@@ -1,0 +1,48 @@
+services:
+  runner-backend-ci:
+    image: gitea/act_runner:latest
+    restart: unless-stopped
+    environment:
+      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
+      GITEA_RUNNER_NAME: ${GITEA_RUNNER_NAME_PREFIX:-sofortbot}-backend-ci
+      GITEA_RUNNER_LABELS: backend-ci
+    command: >
+      sh -lc '
+      if [ ! -f /data/.runner ]; then
+        act_runner register
+        --no-interactive
+        --instance "${GITEA_INSTANCE_URL}"
+        --token "${GITEA_RUNNER_REGISTRATION_TOKEN}"
+        --name "${GITEA_RUNNER_NAME}"
+        --labels "${GITEA_RUNNER_LABELS}";
+      fi;
+      exec act_runner daemon
+      '
+    volumes:
+      - ./runner-backend-ci:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  runner-backend-cd:
+    image: gitea/act_runner:latest
+    restart: unless-stopped
+    environment:
+      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
+      GITEA_RUNNER_NAME: ${GITEA_RUNNER_NAME_PREFIX:-sofortbot}-backend-cd
+      GITEA_RUNNER_LABELS: backend-cd
+    command: >
+      sh -lc '
+      if [ ! -f /data/.runner ]; then
+        act_runner register
+        --no-interactive
+        --instance "${GITEA_INSTANCE_URL}"
+        --token "${GITEA_RUNNER_REGISTRATION_TOKEN}"
+        --name "${GITEA_RUNNER_NAME}"
+        --labels "${GITEA_RUNNER_LABELS}";
+      fi;
+      exec act_runner daemon
+      '
+    volumes:
+      - ./runner-backend-cd:/data
+      - /var/run/docker.sock:/var/run/docker.sock

@@ -1,0 +1,64 @@
+version: 1
+service: sb-sofort-orchestrator-service
+dashboard:
+  name: "Sofort Orchestrator Overview"
+  rows:
+    - name: "Service Health"
+      panels:
+        - id: ready-state
+          title: "Ready State"
+          metric_source: "readyz"
+          visualization: "status"
+          slo_link: "docs/slo-targets.md"
+        - id: api-availability
+          title: "API Availability % (30d)"
+          metric_source: "http_status_stream"
+          visualization: "line"
+          slo_link: "docs/slo-targets.md"
+        - id: error-rate
+          title: "HTTP Error Rate"
+          metric_source: "metrics.error_rate"
+          visualization: "line"
+          alert_link: "orchestrator-error-rate-spike"
+
+    - name: "Queue"
+      panels:
+        - id: jobs-by-status
+          title: "Jobs by Status"
+          metric_source: "metrics.job_store_metrics.jobs_by_status"
+          visualization: "stacked_bar"
+          alert_link: "orchestrator-queue-backlog-growth"
+        - id: job-throughput
+          title: "Job Completion Throughput"
+          metric_source: "job_events"
+          visualization: "line"
+        - id: priority-mix
+          title: "Queue Priority Mix"
+          metric_source: "metrics.job_store_metrics.jobs_by_priority"
+          visualization: "donut"
+
+    - name: "Reliability Controls"
+      panels:
+        - id: breaker-open-channels
+          title: "Open Breaker Channels"
+          metric_source: "metrics.circuit_breaker_metrics.open_channels_total"
+          visualization: "single_stat"
+          alert_link: "orchestrator-breaker-open-saturation"
+        - id: intake-rate-limited
+          title: "Rate-Limited Intake %"
+          metric_source: "error_code.orchestrator_jobs_rate_limited"
+          visualization: "line"
+          alert_link: "orchestrator-intake-rate-limited"
+
+    - name: "Reconciliation"
+      panels:
+        - id: reconciliation-total
+          title: "Reconciliation Reports Total"
+          metric_source: "metrics.job_store_metrics.reconciliation_reports_total"
+          visualization: "line"
+          alert_link: "orchestrator-reconciliation-drift-persistence"
+        - id: drift-trend
+          title: "Drift Trend"
+          metric_source: "reconciliation_reports"
+          visualization: "line"
+          runbook_link: "docs/runbooks/orchestrator-incidents.md#scenario-d-reconciliation-drift-not-converging"

@@ -1,0 +1,124 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sofortbot-postgres-dev
+    ports:
+      - "${DEV_POSTGRES_PORT:-8933}:5432"
+    environment:
+      POSTGRES_DB: sofortbot
+      POSTGRES_USER: sofortbot
+      POSTGRES_PASSWORD: sofortbot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: sofortbot-minio-dev
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
+    volumes:
+      - minio_data:/data
+
+  services:
+    build:
+      context: ../../sofortbot-services
+      dockerfile: services/database_service/Dockerfile
+    container_name: sofortbot-services-dev
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${SERVICES_SECRET_KEY:-dev-change-me}
+      DEBUG: "true"
+      DEV_ALLOW_ALL: "true"
+      ALLOWED_HOSTS: ${DEV_SERVICES_ALLOWED_HOSTS:-*}
+      POSTGRES_DB: ${DEV_POSTGRES_DB:-sofortbot}
+      POSTGRES_USER: ${DEV_POSTGRES_USER:-sofortbot}
+      POSTGRES_PASSWORD: ${DEV_POSTGRES_PASSWORD:-sofortbot}
+      POSTGRES_HOST: ${DEV_POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${DEV_POSTGRES_HOST_PORT:-5432}
+    command: >
+      sh -c "
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        python manage.py migrate && break;
+        echo 'Waiting for database...';
+        sleep 3;
+      done;
+      python manage.py runserver 0.0.0.0:8000
+      "
+    ports:
+      - "${DEV_SERVICES_PORT:-8934}:8000"
+
+  services-jv-worker:
+    build:
+      context: ../../sofortbot-services
+      dockerfile: services/database_service/Dockerfile
+    container_name: sofortbot-services-jv-worker-dev
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      services:
+        condition: service_started
+    environment:
+      SECRET_KEY: ${SERVICES_SECRET_KEY:-dev-change-me}
+      DEBUG: "true"
+      DEV_ALLOW_ALL: "true"
+      ALLOWED_HOSTS: ${DEV_SERVICES_ALLOWED_HOSTS:-*}
+      POSTGRES_DB: ${DEV_POSTGRES_DB:-sofortbot}
+      POSTGRES_USER: ${DEV_POSTGRES_USER:-sofortbot}
+      POSTGRES_PASSWORD: ${DEV_POSTGRES_PASSWORD:-sofortbot}
+      POSTGRES_HOST: ${DEV_POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${DEV_POSTGRES_HOST_PORT:-5432}
+    command: >
+      sh -c "
+      python manage.py run_jv_batch_worker --poll-interval 2
+      "
+
+  orchestrator:
+    build:
+      context: ../../sofortbot-services/services/sb-sofort-orchestrator-service
+      dockerfile: Dockerfile
+    container_name: sofortbot-orchestrator-dev
+    env_file:
+      - ../.env
+    depends_on:
+      services:
+        condition: service_started
+    environment:
+      DATABASE_SERVICE_BASE_URL: http://services:8000
+      ORCHESTRATOR_IDEMPOTENCY_SQLITE_PATH: /app/data/orchestrator_idempotency.sqlite3
+      ORCHESTRATOR_HTTP_TIMEOUT_SECONDS: ${ORCHESTRATOR_HTTP_TIMEOUT_SECONDS:-8}
+      ORCHESTRATOR_HTTP_RETRIES: ${ORCHESTRATOR_HTTP_RETRIES:-2}
+      ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS: ${ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS:-86400}
+      ORCHESTRATOR_SERVICE_NAME: ${ORCHESTRATOR_SERVICE_NAME:-sb-sofort-orchestrator-service}
+      ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\"http://localhost:8011/healthz\")"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    ports:
+      - "${DEV_ORCHESTRATOR_PORT:-8935}:8011"
+    volumes:
+      - orchestrator_data:/app/data
+
+volumes:
+  pg_data:
+  minio_data:
+  orchestrator_data:

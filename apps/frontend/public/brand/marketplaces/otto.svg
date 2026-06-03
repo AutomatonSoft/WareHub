@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="OTTO">
+  <rect width="120" height="120" rx="20" fill="#fff"/>
+  <rect x="8" y="8" width="104" height="104" rx="16" fill="#e3173e"/>
+  <text x="60" y="72" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Ot</text>
+</svg>

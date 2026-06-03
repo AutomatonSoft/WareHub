@@ -1,0 +1,13 @@
+*.log
+.idea/
+.vscode/
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+
+AGENTS.md
+
+.deploy-requests/
+.deploy-state/

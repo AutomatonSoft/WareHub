@@ -1,0 +1,64 @@
+﻿admin
+ [X] 0001_initial
+ [X] 0002_logentry_remove_auto_add
+ [X] 0003_logentry_add_action_flag_choices
+auth
+ [X] 0001_initial
+ [X] 0002_alter_permission_name_max_length
+ [X] 0003_alter_user_email_max_length
+ [X] 0004_alter_user_username_opts
+ [X] 0005_alter_user_last_login_null
+ [X] 0006_require_contenttypes_0002
+ [X] 0007_alter_validators_add_error_messages
+ [X] 0008_alter_user_username_max_length
+ [X] 0009_alter_user_last_name_max_length
+ [X] 0010_alter_group_name_max_length
+ [X] 0011_update_proxy_permissions
+ [X] 0012_alter_user_first_name_max_length
+contenttypes
+ [X] 0001_initial
+ [X] 0002_remove_content_type_name
+database
+ [X] 0001_initial
+ [X] 0002_alter_orders_date_alter_orders_kid_alter_orders_memo_and_more
+ [X] 0003_require_kid_for_orders
+ [X] 0004_alter_kid_global_price_alter_kid_id_alter_orders_id
+ [X] 0005_remove_kid_global_price_kid_photo_kid_place_and_more
+ [X] 0006_alter_kid_place
+ [X] 0007_orders_quantity_alter_kid_kid_number
+ [X] 0008_alter_orders_sku
+ [X] 0009_orders_buyer_orders_platform
+ [X] 0010_orders_additional_items
+ [X] 0011_kid_account
+ [X] 0012_idempotencyrecord
+ [X] 0013_eanpool_eanusage
+ [X] 0014_kid_room_type_listing_status
+ [X] 0015_alter_eanpool_id_alter_eanusage_id
+hood_service
+ [X] 0001_initial
+ [X] 0002_split_jv_xl
+ [X] 0003_hoodapiresponsejv_external_push_error_and_more
+jv_services
+ [X] 0001_initial
+ [X] 0002_importedproduct_update_user_and_more
+ [X] 0003_importedproduct_local_save_status_and_more
+ [X] 0004_xljvbatchjob_xljvbatchjobitem
+ [X] 0005_importedproduct_site_key_and_unique_per_sitekey
+ [X] 0006_importedproductcategory_main_category
+ [X] 0007_rename_batch_tables_to_jv
+ [X] 0008_state_drop_imported_models
+ [ ] 0009_state_rename_xljv_models_to_jv
+ [ ] 0010_alter_jvbatchjob_site_family
+kaufland
+ [X] 0001_initial
+orders_pars
+ (no migrations)
+otto_service
+ [X] 0001_initial
+ [X] 0002_split_jv_xl
+ [X] 0003_alter_ottoproductjv_options_and_more
+sessions
+ [X] 0001_initial
+xl_services
+ [X] 0001_xl_batch_tables
+ [X] 0002_state_models

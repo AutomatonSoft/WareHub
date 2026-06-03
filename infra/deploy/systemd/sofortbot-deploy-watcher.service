@@ -1,0 +1,16 @@
+[Unit]
+Description=SofortBOT Deploy Watcher
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/server/sofotbot/infra
+ExecStart=/usr/bin/env bash /home/server/sofotbot/infra/scripts/deploy-watcher.sh
+Restart=always
+RestartSec=5
+Environment=POLL_INTERVAL_SECONDS=20
+Environment=WATCHER_SKIP_INFRA_GIT_PULL=1
+
+[Install]
+WantedBy=multi-user.target

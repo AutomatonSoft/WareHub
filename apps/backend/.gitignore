@@ -1,0 +1,10 @@
+﻿/target
+/uploads
+.afterbuy_*.cookie
+tmp_*
+*.log
+.idea/
+.vscode/
+.DS_Store
+
+AGENTS.md
