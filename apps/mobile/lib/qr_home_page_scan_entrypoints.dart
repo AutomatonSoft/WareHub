@@ -1,0 +1,104 @@
+// ignore_for_file: invalid_use_of_protected_member
+
+part of 'qr_home_page.dart';
+
+extension _QrHomePageScanEntrypoints on _QrHomePageState {
+  Future<void> _onScanTap() async {
+    if (isScanActionLocked(
+      adding: _adding,
+      removing: _removing,
+      printingItemId: _printingItemId,
+      printingImage: _printingImage,
+    )) {
+      return;
+    }
+    final String? action = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final AppStrings strings = AppStrings.of(dialogContext);
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  strings.text('scan_action_title'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: uiText,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  strings.text('scan_action_subtitle'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: uiMuted,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 56,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop('add'),
+                    icon: const Icon(Icons.add_box_rounded),
+                    label: Text(
+                      strings.text('add'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop('remove'),
+                    icon: const Icon(Icons.indeterminate_check_box_rounded),
+                    label: Text(
+                      strings.text('remove'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(strings.text('cancel')),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    switch (parseScanActionChoice(action)) {
+      case ScanActionChoice.add:
+        await _onAddItem();
+        break;
+      case ScanActionChoice.remove:
+        await _onRemoveItem();
+        break;
+      case ScanActionChoice.cancel:
+        break;
+    }
+  }
+
+  Future<void> _reloadList() async {
+    await _loadInitialIntakes();
+  }
+}

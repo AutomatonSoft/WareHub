@@ -1,0 +1,13 @@
+.git
+.github
+.dart_tool
+.flutter-plugins
+.flutter-plugins-dependencies
+build
+coverage
+.pub-cache
+.pub
+*.log
+.env
+.env.*
+!.env.example

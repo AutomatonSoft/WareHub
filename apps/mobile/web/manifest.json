@@ -1,0 +1,9 @@
+{
+  "name": "sofortbot-mobile",
+  "short_name": "sofortbot",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#00897b",
+  "description": "SofortBot mobile thin client"
+}

@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: database_service_db
+    environment:
+      POSTGRES_DB: database_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d database_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ../..
+      dockerfile: services/database_service/Dockerfile
+    container_name: database_service_web
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    environment:
+      SECRET_KEY: django-insecure-change-me
+      DEBUG: "true"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      POSTGRES_DB: ${POSTGRES_DB:-sofortbot_shared_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-Ravil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Ravilka112}
+      POSTGRES_HOST: ${POSTGRES_HOST:-217.160.149.34}
+      POSTGRES_PORT: ${POSTGRES_PORT:-15432}
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pg_data:

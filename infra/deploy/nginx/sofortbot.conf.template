@@ -1,0 +1,138 @@
+# Replace placeholders before enabling:
+# __DEV_DOMAIN__
+# __STAGE_DOMAIN__
+# __PROD_DOMAIN__
+
+# HTTP to HTTPS redirects
+server {
+  listen 80;
+  server_name __DEV_DOMAIN__ __STAGE_DOMAIN__ __PROD_DOMAIN__;
+  return 301 https://$host$request_uri;
+}
+
+# Dev (frontend + backend on one domain, API under /api/)
+server {
+  listen 443 ssl http2;
+  server_name __DEV_DOMAIN__;
+
+  ssl_certificate /etc/letsencrypt/live/__DEV_DOMAIN__/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/__DEV_DOMAIN__/privkey.pem;
+
+  location = /api/v1/intakes/ws {
+    proxy_pass http://127.0.0.1:8932/api/v1/intakes/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8932/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # Optional direct APK download endpoint
+  location = /warehub-dev.apk {
+    alias /var/www/warehub-downloads/warehub-dev.apk;
+    default_type application/vnd.android.package-archive;
+    add_header Content-Disposition 'attachment; filename="warehub-dev.apk"';
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:8931;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+
+# Stage (frontend + backend on one domain, API under /api/)
+server {
+  listen 443 ssl http2;
+  server_name __STAGE_DOMAIN__;
+
+  ssl_certificate /etc/letsencrypt/live/__STAGE_DOMAIN__/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/__STAGE_DOMAIN__/privkey.pem;
+
+  location = /api/v1/intakes/ws {
+    proxy_pass http://127.0.0.1:8942/api/v1/intakes/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8942/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location = /warehubstage.apk {
+    alias /var/www/warehub-downloads/warehubstage.apk;
+    default_type application/vnd.android.package-archive;
+    add_header Content-Disposition 'attachment; filename="warehubstage.apk"';
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:8941;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+
+# Prod (frontend + backend on one domain, API under /api/)
+server {
+  listen 443 ssl http2;
+  server_name __PROD_DOMAIN__;
+
+  ssl_certificate /etc/letsencrypt/live/__PROD_DOMAIN__/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/__PROD_DOMAIN__/privkey.pem;
+
+  location = /api/v1/intakes/ws {
+    proxy_pass http://127.0.0.1:8952/api/v1/intakes/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8952/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location = /warehub.apk {
+    alias /var/www/warehub-downloads/warehub.apk;
+    default_type application/vnd.android.package-archive;
+    add_header Content-Disposition 'attachment; filename="warehub.apk"';
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:8951;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}

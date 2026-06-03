@@ -1,0 +1,2 @@
+ALTER TABLE intakes
+ADD COLUMN IF NOT EXISTS b_ware_comment TEXT;
