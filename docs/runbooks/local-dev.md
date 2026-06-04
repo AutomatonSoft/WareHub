@@ -133,8 +133,17 @@ Notes:
 1. Copy `services/database-service/.env.example` to `services/database-service/.env`.
 2. Dependency manifest source of truth is `services/database-service/requirements.txt`.
 3. Django entrypoint remains `services/database-service/manage.py`.
-4. If you run the service directly on the host, keep startup and migrations explicit and separate.
-5. Do not invent an unverified install command sequence beyond the confirmed dependency manifest ownership.
+4. Preferred future host-local installer is `uv`.
+5. Documentation-only target bootstrap sequence:
+
+```powershell
+Set-Location I:\WareHub\services\database-service
+uv venv
+uv pip install -r requirements.txt
+```
+
+6. `uv` install validation was not executed in this slice.
+7. If you run the service directly on the host, keep startup and migrations explicit and separate.
 6. If you use the service-local Docker flow, validate it from repo root:
 
 ```powershell
@@ -142,21 +151,21 @@ Set-Location I:\WareHub
 docker compose -f services/database-service/docker-compose.yml config
 ```
 
-7. The normalized service-local Docker flow uses:
+8. The normalized service-local Docker flow uses:
    - build context `services`
    - Dockerfile `database-service/Dockerfile`
    - dependency manifest `database-service/requirements.txt`
    - Django API on `localhost:8934`
    - service-local Postgres on `localhost:8543`
-8. The service-local compose file is `services/database-service/docker-compose.yml`.
-9. The service-local compose command does not auto-run migrations.
-10. If you inspect or repair this later, use [slice-3j-database-service-dependency-ownership-report.md](/I:/WareHub/docs/runbooks/slice-3j-database-service-dependency-ownership-report.md) as the source of truth for the current state.
+9. The service-local compose file is `services/database-service/docker-compose.yml`.
+10. The service-local compose command does not auto-run migrations.
+11. If you inspect or repair this later, use [slice-3k-database-service-requirements-audit-report.md](/I:/WareHub/docs/runbooks/slice-3k-database-service-requirements-audit-report.md) as the source of truth for the current state.
 
 Do not enable implicit migrations as part of automated startup in this slice.
 
 Current limitation:
 
-- host-local manual install/start commands still remain partially undocumented by design
+- `uv` target policy is documented, but not runtime-validated in this slice
 - the service-local Docker flow is local/dev only and must not be treated as stage/prod deployment guidance
 
 ## 9. Orchestrator Local Run
