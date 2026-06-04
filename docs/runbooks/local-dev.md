@@ -131,20 +131,30 @@ Notes:
 ## 8. Database-Service Local Run
 
 1. Copy `services/database-service/.env.example` to `services/database-service/.env`.
-2. Point the service to local Postgres on `localhost:8933`.
-3. Dependency bootstrap is currently `Needs follow-up`:
-4. the imported service does not contain `services/database-service/requirements.txt`
-5. the only confirmed Django dependency manifest in the `services` area is `services/requirements.txt`
-6. do not invent a local install command until the dependency ownership between `services/requirements.txt` and `services/database-service` is explicitly confirmed
-7. if you inspect or repair this later, use [slice-3h-database-service-bootstrap-report.md](/I:/WareHub/docs/runbooks/slice-3h-database-service-bootstrap-report.md) as the source of truth for the current state.
+2. For host-local dependency ownership, use `services/requirements.txt` as the current source of truth.
+3. If you run the service directly on the host, keep startup and migrations explicit and separate.
+4. Do not invent an unverified install command sequence beyond the confirmed dependency manifest ownership.
+5. If you use the service-local Docker flow, validate it from repo root:
+
+```powershell
+Set-Location I:\WareHub
+docker compose -f services/database-service/docker-compose.yml config
+```
+
+6. The normalized service-local Docker flow uses:
+   - build context `services`
+   - Dockerfile `database-service/Dockerfile`
+   - Django API on `localhost:8934`
+   - service-local Postgres on `localhost:8543`
+7. The service-local compose command does not auto-run migrations.
+8. If you inspect or repair this later, use [slice-3i-database-service-bootstrap-contract-report.md](/I:/WareHub/docs/runbooks/slice-3i-database-service-bootstrap-contract-report.md) as the source of truth for the current state.
 
 Do not enable implicit migrations as part of automated startup in this slice.
 
 Current limitation:
 
-- the imported service Dockerfile is not monorepo-safe without extra path work
-- the imported service Docker Compose file still references legacy snake_case paths and auto-runs migrations
-- for the current local-dev contract, `database-service` startup commands remain intentionally undocumented until a dedicated follow-up slice confirms the dependency/bootstrap path
+- host-local manual install/start commands still remain partially undocumented by design
+- the service-local Docker flow is local/dev only and must not be treated as stage/prod deployment guidance
 
 ## 9. Orchestrator Local Run
 
