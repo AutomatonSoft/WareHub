@@ -15,8 +15,9 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
+import { StatusBadge } from "../ui/status-badge";
 import { cn } from "../../lib/cn";
-import type { ProductEditorJvDraft, ProductEditorWarning } from "./product-editor-types";
+import type { ProductEditorJobResponse, ProductEditorJvDraft, ProductEditorWarning } from "./product-editor-types";
 
 const JV_SITE_KEYS = ["JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"] as const;
 const UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
@@ -30,6 +31,7 @@ type ProductEditorJvPanelProps = {
   onChange: (patch: Partial<ProductEditorJvDraft>) => void;
   activeTabLabel?: string;
   batchApplyLoading?: boolean;
+  jobResponse?: ProductEditorJobResponse | null;
   onApplyEditedProducts?: () => void;
 };
 
@@ -47,7 +49,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const kurzbeschreibungValue = String(jvContentDe?.kurzbeschreibung ?? jvContentDe?.short_description_real ?? "");
   const descriptionValue = String(jvContentDe?.description ?? "");
   const descriptionPreviewHtml = normalizeDescriptionHtmlForPreview(descriptionValue);
-  const deliveryIdValue = String(props.draft.jv_fields?.lieferzeitid ?? "");
+  const rawDeliveryIdValue = String(props.draft.jv_fields?.lieferzeitid ?? "");
   const urlKeyValue = props.draft.jv_fields?.urlkey ?? "";
   const priceValue = props.draft.price ?? "";
   const uvpValue = props.draft.jv_fields?.uvp ?? "";
@@ -138,6 +140,30 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const selectedCategoryIds = new Set(props.draft.categories.map((item) => item.category_id));
   const mainCategoryId = props.draft.categories.find((item) => item.main_category)?.category_id ?? null;
   const filteredCategoryTree = filterCategoryTree(categoryTree, categoryQuery, selectedCategoryIds, onlyCheckedCategories);
+  const deliveryIdValue = normalizeDeliverySelectValue(rawDeliveryIdValue, deliveryOptions);
+  const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
+  const jobSummary = props.jobResponse?.summary ?? {};
+  const progressPhase = String(jobSummary.progress_phase || jobStatus || "").trim();
+  const progressMessage = String(jobSummary.progress_message || "").trim();
+  const progressTotal = toNumber(jobSummary.total);
+  const progressApplied = toNumber(jobSummary.applied ?? jobSummary.success);
+  const progressSkipped = toNumber(jobSummary.skipped);
+  const progressFailed = toNumber(jobSummary.failed);
+  const progressCompleted = Math.min(
+    progressTotal || progressApplied + progressSkipped + progressFailed,
+    progressApplied + progressSkipped + progressFailed
+  );
+  const isInlineProgressVisible =
+    Boolean(props.batchApplyLoading) ||
+    jobStatus === "queued" ||
+    jobStatus === "running" ||
+    Boolean(progressPhase) ||
+    progressTotal > 0;
+  const inlineProgressPercent = progressTotal > 0
+    ? Math.min(100, Math.round((progressCompleted / progressTotal) * 100))
+    : props.batchApplyLoading || jobStatus === "queued" || jobStatus === "running"
+      ? 15
+      : 100;
 
   function patchPrimaryName(name: string) {
     const nextJvFields = setJvContentByLanguage(props.draft.jv_fields, "de", { name });
@@ -200,10 +226,11 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   }
 
   function patchDeliveryId(value: string) {
+    const normalizedValue = normalizeDeliverySelectValue(value, deliveryOptions) || value;
     props.onChange({
       jv_fields: {
         ...(props.draft.jv_fields ?? {}),
-        lieferzeitid: value
+        lieferzeitid: normalizedValue
       }
     });
   }
@@ -514,15 +541,38 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       changedCount={changedFields.length}
       status={props.draft.target_id || undefined}
       headerActions={
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 rounded-xl text-xs font-semibold"
-          onClick={props.onApplyEditedProducts}
-          disabled={Boolean(props.batchApplyLoading) || changedFields.length === 0}
-        >
-          {props.batchApplyLoading ? "Updating..." : "Update Edited Products"}
-        </Button>
+        <div className="flex min-w-[280px] flex-col items-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-xl text-xs font-semibold"
+            onClick={props.onApplyEditedProducts}
+            disabled={Boolean(props.batchApplyLoading) || changedFields.length === 0}
+          >
+            {props.batchApplyLoading ? "Updating..." : "Update Edited Products"}
+          </Button>
+          {isInlineProgressVisible ? (
+            <div className="w-full min-w-[280px] rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium text-foreground">
+                    {progressMessage || "Preparing orchestrator plan."}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    {progressPhase || "planning"} / {progressCompleted}/{progressTotal || progressCompleted || 0}
+                  </div>
+                </div>
+                <StatusBadge tone="planned">{jobStatus || "running"}</StatusBadge>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full bg-primary transition-all", (props.batchApplyLoading || jobStatus === "queued" || jobStatus === "running") && "animate-pulse")}
+                  style={{ width: `${inlineProgressPercent}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
       }
       topLeft={
         <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4">
@@ -926,6 +976,11 @@ function collectAllCategoryIds(nodes: ProductEditorJvRubricNode[]): Set<number> 
   return ids;
 }
 
+function toNumber(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function filterCategoryTree(
   nodes: ProductEditorJvRubricNode[],
   query: string,
@@ -1050,6 +1105,16 @@ function setJvContentByLanguage(
   }
 
   return { ...fields, content_by_language: rows };
+}
+
+function normalizeDeliverySelectValue(value: string, options: ProductEditorJvDeliveryOption[]): string {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (options.some((option) => option.value === normalized)) {
+    return normalized;
+  }
+  const byLabel = options.find((option) => option.label.trim().toLowerCase() === normalized.toLowerCase());
+  return byLabel?.value ?? normalized;
 }
 
 function normalizeDescriptionHtmlForPreview(html: string): string {

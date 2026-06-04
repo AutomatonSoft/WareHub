@@ -1,0 +1,10 @@
+{
+  "_comment": "Reviewed JV category overrides. Format: SOURCE_SITE_KEY -> TARGET_SITE_KEY -> source_rubid -> target_rubid. Only manually verified rows should be added here.",
+  "JV_DE": {
+    "JV_CH": {},
+    "JV_AT": {},
+    "JV_CO_UK": {
+      "934": 877
+    }
+  }
+}

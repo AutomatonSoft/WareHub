@@ -361,6 +361,41 @@ class JVBatchPayloadSerializer(serializers.Serializer):
 
 
 class JVBatchJobItemSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        details = data.get("details") or {}
+        if not isinstance(details, dict):
+            return data
+
+        status_value = str(data.get("status") or "").strip().lower()
+        phase_value = str(details.get("progress_phase") or "").strip().lower()
+        message_value = str(details.get("progress_message") or "").strip()
+
+        if status_value == "applied" and (
+            phase_value != "applied"
+            or message_value.lower() == "queued in worker."
+        ):
+            details["progress_phase"] = "applied"
+            details["progress_message"] = "Applied to source DB."
+        elif status_value == "failed" and (
+            phase_value != "failed"
+            or message_value.lower() == "queued in worker."
+        ):
+            details["progress_phase"] = "failed"
+            details["progress_message"] = str(data.get("error_text") or "Apply failed.").strip()
+        elif status_value == "skipped" and (
+            phase_value != "skipped"
+            or message_value.lower() == "queued in worker."
+        ):
+            details["progress_phase"] = "skipped"
+            details["progress_message"] = str(data.get("error_text") or "Skipped.").strip()
+        elif status_value == "pending" and not phase_value:
+            details["progress_phase"] = "queued"
+            details["progress_message"] = message_value or "Queued in worker."
+
+        data["details"] = details
+        return data
+
     class Meta:
         model = JVBatchJobItem
         fields = "__all__"
@@ -368,6 +403,32 @@ class JVBatchJobItemSerializer(serializers.ModelSerializer):
 
 class JVBatchJobSerializer(serializers.ModelSerializer):
     items = JVBatchJobItemSerializer(many=True, read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        summary = data.get("result_summary") or {}
+        if not isinstance(summary, dict):
+            summary = {}
+
+        status_value = str(data.get("status") or "").strip().lower()
+        phase_value = str(summary.get("progress_phase") or "").strip().lower()
+        message_value = str(summary.get("progress_message") or "").strip()
+
+        if status_value == "applied" and phase_value != "completed":
+            summary["progress_phase"] = "completed"
+            summary["progress_message"] = message_value or "Batch apply completed."
+        elif status_value == "failed" and phase_value != "failed":
+            summary["progress_phase"] = "failed"
+            summary["progress_message"] = message_value or "Batch apply completed with failures."
+        elif status_value == "running" and not phase_value:
+            summary["progress_phase"] = "applying"
+            summary["progress_message"] = message_value or "Worker is applying site updates."
+        elif status_value == "pending" and not phase_value:
+            summary["progress_phase"] = "queued"
+            summary["progress_message"] = message_value or "Batch job queued."
+
+        data["result_summary"] = summary
+        return data
 
     class Meta:
         model = JVBatchJob

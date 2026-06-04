@@ -137,7 +137,11 @@ _job_store = SqliteJobStore(db_path=settings.jobs_sqlite_path)
 _metrics = InMemoryMetrics()
 _product_editor_gateway = ProductEditorGateway(base_url=settings.base_url, http_client=_http_client)
 _product_editor_store = SqliteProductEditorStore(db_path=settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3"))
-_product_editor_service = ProductEditorService(gateway=_product_editor_gateway, store=_product_editor_store)
+_product_editor_service = ProductEditorService(
+    gateway=_product_editor_gateway,
+    store=_product_editor_store,
+    orchestrator_job_store=_job_store,
+)
 
 Deps.service = _service
 Deps.idempotency_store = _idempotency_store

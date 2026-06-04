@@ -34,7 +34,7 @@ class HttpClient:
                 if attempt >= self._retries:
                     raise RetryExhaustedError(str(exc), kind=last_kind) from exc
                 time.sleep(0.2 * (attempt + 1))
-            except httpx.NetworkError as exc:
+            except (httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exc = exc
                 last_kind = "network"
                 if attempt >= self._retries:

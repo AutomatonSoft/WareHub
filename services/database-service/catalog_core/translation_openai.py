@@ -33,7 +33,7 @@ def translate_text(*, text: str, source_lang: str, target_lang: str) -> str:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
-    model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5-mini").strip()
+    model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.4-mini").strip()
     prompt = (
         f"Translate ecommerce content from {source_lang} to {target_lang}. "
         "Preserve all HTML tags and attributes exactly, preserve line breaks, placeholders, SKU, brand names, and numbers. "
@@ -70,7 +70,7 @@ def translate_fields_batch(
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
-    model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini").strip()
+    model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.4-mini").strip()
     payload_fields = {
         key: str(source_fields.get(key) or "")
         for key in translatable_fields

@@ -151,6 +151,7 @@ export function ProductEditorActiveGroupPanel(input: {
           onChange={input.onPatchJv}
           activeTabLabel={input.activeTabLabel}
           batchApplyLoading={input.jvBatchApplyLoading}
+          jobResponse={input.jobResponse}
           onApplyEditedProducts={input.onApplyJvEditedProducts}
         />
         <ProductEditorJobPanel job={input.jobResponse} loading={input.jobLoading} onRefresh={input.onRefreshJob} />

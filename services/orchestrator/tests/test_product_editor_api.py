@@ -81,6 +81,7 @@ class FakeProductEditorGateway:
         self.jv_batch_result = {
             "summary": {"applied": 3, "failed": 0, "skipped": 0, "translation_used_sites": 1, "translation_error_sites": 0},
             "job": {
+                "id": 501,
                 "items": [
                     {"site": "JV", "site_key": "JV_DE", "domain": "de.example", "status": "applied"},
                     {"site": "JV", "site_key": "JV_AT", "domain": "at.example", "status": "applied"},
@@ -116,7 +117,27 @@ class FakeProductEditorGateway:
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict):
         self.jv_batch_calls.append({"ean": ean, "payload": payload, "request_id": request_id})
-        return type("R", (), {"status_code": 200, "body": self.jv_batch_result})()
+        return type("R", (), {"status_code": 202, "body": self.jv_batch_result})()
+
+    def fetch_jv_batch_job_status(self, *, job_id: int, request_id: str):
+        body = {
+            "job": {
+                "id": job_id,
+                "status": "applied",
+                "result_summary": {
+                    "total": 3,
+                    "applied": 3,
+                    "failed": 0,
+                    "skipped": 0,
+                    "translation_used_sites": 1,
+                    "translation_error_sites": 0,
+                    "progress_phase": "completed",
+                    "progress_message": "Batch apply completed.",
+                },
+                "items": self.jv_batch_result["job"]["items"],
+            }
+        }
+        return type("R", (), {"status_code": 200, "body": body})()
 
 
 def _client(tmp_path) -> tuple[TestClient, FakeProductEditorGateway]:
@@ -127,6 +148,7 @@ def _client(tmp_path) -> tuple[TestClient, FakeProductEditorGateway]:
     ProductEditorDeps.service = ProductEditorService(
         gateway=fake_gateway,
         store=SqliteProductEditorStore(db_path=str(tmp_path / "product_editor.sqlite3")),
+        orchestrator_job_store=Deps.job_store,
     )
     return TestClient(app), fake_gateway
 
@@ -148,6 +170,17 @@ def test_product_editor_discover_returns_hood_found_and_excludes_jv_main(tmp_pat
     assert jv_targets["JV_CH"]["status"] == "missing"
     all_target_ids = [target["id"] for group in payload["groups"] for target in group["targets"]]
     assert "JV_MAIN" not in all_target_ids
+
+
+def test_product_editor_discover_respects_active_group_jv(tmp_path):
+    client, _ = _client(tmp_path)
+    response = client.post("/api/v1/orchestrator/product-editor/discover", json={"ean": "4012345678901", "active_group": "JV"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["selected_group_id"] == "JV"
+    assert payload["selected_target_ids"] == ["JV_DE", "JV_AT", "JV_CO_UK"]
+    hood_group = next(group for group in payload["groups"] if group["id"] == "HOOD")
+    assert all(target["status"] == "unknown" for target in hood_group["targets"])
 
 
 def test_product_editor_load_returns_normalized_hood_draft(tmp_path):
@@ -333,12 +366,15 @@ def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path)
     )
     assert apply_response.status_code == 200
     apply_payload = apply_response.json()
-    assert apply_payload["status"] == "completed"
-    assert gateway.jv_batch_calls[0]["payload"]["site_keys"] == ["JV_DE", "JV_AT", "JV_CO_UK"]
-    assert gateway.jv_batch_calls[0]["payload"]["template_site_key"] == "JV_DE"
-    assert gateway.jv_batch_calls[0]["payload"]["translate_texts"] is True
-    assert gateway.jv_batch_calls[0]["payload"]["translation_source_language"] == "de"
-    assert gateway.jv_batch_calls[0]["payload"]["translation_source"] == {
+    assert apply_payload["status"] == "queued"
+    command = Deps.job_store.get_job_command(job_id=apply_payload["job_id"])
+    assert command is not None
+    overrides = command.channels[0].overrides
+    assert overrides["site_keys"] == ["JV_DE", "JV_AT", "JV_CO_UK"]
+    assert overrides["template_site_key"] == "JV_DE"
+    assert overrides["translate_texts"] is True
+    assert overrides["translation_source_language"] == "de"
+    assert overrides["translation_source"] == {
         "name": "Ecksofa PH-028",
         "description": "Полное описание товара...",
         "meta_title": "Ecksofa PH-028 kaufen",
@@ -352,8 +388,7 @@ def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path)
     job_response = client.get(f"/api/v1/orchestrator/product-editor/jobs/{apply_payload['job_id']}")
     assert job_response.status_code == 200
     job_payload = job_response.json()
-    assert job_payload["summary"]["success"] == 3
-    assert job_payload["targets"][2]["target_id"] == "JV_CO_UK"
+    assert job_payload["status"] == "queued"
 
 
 def test_product_editor_apply_sends_updated_jv_main_category(tmp_path):
@@ -383,7 +418,10 @@ def test_product_editor_apply_sends_updated_jv_main_category(tmp_path):
         json={"plan_id": plan_id, "confirmation": True},
     )
     assert apply_response.status_code == 200
-    payload = gateway.jv_batch_calls[0]["payload"]
+    apply_payload = apply_response.json()
+    command = Deps.job_store.get_job_command(job_id=apply_payload["job_id"])
+    assert command is not None
+    payload = command.channels[0].overrides
     assert payload["template_main_category_id"] == 11
     assert payload["categories"] == [
         {"category_id": 10, "main_category": False},

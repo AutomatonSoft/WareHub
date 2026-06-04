@@ -3,7 +3,16 @@ from __future__ import annotations
 import uuid
 
 from ..domain.field_registry import filtered_payload, validate_changed_fields
-from ..domain.models import ErrorContract, JobStatus, Marketplace
+from ..domain.models import (
+    CanonicalPayload,
+    ChannelTarget,
+    ErrorContract,
+    JobPriority,
+    JobStatus,
+    Marketplace,
+    Operation,
+    OrchestrateRequest,
+)
 from ..domain.product_editor_models import (
     ProductEditorApplyResponse,
     ProductEditorGroupId,
@@ -17,6 +26,7 @@ from ..domain.product_editor_models import (
 from ..domain.product_editor_registry import build_product_editor_groups
 from ..infra.product_editor_gateway import ProductEditorGateway
 from ..infra.product_editor_store import SqliteProductEditorStore
+from ..infra.job_store import SqliteJobStore
 
 
 _JV_PRIORITY = ["JV_DE", "JV_CH", "JV_AT", "JV_CO_UK"]
@@ -24,9 +34,16 @@ _JV_TEXTUAL_FIELDS = {"descriptions", "jv_fields"}
 
 
 class ProductEditorJvFlow:
-    def __init__(self, *, gateway: ProductEditorGateway, store: SqliteProductEditorStore) -> None:
+    def __init__(
+        self,
+        *,
+        gateway: ProductEditorGateway,
+        store: SqliteProductEditorStore,
+        orchestrator_job_store: SqliteJobStore,
+    ) -> None:
         self.gateway = gateway
         self.store = store
+        self.orchestrator_job_store = orchestrator_job_store
 
     def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
         fetch = self.gateway.fetch_jv_sites_by_ean(ean=ean, request_id=request_id)
@@ -232,82 +249,52 @@ class ProductEditorJvFlow:
             raise ProductEditorJvFlowError("product_editor_plan_not_found", "Product Editor plan was not found.", 404, details={"plan_id": plan_id})
 
         job_id = str(uuid.uuid4())
-        self.store.create_job(
+        command = _build_jv_orchestrate_request(plan=plan)
+        self.orchestrator_job_store.create_job(
             job_id=job_id,
             request_id=request_id,
-            plan_id=plan_id,
             ean=plan["ean"],
-            active_group=plan["active_group"],
+            command=command,
+            priority=JobPriority.BACKGROUND,
         )
-        self.store.mark_running(job_id=job_id)
-
-        batch = self.gateway.apply_jv_batch_by_ean(ean=plan["ean"], request_id=request_id, payload=plan["draft"])
-        if not (200 <= batch.status_code < 300):
-            error = ErrorContract(
-                code=str(batch.body.get("code") or "product_editor_jv_batch_apply_failed"),
-                message="JV batch apply failed.",
-                request_id=request_id,
-                details={"upstream_status_code": batch.status_code, "upstream_response": batch.body},
-            )
-            summary = {"supported": True, "success": 0, "failed": len(plan["selected_target_ids"])}
-            self.store.mark_failed(job_id=job_id, summary=summary, targets=[], error=error)
-            return ProductEditorApplyResponse(
-                request_id=request_id,
-                job_id=job_id,
-                status=JobStatus.FAILED,
-                active_group=ProductEditorGroupId.JV,
-                accepted=False,
-            )
-
-        targets = _map_jv_batch_targets(batch.body, request_id=request_id)
-        success_count = sum(1 for target in targets if target["status"] == "success")
-        failed_count = len(targets) - success_count
-        summary = {
-            "supported": True,
-            "success": success_count,
-            "failed": failed_count,
-            "applied": batch.body.get("summary", {}).get("applied", 0),
-            "skipped": batch.body.get("summary", {}).get("skipped", 0),
-            "translation_used_sites": batch.body.get("summary", {}).get("translation_used_sites", 0),
-            "translation_error_sites": batch.body.get("summary", {}).get("translation_error_sites", 0),
-        }
-        if failed_count == 0:
-            self.store.mark_completed(job_id=job_id, summary=summary, targets=targets)
-            return ProductEditorApplyResponse(
-                request_id=request_id,
-                job_id=job_id,
-                status=JobStatus.COMPLETED,
-                active_group=ProductEditorGroupId.JV,
-                accepted=True,
-            )
-
-        error = ErrorContract(
-            code="product_editor_apply_partial_failure",
-            message="One or more JV targets failed during Product Editor apply.",
-            request_id=request_id,
-            details={"job_id": job_id, "failed_targets": failed_count},
-        )
-        self.store.mark_failed(job_id=job_id, summary=summary, targets=targets, error=error)
         return ProductEditorApplyResponse(
             request_id=request_id,
             job_id=job_id,
-            status=JobStatus.FAILED,
+            status=JobStatus.QUEUED,
             active_group=ProductEditorGroupId.JV,
-            accepted=False,
+            accepted=True,
         )
 
     def get_job(self, *, job_id: str, request_id: str) -> ProductEditorJobResponse:
-        job = self.store.get_job(job_id=job_id)
-        if job is None:
+        details = self.orchestrator_job_store.get_job(job_id=job_id)
+        command = self.orchestrator_job_store.get_job_command(job_id=job_id)
+        if details is None or command is None or not _is_jv_product_editor_command(command):
             raise ProductEditorJvFlowError("product_editor_job_not_found", "Product Editor job was not found.", 404, details={"job_id": job_id})
+
+        batch_job_id = _extract_jv_batch_job_id(details)
+        if batch_job_id is not None:
+            live_batch = self.gateway.fetch_jv_batch_job_status(job_id=batch_job_id, request_id=request_id)
+            if 200 <= live_batch.status_code < 300:
+                return _map_live_jv_batch_job_response(
+                    orchestrator_job_id=job_id,
+                    request_id=request_id,
+                    batch_body=live_batch.body,
+                )
+
+        summary = _map_jv_orchestrator_summary(details=details)
+        targets = _map_jv_orchestrator_targets(details=details, command=command, request_id=request_id)
+        error = details.error
+        facade_status = details.status
+        if details.status is JobStatus.COMPLETED and int(summary.get("failed") or 0) > 0:
+            facade_status = JobStatus.FAILED
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,
-            status=job["status"],
-            active_group=job["active_group"],
-            summary=job["summary"],
-            targets=job["targets"],
-            error=job["error"],
+            status=facade_status,
+            active_group=ProductEditorGroupId.JV,
+            summary=summary,
+            targets=targets,
+            error=error,
         )
 
     def _resolve_baseline_site_key(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
@@ -475,6 +462,79 @@ def _build_jv_batch_payload(*, draft: dict, changed_fields: list[str], target_id
     return payload
 
 
+def _build_jv_orchestrate_request(*, plan: dict) -> OrchestrateRequest:
+    draft = plan["draft"] if isinstance(plan.get("draft"), dict) else {}
+    selected_target_ids = [
+        str(target_id or "").strip().upper()
+        for target_id in plan.get("selected_target_ids") or []
+        if str(target_id or "").strip()
+    ]
+    payload = CanonicalPayload(**_normalize_jv_canonical_payload(filtered_payload(Marketplace.XLJV, draft)))
+    overrides = {
+        "__product_editor_mode": "jv_batch_apply",
+        **draft,
+        "site_family": "JV",
+        "site_keys": selected_target_ids,
+    }
+    baseline_site_key = str(draft.get("template_site_key") or draft.get("target_id") or "").strip().upper()
+    return OrchestrateRequest(
+        operation=Operation.UPDATE,
+        payload=payload,
+        channels=[
+            ChannelTarget(
+                marketplace=Marketplace.XLJV,
+                site="JV",
+                site_key=baseline_site_key or None,
+                changed_fields=list(plan.get("changed_fields") or []),
+                overrides=overrides,
+            )
+        ],
+    )
+
+
+def _normalize_jv_canonical_payload(payload: dict) -> dict:
+    normalized = dict(payload or {})
+
+    images = normalized.get("images")
+    if isinstance(images, list):
+        normalized["images"] = [
+            str(
+                image.get("image")
+                if isinstance(image, dict)
+                else image
+            ).strip()
+            for image in images
+            if str(
+                image.get("image")
+                if isinstance(image, dict)
+                else image
+            ).strip()
+        ]
+
+    quantity = normalized.get("quantity")
+    if quantity == "":
+        normalized["quantity"] = None
+    elif quantity is not None and not isinstance(quantity, int):
+        try:
+            normalized["quantity"] = int(quantity)
+        except (TypeError, ValueError):
+            normalized["quantity"] = None
+
+    price = normalized.get("price")
+    if price is not None and not isinstance(price, str):
+        normalized["price"] = str(price)
+
+    image = normalized.get("image")
+    if image is not None and not isinstance(image, str):
+        normalized["image"] = str(image)
+
+    date_available = normalized.get("date_available")
+    if date_available is not None and not isinstance(date_available, str):
+        normalized["date_available"] = str(date_available)
+
+    return normalized
+
+
 def _plan_warnings_for_jv(*, changed_fields: list[str], target_ids: list[str]) -> list[ProductEditorWarning]:
     warnings = [
         ProductEditorWarning(
@@ -541,3 +601,132 @@ def _map_jv_batch_targets(batch_body: dict, *, request_id: str) -> list[dict]:
             }
         )
     return targets
+
+
+def _extract_jv_batch_job_id(details) -> int | None:
+    result = details.result
+    if result is None or not result.results:
+        return None
+    channel_data = result.results[0].data
+    job = channel_data.get("job") if isinstance(channel_data.get("job"), dict) else {}
+    raw_id = job.get("id")
+    try:
+        batch_job_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    return batch_job_id if batch_job_id > 0 else None
+
+
+def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict) -> ProductEditorJobResponse:
+    job = batch_body.get("job") if isinstance(batch_body.get("job"), dict) else {}
+    batch_status = str(job.get("status") or "").strip().lower()
+    summary = job.get("result_summary") if isinstance(job.get("result_summary"), dict) else {}
+    facade_status = _map_jv_batch_status(batch_status)
+    failed_count = int(summary.get("failed") or 0) if isinstance(summary, dict) else 0
+    if facade_status is JobStatus.COMPLETED and failed_count > 0:
+        facade_status = JobStatus.FAILED
+    mapped_summary = _map_live_jv_batch_summary(job=job)
+    return ProductEditorJobResponse(
+        request_id=request_id,
+        job_id=orchestrator_job_id,
+        status=facade_status,
+        active_group=ProductEditorGroupId.JV,
+        summary=mapped_summary,
+        targets=_map_jv_batch_targets({"job": job}, request_id=request_id) if batch_status in {"applied", "failed"} else [],
+        error=None,
+    )
+
+
+def _map_jv_batch_status(status: str) -> JobStatus:
+    if status == "pending":
+        return JobStatus.QUEUED
+    if status == "running":
+        return JobStatus.RUNNING
+    if status == "applied":
+        return JobStatus.COMPLETED
+    if status == "failed":
+        return JobStatus.FAILED
+    return JobStatus.RUNNING
+
+
+def _map_live_jv_batch_summary(*, job: dict) -> dict:
+    summary = job.get("result_summary") if isinstance(job.get("result_summary"), dict) else {}
+    items = job.get("items") if isinstance(job.get("items"), list) else []
+    applied = int(summary.get("applied") or 0)
+    skipped = int(summary.get("skipped") or 0)
+    failed = int(summary.get("failed") or 0)
+    return {
+        "supported": True,
+        "success": applied + skipped,
+        "failed": failed,
+        "total": int(summary.get("total") or len(items) or 0),
+        "applied": applied,
+        "skipped": skipped,
+        "translation_used_sites": int(summary.get("translation_used_sites") or 0),
+        "translation_error_sites": int(summary.get("translation_error_sites") or 0),
+        "progress_phase": str(summary.get("progress_phase") or "").strip(),
+        "progress_message": str(summary.get("progress_message") or "").strip(),
+        "batch_job_id": job.get("id"),
+    }
+
+
+def _is_jv_product_editor_command(command: OrchestrateRequest) -> bool:
+    if len(command.channels) != 1:
+        return False
+    channel = command.channels[0]
+    if channel.marketplace is not Marketplace.XLJV:
+        return False
+    return str(channel.overrides.get("__product_editor_mode") or "").strip().lower() == "jv_batch_apply"
+
+
+def _map_jv_orchestrator_summary(*, details) -> dict:
+    if details.status is JobStatus.QUEUED:
+        return {"supported": True, "success": 0, "failed": 0}
+    if details.status is JobStatus.RUNNING:
+        return {"supported": True, "success": 0, "failed": 0}
+    result = details.result
+    if result is None or not result.results:
+        return {"supported": True, "success": 0, "failed": 1 if details.status is JobStatus.FAILED else 0}
+    channel_result = result.results[0]
+    batch_summary = channel_result.data.get("summary") if isinstance(channel_result.data.get("summary"), dict) else {}
+    job_payload = channel_result.data.get("job") if isinstance(channel_result.data.get("job"), dict) else {}
+    items = job_payload.get("items") if isinstance(job_payload.get("items"), list) else []
+    if batch_summary:
+        success_count = int(batch_summary.get("applied") or 0) + int(batch_summary.get("skipped") or 0)
+        failed_count = int(batch_summary.get("failed") or 0)
+        return {
+            "supported": True,
+            "success": success_count,
+            "failed": failed_count,
+            "applied": int(batch_summary.get("applied") or 0),
+            "skipped": int(batch_summary.get("skipped") or 0),
+            "translation_used_sites": int(batch_summary.get("translation_used_sites") or 0),
+            "translation_error_sites": int(batch_summary.get("translation_error_sites") or 0),
+        }
+    targets = _map_jv_batch_targets(channel_result.data, request_id=details.request_id)
+    success_count = sum(1 for target in targets if target["status"] == "success")
+    failed_count = len(targets) - success_count
+    if not targets and items:
+        failed_count = len(items)
+    return {"supported": True, "success": success_count, "failed": failed_count}
+
+
+def _map_jv_orchestrator_targets(*, details, command: OrchestrateRequest, request_id: str) -> list[dict]:
+    if details.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+        return []
+    result = details.result
+    if result is None or not result.results:
+        return []
+    channel_result = result.results[0]
+    targets = _map_jv_batch_targets(channel_result.data, request_id=request_id)
+    if targets:
+        return targets
+    return [
+        {
+            "target_id": "JV_BATCH",
+            "status": "success" if channel_result.status == "success" else "failed",
+            "status_code": int(channel_result.status_code),
+            "data": channel_result.data,
+            "error": channel_result.error.model_dump() if channel_result.error is not None else None,
+        }
+    ]

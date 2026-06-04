@@ -5,11 +5,9 @@ FIXED_JV_BATCH_SITE_KEYS = (
     "JV_AT",
 )
 
-FORCED_JV_TARGET_LOCALE = "de"
-
 DEFAULT_LOCALE_BY_SITE_KEY = {
     "JV_DE": "de",
-    "JV_CO_UK": "de",
+    "JV_CO_UK": "en",
     "JV_CH": "de",
     "JV_AT": "de",
 }

@@ -35,6 +35,7 @@ class OrchestratorService:
 
         for channel in command.channels:
             target_label = _target_label(channel)
+            product_editor_mode = str(channel.overrides.get("__product_editor_mode") or "").strip().lower()
             unknown = validate_changed_fields(channel.marketplace, channel.changed_fields)
             if unknown:
                 results.append(
@@ -59,7 +60,7 @@ class OrchestratorService:
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
             scoped_payload.update(channel.overrides)
 
-            missing = missing_required_fields(channel.marketplace, scoped_payload)
+            missing = [] if product_editor_mode == "jv_batch_apply" else missing_required_fields(channel.marketplace, scoped_payload)
             if missing:
                 results.append(
                     ChannelResult(
