@@ -3,7 +3,8 @@
 ## Local Bootstrap Contract
 
 - Monorepo path: `services/database-service`
-- Dependency manifest source of truth: `services/requirements.txt`
+- Dependency manifest source of truth: `services/database-service/requirements.txt`
+- `services/requirements.txt` is no longer the source of truth for `database-service` bootstrap
 - Local untracked env file: `services/database-service/.env`
 - Service-local Docker build context: `services`
 - Service-local Dockerfile path inside that context: `database-service/Dockerfile`
@@ -50,5 +51,5 @@ docker compose -f services/database-service/docker-compose.yml down -v
 ## Manual Host-Run Notes
 
 - If you run the service directly on the host, keep `services/database-service/.env` local and untracked.
-- Use `services/requirements.txt` as the dependency source of truth.
+- Use `services/database-service/requirements.txt` as the dependency source of truth.
 - Do not treat migrations as implicit startup behavior.
