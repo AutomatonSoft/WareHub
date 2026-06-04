@@ -1,6 +1,17 @@
 from .source_schema import table_exists, table_has_column
 
 
+def _row_get(row, key: str, index: int, default=""):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    if isinstance(row, (list, tuple)):
+        try:
+            return row[index]
+        except IndexError:
+            return default
+    return default
+
+
 def fetch_jv_seo_by_product_id(cur, product_id: int) -> dict[str, dict]:
     if not table_exists(cur, "shopseo"):
         return {}
@@ -18,13 +29,13 @@ def fetch_jv_seo_by_product_id(cur, product_id: int) -> dict[str, dict]:
     )
     result = {}
     for row in cur.fetchall() or []:
-        lang = str(row.get("sprache") or "").strip().lower()
+        lang = str(_row_get(row, "sprache", 0) or "").strip().lower()
         if not lang:
             continue
         result[lang] = {
-            "meta_title": row.get("page_title") or "",
-            "meta_description": row.get("meta_description") or "",
-            "meta_keyword": row.get("meta_keywords") or "",
+            "meta_title": _row_get(row, "page_title", 1) or "",
+            "meta_description": _row_get(row, "meta_description", 2) or "",
+            "meta_keyword": _row_get(row, "meta_keywords", 3) or "",
         }
     return result
 

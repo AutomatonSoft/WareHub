@@ -286,6 +286,21 @@ class SqliteJobStore:
             error=error,
         )
 
+    def get_job_command(self, *, job_id: str) -> OrchestrateRequest | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT command_json
+                FROM orchestrator_jobs
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+            conn.commit()
+        if row is None or not row[0]:
+            return None
+        return OrchestrateRequest(**json.loads(row[0]))
+
     def claim_next_queued_job(self) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(

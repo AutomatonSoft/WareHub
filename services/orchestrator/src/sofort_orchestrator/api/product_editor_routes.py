@@ -76,7 +76,7 @@ def product_editor_discover(
             message="EAN must be non-empty",
         )
 
-    return service.discover(ean=ean, request_id=request_id)
+    return service.discover(ean=ean, request_id=request_id, active_group=body.active_group)
 
 
 @router.post("/api/v1/orchestrator/product-editor/load")

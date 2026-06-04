@@ -86,6 +86,7 @@ class JVRoutesSmokeTest(SimpleTestCase):
         self.assertEqual(config["host"], "example.test")
         self.assertEqual(config["port"], 3307)
         self.assertEqual(config["table_prefix"], "shop_")
+        self.assertEqual(config["site_key"], "JV_TEST")
 
     def test_jv_source_values_helpers(self):
         from decimal import Decimal
@@ -216,6 +217,46 @@ class JVRoutesSmokeTest(SimpleTestCase):
             cur.execute.call_args_list,
         )
 
+    def test_jv_shopmedia_sync_supports_tuple_shopartikel_row(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, call, patch
+
+        from jv_services.source_media import sync_jv_shopmedia
+
+        image_rows = [
+            SimpleNamespace(image="cosmoshop/default/pix/a/z/4260533187876/g/extra-1.jpg", sort_order=0),
+        ]
+        product = SimpleNamespace(
+            source_model="4260533187876",
+            ean="4260533187876",
+            image="cosmoshop/default/pix/a/v/main-image.jpg",
+            images=SimpleNamespace(all=lambda: SimpleNamespace(order_by=lambda *args: image_rows)),
+        )
+
+        cur = MagicMock()
+        cur.fetchall.return_value = [
+            ("key",),
+            ("art",),
+            ("typ",),
+            ("dateiname",),
+            ("endung",),
+            ("order",),
+            ("timestamp",),
+        ]
+        cur.fetchone.return_value = ("4260533187876A", "4260533187876")
+
+        with patch("jv_services.source_media.table_exists", return_value=True):
+            sync_jv_shopmedia(cur, product, artikelid=66969)
+
+        self.assertIn(
+            call("SELECT artikelnr, ean FROM `shopartikel` WHERE artikelid = %s LIMIT 1", (66969,)),
+            cur.execute.call_args_list,
+        )
+        self.assertIn(
+            call("DELETE FROM `shopmedia` WHERE `key`=%s AND art='artikel' AND typ IN ('v','n','g','flashzoomer','z','zg')", ("4260533187876A",)),
+            cur.execute.call_args_list,
+        )
+
     def test_jv_shopmedia_sync_skips_without_live_key(self):
         from types import SimpleNamespace
         from unittest.mock import MagicMock, patch
@@ -271,6 +312,132 @@ class JVRoutesSmokeTest(SimpleTestCase):
         )
         self.assertEqual(extract_main_category_id(rows), 11)
         self.assertEqual(extract_main_category_id([{"category_id": "22"}]), 22)
+        self.assertEqual(
+            normalize_jv_categories(
+                [
+                    {"category_id": "30", "main_category": "false"},
+                    {"category_id": "31", "main_category": "true"},
+                ]
+            ),
+            [
+                {"category_id": 30, "main_category": False},
+                {"category_id": 31, "main_category": True},
+            ],
+        )
+
+    def test_jv_ensure_main_category_parses_string_booleans(self):
+        from jv_services.batch_payload import ensure_main_category
+
+        self.assertEqual(
+            ensure_main_category(
+                [
+                    {"category_id": "10", "main_category": "false"},
+                    {"category_id": "11", "main_category": "true"},
+                    {"category_id": "12", "main_category": "false"},
+                ],
+                template_main_category_id=None,
+            ),
+            [
+                {"category_id": "10", "main_category": False},
+                {"category_id": "11", "main_category": True},
+                {"category_id": "12", "main_category": False},
+            ],
+        )
+
+    def test_jv_category_override_helper_reads_reviewed_json(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from jv_services.source_categories import _category_override_target_id, _load_category_mapping_overrides
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "overrides.json"
+            path.write_text(
+                json.dumps({"JV_DE": {"JV_CO_UK": {"396": 393}}}),
+                encoding="utf-8",
+            )
+            _load_category_mapping_overrides.cache_clear()
+            with patch.dict("os.environ", {"JV_CATEGORY_MAPPING_OVERRIDES_PATH": str(path)}):
+                self.assertEqual(
+                    _category_override_target_id(
+                        source_site_key="jv_de",
+                        target_site_key="jv_co_uk",
+                        source_category_id=396,
+                    ),
+                    393,
+                )
+                self.assertIsNone(
+                    _category_override_target_id(
+                        source_site_key="jv_de",
+                        target_site_key="jv_co_uk",
+                        source_category_id=999,
+                    )
+                )
+            _load_category_mapping_overrides.cache_clear()
+
+    def test_jv_category_main_override_helper_reads_reviewed_json(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from jv_services.source_reader import _apply_jv_category_main_override, _load_jv_category_main_overrides
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "main_overrides.json"
+            path.write_text(json.dumps({"JV_DE": {"4260533187876": 930}}), encoding="utf-8")
+            _load_jv_category_main_overrides.cache_clear()
+            with patch.dict("os.environ", {"JV_CATEGORY_MAIN_OVERRIDES_PATH": str(path)}):
+                self.assertEqual(
+                    _apply_jv_category_main_override(
+                        [
+                            {"category_id": 931, "main_category": True},
+                            {"category_id": 930, "main_category": False},
+                        ],
+                        site_key="JV_DE",
+                        ean="4260533187876",
+                    ),
+                    [
+                        {"category_id": 931, "main_category": False},
+                        {"category_id": 930, "main_category": True},
+                    ],
+                )
+            _load_jv_category_main_overrides.cache_clear()
+
+    def test_jv_delivery_override_helper_reads_reviewed_json(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from jv_services.source_values import _delivery_override_target_id, _load_delivery_mapping_overrides
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "delivery_overrides.json"
+            path.write_text(
+                json.dumps({"JV_DE": {"JV_CO_UK": {"11": 7}}}),
+                encoding="utf-8",
+            )
+            _load_delivery_mapping_overrides.cache_clear()
+            with patch.dict("os.environ", {"JV_DELIVERY_MAPPING_OVERRIDES_PATH": str(path)}):
+                self.assertEqual(
+                    _delivery_override_target_id(
+                        source_site_key="jv_de",
+                        target_site_key="jv_co_uk",
+                        source_delivery_id=11,
+                    ),
+                    7,
+                )
+                self.assertIsNone(
+                    _delivery_override_target_id(
+                        source_site_key="jv_de",
+                        target_site_key="jv_co_uk",
+                        source_delivery_id=999,
+                    )
+                )
+            _load_delivery_mapping_overrides.cache_clear()
 
     def test_jv_batch_serializer_accepts_categories_by_site_key(self):
         from jv_services.serializers import JVBatchPayloadSerializer
@@ -370,10 +537,17 @@ class JVRoutesSmokeTest(SimpleTestCase):
             TRANSLATABLE_FIELDS,
         )
 
-        self.assertEqual(DEFAULT_LOCALE_BY_SITE_KEY["JV_CO_UK"], "de")
+        self.assertEqual(DEFAULT_LOCALE_BY_SITE_KEY["JV_CO_UK"], "en")
         self.assertEqual(DEFAULT_CURRENCY_BY_SITE_KEY["JV_CO_UK"], "GBP")
         self.assertEqual(DEFAULT_LANGUAGE_ID_BY_LOCALE["de"], 1)
         self.assertIn("meta_title", TRANSLATABLE_FIELDS)
+
+    def test_jv_batch_precompute_helpers_import(self):
+        from jv_services.batch_service import build_batch_plan, build_job_precompute_context, save_job_precompute_context
+
+        self.assertTrue(callable(build_job_precompute_context))
+        self.assertTrue(callable(save_job_precompute_context))
+        self.assertTrue(callable(build_batch_plan))
 
     def test_jv_batch_translation_helpers_import(self):
         from jv_services.batch_translation import (

@@ -231,6 +231,8 @@ class JVLocalProductByEANAPIView(APIView):
             if isinstance(source_product, dict):
                 if not str(result.get("image") or "").strip():
                     result["image"] = source_product.get("image") or ""
+            if isinstance(snapshot, dict) and isinstance(snapshot.get("categories"), list):
+                result["categories"] = snapshot.get("categories") or []
             if isinstance(source_images, list) and not (result.get("images") or []):
                 result["images"] = source_images
             result = add_jv_public_image_urls(result, site_key=normalized_site_key)
@@ -417,10 +419,10 @@ class JVDeliveryOptionsAPIView(APIView):
             if db_config:
                 conn = mysql_connect(db_config)
                 cur = conn.cursor(dictionary=True)
-                options = fetch_jv_lieferzeit_options(cur)
+                options = fetch_jv_lieferzeit_options(cur, site_key=site_key)
                 source = "source_db"
             else:
-                options = fetch_jv_lieferzeit_options(None)
+                options = fetch_jv_lieferzeit_options(None, site_key=site_key)
             return Response(
                 {
                     "site": site,

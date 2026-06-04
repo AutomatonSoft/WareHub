@@ -16,6 +16,16 @@ type ProductEditorJobPanelProps = {
 
 export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditorJobPanelProps) {
   if (!job) return null;
+  const jobStatus = String(job.status || "").toLowerCase();
+  const isInFlight = jobStatus === "queued" || jobStatus === "running";
+  const total = toNumber(job.summary.total);
+  const applied = toNumber(job.summary.applied ?? job.summary.success);
+  const skipped = toNumber(job.summary.skipped);
+  const failed = toNumber(job.summary.failed);
+  const completed = Math.min(total || applied + skipped + failed, applied + skipped + failed);
+  const progressPercent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : isInFlight ? 15 : 100;
+  const progressPhase = String(job.summary.progress_phase || jobStatus || "").trim();
+  const progressMessage = String(job.summary.progress_message || "").trim();
 
   return (
     <SectionCard title="Apply Result" subtitle="Orchestrator job status and target results." className="rounded-xl border-border bg-card shadow-sm">
@@ -23,18 +33,38 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
           The result panel reflects Product Editor job state, not a hidden direct marketplace call.
         </p>
-        <Button type="button" variant="secondary" disabled={loading} onClick={onRefresh}>
+        <Button type="button" variant="secondary" disabled={loading || !job.job_id} onClick={onRefresh}>
           {loading ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
           Refresh Job
         </Button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <JobStat label="Job ID" value={job.job_id.slice(0, 8)} />
+        <JobStat label="Job ID" value={job.job_id ? job.job_id.slice(0, 8) : "pending"} />
         <JobStat label="Status" value={String(job.status)} />
         <JobStat label="Succeeded" value={String(job.summary.success ?? 0)} />
         <JobStat label="Failed" value={String(job.summary.failed ?? 0)} />
       </div>
+
+      {isInFlight || progressPhase || total > 0 ? (
+        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <div className="font-medium text-foreground">{progressMessage || "JV batch progress"}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {progressPhase || "status"} / {completed}/{total || completed || 0}
+              </div>
+            </div>
+            <StatusBadge tone="planned">{jobStatus}</StatusBadge>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={`h-full rounded-full bg-primary transition-all ${isInFlight ? "animate-pulse" : ""}`}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {job.targets.map((target) => (
@@ -86,3 +116,7 @@ function JobStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function toNumber(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}

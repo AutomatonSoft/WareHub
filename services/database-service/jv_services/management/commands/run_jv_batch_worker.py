@@ -28,7 +28,8 @@ class Command(BaseCommand):
                 continue
 
             try:
-                call_command("run_jv_batch_job", str(job_id))
+                print("JV_BATCH_WORKER_LOOP_CLAIMED", {"job_id": job_id})
+                call_command("run_jv_batch_job", str(job_id), already_claimed=True)
             except Exception:
                 logger.exception("JV_BATCH_WORKER_LOOP_JOB_FAILED code=jv_batch_worker_loop_job_failed job_id=%s", job_id)
                 JVBatchJob.objects.filter(pk=job_id).update(status=JVBatchJob.Status.FAILED)

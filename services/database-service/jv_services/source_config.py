@@ -25,7 +25,7 @@ JV_LANGUAGE_ID_BY_CODE = {
     "nl": 11,
 }
 
-JV_DELIVERY_LABEL_BY_UI_ID = {
+JV_DELIVERY_LABEL_BY_UI_ID_DE = {
     0: "Lieferzeit: 2-5 Tage",
     1: "Lieferzeit: 2 Wochen",
     2: "Lieferzeit: 4-8 Wochen",
@@ -35,14 +35,40 @@ JV_DELIVERY_LABEL_BY_UI_ID = {
     6: "Lieferzeit: 2-6 Wochen",
     7: "Lieferzeit: 4-8 Wochen",
     8: "Lieferzeit: 8-12 Wochen",
-    9: "Lieferzeit: 6-8 Wochen",
+    9: "Lieferzeit: 6-10 Wochen",
     10: "Lieferzeit: 2-4 Wochen",
     11: "Lieferzeit: 3-6 Wochen",
-    12: "Lieferzeit: 6-10 Wochen",
-    13: "Lieferzeit: 10-14 Wochen",
-    14: "Lieferzeit: 12-16 Wochen",
-    15: "Lieferzeit: 10-12 Wochen",
+    12: "Lieferzeit: 8-12 Wochen",
+    13: "Lieferzeit: 12-16 Wochen",
+    14: "Lieferzeit: 10-12 Wochen",
 }
+
+JV_DELIVERY_LABEL_BY_UI_ID_EN = {
+    0: "Delivery Time: 2-5 Days",
+    1: "Delivery Time: 2 Weeks",
+    2: "Delivery Time: 4-8 Weeks",
+    3: "Delivery Time: 8-12 Weeks",
+    4: "Delivery Time: 8-14 Day",
+    5: "derzeit nicht lieferbar!",
+    6: "Delivery Time: 4-6 Weeks",
+    7: "Delivery Time: 4-8 Weeks",
+    8: "Delivery Time: 8-12 Weeks",
+    9: "Delivery Time: 6-10 Weeks",
+    10: "Delivery Time: 2-4 Weeks",
+    11: "Delivery Time: 3-6 Weeks",
+    12: "Delivery Time: 8-12 Weeks",
+    13: "Delivery Time: 12-16 Weeks",
+    14: "Delivery Time: 10-12 Weeks",
+}
+
+JV_DELIVERY_LABEL_BY_UI_ID = JV_DELIVERY_LABEL_BY_UI_ID_DE
+
+
+def jv_delivery_label_by_ui_id(site_key: str | None) -> dict[int, str]:
+    normalized = str(site_key or "").strip().upper()
+    if normalized == "JV_CO_UK":
+        return JV_DELIVERY_LABEL_BY_UI_ID_EN
+    return JV_DELIVERY_LABEL_BY_UI_ID_DE
 
 LANGUAGE_LOCALE_ALIASES = {
     "cz": "cs",
@@ -86,6 +112,7 @@ def source_db_config_for_site(site: str, site_key: str | None = None):
                     "database": database,
                     "port": port,
                     "table_prefix": table_prefix,
+                    "site_key": str(candidate_site_key or "").strip().upper(),
                 }
     return None
 

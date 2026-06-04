@@ -10,6 +10,7 @@ from ..domain.product_editor_models import (
 )
 from ..domain.product_editor_registry import build_product_editor_groups
 from ..infra.product_editor_gateway import ProductEditorGateway
+from ..infra.job_store import SqliteJobStore
 from ..infra.product_editor_store import SqliteProductEditorStore
 from ..infra.http_client import RetryExhaustedError
 from .product_editor_hood_flow import ProductEditorHoodFlow, ProductEditorHoodFlowError
@@ -17,16 +18,18 @@ from .product_editor_jv_flow import ProductEditorJvFlow, ProductEditorJvFlowErro
 
 
 class ProductEditorService:
-    def __init__(self, *, gateway: ProductEditorGateway, store: SqliteProductEditorStore) -> None:
+    def __init__(self, *, gateway: ProductEditorGateway, store: SqliteProductEditorStore, orchestrator_job_store: SqliteJobStore) -> None:
         self.gateway = gateway
         self.store = store
         self.hood_flow = ProductEditorHoodFlow(gateway=gateway, store=store)
-        self.jv_flow = ProductEditorJvFlow(gateway=gateway, store=store)
+        self.jv_flow = ProductEditorJvFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
 
-    def discover(self, *, ean: str, request_id: str) -> ProductEditorDiscoverResponse:
+    def discover(self, *, ean: str, request_id: str, active_group: ProductEditorGroupId | None = None) -> ProductEditorDiscoverResponse:
         groups = build_product_editor_groups()
-        hood_results = self.hood_flow.discover_targets(ean=ean, request_id=request_id)
-        jv_results = self.jv_flow.discover_targets(ean=ean, request_id=request_id)
+        discover_hood = active_group in (None, ProductEditorGroupId.HOOD)
+        discover_jv = active_group in (None, ProductEditorGroupId.JV)
+        hood_results = self.hood_flow.discover_targets(ean=ean, request_id=request_id) if discover_hood else {}
+        jv_results = self.jv_flow.discover_targets(ean=ean, request_id=request_id) if discover_jv else {}
 
         hood_found_target_ids: list[str] = []
         jv_found_target_ids: list[str] = []
@@ -53,14 +56,17 @@ class ProductEditorService:
                 message="HOOD remains the first fully active Product Editor flow, while JV is now available through the same orchestrator facade.",
             )
         ]
-        selected_group_id = ProductEditorGroupId.HOOD if hood_found_target_ids else ProductEditorGroupId.JV if jv_found_target_ids else ProductEditorGroupId.HOOD
+        if active_group is ProductEditorGroupId.JV:
+            selected_group_id = ProductEditorGroupId.JV
+        elif active_group is ProductEditorGroupId.HOOD:
+            selected_group_id = ProductEditorGroupId.HOOD
+        else:
+            selected_group_id = ProductEditorGroupId.HOOD if hood_found_target_ids else ProductEditorGroupId.JV if jv_found_target_ids else ProductEditorGroupId.HOOD
         selected_target_ids = hood_found_target_ids if selected_group_id is ProductEditorGroupId.HOOD else jv_found_target_ids
-        recommended_baseline = (
-            hood_found_target_ids[0]
-            if hood_found_target_ids
-            else self.jv_flow.recommended_baseline(ean=ean, request_id=request_id)
-            or "JV_DE"
-        )
+        if selected_group_id is ProductEditorGroupId.HOOD:
+            recommended_baseline = hood_found_target_ids[0] if hood_found_target_ids else None
+        else:
+            recommended_baseline = self.jv_flow.recommended_baseline(ean=ean, request_id=request_id) or "JV_DE"
         return ProductEditorDiscoverResponse(
             request_id=request_id,
             ean=ean,
@@ -156,7 +162,10 @@ class ProductEditorService:
     def get_job(self, *, job_id: str, request_id: str) -> ProductEditorJobResponse:
         job = self.store.get_job(job_id=job_id)
         if job is None:
-            raise ProductEditorServiceError("product_editor_job_not_found", "Product Editor job was not found.", 404, details={"job_id": job_id})
+            try:
+                return self.jv_flow.get_job(job_id=job_id, request_id=request_id)
+            except ProductEditorJvFlowError as exc:
+                raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,

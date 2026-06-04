@@ -87,6 +87,7 @@ class ProductEditorGroup(BaseModel):
 
 class ProductEditorDiscoverRequest(BaseModel):
     ean: str
+    active_group: ProductEditorGroupId | None = None
 
 
 class ProductEditorDiscoverResponse(BaseModel):

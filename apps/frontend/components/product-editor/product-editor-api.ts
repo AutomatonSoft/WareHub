@@ -39,29 +39,6 @@ export type ProductEditorUploadImagesResponse = {
   image_role: ProductEditorImageRole | string;
 };
 
-export type ProductEditorJvBatchApplyResponse = {
-  code: string;
-  detail: string;
-  accepted?: boolean;
-  summary?: Record<string, unknown>;
-  job?: ProductEditorJvBatchJob | null;
-};
-
-export type ProductEditorJvBatchJob = {
-  id: number;
-  status: string;
-  result_summary?: Record<string, unknown>;
-  items?: Array<Record<string, unknown>>;
-};
-
-export type ProductEditorJvBatchJobStatusResponse = {
-  code: string;
-  detail: string;
-  job: ProductEditorJvBatchJob;
-  language_mapping_by_site?: Array<Record<string, unknown>>;
-  translation_status_by_site?: Array<Record<string, unknown>>;
-};
-
 async function readJsonSafe(response: Response): Promise<Record<string, unknown>> {
   try {
     return (await response.json()) as Record<string, unknown>;
@@ -83,11 +60,11 @@ function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function discoverProductEditor(ean: string): Promise<ProductEditorDiscoverResponse> {
+export async function discoverProductEditor(ean: string, activeGroup?: ProductEditorGroupId): Promise<ProductEditorDiscoverResponse> {
   const response = await apiFetch("/api/orchestrator/product-editor/discover", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ean })
+    body: JSON.stringify({ ean, active_group: activeGroup ?? null })
   });
   const body = await readJsonSafe(response);
   if (!response.ok) {
@@ -206,11 +183,9 @@ export async function getJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOpt
     .map((row) => {
       const item = row as Record<string, unknown>;
       const rawValue = item.lieferzeitid ?? item.id ?? item.value;
-      const rawDays = item.days;
-      const rawLabel = item.label ?? item.name ?? item.title ?? rawValue;
+      const rawLabel = item.ui_label ?? item.label ?? item.name ?? item.title ?? rawValue;
       const value = rawValue === undefined || rawValue === null ? "" : String(rawValue);
-      const days = rawDays === undefined || rawDays === null ? "" : String(rawDays).trim();
-      const label = days || (rawLabel === undefined || rawLabel === null ? value : String(rawLabel));
+      const label = rawLabel === undefined || rawLabel === null ? value : String(rawLabel);
       if (!value) return null;
       return { value, label };
     })
@@ -295,33 +270,6 @@ export async function uploadProductEditorImages(input: {
     throw toApiError(response, body, "Image upload failed.");
   }
   return body as unknown as ProductEditorUploadImagesResponse;
-}
-
-export async function applyJvBatchUpdateByEan(input: {
-  ean: string;
-  payload: Record<string, unknown>;
-}): Promise<ProductEditorJvBatchApplyResponse> {
-  const response = await apiFetch(`/api/jv/batch/update-by-ean/${encodeURIComponent(input.ean)}/apply/`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input.payload)
-  });
-  const body = await readJsonSafe(response);
-  if (!response.ok) {
-    throw toApiError(response, body, "JV batch apply failed.");
-  }
-  return body as unknown as ProductEditorJvBatchApplyResponse;
-}
-
-export async function getJvBatchJobStatus(jobId: number): Promise<ProductEditorJvBatchJobStatusResponse> {
-  const response = await apiFetch(`/api/jv/batch/jobs/${jobId}/`, {
-    method: "GET"
-  });
-  const body = await readJsonSafe(response);
-  if (!response.ok) {
-    throw toApiError(response, body, "JV batch job load failed.");
-  }
-  return body as unknown as ProductEditorJvBatchJobStatusResponse;
 }
 
 function normalizeRubricNodes(input: unknown[]): ProductEditorJvRubricNode[] {

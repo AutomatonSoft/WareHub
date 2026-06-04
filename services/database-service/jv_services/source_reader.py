@@ -1,6 +1,10 @@
 import logging
+import json
+import os
 import re
 from datetime import date, datetime
+from functools import lru_cache
+from pathlib import Path
 
 from .source_config import JV_LANGUAGE_ID_BY_CODE
 from .source_connection import mysql_connect as _mysql_connect
@@ -18,6 +22,8 @@ from .source_values import as_plain_value as _as_plain_value
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_JV_CATEGORY_MAIN_OVERRIDES_PATH = Path(__file__).with_name("category_main_overrides.json")
+
 
 def _json_safe_datetime(value):
     if isinstance(value, datetime):
@@ -25,6 +31,49 @@ def _json_safe_datetime(value):
     if isinstance(value, date):
         return value.isoformat()
     return value
+
+
+@lru_cache(maxsize=8)
+def _load_jv_category_main_overrides(path_raw: str) -> dict:
+    path = Path(path_raw)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("JV_CATEGORY_MAIN_OVERRIDES_READ_FAILED path=%s", path)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _apply_jv_category_main_override(categories: list[dict], *, site_key: str | None, ean: str | None) -> list[dict]:
+    normalized_site_key = str(site_key or "").strip().upper()
+    normalized_ean = "".join(ch for ch in str(ean or "") if ch.isdigit())
+    if not categories or not normalized_site_key or not normalized_ean:
+        return categories
+
+    override_path = os.getenv("JV_CATEGORY_MAIN_OVERRIDES_PATH") or str(DEFAULT_JV_CATEGORY_MAIN_OVERRIDES_PATH)
+    overrides = _load_jv_category_main_overrides(override_path)
+    site_overrides = overrides.get(normalized_site_key) if isinstance(overrides, dict) else None
+    if not isinstance(site_overrides, dict):
+        return categories
+    main_category_id_raw = site_overrides.get(normalized_ean)
+    if main_category_id_raw in (None, ""):
+        return categories
+    try:
+        main_category_id = int(main_category_id_raw)
+    except (TypeError, ValueError):
+        return categories
+    if not any(int(item.get("category_id")) == main_category_id for item in categories if item.get("category_id") is not None):
+        return categories
+    return [
+        {
+            **item,
+            "main_category": int(item.get("category_id")) == main_category_id,
+        }
+        for item in categories
+    ]
+
 
 def _fetch_jv_product_brief_by_ean(cur, ean: str):
     normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
@@ -59,7 +108,7 @@ def _fetch_jv_product_brief_by_ean(cur, ean: str):
     return cur.fetchone()
 
 
-def _fetch_jv_product_snapshot_by_ean(cur, ean: str):
+def _fetch_jv_product_snapshot_by_ean(cur, ean: str, *, site_key: str | None = None):
     normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
     has_shopartikelpreise = _table_exists(cur, "shopartikelpreise")
     has_staffel = _table_has_column(cur, "shopartikelpreise", "staffel") if has_shopartikelpreise else False
@@ -284,6 +333,7 @@ def _fetch_jv_product_snapshot_by_ean(cur, ean: str):
                 (product_id,),
             )
             categories = _normalize_jv_categories(cur.fetchall() or [])
+            categories = _apply_jv_category_main_override(categories, site_key=site_key, ean=row.get("ean") or ean)
 
     media_key = str(row.get("model") or "").strip() or str(row.get("ean") or "").strip()
     main_image, extra_images = _fetch_jv_media_from_shopmedia(
@@ -343,7 +393,7 @@ def _fetch_jv_product_snapshot_by_ean(cur, ean: str):
     }
 
 
-def _fetch_jv_product_snapshot_by_product_id(cur, source_product_id: int):
+def _fetch_jv_product_snapshot_by_product_id(cur, source_product_id: int, *, site_key: str | None = None):
     has_shopartikelpreise = _table_exists(cur, "shopartikelpreise")
     has_staffel = _table_has_column(cur, "shopartikelpreise", "staffel") if has_shopartikelpreise else False
     has_preis = _table_has_column(cur, "shopartikelpreise", "preis") if has_shopartikelpreise else False
@@ -553,6 +603,11 @@ def _fetch_jv_product_snapshot_by_product_id(cur, source_product_id: int):
                 (product_id,),
             )
             categories = _normalize_jv_categories(cur.fetchall() or [])
+            categories = _apply_jv_category_main_override(
+                categories,
+                site_key=site_key,
+                ean=row.get("ean"),
+            )
 
     media_key = str(row.get("model") or "").strip() or str(row.get("ean") or "").strip()
     main_image, extra_images = _fetch_jv_media_from_shopmedia(
@@ -685,7 +740,7 @@ def fetch_source_product_snapshot_by_ean(config: dict, ean: str):
     try:
         prefix = config.get("table_prefix", "oc_")
         if not _table_exists(cur, f"{prefix}product") and _table_exists(cur, "shopartikel"):
-            return _fetch_jv_product_snapshot_by_ean(cur, ean)
+            return _fetch_jv_product_snapshot_by_ean(cur, ean, site_key=config.get("site_key"))
 
         normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
         cur.execute(
@@ -719,7 +774,11 @@ def fetch_source_product_snapshot_by_product_id(config: dict, source_product_id:
     try:
         prefix = config.get("table_prefix", "oc_")
         if not _table_exists(cur, f"{prefix}product") and _table_exists(cur, "shopartikel"):
-            return _fetch_jv_product_snapshot_by_product_id(cur, int(source_product_id))
+            return _fetch_jv_product_snapshot_by_product_id(
+                cur,
+                int(source_product_id),
+                site_key=config.get("site_key"),
+            )
         return _fetch_oc_snapshot_by_product_id(cur, product_id=int(source_product_id), prefix=prefix)
     finally:
         cur.close()

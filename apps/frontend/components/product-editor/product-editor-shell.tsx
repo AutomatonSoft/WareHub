@@ -7,15 +7,12 @@ import { useToast } from "../shared/toast-provider";
 import { LoadingState } from "../ui/loading-state";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import {
-  applyJvBatchUpdateByEan,
   applyProductEditorPlan,
   discoverProductEditor,
-  getJvBatchJobStatus,
   getProductEditorJob,
   loadProductEditorGroup,
   planProductEditor
 } from "./product-editor-api";
-import type { ProductEditorJvBatchJobStatusResponse } from "./product-editor-api";
 import { fetchHoodByEan, patchHoodByEan } from "../hood/hood-api";
 import { extractFirstItemFromPayload } from "../hood/hood-search-utils";
 import { ProductEditorHeaderCard } from "./product-editor-header-card";
@@ -85,7 +82,6 @@ function ProductEditorContent() {
   const [applyLoading, setApplyLoading] = useState(false);
   const [jobLoading, setJobLoading] = useState(false);
   const [jvBatchApplyLoading, setJvBatchApplyLoading] = useState(false);
-  const [jvBatchStatusResponse, setJvBatchStatusResponse] = useState<ProductEditorJvBatchJobStatusResponse | null>(null);
   const [planResponse, setPlanResponse] = useState<ProductEditorPlanResponse | null>(null);
   const [applyResponse, setApplyResponse] = useState<ProductEditorApplyResponse | null>(null);
   const [jobResponse, setJobResponse] = useState<ProductEditorJobResponse | null>(null);
@@ -136,6 +132,7 @@ function ProductEditorContent() {
 
   useEffect(() => {
     if (!jobResponse) return;
+    if (!jobResponse.job_id) return;
     if (jobResponse.status !== "queued" && jobResponse.status !== "running") return;
     const timer = window.setTimeout(() => {
       void refreshJob(jobResponse.job_id, false);
@@ -146,7 +143,7 @@ function ProductEditorContent() {
   async function handleSearchGlobal() {
     const ean = eanInput.trim();
     if (!/^\d{13}$/.test(ean)) return;
-    await runDiscover(ean);
+    await runDiscover(ean, activeGroupId);
   }
 
   async function handleSearchForActiveTab() {
@@ -184,15 +181,17 @@ function ProductEditorContent() {
     }
   }
 
-  async function runDiscover(ean: string) {
+  async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null) {
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
     try {
-      const response = await discoverProductEditor(ean);
-      setDiscover(response);
-      setActiveGroupId(response.selected_group_id);
-      setActiveTabKey(getDefaultTabKeyForGroup(response.selected_group_id));
+      const response = await discoverProductEditor(ean, activeGroup ?? undefined);
+      const normalizedResponse = limitDiscoverToActiveGroup(response, activeGroup);
+      const nextActiveGroup = activeGroup ?? normalizedResponse.selected_group_id;
+      setDiscover(normalizedResponse);
+      setActiveGroupId(nextActiveGroup);
+      setActiveTabKey(getDefaultTabKeyForGroup(nextActiveGroup));
       showToast(`Product Editor discover completed for ${ean}.`, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Product Editor discover failed.";
@@ -266,7 +265,13 @@ function ProductEditorContent() {
   async function loadJvDraftByEan(ean: string): Promise<boolean> {
     setJvLoading(true);
     try {
-      const response = await loadProductEditorGroup({ ean, activeGroup: "JV", baselineTargetId: null });
+      const discovered = await discoverProductEditor(ean, "JV");
+      setDiscover(limitDiscoverToActiveGroup(discovered, "JV"));
+      const response = await loadProductEditorGroup({
+        ean,
+        activeGroup: "JV",
+        baselineTargetId: discovered.recommended_baseline_target_id
+      });
       const hydrated = hydrateJvDraft(response.draft as never);
       if (!hydrated.target_id) return false;
       setJvDraft(hydrated);
@@ -379,35 +384,72 @@ function ProductEditorContent() {
       showToast("No edited JV fields to apply.", "error");
       return;
     }
-
-    const payload = buildJvBatchPayloadFromDraft(jvDraft, jvChangedFields);
+    const selectedTargetIds = discover?.groups
+      .find((group) => group.id === "JV")
+      ?.targets.filter((target) => target.status === "found")
+      .map((target) => target.id) ?? [];
+    if (selectedTargetIds.length === 0) {
+      showToast("No found JV targets are available for orchestrator apply.", "error");
+      return;
+    }
     setJvBatchApplyLoading(true);
     setPageError(null);
+    setJobResponse({
+      request_id: "",
+      job_id: "",
+      status: "running",
+      active_group: "JV",
+      summary: {
+        supported: true,
+        success: 0,
+        failed: 0,
+        total: 0,
+        applied: 0,
+        skipped: 0,
+        progress_phase: "planning",
+        progress_message: "Preparing orchestrator plan."
+      },
+      targets: [],
+      error: null
+    });
+    let acceptedJobId = "";
     try {
-      const response = await applyJvBatchUpdateByEan({ ean, payload });
-      const jobId = Number(response.job?.id ?? 0);
-      if (!Number.isFinite(jobId) || jobId <= 0) {
-        throw new Error("JV batch apply did not return a valid job id.");
-      }
-      setJvBatchStatusResponse({
-        code: response.code,
-        detail: response.detail,
-        job: response.job ?? { id: jobId, status: "pending", result_summary: {}, items: [] }
+      const plan = await planProductEditor({
+        ean,
+        activeGroup: "JV",
+        changedFields: jvChangedFields,
+        draft: jvDraft as unknown as Record<string, unknown>,
+        selectedTargetIds
       });
-      showToast(response.detail || `JV batch job ${jobId} queued.`, "success");
-      const finalJob = await pollJvBatchJobUntilFinished(jobId);
+      setPlanResponse(plan);
+      const response = await applyProductEditorPlan(plan.plan_id);
+      setApplyResponse(response);
+      acceptedJobId = response.job_id;
+      setJobResponse({
+        request_id: response.request_id,
+        job_id: response.job_id,
+        status: response.status,
+        active_group: response.active_group,
+        summary: { supported: true, success: 0, failed: 0 },
+        targets: [],
+        error: null
+      });
+      showToast(`Orchestrator apply accepted for job ${response.job_id.slice(0, 8)}.`, "success");
+      const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
       const finalStatus = String(finalJob.status || "").toLowerCase();
-      const summary = finalJob.result_summary ?? {};
-      const applied = Number(summary.applied ?? 0);
+      const summary = finalJob.summary ?? {};
+      const success = Number(summary.success ?? 0);
       const failed = Number(summary.failed ?? 0);
-      const skipped = Number(summary.skipped ?? 0);
-      if (finalStatus === "applied") {
+      if (finalStatus === "completed") {
         setInitialJvDraft(jvDraft);
-        showToast(`JV batch completed. Applied: ${applied}, Failed: ${failed}, Skipped: ${skipped}.`, "success");
+        showToast(`JV orchestrator job completed. Success: ${success}, Failed: ${failed}.`, "success");
       } else {
-        showToast(`JV batch finished with status ${finalStatus || "unknown"}. Applied: ${applied}, Failed: ${failed}, Skipped: ${skipped}.`, "error");
+        showToast(`JV orchestrator job finished with status ${finalStatus || "unknown"}. Success: ${success}, Failed: ${failed}.`, "error");
       }
     } catch (error) {
+      if (!acceptedJobId) {
+        setJobResponse(null);
+      }
       const message = error instanceof Error ? error.message : "JV batch apply failed.";
       setPageError(message);
       showToast(message, "error");
@@ -527,16 +569,15 @@ function ProductEditorContent() {
     }
   }
 
-  async function pollJvBatchJobUntilFinished(jobId: number) {
+  async function waitForOrchestratorJobToFinish(jobId: string) {
     const maxAttempts = 120;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const response = await getJvBatchJobStatus(jobId);
-      setJvBatchStatusResponse(response);
-      const job = response.job ?? null;
-      const statusValue = String(job?.status || "").toLowerCase();
-      if (job && statusValue !== "pending" && statusValue !== "running") {
-        return job;
+      const response = await getProductEditorJob(jobId);
+      setJobResponse(response);
+      const statusValue = String(response.status || "").toLowerCase();
+      if (statusValue !== "queued" && statusValue !== "running") {
+        return response;
       }
       const delayMs =
         attempt <= 5 ? 3000 :
@@ -545,7 +586,7 @@ function ProductEditorContent() {
       await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
     }
 
-    throw new Error(`JV batch job ${jobId} polling timed out.`);
+    throw new Error(`Orchestrator job ${jobId} polling timed out.`);
   }
 
   async function handleApplyPlan() {
@@ -613,7 +654,6 @@ function ProductEditorContent() {
   function clearPlanAndJobState() {
     clearPlanStateOnly();
     setJobResponse(null);
-    setJvBatchStatusResponse(null);
   }
 
   function resetEditorState() {
@@ -630,7 +670,6 @@ function ProductEditorContent() {
     setPlanResponse(null);
     setApplyResponse(null);
     setJobResponse(null);
-    setJvBatchStatusResponse(null);
     setApplyConfirmed(false);
   }
 
@@ -677,10 +716,6 @@ function ProductEditorContent() {
           <Card className="border-destructive/20 bg-destructive/10 text-destructive shadow-sm">
             <CardContent className="pt-0 text-sm">{pageError}</CardContent>
           </Card>
-        ) : null}
-
-        {jvBatchStatusResponse ? (
-          <JvBatchProgressCard response={jvBatchStatusResponse} />
         ) : null}
 
         <Card className="wh-product-editor-tabs-card rounded-2xl border-border bg-white shadow-[0_8px_24px_-20px_rgba(15,23,42,0.35)]">
@@ -749,6 +784,21 @@ function ProductEditorContent() {
       </div>
     </AppShell>
   );
+}
+
+function limitDiscoverToActiveGroup(
+  response: ProductEditorDiscoverResponse,
+  activeGroup: ProductEditorGroupId | null
+): ProductEditorDiscoverResponse {
+  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD")) {
+    return response;
+  }
+  const activeGroupResponse = response.groups.find((group) => group.id === activeGroup);
+  return {
+    ...response,
+    groups: activeGroupResponse ? [activeGroupResponse] : [],
+    selected_group_id: activeGroup
+  };
 }
 
 function findFirstFoundTarget(group: ReturnType<typeof findGroup>): ProductEditorTarget | null {
@@ -853,181 +903,6 @@ function getPreferredTargetIdForTab(discover: ProductEditorDiscoverResponse, tab
     return id.includes(`_${variantUpper}`) || family === variantUpper || label.includes(variantUpper);
   });
   return matched?.id ?? null;
-}
-
-function buildJvBatchPayloadFromDraft(draft: ProductEditorJvDraft, changedFields: string[]): Record<string, unknown> {
-  const changed = new Set(changedFields);
-  const translationSource = buildJvTranslationSource(draft);
-  const payload: Record<string, unknown> = {
-    site_keys: ["JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"],
-    template_site_key: "JV_DE",
-    source_currency: "EUR",
-    convert_currency: true,
-    translate_texts: true,
-    translation_source_language: "auto",
-    translation_source: translationSource,
-    locale_by_site_key: {
-      JV_DE: "de",
-      JV_CO_UK: "en",
-      JV_CH: "de",
-      JV_AT: "de"
-    }
-  };
-
-  if (changed.has("source_model")) payload.source_model = draft.source_model ?? "";
-  if (changed.has("source_sku")) payload.source_sku = draft.source_sku ?? "";
-  if (changed.has("source_ean_field")) payload.source_ean_field = draft.source_ean_field ?? "";
-  if (changed.has("price")) payload.price = draft.price ?? "";
-  if (changed.has("quantity")) payload.quantity = draft.quantity === "" ? null : Number(draft.quantity);
-  if (changed.has("status")) payload.status = Boolean(draft.status);
-  if (changed.has("image")) payload.image = draft.image ?? "";
-  if (changed.has("descriptions")) payload.descriptions = draft.descriptions;
-  if (changed.has("categories")) payload.categories = draft.categories;
-  if (changed.has("images")) payload.images = draft.images;
-  if (changed.has("jv_fields")) payload.jv_fields = draft.jv_fields;
-
-  return payload;
-}
-
-function buildJvTranslationSource(draft: ProductEditorJvDraft): Record<string, string> {
-  const contentRows = Array.isArray(draft.jv_fields?.content_by_language)
-    ? (draft.jv_fields.content_by_language as Array<Record<string, unknown>>)
-    : [];
-  const deContent =
-    contentRows.find((row) => String(row?.language_code ?? "de").toLowerCase() === "de") ??
-    contentRows[0] ??
-    {};
-  const firstDescription = draft.descriptions[0] ?? {};
-
-  return {
-    name: String(deContent.name ?? firstDescription.name ?? ""),
-    description: String(deContent.description ?? firstDescription.description ?? ""),
-    kurzbeschreibung: String(
-      deContent.kurzbeschreibung ??
-        deContent.short_description_real ??
-        deContent.bezeichnung ??
-        ""
-    ),
-    tag: String(firstDescription.tag ?? ""),
-    meta_title: String(deContent.meta_title ?? firstDescription.meta_title ?? ""),
-    meta_description: String(deContent.meta_description ?? firstDescription.meta_description ?? ""),
-    meta_keyword: String(deContent.meta_keyword ?? firstDescription.meta_keyword ?? "")
-  };
-}
-
-type JvBatchProgressItem = {
-  id: number;
-  siteKey: string;
-  status: string;
-  targetLocale: string;
-  progressPhase: string;
-  progressMessage: string;
-  phaseUpdatedAt: string;
-};
-
-function JvBatchProgressCard({ response }: { response: ProductEditorJvBatchJobStatusResponse }) {
-  const job = response.job;
-  const jobSummary = job?.result_summary && typeof job.result_summary === "object"
-    ? (job.result_summary as Record<string, unknown>)
-    : {};
-  const items = normalizeJvBatchItems(job?.items);
-  const total = items.length;
-  const applied = items.filter((item) => item.status === "applied").length;
-  const failed = items.filter((item) => item.status === "failed").length;
-  const skipped = items.filter((item) => item.status === "skipped").length;
-  const completed = applied + failed + skipped;
-  const pending = Math.max(total - completed, 0);
-  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const jobStatus = String(job?.status || "pending").toLowerCase();
-  const jobPhase = String(jobSummary.progress_phase ?? "").trim();
-  const jobMessage = String(jobSummary.progress_message ?? "").trim();
-
-  return (
-    <Card className="rounded-2xl border-border bg-white shadow-[0_8px_24px_-20px_rgba(15,23,42,0.35)]">
-      <CardContent className="space-y-3 pt-0">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-foreground">JV Batch Progress</div>
-            <div className="text-xs text-muted-foreground">
-              Job #{job?.id ?? "?"} · status: {jobStatus}
-            </div>
-            {jobPhase || jobMessage ? (
-              <div className="text-xs text-muted-foreground">
-                phase: {jobPhase || "n/a"}{jobMessage ? ` · ${jobMessage}` : ""}
-              </div>
-            ) : null}
-          </div>
-          <div className="text-right text-xs text-muted-foreground">
-            <div>{completed} / {total || "?"} sites completed</div>
-            <div>Applied: {applied} · Failed: {failed} · Pending: {pending}</div>
-          </div>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-emerald-600 transition-all"
-            style={{ width: `${Math.max(6, percent)}%` }}
-          />
-        </div>
-        {items.length > 0 ? (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            {items.map((item) => (
-              <div key={item.id} className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-foreground">{item.siteKey}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusToneClass(item.status)}`}>
-                    {item.status}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  locale: {item.targetLocale || "n/a"}
-                </div>
-                {item.progressPhase || item.progressMessage ? (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    phase: {item.progressPhase || "n/a"}{item.progressMessage ? ` · ${item.progressMessage}` : ""}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">
-            Targets are being prepared in worker. Site-level progress will appear here as soon as items are created.
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function normalizeJvBatchItems(rawItems: Array<Record<string, unknown>> | undefined): JvBatchProgressItem[] {
-  if (!Array.isArray(rawItems)) return [];
-  return rawItems.map((raw, index) => {
-    const details = raw.details && typeof raw.details === "object"
-      ? (raw.details as Record<string, unknown>)
-      : {};
-    return {
-      id: Number(raw.id ?? index),
-      siteKey: String(raw.site_key ?? raw.siteKey ?? `site-${index + 1}`),
-      status: String(raw.status ?? "pending").toLowerCase(),
-      targetLocale: String(details.target_locale ?? raw.target_locale ?? ""),
-      progressPhase: String(details.progress_phase ?? ""),
-      progressMessage: String(details.progress_message ?? ""),
-      phaseUpdatedAt: String(details.phase_updated_at ?? "")
-    };
-  });
-}
-
-function statusToneClass(status: string): string {
-  switch (status) {
-    case "applied":
-      return "bg-emerald-100 text-emerald-700";
-    case "failed":
-      return "bg-rose-100 text-rose-700";
-    case "skipped":
-      return "bg-slate-200 text-slate-700";
-    default:
-      return "bg-amber-100 text-amber-700";
-  }
 }
 
 export function ProductEditorShell() {

@@ -1,0 +1,6 @@
+{
+  "_comment": "Reviewed JV source main-category overrides. Format: SITE_KEY -> EAN -> source_rubid. Use only when source shoprubrikartikel.priority is known to be wrong and source DB must not be edited.",
+  "JV_DE": {
+    "4260533187876": 930
+  }
+}

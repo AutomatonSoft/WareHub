@@ -6,8 +6,8 @@ from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
 
-from .batch_service import apply_batch, create_job_with_plan
-from .models import ImportedProduct, JVBatchJob
+from .batch_service import create_job_with_plan
+from .models import ImportedProduct, JVBatchJob, JVBatchJobItem
 from .serializers import JVBatchJobSerializer, JVBatchPayloadSerializer
 from .source_client import fetch_source_language_id_by_locale, source_db_config_for_site
 
@@ -16,13 +16,16 @@ logger = logging.getLogger(__name__)
 
 def _collect_language_mapping_by_site(job: JVBatchJob) -> list[dict]:
     rows: list[dict] = []
-    seen: set[tuple[str, str, str]] = set()
-    items = job.items.all().order_by("id")
-    for item in items:
+    selected_by_key = {}
+    for item in job.items.all().order_by("id"):
         key = (str(item.site or ""), str(item.site_key or ""), str(item.domain or ""))
-        if key in seen:
+        current = selected_by_key.get(key)
+        if current is None or item.status == JVBatchJobItem.Status.APPLIED:
+            selected_by_key[key] = item
+
+    for item in selected_by_key.values():
+        if item.status not in {JVBatchJobItem.Status.APPLIED, JVBatchJobItem.Status.PENDING}:
             continue
-        seen.add(key)
 
         details = item.details or {}
         language_map = details.get("language_id_by_locale")
@@ -131,19 +134,18 @@ class JVBatchApplyByEANAPIView(APIView):
             site_family=ImportedProduct.Site.JV,
             payload=payload,
             idempotency_key=idem_key,
+            initial_status=JVBatchJob.Status.PENDING,
+            build_plan_now=False,
         )
-        summary = apply_batch(job=job)
-        job.refresh_from_db()
         return Response(
             {
-                "code": "jv_batch_apply_done",
-                "detail": "Batch apply completed.",
-                "summary": summary,
+                "code": "jv_batch_apply_accepted",
+                "detail": "Batch apply accepted and queued.",
+                "accepted": True,
                 "job": JVBatchJobSerializer(job).data,
                 "language_mapping_by_site": _collect_language_mapping_by_site(job),
-                "translation_status_by_site": _collect_translation_status_by_site(job),
             },
-            status=status.HTTP_200_OK,
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

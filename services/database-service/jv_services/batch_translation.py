@@ -98,13 +98,16 @@ def _build_translated_descriptions(
     target_locale: str,
     language_id_by_locale: dict,
     translation_cache: dict | None = None,
+    pretranslated_fields: dict | None = None,
 ):
     target_language_id = int(language_id_by_locale.get(target_locale, DEFAULT_LANGUAGE_ID_BY_LOCALE.get(target_locale, 1)))
     translated = {"language_id": target_language_id}
     if not source_fields:
         return [translated]
 
-    if target_locale and target_locale != source_lang:
+    if isinstance(pretranslated_fields, dict) and pretranslated_fields:
+        translated_fields = dict(pretranslated_fields)
+    elif target_locale and target_locale != source_lang:
         translated_fields, _used, _errors = _safe_translate_fields(
             source_fields=source_fields,
             source_lang=source_lang,
@@ -127,6 +130,7 @@ def _translate_jv_content_row(
     source_lang: str,
     target_locale: str,
     translation_cache: dict | None = None,
+    pretranslated_fields: dict | None = None,
 ) -> tuple[dict, list[str]]:
     """
     Translate JV admin-content row fields used for shopartikelcontent sync.
@@ -145,6 +149,7 @@ def _translate_jv_content_row(
     fields = (
         "name",
         "keywords",
+        "bezeichnung",
         "description",
         "short_description",
         "short_description_real",
@@ -155,7 +160,7 @@ def _translate_jv_content_row(
     source_fields = {field: str(translated.get(field) or "").strip() for field in fields if str(translated.get(field) or "").strip()}
     if not source_fields:
         return translated, errors
-    allow_field_fallback = os.getenv("JV_TRANSLATION_ALLOW_FIELD_FALLBACK", "0") == "1"
+    allow_field_fallback = os.getenv("JV_TRANSLATION_ALLOW_FIELD_FALLBACK", "1") == "1"
 
     cache_key = None
     if translation_cache is not None:
@@ -173,22 +178,25 @@ def _translate_jv_content_row(
             return translated, errors
 
     translated_fields: dict = {}
-    try:
-        translated_fields = _shared_translate_fields_batch(
-            source_fields=source_fields,
-            source_lang=source_lang,
-            target_lang=target_locale,
-            translatable_fields=fields,
-        ) or {}
-    except Exception:
-        logger.warning(
-            "JV_TRANSLATE_JV_CONTENT_BATCH_FAILED code=jv_translate_jv_content_batch_failed "
-            "source_lang=%s target_lang=%s",
-            source_lang,
-            target_locale,
-            exc_info=True,
-        )
-        errors.append("batch: translation_failed_fallback")
+    if isinstance(pretranslated_fields, dict) and pretranslated_fields:
+        translated_fields = dict(pretranslated_fields)
+    else:
+        try:
+            translated_fields = _shared_translate_fields_batch(
+                source_fields=source_fields,
+                source_lang=source_lang,
+                target_lang=target_locale,
+                translatable_fields=fields,
+            ) or {}
+        except Exception:
+            logger.warning(
+                "JV_TRANSLATE_JV_CONTENT_BATCH_FAILED code=jv_translate_jv_content_batch_failed "
+                "source_lang=%s target_lang=%s",
+                source_lang,
+                target_locale,
+                exc_info=True,
+            )
+            errors.append("batch: translation_failed_fallback")
 
     if not allow_field_fallback:
         for field in fields:
@@ -261,7 +269,7 @@ def _safe_translate_fields(
     target_lang: str,
     translation_cache: dict | None = None,
 ) -> tuple[dict, bool, list[str]]:
-    allow_field_fallback = os.getenv("JV_TRANSLATION_ALLOW_FIELD_FALLBACK", "0") == "1"
+    allow_field_fallback = os.getenv("JV_TRANSLATION_ALLOW_FIELD_FALLBACK", "1") == "1"
     cache_key = None
     if translation_cache is not None:
         cache_key = (
@@ -336,6 +344,7 @@ def _build_multilang_descriptions_for_site(
     locale_to_language_id: dict,
     translation_cache: dict | None = None,
     source_lang_hint: str | None = None,
+    pretranslated_fields_by_locale: dict[str, dict] | None = None,
 ) -> tuple[list[dict], dict]:
     requested = requested_descriptions or []
     existing = existing_descriptions or []
@@ -455,16 +464,25 @@ def _build_multilang_descriptions_for_site(
 
         target_locale = lang_to_locale.get(lang_id, "")
         if target_locale and target_locale != source_lang:
-            translated_fields, used, errors = _safe_translate_fields(
-                source_fields=source_fields,
-                source_lang=source_lang,
-                target_lang=target_locale,
-                translation_cache=translation_cache,
-            )
-            if used:
+            pretranslated_fields = None
+            if isinstance(pretranslated_fields_by_locale, dict):
+                maybe_fields = pretranslated_fields_by_locale.get(target_locale)
+                if isinstance(maybe_fields, dict) and maybe_fields:
+                    pretranslated_fields = dict(maybe_fields)
+            if pretranslated_fields is not None:
+                translated_fields = pretranslated_fields
                 meta["translation_used"] = True
-            if errors:
-                meta["translation_errors"].extend([f"lang_id={lang_id} {msg}" for msg in errors])
+            else:
+                translated_fields, used, errors = _safe_translate_fields(
+                    source_fields=source_fields,
+                    source_lang=source_lang,
+                    target_lang=target_locale,
+                    translation_cache=translation_cache,
+                )
+                if used:
+                    meta["translation_used"] = True
+                if errors:
+                    meta["translation_errors"].extend([f"lang_id={lang_id} {msg}" for msg in errors])
         else:
             translated_fields = dict(source_fields)
         result_by_lang[lang_id] = {

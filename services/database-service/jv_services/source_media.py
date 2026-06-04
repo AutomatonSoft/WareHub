@@ -4,6 +4,17 @@ from .models import ImportedProduct
 from .source_schema import table_exists, table_has_column
 
 
+def _row_get(row, key: str, index: int, default=""):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    if isinstance(row, (list, tuple)):
+        try:
+            return row[index]
+        except IndexError:
+            return default
+    return default
+
+
 def fetch_jv_media_from_shopmedia(cur, *, media_key: str, ean: str) -> tuple[str, list[dict]]:
     # Some JV schemas do not have shopartikel.image/bild, so main/additional
     # images must be reconstructed from shopmedia.
@@ -32,16 +43,16 @@ def fetch_jv_media_from_shopmedia(cur, *, media_key: str, ean: str) -> tuple[str
     )
     rows = cur.fetchall() or []
 
-    main_row = next((r for r in rows if str((r or {}).get("typ") or "").lower() == "v"), None)
+    main_row = next((r for r in rows if str(_row_get(r, "typ", 0) or "").lower() == "v"), None)
     if main_row is None:
         main_row = next(
-            (r for r in rows if str((r or {}).get("typ") or "").lower() in {"g", "n", "flashzoomer"}),
+            (r for r in rows if str(_row_get(r, "typ", 0) or "").lower() in {"g", "n", "flashzoomer"}),
             None,
         )
 
-    def _build_path(row: dict, *, is_main: bool) -> str:
-        stem = str(row.get("dateiname") or "").strip()
-        ext = str(row.get("endung") or "").strip().lower() or "jpg"
+    def _build_path(row, *, is_main: bool) -> str:
+        stem = str(_row_get(row, "dateiname", 1) or "").strip()
+        ext = str(_row_get(row, "endung", 2) or "").strip().lower() or "jpg"
         if not stem:
             return ""
         if is_main:
@@ -52,13 +63,13 @@ def fetch_jv_media_from_shopmedia(cur, *, media_key: str, ean: str) -> tuple[str
     main_image = _build_path(main_row, is_main=True) if main_row else ""
     extra_rows: list[dict] = []
     for row in rows:
-        typ = str((row or {}).get("typ") or "").strip().lower()
+        typ = str(_row_get(row, "typ", 0) or "").strip().lower()
         if typ not in {"z", "zg"}:
             continue
         image_path = _build_path(row, is_main=False)
         if not image_path:
             continue
-        raw_sort = row.get(sort_col) if sort_col else None
+        raw_sort = _row_get(row, sort_col, 3) if sort_col else None
         try:
             sort_order = int(raw_sort) if raw_sort is not None else 0
         except Exception:
@@ -203,10 +214,19 @@ def _resolve_shopmedia_key(cur, *, artikelid: int | None) -> str:
         row = cur.fetchone() or {}
     except Exception:
         row = {}
-    artikel_key = str((row or {}).get("artikelnr") or "").strip()
+    if isinstance(row, dict):
+        artikel_value = row.get("artikelnr")
+        ean_value = row.get("ean")
+    elif isinstance(row, (list, tuple)):
+        artikel_value = row[0] if len(row) > 0 else ""
+        ean_value = row[1] if len(row) > 1 else ""
+    else:
+        artikel_value = ""
+        ean_value = ""
+    artikel_key = str(artikel_value or "").strip()
     if artikel_key:
         return artikel_key
-    return str((row or {}).get("ean") or "").strip()
+    return str(ean_value or "").strip()
 
 
 def sync_jv_shopmedia(cur, product: ImportedProduct, *, artikelid: int | None = None):

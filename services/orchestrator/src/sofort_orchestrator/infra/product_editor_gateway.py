@@ -52,6 +52,12 @@ class ProductEditorGateway:
         response = self.http.request("POST", url, headers=headers, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_jv_batch_job_status(self, *, job_id: int, request_id: str) -> GatewayResult:
+        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        url = f"{self.base_url}/api/jv/batch/jobs/{job_id}/"
+        response = self.http.request("GET", url, headers=headers)
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
 
 def _json_or_text(response) -> dict:
     try:

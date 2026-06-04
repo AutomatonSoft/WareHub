@@ -1,8 +1,15 @@
 import os
 import copy
+import sys
+import socket
+import traceback
+import threading
 from decimal import Decimal
 from datetime import date
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from django.db import transaction, close_old_connections
 from django.utils import timezone
 import logging
 from catalog_core.batch_shared import (
@@ -44,14 +51,16 @@ from .batch_defaults import (
     DEFAULT_CURRENCY_BY_SITE_KEY,
     DEFAULT_LOCALE_BY_SITE_KEY,
     FIXED_JV_BATCH_SITE_KEYS,
-    FORCED_JV_TARGET_LOCALE,
 )
 from .batch_item_status import (
+    append_item_debug_trace,
     finalize_batch_job,
     mark_item_applied,
     mark_item_failed,
     mark_item_skipped,
     new_batch_summary,
+    update_item_progress,
+    update_job_progress,
 )
 from .batch_payload import (
     SCALAR_UPDATE_KEYS,
@@ -60,19 +69,287 @@ from .batch_payload import (
 )
 from .batch_sites import sites_for_family
 from .source_categories import map_jv_categories_between_sources
-from .source_values import fetch_jv_lieferzeit_label_by_id
+from .source_values import resolve_jv_delivery_target_id_for_sites
 from .batch_translation import (
     _build_multilang_descriptions_for_site,
     _build_translated_descriptions,
     _detect_language_from_texts,
     _extract_translation_source_from_snapshot,
     _language_map_for_site,
+    _safe_translate_fields,
     _translate_jv_content_row,
 )
 from .price_rules import apply_special_price_from_product
 
 logger = logging.getLogger(__name__)
 _FX_MAX_RATE_CACHE: dict[tuple[str, str, int, str], Decimal] = {}
+_APPLY_ITEM_LOCKS_GUARD = threading.Lock()
+_APPLY_ITEM_LOCKS: dict[tuple[int, str], threading.Lock] = {}
+
+
+def _runtime_debug_context() -> dict:
+    return {
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
+        "argv": list(sys.argv),
+        "stack": traceback.format_stack(limit=8),
+    }
+
+
+@contextmanager
+def _site_apply_lock(*, job_id: int, site_key: str):
+    lock_key = (int(job_id), str(site_key or "").strip().upper())
+    with _APPLY_ITEM_LOCKS_GUARD:
+        lock = _APPLY_ITEM_LOCKS.get(lock_key)
+        if lock is None:
+            lock = threading.Lock()
+            _APPLY_ITEM_LOCKS[lock_key] = lock
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+def _merge_batch_summary(summary: dict, fragment: dict) -> None:
+    for key in ("total", "applied", "failed", "skipped", "translation_used_sites", "translation_error_sites"):
+        summary[key] += int(fragment.get(key) or 0)
+
+
+def _trace_jv_batch_details(event: str, **fields) -> None:
+    payload = {"event": event}
+    payload.update(fields)
+    logger.warning("JV_BATCH_TRACE %s", payload)
+
+
+def _append_rehydrate_trace(details: dict, *, event: str, **fields) -> dict:
+    return append_item_debug_trace(details, event=event, **fields)
+
+
+def _normalize_delivery_mapping_details(*, details: dict, item_site_key: str) -> dict:
+    normalized = dict(details or {})
+    jv_fields = normalized.get("jv_fields")
+    delivery_meta = normalized.get("delivery_mapping_meta")
+    if not isinstance(jv_fields, dict) or not isinstance(delivery_meta, dict):
+        return normalized
+
+    source_site_key = str(jv_fields.get("_delivery_mapping_source_site_key") or "").strip().upper()
+    target_site_key = str(jv_fields.get("_delivery_mapping_target_site_key") or item_site_key or "").strip().upper()
+    source_delivery_id = (
+        jv_fields.get("_delivery_mapping_source_id")
+        if jv_fields.get("_delivery_mapping_source_id") not in (None, "")
+        else delivery_meta.get("source_delivery_id")
+    )
+
+    mapped_target_delivery_id = resolve_jv_delivery_target_id_for_sites(
+        source_site_key=source_site_key,
+        target_site_key=target_site_key,
+        source_delivery_id=source_delivery_id,
+    )
+    if mapped_target_delivery_id is None:
+        return normalized
+
+    next_jv_fields = dict(jv_fields)
+    next_jv_fields["lieferzeitid"] = mapped_target_delivery_id
+    next_jv_fields["_delivery_mapping_source_site_key"] = source_site_key
+    next_jv_fields["_delivery_mapping_target_site_key"] = target_site_key
+    next_jv_fields["_delivery_mapping_source_id"] = source_delivery_id
+    normalized["jv_fields"] = next_jv_fields
+    normalized["delivery_mapping_meta"] = {
+        "mode": "override_from_template_id",
+        "template_site_key": source_site_key,
+        "source_delivery_id": source_delivery_id,
+        "target_delivery_id": mapped_target_delivery_id,
+    }
+    return normalized
+
+
+def _rehydrate_site_specific_details(
+    *,
+    payload: dict,
+    details: dict,
+    item_site_key: str,
+    item_domain: str,
+    db_config: dict,
+    precomputed_context: dict,
+    translation_cache: dict,
+    site_language_map_cache: dict,
+    explicit_relations: set[str],
+    translate_texts_requested: bool,
+    translation_source_requested: bool,
+) -> dict:
+    hydrated = dict(details or {})
+    site_key_norm = str(item_site_key or "").strip().upper()
+    hydrated = _append_rehydrate_trace(
+        hydrated,
+        event="rehydrate_start",
+        site_key=site_key_norm,
+        domain=str(item_domain or ""),
+        incoming_target_locale=str(hydrated.get("target_locale") or ""),
+        incoming_lieferzeitid=str(((hydrated.get("jv_fields") or {}) if isinstance(hydrated.get("jv_fields"), dict) else {}).get("lieferzeitid") or ""),
+        translate_texts_requested=bool(translate_texts_requested),
+        translation_source_requested=bool(translation_source_requested),
+    )
+    locale_by_site_key_raw = payload.get("locale_by_site_key") or {}
+    locale_by_site_key = {
+        str(key or "").strip().upper(): normalize_locale_code(str(value or ""))
+        for key, value in locale_by_site_key_raw.items()
+        if str(key or "").strip() and normalize_locale_code(str(value or ""))
+    }
+    target_locale = _infer_locale(
+        site_key=site_key_norm,
+        domain=str(item_domain or ""),
+        locale_by_site_key=locale_by_site_key,
+    )
+    hydrated["target_locale"] = target_locale
+    hydrated = _append_rehydrate_trace(
+        hydrated,
+        event="rehydrate_locale_resolved",
+        site_key=site_key_norm,
+        domain=str(item_domain or ""),
+        locale_by_site_key=locale_by_site_key,
+        resolved_target_locale=target_locale,
+        translation_source_language=str(precomputed_context.get("translation_source_language") or "").strip().lower(),
+    )
+
+    resolved_translation_source = dict(precomputed_context.get("resolved_translation_source") or {})
+    translation_source_language = str(precomputed_context.get("translation_source_language") or "").strip().lower()
+    description_fields_by_locale = {
+        str(locale): dict(fields)
+        for locale, fields in (precomputed_context.get("description_fields_by_locale") or {}).items()
+        if str(locale).strip() and isinstance(fields, dict)
+    }
+    jv_content_fields_by_locale = {
+        str(locale): dict(fields)
+        for locale, fields in (precomputed_context.get("jv_content_fields_by_locale") or {}).items()
+        if str(locale).strip() and isinstance(fields, dict)
+    }
+
+    language_id_by_locale = payload.get("language_id_by_locale") or {}
+    language_map_for_site = _language_map_for_site(
+        site_key=site_key_norm,
+        db_config=db_config,
+        cache=site_language_map_cache,
+        language_id_by_locale_override=language_id_by_locale,
+    )
+    hydrated["language_id_by_locale"] = language_map_for_site
+
+    if "descriptions" in explicit_relations or (translate_texts_requested and translation_source_requested):
+        explicit_descriptions = payload.get("descriptions") or []
+        if translate_texts_requested and resolved_translation_source:
+            hydrated["descriptions"] = _build_translated_descriptions(
+                source_fields=resolved_translation_source,
+                source_lang=translation_source_language,
+                target_locale=target_locale,
+                language_id_by_locale=language_map_for_site,
+                translation_cache=translation_cache,
+                pretranslated_fields=description_fields_by_locale.get(target_locale),
+            )
+        elif "descriptions" in explicit_relations:
+            hydrated["descriptions"] = explicit_descriptions
+
+    if "jv_fields" in explicit_relations:
+        base_jv_fields = payload.get("jv_fields") if isinstance(payload.get("jv_fields"), dict) else None
+        if isinstance(base_jv_fields, dict):
+            template_site_key = str(payload.get("template_site_key") or "").strip().upper()
+            jv_fields_for_site = copy.deepcopy(base_jv_fields)
+            hydrated = _append_rehydrate_trace(
+                hydrated,
+                event="rehydrate_jv_fields_before_delivery",
+                site_key=site_key_norm,
+                template_site_key=template_site_key,
+                source_lieferzeitid=str(jv_fields_for_site.get("lieferzeitid") or ""),
+            )
+            if (
+                template_site_key
+                and site_key_norm != template_site_key
+                and jv_fields_for_site.get("lieferzeitid") not in (None, "")
+            ):
+                source_delivery_id = jv_fields_for_site.get("lieferzeitid")
+                mapped_target_delivery_id = resolve_jv_delivery_target_id_for_sites(
+                    source_site_key=template_site_key,
+                    target_site_key=site_key_norm,
+                    source_delivery_id=source_delivery_id,
+                )
+                jv_fields_for_site["_delivery_mapping_source_site_key"] = template_site_key
+                jv_fields_for_site["_delivery_mapping_target_site_key"] = site_key_norm
+                jv_fields_for_site["_delivery_mapping_source_id"] = source_delivery_id
+                if mapped_target_delivery_id is not None:
+                    jv_fields_for_site["lieferzeitid"] = mapped_target_delivery_id
+                hydrated["delivery_mapping_meta"] = {
+                    "mode": "override_from_template_id",
+                    "template_site_key": template_site_key,
+                    "source_delivery_id": source_delivery_id,
+                    "target_delivery_id": mapped_target_delivery_id,
+                }
+                hydrated = _append_rehydrate_trace(
+                    hydrated,
+                    event="rehydrate_delivery_override",
+                    site_key=site_key_norm,
+                    template_site_key=template_site_key,
+                    source_delivery_id=str(source_delivery_id or ""),
+                    mapped_target_delivery_id=mapped_target_delivery_id,
+                    final_lieferzeitid=str(jv_fields_for_site.get("lieferzeitid") or ""),
+                )
+
+            content_rows = jv_fields_for_site.get("content_by_language")
+            if isinstance(content_rows, list):
+                source_row = next(
+                    (
+                        content_row
+                        for content_row in content_rows
+                        if isinstance(content_row, dict)
+                        and str(content_row.get("language_code") or "de").strip().lower() == "de"
+                    ),
+                    None,
+                )
+                if source_row is None:
+                    source_row = next((content_row for content_row in content_rows if isinstance(content_row, dict)), None)
+                if source_row is not None:
+                    source_row = dict(source_row)
+                    if isinstance(resolved_translation_source, dict):
+                        description_override = str(resolved_translation_source.get("description") or "").strip()
+                        short_override = str(resolved_translation_source.get("kurzbeschreibung") or "").strip()
+                        if description_override and not str(source_row.get("description") or "").strip():
+                            source_row["description"] = description_override
+                        if short_override and not str(source_row.get("short_description_real") or "").strip():
+                            source_row["short_description_real"] = short_override
+                            source_row["kurzbeschreibung"] = short_override
+                    if translate_texts_requested:
+                        content_source_lang = normalize_locale_code(source_row.get("language_code")) or translation_source_language
+                        translated_row, content_errors = _translate_jv_content_row(
+                            row=source_row,
+                            source_lang=content_source_lang,
+                            target_locale=target_locale,
+                            translation_cache=translation_cache,
+                            pretranslated_fields=jv_content_fields_by_locale.get(target_locale),
+                        )
+                        jv_fields_for_site["content_by_language"] = [translated_row]
+                        if content_errors:
+                            hydrated["translation_meta_jv_content_error"] = "; ".join(content_errors[:10])
+                        hydrated = _append_rehydrate_trace(
+                            hydrated,
+                            event="rehydrate_jv_content_translated",
+                            site_key=site_key_norm,
+                            source_lang=content_source_lang,
+                            target_locale=target_locale,
+                            translated_name=str(translated_row.get("name") or "")[:160],
+                            translated_meta_title=str(translated_row.get("meta_title") or "")[:160],
+                            translation_errors=content_errors[:10],
+                        )
+                    else:
+                        jv_fields_for_site["content_by_language"] = [source_row]
+            hydrated["jv_fields"] = jv_fields_for_site
+            hydrated = _append_rehydrate_trace(
+                hydrated,
+                event="rehydrate_done",
+                site_key=site_key_norm,
+                target_locale=str(hydrated.get("target_locale") or ""),
+                final_lieferzeitid=str((hydrated.get("jv_fields") or {}).get("lieferzeitid") or ""),
+                delivery_mapping_meta=hydrated.get("delivery_mapping_meta") or {},
+            )
+
+    return hydrated
 
 
 def _round_price_no_fraction(value) -> Decimal:
@@ -117,8 +394,236 @@ def _normalize_translation_source_fields(raw: dict) -> dict:
     return normalized
 
 
+def _serialize_translation_cache(cache: dict) -> dict[str, dict]:
+    serialized: dict[str, dict] = {}
+    for key, value in (cache or {}).items():
+        if not isinstance(value, dict):
+            continue
+        try:
+            cache_key = json.dumps(list(key) if isinstance(key, tuple) else key, ensure_ascii=False)
+        except Exception:
+            continue
+        serialized[cache_key] = {
+            str(field): str(field_value or "")
+            for field, field_value in value.items()
+            if str(field).strip()
+        }
+    return serialized
+
+
+def _deserialize_translation_cache(raw: dict) -> dict:
+    cache: dict = {}
+    if not isinstance(raw, dict):
+        return cache
+    for key_text, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        try:
+            parsed_key = json.loads(str(key_text))
+        except Exception:
+            continue
+        if isinstance(parsed_key, list):
+            cache_key = tuple(parsed_key)
+        else:
+            cache_key = parsed_key
+        cache[cache_key] = {
+            str(field): str(field_value or "")
+            for field, field_value in value.items()
+            if str(field).strip()
+        }
+    return cache
+
+
+def _extract_jv_content_source_row(*, payload: dict, resolved_translation_source: dict) -> dict | None:
+    base_jv_fields = payload.get("jv_fields") if isinstance(payload.get("jv_fields"), dict) else None
+    if not isinstance(base_jv_fields, dict):
+        return None
+    content_rows = base_jv_fields.get("content_by_language")
+    if not isinstance(content_rows, list):
+        return None
+    source_row = next(
+        (
+            content_row
+            for content_row in content_rows
+            if isinstance(content_row, dict)
+            and str(content_row.get("language_code") or "de").strip().lower() == "de"
+        ),
+        None,
+    )
+    if source_row is None:
+        source_row = next((content_row for content_row in content_rows if isinstance(content_row, dict)), None)
+    if source_row is None:
+        return None
+    source_row = dict(source_row)
+    if isinstance(resolved_translation_source, dict):
+        description_override = str(resolved_translation_source.get("description") or "").strip()
+        short_override = str(resolved_translation_source.get("kurzbeschreibung") or "").strip()
+        if description_override and not str(source_row.get("description") or "").strip():
+            source_row["description"] = description_override
+        if short_override and not str(source_row.get("short_description_real") or "").strip():
+            source_row["short_description_real"] = short_override
+            source_row["kurzbeschreibung"] = short_override
+    return source_row
+
+
+def _build_pretranslated_fields_by_locale(*, payload: dict, precomputed: dict) -> dict:
+    translate_texts = bool(payload.get("translate_texts"))
+    resolved_translation_source = dict(precomputed.get("resolved_translation_source") or {})
+    translation_source_language = str(precomputed.get("translation_source_language") or "").strip().lower()
+    if not translate_texts or not resolved_translation_source or not translation_source_language:
+        return {
+            "translation_seed_cache": {},
+            "description_fields_by_locale": {},
+            "jv_content_fields_by_locale": {},
+        }
+
+    locale_by_site_key_raw = payload.get("locale_by_site_key") or {}
+    locale_by_site_key = {
+        str(key or "").strip().upper(): normalize_locale_code(str(value or ""))
+        for key, value in locale_by_site_key_raw.items()
+        if str(key or "").strip() and normalize_locale_code(str(value or ""))
+    }
+    target_locales = {
+        _infer_locale(
+            site_key=row.get("site_key") or "",
+            domain=row.get("domain") or "",
+            locale_by_site_key=locale_by_site_key,
+        )
+        for row in (precomputed.get("candidate_rows") or [])
+    }
+    target_locales = {
+        locale
+        for locale in target_locales
+        if locale and locale != translation_source_language
+    }
+    if not target_locales:
+        return {
+            "translation_seed_cache": {},
+            "description_fields_by_locale": {},
+            "jv_content_fields_by_locale": {},
+        }
+
+    translation_cache: dict = {}
+    description_fields_by_locale: dict[str, dict] = {}
+    jv_content_fields_by_locale: dict[str, dict] = {}
+    jv_content_source_row = _extract_jv_content_source_row(
+        payload=payload,
+        resolved_translation_source=resolved_translation_source,
+    )
+    content_source_lang = normalize_locale_code((jv_content_source_row or {}).get("language_code")) or translation_source_language
+
+    for target_locale in sorted(target_locales):
+        translated_fields, _used, _errors = _safe_translate_fields(
+            source_fields=resolved_translation_source,
+            source_lang=translation_source_language,
+            target_lang=target_locale,
+            translation_cache=translation_cache,
+        )
+        if translated_fields:
+            description_fields_by_locale[target_locale] = {
+                str(field): str(value or "")
+                for field, value in translated_fields.items()
+                if str(field).strip() and str(value or "").strip()
+            }
+        if jv_content_source_row:
+            translated_row, _content_errors = _translate_jv_content_row(
+                row=jv_content_source_row,
+                source_lang=content_source_lang,
+                target_locale=target_locale,
+                translation_cache=translation_cache,
+            )
+            if translated_row:
+                jv_content_fields_by_locale[target_locale] = {
+                    field: str(translated_row.get(field) or "")
+                    for field in (
+                        "name",
+                        "keywords",
+                        "bezeichnung",
+                        "description",
+                        "short_description",
+                        "short_description_real",
+                        "meta_title",
+                        "meta_description",
+                        "meta_keyword",
+                    )
+                    if str(translated_row.get(field) or "").strip()
+                }
+
+    return {
+        "translation_seed_cache": _serialize_translation_cache(translation_cache),
+        "description_fields_by_locale": description_fields_by_locale,
+        "jv_content_fields_by_locale": jv_content_fields_by_locale,
+    }
+
+
 def _sites_for_family(selected_site_keys: list[str] | None = None):
     return sites_for_family(selected_site_keys)
+
+
+def _selected_site_keys_from_payload(payload: dict) -> list[str]:
+    payload_site_keys = payload.get("site_keys") or []
+    if isinstance(payload_site_keys, (list, tuple)):
+        selected_site_keys = [
+            str(site_key or "").strip().upper()
+            for site_key in payload_site_keys
+            if str(site_key or "").strip()
+        ]
+    else:
+        selected_site_keys = []
+    if not selected_site_keys:
+        selected_site_keys = list(FIXED_JV_BATCH_SITE_KEYS)
+    return selected_site_keys
+
+
+def _job_item_priority(*, item, selected_site_keys: set[str], template_site_key: str) -> tuple[int, int]:
+    score = 0
+    item_site_key = str(item.site_key or "").strip().upper()
+    details = item.details or {}
+    jv_fields = details.get("jv_fields") or {}
+    if item_site_key in selected_site_keys:
+        score += 100
+    if template_site_key and item_site_key != template_site_key:
+        if (
+            isinstance(jv_fields, dict)
+            and str(jv_fields.get("_delivery_mapping_source_site_key") or "").strip().upper() == template_site_key
+            and str(jv_fields.get("_delivery_mapping_target_site_key") or "").strip().upper() == item_site_key
+        ):
+            score += 20
+    if item.status == JVBatchJobItem.Status.PENDING:
+        score += 5
+    return score, int(item.pk or 0)
+
+
+def normalize_job_items_for_payload(job: JVBatchJob) -> None:
+    payload = job.request_payload or {}
+    selected_site_keys = _selected_site_keys_from_payload(payload)
+    selected_site_keys_set = set(selected_site_keys)
+    template_site_key = str(payload.get("template_site_key") or "").strip().upper()
+    items = list(job.items.all().order_by("id"))
+    if not items:
+        return
+
+    preferred_by_site_key: dict[str, JVBatchJobItem] = {}
+    for item in items:
+        item_site_key = str(item.site_key or "").strip().upper()
+        if item_site_key not in selected_site_keys_set:
+            continue
+        current = preferred_by_site_key.get(item_site_key)
+        if current is None or _job_item_priority(
+            item=item,
+            selected_site_keys=selected_site_keys_set,
+            template_site_key=template_site_key,
+        ) > _job_item_priority(
+            item=current,
+            selected_site_keys=selected_site_keys_set,
+            template_site_key=template_site_key,
+        ):
+            preferred_by_site_key[item_site_key] = item
+
+    keep_ids = {item.pk for item in preferred_by_site_key.values()}
+    delete_ids = [item.pk for item in items if item.pk not in keep_ids]
+    if delete_ids:
+        JVBatchJobItem.objects.filter(job=job, pk__in=delete_ids).delete()
 
 
 def _infer_locale(*, site_key: str, domain: str, locale_by_site_key: dict) -> str:
@@ -193,24 +698,9 @@ def _ensure_main_category(categories: list[dict], template_main_category_id):
     return ensure_main_category(categories, template_main_category_id)
 
 
-def build_batch_plan(*, ean: str, payload: dict):
-    selected_site_keys = list(FIXED_JV_BATCH_SITE_KEYS)
+def build_job_precompute_context(*, ean: str, payload: dict) -> dict:
+    selected_site_keys = _selected_site_keys_from_payload(payload)
     template_site_key = str(payload.get("template_site_key") or "").strip().upper()
-    template_main_category_id = payload.get("template_main_category_id")
-    default_price = payload.get("default_price")
-    price_by_site_key_raw = payload.get("price_by_site_key") or {}
-    price_by_site_key = {str(k or "").strip().upper(): v for k, v in price_by_site_key_raw.items()}
-    image_by_site_key_raw = payload.get("image_by_site_key") or {}
-    image_by_site_key = {
-        str(k or "").strip().upper(): str(v or "").strip()
-        for k, v in image_by_site_key_raw.items()
-        if str(k or "").strip() and str(v or "").strip()
-    }
-    convert_currency = bool(payload.get("convert_currency"))
-    source_currency_default = str(payload.get("source_currency") or "EUR").upper()
-    currency_by_site_key_raw = payload.get("currency_by_site_key") or {}
-    currency_by_site_key = {str(k or "").strip().upper(): str(v or "").strip().upper() for k, v in currency_by_site_key_raw.items()}
-    translate_texts = bool(payload.get("translate_texts"))
     translation_source = _normalize_translation_source_fields(payload.get("translation_source") or {})
     translation_source_language_raw = str(payload.get("translation_source_language") or "").strip().lower()
     source_locale_for_snapshot = (
@@ -218,30 +708,9 @@ def build_batch_plan(*, ean: str, payload: dict):
         if translation_source_language_raw not in {"", "auto"}
         else "de"
     )
-    locale_by_site_key = {key: FORCED_JV_TARGET_LOCALE for key in FIXED_JV_BATCH_SITE_KEYS}
     language_id_by_locale = payload.get("language_id_by_locale") or {}
     site_language_map_cache: dict[str, dict[str, int]] = {}
-    explicit_descriptions = payload.get("descriptions") or []
-    has_explicit_descriptions = "descriptions" in payload
-    has_explicit_categories = "categories" in payload
-    categories_by_site_key_raw = payload.get("categories_by_site_key") or {}
-    categories_by_site_key = {
-        str(site_key or "").strip().upper(): rows
-        for site_key, rows in categories_by_site_key_raw.items()
-        if str(site_key or "").strip()
-    }
-    has_explicit_stores = "stores" in payload
-    has_explicit_images = "images" in payload
-    has_explicit_specials = "specials" in payload
-    explicit_categories = payload.get("categories") if has_explicit_categories else None
-    explicit_stores = payload.get("stores") if has_explicit_stores else None
-    explicit_images = payload.get("images") if has_explicit_images else None
-    explicit_specials = payload.get("specials") if has_explicit_specials else None
-    base_scalar_updates = _extract_scalar_updates(payload)
-    base_jv_fields = payload.get("jv_fields") if isinstance(payload.get("jv_fields"), dict) else None
     resolved_translation_source = dict(translation_source)
-    template_currency_detected = None
-    translation_cache: dict = {}
 
     candidate_rows = _sites_for_family(selected_site_keys)
     if template_site_key:
@@ -250,7 +719,7 @@ def build_batch_plan(*, ean: str, payload: dict):
             key=lambda row: 0 if (row.get("site_key") or "").upper() == template_site_key else 1,
         )
 
-    if translate_texts and not resolved_translation_source:
+    if bool(payload.get("translate_texts")) and not resolved_translation_source:
         for site_row in candidate_rows:
             db_config = source_db_config_for_site(site_row["site"], site_key=site_row["site_key"] or None)
             if not db_config:
@@ -280,6 +749,121 @@ def build_batch_plan(*, ean: str, payload: dict):
     else:
         translation_source_language = translation_source_language_raw
 
+    precomputed = {
+        "selected_site_keys": selected_site_keys,
+        "template_site_key": template_site_key,
+        "candidate_rows": candidate_rows,
+        "resolved_translation_source": resolved_translation_source,
+        "translation_source_language": translation_source_language,
+        "site_language_map_cache": site_language_map_cache,
+    }
+    precomputed.update(_build_pretranslated_fields_by_locale(payload=payload, precomputed=precomputed))
+    return precomputed
+
+
+def save_job_precompute_context(job: JVBatchJob, *, precomputed: dict) -> None:
+    summary = dict(job.result_summary or {})
+    summary["precomputed"] = _json_safe({
+        "selected_site_keys": precomputed.get("selected_site_keys") or [],
+        "template_site_key": precomputed.get("template_site_key") or "",
+        "candidate_rows": precomputed.get("candidate_rows") or [],
+        "resolved_translation_source": precomputed.get("resolved_translation_source") or {},
+        "translation_source_language": precomputed.get("translation_source_language") or "",
+        "translation_seed_cache": precomputed.get("translation_seed_cache") or {},
+        "description_fields_by_locale": precomputed.get("description_fields_by_locale") or {},
+        "jv_content_fields_by_locale": precomputed.get("jv_content_fields_by_locale") or {},
+    })
+    job.result_summary = summary
+    job.save(update_fields=["result_summary", "updated_at"])
+
+
+def load_job_precompute_context(job: JVBatchJob) -> dict:
+    summary = dict(job.result_summary or {})
+    precomputed = summary.get("precomputed") or {}
+    if not isinstance(precomputed, dict):
+        return {}
+    selected_site_keys = precomputed.get("selected_site_keys") or []
+    template_site_key = str(precomputed.get("template_site_key") or "").strip().upper()
+    candidate_rows = precomputed.get("candidate_rows") or []
+    resolved_translation_source = precomputed.get("resolved_translation_source") or {}
+    translation_source_language = str(precomputed.get("translation_source_language") or "").strip().lower()
+    translation_seed_cache = precomputed.get("translation_seed_cache") or {}
+    description_fields_by_locale = precomputed.get("description_fields_by_locale") or {}
+    jv_content_fields_by_locale = precomputed.get("jv_content_fields_by_locale") or {}
+    return {
+        "selected_site_keys": list(selected_site_keys) if isinstance(selected_site_keys, list) else [],
+        "template_site_key": template_site_key,
+        "candidate_rows": list(candidate_rows) if isinstance(candidate_rows, list) else [],
+        "resolved_translation_source": dict(resolved_translation_source) if isinstance(resolved_translation_source, dict) else {},
+        "translation_source_language": translation_source_language,
+        "translation_seed_cache": dict(translation_seed_cache) if isinstance(translation_seed_cache, dict) else {},
+        "description_fields_by_locale": dict(description_fields_by_locale) if isinstance(description_fields_by_locale, dict) else {},
+        "jv_content_fields_by_locale": dict(jv_content_fields_by_locale) if isinstance(jv_content_fields_by_locale, dict) else {},
+        "site_language_map_cache": {},
+    }
+
+
+def build_batch_plan(*, ean: str, payload: dict, precomputed: dict | None = None):
+    precomputed_context = precomputed or build_job_precompute_context(ean=ean, payload=payload)
+    selected_site_keys = list(precomputed_context.get("selected_site_keys") or [])
+    template_site_key = str(precomputed_context.get("template_site_key") or "").strip().upper()
+    template_main_category_id = payload.get("template_main_category_id")
+    default_price = payload.get("default_price")
+    price_by_site_key_raw = payload.get("price_by_site_key") or {}
+    price_by_site_key = {str(k or "").strip().upper(): v for k, v in price_by_site_key_raw.items()}
+    image_by_site_key_raw = payload.get("image_by_site_key") or {}
+    image_by_site_key = {
+        str(k or "").strip().upper(): str(v or "").strip()
+        for k, v in image_by_site_key_raw.items()
+        if str(k or "").strip() and str(v or "").strip()
+    }
+    convert_currency = bool(payload.get("convert_currency"))
+    source_currency_default = str(payload.get("source_currency") or "EUR").upper()
+    currency_by_site_key_raw = payload.get("currency_by_site_key") or {}
+    currency_by_site_key = {str(k or "").strip().upper(): str(v or "").strip().upper() for k, v in currency_by_site_key_raw.items()}
+    translate_texts = bool(payload.get("translate_texts"))
+    locale_by_site_key_raw = payload.get("locale_by_site_key") or {}
+    locale_by_site_key = {
+        str(key or "").strip().upper(): normalize_locale_code(str(value or ""))
+        for key, value in locale_by_site_key_raw.items()
+        if str(key or "").strip() and normalize_locale_code(str(value or ""))
+    }
+    language_id_by_locale = payload.get("language_id_by_locale") or {}
+    site_language_map_cache: dict[str, dict[str, int]] = dict(precomputed_context.get("site_language_map_cache") or {})
+    explicit_descriptions = payload.get("descriptions") or []
+    has_explicit_descriptions = "descriptions" in payload
+    has_explicit_categories = "categories" in payload
+    categories_by_site_key_raw = payload.get("categories_by_site_key") or {}
+    categories_by_site_key = {
+        str(site_key or "").strip().upper(): rows
+        for site_key, rows in categories_by_site_key_raw.items()
+        if str(site_key or "").strip()
+    }
+    has_explicit_stores = "stores" in payload
+    has_explicit_images = "images" in payload
+    has_explicit_specials = "specials" in payload
+    explicit_categories = payload.get("categories") if has_explicit_categories else None
+    explicit_stores = payload.get("stores") if has_explicit_stores else None
+    explicit_images = payload.get("images") if has_explicit_images else None
+    explicit_specials = payload.get("specials") if has_explicit_specials else None
+    base_scalar_updates = _extract_scalar_updates(payload)
+    base_jv_fields = payload.get("jv_fields") if isinstance(payload.get("jv_fields"), dict) else None
+    resolved_translation_source = dict(precomputed_context.get("resolved_translation_source") or {})
+    translation_source_language = str(precomputed_context.get("translation_source_language") or "").strip().lower()
+    template_currency_detected = None
+    translation_cache: dict = _deserialize_translation_cache(precomputed_context.get("translation_seed_cache") or {})
+    description_fields_by_locale = {
+        str(locale): dict(fields)
+        for locale, fields in (precomputed_context.get("description_fields_by_locale") or {}).items()
+        if str(locale).strip() and isinstance(fields, dict)
+    }
+    jv_content_fields_by_locale = {
+        str(locale): dict(fields)
+        for locale, fields in (precomputed_context.get("jv_content_fields_by_locale") or {}).items()
+        if str(locale).strip() and isinstance(fields, dict)
+    }
+    candidate_rows = list(precomputed_context.get("candidate_rows") or _sites_for_family(selected_site_keys))
+
     plan_items = []
     for site_row in candidate_rows:
         site = site_row["site"]
@@ -290,6 +874,10 @@ def build_batch_plan(*, ean: str, payload: dict):
             plan_items.append({
                 "site": site, "site_key": site_key, "domain": domain, "status": "skipped",
                 "error_code": "jv_site_not_configured", "error_text": "Missing source DB credentials for site.",
+                "details": {
+                    "progress_phase": "skipped",
+                    "progress_message": "Missing source DB credentials for site.",
+                },
             })
             continue
 
@@ -299,10 +887,18 @@ def build_batch_plan(*, ean: str, payload: dict):
                 plan_items.append({
                     "site": site, "site_key": site_key, "domain": domain, "status": "skipped",
                     "error_code": "jv_ean_not_found_on_site", "error_text": "EAN not found on this site.",
+                    "details": {
+                        "progress_phase": "skipped",
+                        "progress_message": "EAN not found on this site.",
+                    },
                 })
                 continue
 
-            target_locale = FORCED_JV_TARGET_LOCALE
+            target_locale = _infer_locale(
+                site_key=site_key,
+                domain=domain,
+                locale_by_site_key=locale_by_site_key,
+            )
             language_map_for_site = _language_map_for_site(
                 site_key=site_key,
                 db_config=db_config,
@@ -341,6 +937,7 @@ def build_batch_plan(*, ean: str, payload: dict):
                     target_locale=target_locale,
                     language_id_by_locale=language_map_for_site,
                     translation_cache=translation_cache,
+                    pretranslated_fields=description_fields_by_locale.get(target_locale),
                 )
             elif not has_explicit_descriptions:
                 descriptions_to_apply = None
@@ -367,12 +964,15 @@ def build_batch_plan(*, ean: str, payload: dict):
                 "title": row.get("title") or "",
                 "target_locale": target_locale,
                 "translate_texts_requested": bool(translate_texts),
+                "progress_phase": "queued",
+                "progress_message": "Queued in worker.",
                 "scalar_updates": scalar_updates,
                 "translation_source_language": translation_source_language,
                 # Per-site resolved mapping so frontend knows exactly
                 # which language_id belongs to which locale on this source site.
                 "language_id_by_locale": language_map_for_site,
             }
+            site_key_norm = str(site_key or "").strip().upper()
 
             if base_jv_fields is not None:
                 jv_fields_for_site = copy.deepcopy(base_jv_fields)
@@ -381,32 +981,37 @@ def build_batch_plan(*, ean: str, payload: dict):
                     and str(site_key or "").strip().upper() != template_site_key
                     and jv_fields_for_site.get("lieferzeitid") not in (None, "")
                 ):
-                    template_db_config = source_db_config_for_site(site, site_key=template_site_key)
-                    if template_db_config:
-                        try:
-                            delivery_label = fetch_jv_lieferzeit_label_by_id(
-                                template_db_config,
-                                jv_fields_for_site.get("lieferzeitid"),
-                            )
-                            if delivery_label:
-                                jv_fields_for_site["lieferzeitid"] = delivery_label
-                                details_payload["delivery_mapping_meta"] = {
-                                    "mode": "label_from_template",
-                                    "template_site_key": template_site_key,
-                                    "label": delivery_label,
-                                }
-                        except Exception as exc:
-                            logger.warning(
-                                "JV_DELIVERY_MAPPING_FAILED code=jv_delivery_mapping_failed template_site_key=%s site_key=%s",
-                                template_site_key,
-                                site_key,
-                                exc_info=True,
-                            )
-                            details_payload["delivery_mapping_meta"] = {
-                                "mode": "label_from_template",
-                                "template_site_key": template_site_key,
-                                "error": str(exc),
-                            }
+                    source_delivery_id = jv_fields_for_site.get("lieferzeitid")
+                    try:
+                        mapped_target_delivery_id = resolve_jv_delivery_target_id_for_sites(
+                            source_site_key=template_site_key,
+                            target_site_key=site_key_norm,
+                            source_delivery_id=source_delivery_id,
+                        )
+                        jv_fields_for_site["_delivery_mapping_source_site_key"] = template_site_key
+                        jv_fields_for_site["_delivery_mapping_target_site_key"] = site_key_norm
+                        jv_fields_for_site["_delivery_mapping_source_id"] = source_delivery_id
+                        if mapped_target_delivery_id is not None:
+                            jv_fields_for_site["lieferzeitid"] = mapped_target_delivery_id
+                        details_payload["delivery_mapping_meta"] = {
+                            "mode": "override_from_template_id",
+                            "template_site_key": template_site_key,
+                            "source_delivery_id": source_delivery_id,
+                            "target_delivery_id": mapped_target_delivery_id,
+                        }
+                    except Exception as exc:
+                        logger.warning(
+                            "JV_DELIVERY_MAPPING_FAILED code=jv_delivery_mapping_failed template_site_key=%s site_key=%s",
+                            template_site_key,
+                            site_key,
+                            exc_info=True,
+                        )
+                        details_payload["delivery_mapping_meta"] = {
+                            "mode": "override_from_template_id",
+                            "template_site_key": template_site_key,
+                            "source_delivery_id": source_delivery_id,
+                            "error": str(exc),
+                        }
                 content_rows = jv_fields_for_site.get("content_by_language")
                 if isinstance(content_rows, list):
                     source_row = next(
@@ -436,6 +1041,7 @@ def build_batch_plan(*, ean: str, payload: dict):
                                 source_lang=content_source_lang,
                                 target_locale=target_locale,
                                 translation_cache=translation_cache,
+                                pretranslated_fields=jv_content_fields_by_locale.get(target_locale),
                             )
                             jv_fields_for_site["content_by_language"] = [translated_row]
                             if content_errors:
@@ -446,7 +1052,6 @@ def build_batch_plan(*, ean: str, payload: dict):
 
             if descriptions_to_apply is not None:
                 details_payload["descriptions"] = descriptions_to_apply
-            site_key_norm = str(site_key or "").strip().upper()
             category_mapping_meta = None
             if site_key_norm in categories_by_site_key:
                 details_payload["categories"] = _ensure_main_category(
@@ -469,12 +1074,17 @@ def build_batch_plan(*, ean: str, payload: dict):
                                 template_db_config,
                                 db_config,
                                 categories_for_site,
+                                source_site_key=template_site_key,
+                                target_site_key=site_key_norm,
                             )
                             category_mapping_meta = {
                                 **(category_mapping_meta or {}),
                                 "mode": "rubnum_from_template",
                                 "template_site_key": template_site_key,
                             }
+                            if categories_for_site and not bool(category_mapping_meta.get("main_mapped")):
+                                category_mapping_meta["error"] = "Template main category was not mapped on target site."
+                                categories_for_site = []
                         except Exception as exc:
                             logger.warning(
                                 "JV_CATEGORY_MAPPING_FAILED code=jv_category_mapping_failed template_site_key=%s site_key=%s",
@@ -533,39 +1143,36 @@ def build_batch_plan(*, ean: str, payload: dict):
                     "status": "failed",
                     "error_code": "jv_batch_plan_item_failed",
                     "error_text": str(exc),
+                    "details": {
+                        "progress_phase": "failed",
+                        "progress_message": str(exc),
+                    },
                 }
             )
     return plan_items
 
 
-def apply_batch(*, job: JVBatchJob):
-    payload = job.request_payload or {}
-    ean = str(job.ean or "").strip()
-    explicit_scalar_fields = {
-        key
-        for key in SCALAR_UPDATE_KEYS
-        if key in payload
-    }
-    if payload.get("image_by_site_key"):
-        explicit_scalar_fields.add("image")
-    explicit_relations = {
-        key
-        for key in ("descriptions", "categories", "stores", "images", "specials", "jv_fields")
-        if key in payload
-    }
-    if payload.get("categories_by_site_key"):
-        explicit_relations.add("categories")
-    translate_texts_requested = bool(payload.get("translate_texts"))
-    translation_source_requested = isinstance(payload.get("translation_source"), dict) and bool(payload.get("translation_source"))
+def _apply_batch_item(
+    *,
+    job_id: int,
+    item_id: int,
+    ean: str,
+    explicit_scalar_fields: set[str],
+    explicit_relations: set[str],
+    translate_texts_requested: bool,
+    translation_source_requested: bool,
+    precomputed_context: dict,
+) -> dict:
+    close_old_connections()
     summary = new_batch_summary()
-    site_language_map_cache: dict[str, dict[str, int]] = {}
-    translation_cache: dict = {}
-
-    for item in job.items.all().order_by("id"):
-        summary["total"] += 1
+    summary["total"] = 1
+    item = JVBatchJobItem.objects.select_related("job").get(pk=item_id)
+    with _site_apply_lock(job_id=job_id, site_key=item.site_key):
+        item.refresh_from_db()
         if item.status == JVBatchJobItem.Status.SKIPPED:
             summary["skipped"] += 1
-            continue
+            close_old_connections()
+            return summary
 
         db_config = source_db_config_for_site(item.site, site_key=item.site_key or None)
         if not db_config:
@@ -575,9 +1182,19 @@ def apply_batch(*, job: JVBatchJob):
                 code="jv_site_not_configured",
                 text="Missing source DB credentials for site.",
             )
-            continue
+            close_old_connections()
+            return summary
+
+        translation_cache: dict = _deserialize_translation_cache(precomputed_context.get("translation_seed_cache") or {})
+        description_fields_by_locale = {
+            str(locale): dict(fields)
+            for locale, fields in (precomputed_context.get("description_fields_by_locale") or {}).items()
+            if str(locale).strip() and isinstance(fields, dict)
+        }
+        site_language_map_cache: dict[str, dict[str, int]] = {}
 
         try:
+            update_item_progress(item, phase="loading_source", message="Loading current source product state.")
             lookup_ean = (item.effective_ean or "").strip() or ean
             snapshot = None
             if item.source_product_id:
@@ -591,7 +1208,8 @@ def apply_batch(*, job: JVBatchJob):
                     code="jv_ean_not_found_on_site",
                     text="EAN not found on this site.",
                 )
-                continue
+                close_old_connections()
+                return summary
             if item.source_product_id and int(snapshot["product"]["product_id"]) != int(item.source_product_id):
                 mark_item_failed(
                     item,
@@ -602,7 +1220,8 @@ def apply_batch(*, job: JVBatchJob):
                         f"but expected {item.source_product_id} for this site."
                     ),
                 )
-                continue
+                close_old_connections()
+                return summary
 
             product_row = snapshot["product"]
             effective_ean = effective_ean_from_source(product_row, fallback=ean)
@@ -624,9 +1243,11 @@ def apply_batch(*, job: JVBatchJob):
                         "Batch push blocked to prevent updating wrong product."
                     ),
                 )
-                continue
-            actor = str(job.initiated_by or "system_import")
+                close_old_connections()
+                return summary
+            actor = str(item.job.initiated_by or "system_import")
 
+            update_item_progress(item, phase="syncing_local", message="Syncing source snapshot into local cache.")
             if product is None:
                 product = ImportedProduct.objects.create(
                     site=item.site,
@@ -667,7 +1288,8 @@ def apply_batch(*, job: JVBatchJob):
                             "Batch push blocked to prevent updating wrong product."
                         ),
                     )
-                    continue
+                    close_old_connections()
+                    return summary
                 ImportedProduct.all_objects.filter(pk=product.pk).update(
                     source_model=(product_row.get("model") or "").strip(),
                     source_sku=(product_row.get("sku") or "").strip(),
@@ -697,9 +1319,23 @@ def apply_batch(*, job: JVBatchJob):
             changed_scalar_fields = set()
             changed_relations = set()
 
-            details = dict(item.details or {})
-            # Safety guard: for patch-like requests, do not apply relation blocks
-            # that were not explicitly requested in the outer payload.
+            details = _normalize_delivery_mapping_details(
+                details=dict(item.details or {}),
+                item_site_key=str(item.site_key or "").strip().upper(),
+            )
+            details = _rehydrate_site_specific_details(
+                payload=item.job.request_payload or {},
+                details=details,
+                item_site_key=str(item.site_key or "").strip().upper(),
+                item_domain=str(item.domain or ""),
+                db_config=db_config,
+                precomputed_context=precomputed_context,
+                translation_cache=translation_cache,
+                site_language_map_cache=site_language_map_cache,
+                explicit_relations=explicit_relations,
+                translate_texts_requested=translate_texts_requested,
+                translation_source_requested=translation_source_requested,
+            )
             if "images" not in explicit_relations:
                 details.pop("images", None)
             if "categories" not in explicit_relations:
@@ -747,7 +1383,6 @@ def apply_batch(*, job: JVBatchJob):
                 elif key == "status":
                     product.status = bool(value)
                 elif key == "update_user":
-                    # handled below together with actor fallback
                     pass
                 else:
                     setattr(product, key, value)
@@ -762,6 +1397,7 @@ def apply_batch(*, job: JVBatchJob):
                 setattr(product, "_jv_fields", merged_jv_fields)
 
             if "descriptions" in details:
+                update_item_progress(item, phase="translating", message="Preparing translated descriptions.", details=details)
                 descriptions = details.get("descriptions") or []
                 if descriptions:
                     changed_relations.add("descriptions")
@@ -788,6 +1424,7 @@ def apply_batch(*, job: JVBatchJob):
                         locale_to_language_id=locale_to_language_id,
                         translation_cache=translation_cache,
                         source_lang_hint=details.get("translation_source_language"),
+                        pretranslated_fields_by_locale=description_fields_by_locale,
                     )
                     try:
                         debug_rows = [
@@ -801,7 +1438,7 @@ def apply_batch(*, job: JVBatchJob):
                         print(
                             "JV_TRANSLATION_DEBUG",
                             {
-                                "job_id": int(job.id),
+                                "job_id": int(job_id),
                                 "site": str(item.site or ""),
                                 "site_key": str(item.site_key or ""),
                                 "target_locale": str(details.get("target_locale") or ""),
@@ -814,7 +1451,7 @@ def apply_batch(*, job: JVBatchJob):
                         print(
                             "JV_TRANSLATION_DEBUG_LOG_FAILED",
                             {
-                                "job_id": int(job.id),
+                                "job_id": int(job_id),
                                 "site": str(item.site or ""),
                                 "site_key": str(item.site_key or ""),
                             },
@@ -844,6 +1481,7 @@ def apply_batch(*, job: JVBatchJob):
                         summary["translation_error_sites"] += 1
 
             if "categories" in details:
+                update_item_progress(item, phase="mapping_categories", message="Applying category mapping.", details=details)
                 categories = _ensure_main_category(
                     details.get("categories") or [],
                     template_main_category_id=template_main_category_id,
@@ -934,7 +1572,6 @@ def apply_batch(*, job: JVBatchJob):
                         ]
                     )
 
-            # Business rule: specials price is always derived from base product price.
             if "price" in changed_scalar_fields:
                 apply_special_price_from_product(product)
                 changed_relations.add("specials")
@@ -958,8 +1595,12 @@ def apply_batch(*, job: JVBatchJob):
                     text=combined_error or "Translation failed for one or more fields.",
                     details=_json_safe(details),
                 )
-                continue
+                close_old_connections()
+                return summary
 
+            if "jv_fields" in details and isinstance(details.get("delivery_mapping_meta"), dict):
+                update_item_progress(item, phase="mapping_delivery", message="Resolving delivery mapping.", details=details)
+            update_item_progress(item, phase="pushing", message="Pushing changes to source DB.", details=details)
             push_product_to_source(
                 db_config,
                 product,
@@ -977,36 +1618,138 @@ def apply_batch(*, job: JVBatchJob):
         except Exception as exc:
             mark_item_failed(item, summary, code="jv_batch_apply_failed", text=str(exc))
 
+    close_old_connections()
+    return summary
+
+
+def apply_batch(*, job: JVBatchJob):
+    payload = job.request_payload or {}
+    ean = str(job.ean or "").strip()
+    explicit_scalar_fields = {
+        key
+        for key in SCALAR_UPDATE_KEYS
+        if key in payload
+    }
+    if payload.get("image_by_site_key"):
+        explicit_scalar_fields.add("image")
+    explicit_relations = {
+        key
+        for key in ("descriptions", "categories", "stores", "images", "specials", "jv_fields")
+        if key in payload
+    }
+    if payload.get("categories_by_site_key"):
+        explicit_relations.add("categories")
+    translate_texts_requested = bool(payload.get("translate_texts"))
+    translation_source_requested = isinstance(payload.get("translation_source"), dict) and bool(payload.get("translation_source"))
+    precomputed_context = load_job_precompute_context(job)
+    if not precomputed_context:
+        precomputed_context = build_job_precompute_context(ean=ean, payload=payload)
+        save_job_precompute_context(job, precomputed=precomputed_context)
+    summary = new_batch_summary()
+    update_job_progress(job, phase="applying", message="Worker is applying site updates.")
+
+    items = list(job.items.all().order_by("id"))
+    pending_items = []
+    for item in items:
+        if item.status == JVBatchJobItem.Status.SKIPPED:
+            summary["total"] += 1
+            summary["skipped"] += 1
+        else:
+            pending_items.append(item)
+    max_workers = max(1, min(4, len(pending_items) or 1))
+
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="jv-apply") as executor:
+        futures = {
+            executor.submit(
+                _apply_batch_item,
+                job_id=int(job.id),
+                item_id=int(item.id),
+                ean=ean,
+                explicit_scalar_fields=set(explicit_scalar_fields),
+                explicit_relations=set(explicit_relations),
+                translate_texts_requested=translate_texts_requested,
+                translation_source_requested=translation_source_requested,
+                precomputed_context=precomputed_context,
+            ): int(item.id)
+            for item in pending_items
+        }
+        for future in as_completed(futures):
+            item_id = futures[future]
+            try:
+                fragment = future.result()
+            except Exception as exc:
+                item = JVBatchJobItem.objects.get(pk=item_id)
+                fragment = new_batch_summary()
+                fragment["total"] = 1
+                mark_item_failed(item, fragment, code="jv_batch_apply_thread_failed", text=str(exc))
+            _merge_batch_summary(summary, fragment)
+
     return finalize_batch_job(job, summary)
 
 
-def create_job_with_plan(*, request, ean: str, site_family: str, payload: dict, idempotency_key: str):
+def create_job_with_plan(
+    *,
+    request,
+    ean: str,
+    site_family: str,
+    payload: dict,
+    idempotency_key: str,
+    initial_status: str = JVBatchJob.Status.PENDING,
+    build_plan_now: bool = True,
+):
     actor = _session_actor(request)
     forced_site_family = ImportedProduct.Site.JV
-    job = JVBatchJob.objects.create(
-        ean=ean,
-        site_family=forced_site_family,
-        status=JVBatchJob.Status.PENDING,
-        initiated_by=actor,
-        idempotency_key=idempotency_key or "",
-        request_payload=_json_safe(payload),
-    )
-
-    plan_items = build_batch_plan(ean=ean, payload=payload)
-    for row in plan_items:
-        JVBatchJobItem.objects.create(
-            job=job,
-            site=row.get("site") or forced_site_family,
-            site_key=row.get("site_key") or "",
-            domain=row.get("domain") or "",
-            status=row.get("status") or JVBatchJobItem.Status.PENDING,
-            source_product_id=row.get("source_product_id"),
-            effective_ean=row.get("effective_ean") or "",
-            currency_code=row.get("currency_code") or "",
-            old_price=row.get("old_price"),
-            new_price=row.get("new_price"),
-            error_code=row.get("error_code") or "",
-            error_text=row.get("error_text") or "",
-            details=_json_safe(row.get("details") or {}),
+    initial_summary = {
+        "progress_phase": "queued",
+        "progress_message": "Batch job queued.",
+        "phase_updated_at": timezone.now().isoformat(),
+    }
+    with transaction.atomic():
+        job = JVBatchJob.objects.create(
+            ean=ean,
+            site_family=forced_site_family,
+            status=initial_status,
+            initiated_by=actor,
+            idempotency_key=idempotency_key or "",
+            request_payload=_json_safe(payload),
+            result_summary=initial_summary,
         )
+        precomputed = build_job_precompute_context(ean=ean, payload=payload)
+        save_job_precompute_context(job, precomputed=precomputed)
+        logger.warning(
+            "JV_BATCH_JOB_CREATED code=jv_batch_job_created job_id=%s ean=%s build_plan_now=%s initial_status=%s payload_site_keys=%s runtime=%s",
+            job.id,
+            ean,
+            build_plan_now,
+            initial_status,
+            payload.get("site_keys"),
+            _runtime_debug_context(),
+        )
+        plan_items = build_batch_plan(ean=ean, payload=payload, precomputed=precomputed)
+        logger.warning(
+            "JV_BATCH_JOB_PLAN_READY code=jv_batch_job_plan_ready job_id=%s build_plan_now=%s payload_site_keys=%s precomputed_site_keys=%s plan_site_keys=%s runtime=%s",
+            job.id,
+            build_plan_now,
+            payload.get("site_keys"),
+            precomputed.get("selected_site_keys"),
+            [row.get("site_key") for row in plan_items],
+            _runtime_debug_context(),
+        )
+        for row in plan_items:
+            JVBatchJobItem.objects.create(
+                job=job,
+                site=row.get("site") or forced_site_family,
+                site_key=row.get("site_key") or "",
+                domain=row.get("domain") or "",
+                status=row.get("status") or JVBatchJobItem.Status.PENDING,
+                source_product_id=row.get("source_product_id"),
+                effective_ean=row.get("effective_ean") or "",
+                currency_code=row.get("currency_code") or "",
+                old_price=row.get("old_price"),
+                new_price=row.get("new_price"),
+                error_code=row.get("error_code") or "",
+                error_text=row.get("error_text") or "",
+                details=_json_safe(row.get("details") or {}),
+            )
+        normalize_job_items_for_payload(job)
     return job
