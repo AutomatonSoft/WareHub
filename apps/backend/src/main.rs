@@ -2,17 +2,36 @@
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::{interval, sleep, Duration, MissedTickBehavior};
 use tracing::{error, info, warn};
 
 include!("app_modules.rs");
 
+fn load_local_env() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .map(PathBuf::from);
+
+    let mut candidates = vec![manifest_dir.join(".env")];
+    if let Some(repo_root) = repo_root {
+        candidates.push(repo_root.join(".env"));
+        candidates.push(repo_root.join("infra").join(".env"));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            let _ = dotenvy::from_path(candidate);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    let _ = dotenvy::from_filename("../sofortbot-infra/.env");
-    let _ = dotenvy::dotenv();
+    load_local_env();
     setup_tracing();
 
     let app_env = env::var("APP_ENV").unwrap_or_else(|_| "dev".to_string());
@@ -36,7 +55,7 @@ async fn main() {
             let normalized = raw.trim().to_ascii_lowercase();
             matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
         })
-        .unwrap_or(false);
+        .unwrap_or_else(|| matches!(app_env.as_str(), "dev" | "local"));
 
     let db = connect_postgres_with_retry(
         &database_url,
@@ -82,7 +101,7 @@ async fn main() {
 
     let app = build_app(state);
 
-    info!(%addr, "starting sofortbot-backend");
+    info!(%addr, "starting warehub-backend");
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await

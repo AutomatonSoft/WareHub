@@ -5,8 +5,28 @@ use argon2::{
 use dotenvy::dotenv;
 use rand_core::OsRng;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::env;
+use std::{env, path::PathBuf};
 use uuid::Uuid;
+
+fn load_local_env() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .map(PathBuf::from);
+
+    let mut candidates = vec![manifest_dir.join(".env")];
+    if let Some(repo_root) = repo_root {
+        candidates.push(repo_root.join(".env"));
+        candidates.push(repo_root.join("infra").join(".env"));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            let _ = dotenvy::from_path(candidate);
+        }
+    }
+}
 
 fn require_env(key: &str) -> String {
     env::var(key).unwrap_or_else(|_| panic!("missing required env var: {key}"))
@@ -78,7 +98,7 @@ async fn reset_users(pool: &PgPool) {
 
 #[tokio::main]
 async fn main() {
-    dotenvy::from_filename("../sofortbot-infra/.env").ok();
+    load_local_env();
     dotenv().ok();
     let database_url = require_env("DATABASE_URL");
     let pool = PgPoolOptions::new()
