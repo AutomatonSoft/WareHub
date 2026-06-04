@@ -1,3 +1,10 @@
+# Deprecated legacy/shared services requirements.
+# Do not use as source of truth for active service bootstrap.
+# Active manifests:
+# - services/database-service/requirements.txt
+# - services/orchestrator/requirements.txt
+# Kept temporarily for legacy/manual workflow compatibility.
+# Planned removal requires a separate migration slice.
 Django>=5.1,<6.0
 djangorestframework>=3.15,<4.0
 psycopg[binary]>=3.2,<4.0

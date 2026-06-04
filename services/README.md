@@ -32,6 +32,15 @@ Repository for standalone microservices developed in parallel with the main Sofo
 - Service logic MUST NOT duplicate core business rules from backend.
 - Integration with backend MUST be API-first and versioned.
 
+## Dependency Policy
+
+- `services/database-service` uses `services/database-service/requirements.txt` as its source of truth.
+- `services/orchestrator` uses `services/orchestrator/requirements.txt` as its source of truth.
+- `services/requirements.txt` is a deprecated legacy/shared manifest.
+- Do not add new service dependencies to `services/requirements.txt`.
+- Add new dependencies only to the service-local manifest that owns them.
+- Removal of `services/requirements.txt` requires a separate migration slice.
+
 ## First service template
 
 Use `services/template-service` as a starting point.
