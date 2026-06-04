@@ -3,11 +3,24 @@ import { createRequestId } from "../../../../lib/api/request-id";
 
 export const runtime = "nodejs";
 
-const CANDIDATES = [
-  "http://127.0.0.1:8932/api/v1",
-  "http://localhost:8932/api/v1",
-  "http://sofortbot-backend:8932/api/v1"
-];
+function normalizeBaseUrl(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+  return normalized.replace(/\/+$/, "");
+}
+
+function buildCandidates(): string[] {
+  const candidates = [
+    normalizeBaseUrl(process.env.BACKEND_INTERNAL_API_BASE_URL),
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL),
+    "http://127.0.0.1:8932/api/v1",
+    "http://localhost:8932/api/v1"
+  ].filter((value): value is string => Boolean(value));
+
+  return [...new Set(candidates)];
+}
 
 async function proxyToBackend(request: NextRequest, path: string[]): Promise<NextResponse> {
   const query = request.nextUrl.search ?? "";
@@ -20,10 +33,11 @@ async function proxyToBackend(request: NextRequest, path: string[]): Promise<Nex
       : Buffer.from(await request.arrayBuffer());
 
   let lastError: unknown = null;
+  const configuredCandidates = buildCandidates();
   const candidates =
     request.method === "GET" || request.method === "HEAD"
-      ? CANDIDATES
-      : [CANDIDATES[0]];
+      ? configuredCandidates
+      : [configuredCandidates[0]];
 
   for (const base of candidates) {
     const targetUrl = `${base}/${pathPart}${query}`;
