@@ -132,6 +132,7 @@ Notes:
 
 1. Copy `services/database-service/.env.example` to `services/database-service/.env`.
 2. Dependency manifest source of truth is `services/database-service/requirements.txt`.
+3. `services/requirements.txt` is deprecated and must not be used as the source of truth for active Python service bootstrap.
 3. Django entrypoint remains `services/database-service/manage.py`.
 4. Preferred future host-local installer is `uv`.
 5. Documentation-only target bootstrap sequence:
@@ -172,6 +173,7 @@ Current limitation:
 
 1. Copy `services/orchestrator/.env.example` to `services/orchestrator/.env`.
 2. Keep `DATABASE_SERVICE_BASE_URL=http://localhost:8934`.
+3. Dependency manifest source of truth is `services/orchestrator/requirements.txt`.
 3. Start manually from `services/orchestrator`:
 
 ```powershell
@@ -228,3 +230,12 @@ This runbook is for local developer recovery only.
 - Do not use these local defaults in production
 - Do not run deploy from this flow
 - Do not run migrations automatically from this flow
+
+## 15. Python Services Dependency Policy
+
+- Service-local manifests are the source of truth for active Python services.
+- `services/database-service` owns `services/database-service/requirements.txt`.
+- `services/orchestrator` owns `services/orchestrator/requirements.txt`.
+- `services/requirements.txt` is deprecated legacy/shared manifest only.
+- Do not add new dependencies to `services/requirements.txt`.
+- No local bootstrap flow in this runbook auto-runs migrations.
