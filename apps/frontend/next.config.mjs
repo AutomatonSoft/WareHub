@@ -3,33 +3,42 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-function loadSharedInfraEnv() {
+function loadMonorepoEnv() {
   const dirname = path.dirname(fileURLToPath(import.meta.url));
-  const sharedEnvPath = path.resolve(dirname, "../sofortbot-infra/.env");
-  if (!fs.existsSync(sharedEnvPath)) {
-    return;
-  }
+  const repoRoot = path.resolve(dirname, "..");
+  const candidates = [
+    path.resolve(dirname, ".env.local"),
+    path.resolve(dirname, ".env"),
+    path.resolve(repoRoot, ".env"),
+    path.resolve(repoRoot, "infra", ".env")
+  ];
 
-  const lines = fs.readFileSync(sharedEnvPath, "utf8").split(/\r?\n/);
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const sep = line.indexOf("=");
-    if (sep <= 0) continue;
-    const key = line.slice(0, sep).trim();
-    let value = line.slice(sep + 1).trim();
-    if (!key || process.env[key]) continue;
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
     }
-    process.env[key] = value;
+
+    const lines = fs.readFileSync(candidate, "utf8").split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const sep = line.indexOf("=");
+      if (sep <= 0) continue;
+      const key = line.slice(0, sep).trim();
+      let value = line.slice(sep + 1).trim();
+      if (!key || process.env[key]) continue;
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
   }
 }
 
-loadSharedInfraEnv();
+loadMonorepoEnv();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

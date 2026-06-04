@@ -19,9 +19,14 @@ from corsheaders.defaults import default_headers
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = BASE_DIR.parent.parent.parent
-SHARED_ENV_PATH = WORKSPACE_ROOT / "sofortbot-infra" / ".env"
-load_dotenv(SHARED_ENV_PATH)
-load_dotenv(BASE_DIR / ".env")
+REPO_ROOT = WORKSPACE_ROOT
+for env_path in (
+    BASE_DIR / ".env",
+    REPO_ROOT / ".env",
+    REPO_ROOT / "infra" / ".env",
+):
+    if env_path.is_file():
+        load_dotenv(env_path)
 
 
 # Quick-start development settings - unsuitable for production

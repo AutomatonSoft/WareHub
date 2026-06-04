@@ -25,9 +25,15 @@ except Exception:  # noqa: BLE001
     django_timezone = None
 
 BASE_DIR = Path(__file__).resolve().parent
-SHARED_ENV_PATH = BASE_DIR.parent.parent.parent.parent / "sofortbot-infra" / ".env"
-load_dotenv(dotenv_path=SHARED_ENV_PATH)
-load_dotenv(dotenv_path=BASE_DIR / ".env")
+SERVICE_ROOT = BASE_DIR.parent
+REPO_ROOT = SERVICE_ROOT.parent.parent
+for env_path in (
+    SERVICE_ROOT / ".env",
+    REPO_ROOT / ".env",
+    REPO_ROOT / "infra" / ".env",
+):
+    if env_path.is_file():
+        load_dotenv(dotenv_path=env_path)
 
 API_URL = os.getenv("AFTERBUY_API_URL", "https://api.afterbuy.de/afterbuy/ABInterface.aspx")
 XL_LOGIN_URL = os.getenv("AFTERBUY_XL_LOGIN_URL", "https://login.afterbuy.de/")
