@@ -163,23 +163,6 @@ jobs:
       - name: Validate critical imports
         run: uv run python -c "import django; import rest_framework; import requests; import dotenv; import corsheaders; import PIL; import mysql.connector"
 
-  rust-backend-metadata:
-    name: rust-backend-metadata
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: apps/backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Read cargo metadata
-        run: cargo metadata --no-deps
-
   frontend:
     name: frontend
     runs-on: ubuntu-latest
