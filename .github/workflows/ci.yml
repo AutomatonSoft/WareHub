@@ -299,3 +299,26 @@ jobs:
 
       - name: Run backend tests
         run: cargo test
+
+  python-services-docker-build:
+    name: python-services-docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: docker --version
+
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      - name: Build database-service image
+        run: docker build -f services/database-service/Dockerfile -t warehub-database-service:ci-validation services
+
+      - name: Build orchestrator image
+        run: docker build -f services/orchestrator/Dockerfile -t warehub-orchestrator:ci-validation services/orchestrator
+
+      - name: List validation images
+        run: docker image ls --filter "reference=warehub-*:*"
