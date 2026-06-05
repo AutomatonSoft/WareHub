@@ -255,3 +255,29 @@ jobs:
 
       - name: Run orchestrator tests
         run: uv run pytest -q
+
+  rust-backend:
+    name: rust-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run rustfmt check
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run backend tests
+        run: cargo test
