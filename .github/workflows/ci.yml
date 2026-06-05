@@ -322,3 +322,20 @@ jobs:
 
       - name: List validation images
         run: docker image ls --filter "reference=warehub-*:*"
+
+  frontend-docker-build:
+    name: frontend-docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: docker --version
+
+      - name: Build frontend image
+        run: docker build --target prod -f apps/frontend/Dockerfile -t warehub-frontend:ci-validation apps/frontend
+
+      - name: List validation image
+        run: docker image ls --filter "reference=warehub-frontend:*"
