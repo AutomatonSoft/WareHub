@@ -179,3 +179,33 @@ jobs:
 
       - name: Read cargo metadata
         run: cargo metadata --no-deps
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint --if-present
+
+      - name: Run frontend typecheck
+        run: npm run typecheck --if-present
+
+      - name: Run frontend tests
+        run: npm test --if-present
