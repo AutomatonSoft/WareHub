@@ -210,6 +210,41 @@ jobs:
       - name: Run frontend tests
         run: npm test --if-present
 
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.4"
+          channel: stable
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Show Dart version
+        run: dart --version
+
+      - name: Install mobile dependencies
+        run: flutter pub get
+
+      - name: Check owned mobile formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run mobile analyze
+        run: flutter analyze
+
+      - name: Run mobile tests
+        run: flutter test
+
   orchestrator:
     name: orchestrator
     runs-on: ubuntu-latest
