@@ -112,4 +112,3 @@ extension _QrHomePageAddFlow on _QrHomePageState {
     return result;
   }
 }
-

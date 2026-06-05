@@ -341,5 +341,4 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       }
     }
   }
-
 }

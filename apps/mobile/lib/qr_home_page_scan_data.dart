@@ -164,7 +164,8 @@ extension _QrHomePageScanData on _QrHomePageState {
       );
 
       if (shouldRetryFailedPhotos) {
-        for (final ({XFile file, String filename}) failedPhoto in failedPhotos) {
+        for (final ({XFile file, String filename}) failedPhoto
+            in failedPhotos) {
           final String? retryUrl = await _uploadPhotoWithSingleRetry(
             failedPhoto.file,
             filename: failedPhoto.filename,
