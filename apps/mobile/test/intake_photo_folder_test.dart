@@ -10,7 +10,8 @@ void main() {
     expect(buildIntakePhotoFolder('ab', 'c_17z'), 'AB_C_17Z');
   });
 
-  test('buildIntakePhotoFolder sanitizes separators and duplicate delimiters', () {
+  test('buildIntakePhotoFolder sanitizes separators and duplicate delimiters',
+      () {
     expect(
       buildIntakePhotoFolder(r' sec-1\\', r' room:/a-12  b '),
       'SEC_1_ROOM_A_12_B',

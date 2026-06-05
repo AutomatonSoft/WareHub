@@ -82,7 +82,8 @@ void main() {
   group('parseScanRemoveSourceChoice', () {
     test('maps supported sources', () {
       expect(parseScanRemoveSourceChoice('qr'), ScanRemoveSourceChoice.qr);
-      expect(parseScanRemoveSourceChoice('manual'), ScanRemoveSourceChoice.manual);
+      expect(
+          parseScanRemoveSourceChoice('manual'), ScanRemoveSourceChoice.manual);
     });
 
     test('maps unknown and null to cancel', () {

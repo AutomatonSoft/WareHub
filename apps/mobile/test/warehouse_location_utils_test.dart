@@ -43,7 +43,8 @@ void main() {
     expect(parseWarehouseSlotNumber('A88'), isNull);
   });
 
-  test('parseWarehouseLocationFromQrPayload parses direct and embedded values', () {
+  test('parseWarehouseLocationFromQrPayload parses direct and embedded values',
+      () {
     expect(parseWarehouseLocationFromQrPayload('d12'), 'D12');
     expect(parseWarehouseLocationFromQrPayload('  qr:D77b  '), 'D77B');
     expect(parseWarehouseLocationFromQrPayload('slot=K15;meta=x'), 'K15');
@@ -93,9 +94,14 @@ void main() {
   });
 
   test('findNextFreeWarehouseSlotCode returns null for invalid boundaries', () {
-    expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], minSlot: 0), isNull);
-    expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], maxSlot: 10001), isNull);
-    expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], minSlot: 5, maxSlot: 4), isNull);
+    expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], minSlot: 0),
+        isNull);
+    expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], maxSlot: 10001),
+        isNull);
+    expect(
+        findNextFreeWarehouseSlotCode(const <IntakeData>[],
+            minSlot: 5, maxSlot: 4),
+        isNull);
   });
 
   test('warehouseSectionLabel maps A to Showroom', () {
