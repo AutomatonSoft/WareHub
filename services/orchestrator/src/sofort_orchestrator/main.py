@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -33,10 +34,77 @@ logger = logging.getLogger("sofort_orchestrator")
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO), format="%(message)s")
 
 
+def _ensure_sqlite_parent_dir(db_path: str) -> str:
+    path = Path(db_path)
+    if path.parent != Path():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
+def _build_http_client() -> HttpClient:
+    return HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
+
+
+def _build_service() -> OrchestratorService:
+    http_client = _build_http_client()
+    adapters = MarketplaceAdapters(base_url=settings.base_url, http_client=http_client)
+    circuit_breaker = InMemoryCircuitBreaker(
+        failure_threshold=settings.circuit_breaker_failure_threshold,
+        open_seconds=settings.circuit_breaker_open_seconds,
+        enabled=settings.enable_circuit_breaker,
+    )
+    channel_limiter = InMemoryChannelLimiter(
+        max_inflight_per_key=settings.channel_limiter_max_inflight_per_key,
+        enabled=settings.enable_channel_limiter,
+    )
+    return OrchestratorService(adapters=adapters, circuit_breaker=circuit_breaker, channel_limiter=channel_limiter)
+
+
+def _build_idempotency_store() -> SqliteIdempotencyStore:
+    return SqliteIdempotencyStore(
+        db_path=_ensure_sqlite_parent_dir(settings.idempotency_sqlite_path),
+        ttl_seconds=settings.idempotency_ttl_seconds,
+    )
+
+
+def _build_job_store() -> SqliteJobStore:
+    return SqliteJobStore(db_path=_ensure_sqlite_parent_dir(settings.jobs_sqlite_path))
+
+
+def _build_metrics() -> InMemoryMetrics:
+    return InMemoryMetrics()
+
+
+def _build_product_editor_service(*, job_store: SqliteJobStore) -> ProductEditorService:
+    http_client = _build_http_client()
+    gateway = ProductEditorGateway(base_url=settings.base_url, http_client=http_client)
+    store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3")
+    store = SqliteProductEditorStore(db_path=_ensure_sqlite_parent_dir(store_path))
+    return ProductEditorService(
+        gateway=gateway,
+        store=store,
+        orchestrator_job_store=job_store,
+    )
+
+
+def configure_runtime_dependencies() -> None:
+    if Deps.service is None:
+        Deps.service = _build_service()
+    if Deps.idempotency_store is None:
+        Deps.idempotency_store = _build_idempotency_store()
+    if Deps.job_store is None:
+        Deps.job_store = _build_job_store()
+    if Deps.metrics is None:
+        Deps.metrics = _build_metrics()
+    if ProductEditorDeps.service is None:
+        ProductEditorDeps.service = _build_product_editor_service(job_store=Deps.job_store)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
     reconciliation_scheduler_task: asyncio.Task | None = None
+    configure_runtime_dependencies()
     if settings.enable_job_worker:
         service = Deps.service
         job_store = Deps.job_store
@@ -83,6 +151,7 @@ app = FastAPI(title="sb-sofort-orchestrator-service", version="1.0.0", lifespan=
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
+    configure_runtime_dependencies()
     request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
     request.state.request_id = request_id
     started = time.perf_counter()
@@ -100,7 +169,8 @@ async def request_logging_middleware(request: Request, call_next):
         "latency_ms": latency_ms,
     }
     logger.info(json.dumps(payload, ensure_ascii=False))
-    _metrics.record_request(status_code=response.status_code, latency_ms=latency_ms)
+    if Deps.metrics is not None:
+        Deps.metrics.record_request(status_code=response.status_code, latency_ms=latency_ms)
     response.headers["X-Request-Id"] = request_id
     return response
 
@@ -115,39 +185,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         details={"errors": exc.errors()},
     ).model_dump()
     return JSONResponse(status_code=422, content=payload, headers={"X-Request-Id": request_id})
-
-
-_http_client = HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
-_adapters = MarketplaceAdapters(base_url=settings.base_url, http_client=_http_client)
-_circuit_breaker = InMemoryCircuitBreaker(
-    failure_threshold=settings.circuit_breaker_failure_threshold,
-    open_seconds=settings.circuit_breaker_open_seconds,
-    enabled=settings.enable_circuit_breaker,
-)
-_channel_limiter = InMemoryChannelLimiter(
-    max_inflight_per_key=settings.channel_limiter_max_inflight_per_key,
-    enabled=settings.enable_channel_limiter,
-)
-_service = OrchestratorService(adapters=_adapters, circuit_breaker=_circuit_breaker, channel_limiter=_channel_limiter)
-_idempotency_store = SqliteIdempotencyStore(
-    db_path=settings.idempotency_sqlite_path,
-    ttl_seconds=settings.idempotency_ttl_seconds,
-)
-_job_store = SqliteJobStore(db_path=settings.jobs_sqlite_path)
-_metrics = InMemoryMetrics()
-_product_editor_gateway = ProductEditorGateway(base_url=settings.base_url, http_client=_http_client)
-_product_editor_store = SqliteProductEditorStore(db_path=settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3"))
-_product_editor_service = ProductEditorService(
-    gateway=_product_editor_gateway,
-    store=_product_editor_store,
-    orchestrator_job_store=_job_store,
-)
-
-Deps.service = _service
-Deps.idempotency_store = _idempotency_store
-Deps.job_store = _job_store
-Deps.metrics = _metrics
-ProductEditorDeps.service = _product_editor_service
 
 
 app.include_router(router)
