@@ -209,3 +209,49 @@ jobs:
 
       - name: Run frontend tests
         run: npm test --if-present
+
+  orchestrator:
+    name: orchestrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/orchestrator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Show uv version
+        run: uv --version
+
+      - name: Create virtual environment
+        run: uv venv --python 3.13
+
+      - name: Install orchestrator dependencies
+        run: uv pip install -r requirements.txt
+
+      - name: List installed dependencies
+        run: uv pip list
+
+      - name: Compile orchestrator main
+        run: uv run python -m py_compile src/sofort_orchestrator/main.py
+
+      - name: Compile orchestrator service
+        run: uv run python -m py_compile src/sofort_orchestrator/application/orchestrator_service.py
+
+      - name: Compile orchestrator job store
+        run: uv run python -m py_compile src/sofort_orchestrator/infra/job_store.py
+
+      - name: Compile orchestrator HTTP client
+        run: uv run python -m py_compile src/sofort_orchestrator/infra/http_client.py
+
+      - name: Run orchestrator tests
+        run: uv run pytest -q
