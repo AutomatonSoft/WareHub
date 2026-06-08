@@ -1,0 +1,141 @@
+name: Stage Compose Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage-compose-preflight
+  cancel-in-progress: false
+
+jobs:
+  stage-compose-preflight:
+    name: stage-compose-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: stage
+    env:
+      STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
+      STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
+      STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
+      STAGE_DEPLOY_PATH: ${{ vars.STAGE_DEPLOY_PATH }}
+      SSH_OPTIONS: -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create temporary working directory
+        id: tempdir
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="$(mktemp -d)"
+          echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare local secret and compose files
+        shell: bash
+        env:
+          STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
+          STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
+
+          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$temp_dir/stage.env"
+          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$temp_dir/stage_ssh_key"
+          chmod 600 "$temp_dir/stage_ssh_key"
+          cp infra/deploy/stage/docker-compose.yml "$temp_dir/docker-compose.yml"
+
+      - name: Validate required env keys
+        shell: pwsh
+        run: |
+          $envFile = "${{ steps.tempdir.outputs.temp_dir }}/stage.env"
+          ./infra/scripts/verify-required-env.ps1 -EnvFile $envFile
+
+      - name: Configure SSH known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$STAGE_SSH_PORT" "$STAGE_SSH_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Prepare remote stage directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
+          ssh $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            "mkdir -p '$STAGE_DEPLOY_PATH' && chmod 700 '$STAGE_DEPLOY_PATH'"
+
+      - name: Copy stage env and compose file to remote host
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
+          scp $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -P "$STAGE_SSH_PORT" "$temp_dir/stage.env" \
+            "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_DEPLOY_PATH/.env"
+          scp $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -P "$STAGE_SSH_PORT" "$temp_dir/docker-compose.yml" \
+            "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_DEPLOY_PATH/docker-compose.yml"
+
+      - name: Run remote compose config preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
+          ssh $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            "STAGE_DEPLOY_PATH='$STAGE_DEPLOY_PATH' bash -s" <<'EOF'
+          set -euo pipefail
+
+          compose_file="$STAGE_DEPLOY_PATH/docker-compose.yml"
+          env_file="$STAGE_DEPLOY_PATH/.env"
+          project_name="warehub-stage"
+
+          chmod 700 "$STAGE_DEPLOY_PATH"
+          chmod 600 "$env_file"
+
+          echo "Remote stage path prepared"
+          test -f "$env_file"
+          test -f "$compose_file"
+          stat -c '%a %n' "$env_file" "$compose_file"
+
+          docker --version
+          docker compose version
+
+          if ! docker compose config --help | grep -q -- '--quiet'; then
+            echo "docker compose config --quiet is not supported on the remote host; failing safely."
+            exit 1
+          fi
+
+          before_running_count="$(docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}' | wc -l | tr -d ' ')"
+
+          docker compose \
+            --project-name "$project_name" \
+            --env-file "$env_file" \
+            -f "$compose_file" \
+            config --quiet
+
+          docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.Names}}' || true
+
+          after_running_count="$(docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}' | wc -l | tr -d ' ')"
+
+          if [ "$before_running_count" != "$after_running_count" ]; then
+            echo "Unexpected running container count change detected for project $project_name."
+            exit 1
+          fi
+          EOF
+
+      - name: Clean up local temporary files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
+          if [ -n "$temp_dir" ] && [ -d "$temp_dir" ]; then
+            rm -rf "$temp_dir"
+          fi
+
