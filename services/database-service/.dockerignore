@@ -1,0 +1,23 @@
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+.DS_Store
+xl_jv_services/db creds.txt
+.env
+**/.env
+*.local
+*.secret
+*secret*
+*password*
+*credential*
+*token*
+*.pem
+*.key
+**/db creds.txt
+db.sqlite3
+**/db.sqlite3
+__pycache__/
+.pytest_cache/

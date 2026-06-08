@@ -1,0 +1,38 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+
+# Platform outputs
+android/.gradle/
+android/key.properties
+android/*.jks
+android/app/debug/
+android/app/profile/
+android/app/release/
+ios/Pods/
+ios/Runner.xcworkspace/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Misc
+*.log
+runlog*.txt
+
+# Vendored plugin build artifacts
+vendor/niimbot_label_printer/android/.gradle/
+vendor/niimbot_label_printer/**/.gradle/
+vendor/niimbot_label_printer/**/build/
+vendor/niimbot_label_printer/**/.dart_tool/
+vendor/niimbot_label_printer/**/.flutter-plugins
+vendor/niimbot_label_printer/**/.flutter-plugins-dependencies
+
+AGENTS.md

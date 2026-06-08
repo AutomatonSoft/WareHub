@@ -1,0 +1,364 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - stage
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repo-safety:
+    name: repo-safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail on real .env files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t env_files < <(find . \
+            -path './.git' -prune -o \
+            -type f \( -name '.env' -o -name '.env.*' \) \
+            ! -name '.env.example' \
+            ! -name '.env.*.example' \
+            -print | sort)
+
+          if ((${#env_files[@]} > 0)); then
+            echo "Real .env files are forbidden:"
+            printf '%s\n' "${env_files[@]}"
+            exit 1
+          fi
+
+      - name: Fail on forbidden artifact directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t forbidden_dirs < <(find . \
+            -path './.git' -prune -o \
+            -type d \( \
+              -name 'node_modules' -o \
+              -name 'target' -o \
+              -name '.next' -o \
+              -name 'build' -o \
+              -name 'dist' -o \
+              -name 'venv' -o \
+              -name 'env' -o \
+              -name '__pycache__' -o \
+              -name '.pytest_cache' -o \
+              -name '.ruff_cache' -o \
+              -name '.mypy_cache' -o \
+              -name '.dart_tool' -o \
+              -name 'coverage' \
+            \) -print | sort)
+
+          if ((${#forbidden_dirs[@]} > 0)); then
+            echo "Forbidden artifact directories found:"
+            printf '%s\n' "${forbidden_dirs[@]}"
+            exit 1
+          fi
+
+      - name: Fail on nested .github or .gitea directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t nested_meta_dirs < <(find . \
+            -path './.git' -prune -o \
+            -type d \( -name '.github' -o -name '.gitea' \) \
+            ! -path './.github' \
+            -print | sort)
+
+          if ((${#nested_meta_dirs[@]} > 0)); then
+            echo "Nested .github/.gitea directories are forbidden:"
+            printf '%s\n' "${nested_meta_dirs[@]}"
+            exit 1
+          fi
+
+      - name: Fail on risky key and certificate filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t risky_files < <(find . \
+            -path './.git' -prune -o \
+            -type f \( \
+              -name '*.pem' -o \
+              -name '*.key' -o \
+              -name '*.p12' -o \
+              -name '*.jks' -o \
+              -name '*.keystore' -o \
+              -name 'id_rsa' -o \
+              -name 'id_ed25519' \
+            \) -print | sort)
+
+          if ((${#risky_files[@]} > 0)); then
+            echo "Risky key/certificate files found:"
+            printf '%s\n' "${risky_files[@]}"
+            exit 1
+          fi
+
+  compose-config:
+    name: compose-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      - name: Validate local dependency compose config
+        run: docker compose -f infra/local/docker-compose.dev.yml config
+
+      - name: Validate database-service compose config
+        run: docker compose -f services/database-service/docker-compose.yml config
+
+  database-service:
+    name: database-service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/database-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Show uv version
+        run: uv --version
+
+      - name: Create virtual environment
+        run: uv venv --python 3.13
+
+      - name: Install database-service dependencies
+        run: uv pip install -r requirements.txt
+
+      - name: List installed dependencies
+        run: uv pip list
+
+      - name: Compile Django settings
+        run: uv run python -m py_compile database_service/settings.py
+
+      - name: Compile orders parser service
+        run: uv run python -m py_compile orders_pars/service.py
+
+      - name: Validate critical imports
+        run: uv run python -c "import django; import rest_framework; import requests; import dotenv; import corsheaders; import PIL; import mysql.connector"
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend lint
+        run: npm run lint --if-present
+
+      - name: Run frontend typecheck
+        run: npm run typecheck --if-present
+
+      - name: Run frontend tests
+        run: npm test --if-present
+
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.4"
+          channel: stable
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Show Dart version
+        run: dart --version
+
+      - name: Install mobile dependencies
+        run: flutter pub get
+
+      - name: Check owned mobile formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run mobile analyze
+        run: flutter analyze
+
+      - name: Run mobile tests
+        run: flutter test
+
+  orchestrator:
+    name: orchestrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/orchestrator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Show uv version
+        run: uv --version
+
+      - name: Create virtual environment
+        run: uv venv --python 3.13
+
+      - name: Install orchestrator dependencies
+        run: uv pip install -r requirements.txt
+
+      - name: List installed dependencies
+        run: uv pip list
+
+      - name: Compile orchestrator main
+        run: uv run python -m py_compile src/sofort_orchestrator/main.py
+
+      - name: Compile orchestrator service
+        run: uv run python -m py_compile src/sofort_orchestrator/application/orchestrator_service.py
+
+      - name: Compile orchestrator job store
+        run: uv run python -m py_compile src/sofort_orchestrator/infra/job_store.py
+
+      - name: Compile orchestrator HTTP client
+        run: uv run python -m py_compile src/sofort_orchestrator/infra/http_client.py
+
+      - name: Run orchestrator tests
+        run: uv run pytest -q
+
+  rust-backend:
+    name: rust-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run rustfmt check
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run backend tests
+        run: cargo test
+
+  python-services-docker-build:
+    name: python-services-docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: docker --version
+
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      - name: Build database-service image
+        run: docker build -f services/database-service/Dockerfile -t warehub-database-service:ci-validation services
+
+      - name: Build orchestrator image
+        run: docker build -f services/orchestrator/Dockerfile -t warehub-orchestrator:ci-validation services/orchestrator
+
+      - name: List validation images
+        run: docker image ls --filter "reference=warehub-*:*"
+
+  frontend-docker-build:
+    name: frontend-docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: docker --version
+
+      - name: Build frontend image
+        run: docker build --target prod -f apps/frontend/Dockerfile -t warehub-frontend:ci-validation apps/frontend
+
+      - name: List validation image
+        run: docker image ls --filter "reference=warehub-frontend:*"
+
+  remaining-docker-builds:
+    name: remaining-docker-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: docker --version
+
+      - name: Build backend image
+        run: docker build --target prod -f apps/backend/Dockerfile -t warehub-backend:ci-validation apps/backend
+
+      - name: Build mobile image
+        run: docker build --target prod -f apps/mobile/Dockerfile -t warehub-mobile:ci-validation apps/mobile
+
+      - name: Build infra image
+        run: docker build --target prod -f infra/Dockerfile -t warehub-infra:ci-validation infra
+
+      - name: List validation images
+        run: docker image ls --filter "reference=warehub-*:*"

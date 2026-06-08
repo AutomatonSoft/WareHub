@@ -1,0 +1,9 @@
+﻿Planned operations:
+jv_services.0009_state_rename_xljv_models_to_jv
+    Rename model XLJVBatchJob to JVBatchJob
+    Rename table for jvbatchjob to jv_batch_jobs
+    Rename model XLJVBatchJobItem to JVBatchJobItem
+    Rename table for jvbatchjobitem to jv_batch_job_items
+    Alter field job on jvbatchjobitem
+jv_services.0010_alter_jvbatchjob_site_family
+    Alter field site_family on jvbatchjob

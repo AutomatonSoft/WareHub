@@ -1,0 +1,44 @@
+services:
+  database-service-db:
+    image: postgres:16-alpine
+    container_name: warehub-database-service-db-local
+    environment:
+      POSTGRES_DB: warehub_database_service
+      POSTGRES_USER: warehub
+      POSTGRES_PASSWORD: warehub
+    ports:
+      - "8543:5432"
+    volumes:
+      - database_service_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehub -d warehub_database_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  database-service:
+    build:
+      context: ..
+      dockerfile: database-service/Dockerfile
+    container_name: warehub-database-service-local
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    environment:
+      SECRET_KEY: django-insecure-change-me
+      DEBUG: "true"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      POSTGRES_DB: ${POSTGRES_DB:-warehub_database_service}
+      POSTGRES_USER: ${POSTGRES_USER:-warehub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehub}
+      POSTGRES_HOST: ${POSTGRES_HOST:-database-service-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://warehub:warehub@database-service-db:5432/warehub_database_service}
+    ports:
+      - "8934:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      database-service-db:
+        condition: service_healthy
+
+volumes:
+  database_service_pg_data:

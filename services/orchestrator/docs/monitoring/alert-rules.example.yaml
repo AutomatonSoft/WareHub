@@ -1,0 +1,44 @@
+version: 1
+service: sb-sofort-orchestrator-service
+rules:
+  - id: orchestrator-readyz-down
+    severity: P1
+    source: readyz
+    condition: "readyz != ready for 5m"
+    description: "Service readiness probe is failing."
+    runbook: "docs/runbooks/orchestrator-incidents.md#scenario-a-queue-backlog-growth"
+
+  - id: orchestrator-error-rate-spike
+    severity: P1
+    source: metrics.error_rate
+    condition: "error_rate > 0.05 for 10m"
+    description: "API error-rate spike detected."
+    runbook: "docs/runbooks/orchestrator-incidents.md#fast-triage-checklist"
+
+  - id: orchestrator-queue-backlog-growth
+    severity: P2
+    source: metrics.job_store_metrics.jobs_by_status.queued
+    condition: "queued grows continuously for 15m"
+    description: "Queued jobs accumulate without recovery."
+    runbook: "docs/runbooks/orchestrator-incidents.md#scenario-a-queue-backlog-growth"
+
+  - id: orchestrator-intake-rate-limited
+    severity: P2
+    source: error_code.orchestrator_jobs_rate_limited
+    condition: "rate_limited_responses_ratio > 0.01 for 10m"
+    description: "Job intake throttling pressure above target."
+    runbook: "docs/runbooks/orchestrator-incidents.md#scenario-b-high-rate-limit-rejections"
+
+  - id: orchestrator-breaker-open-saturation
+    severity: P2
+    source: metrics.circuit_breaker_metrics.open_channels_total
+    condition: "open_channels_total >= 2 for 10m"
+    description: "Multiple channel breakers are open."
+    runbook: "docs/runbooks/orchestrator-incidents.md#scenario-c-upstream-marketplace-instability"
+
+  - id: orchestrator-reconciliation-drift-persistence
+    severity: P3
+    source: metrics.job_store_metrics.reconciliation_reports_total
+    condition: "reconciliation total trend grows with unresolved drift for 24h"
+    description: "Reconciliation drift persists despite repairs."
+    runbook: "docs/runbooks/orchestrator-incidents.md#scenario-d-reconciliation-drift-not-converging"

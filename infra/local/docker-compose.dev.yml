@@ -1,0 +1,58 @@
+services:
+  warehub-postgres:
+    image: postgres:16-alpine
+    container_name: warehub-postgres
+    ports:
+      - "${DEV_POSTGRES_PORT:-8933}:5432"
+    environment:
+      POSTGRES_DB: "${DEV_POSTGRES_DB:-warehub}"
+      POSTGRES_USER: "${DEV_POSTGRES_USER:-warehub}"
+      POSTGRES_PASSWORD: "${DEV_POSTGRES_PASSWORD:-warehub}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - warehub_postgres_data:/var/lib/postgresql/data
+
+  warehub-redis:
+    image: redis:7-alpine
+    container_name: warehub-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${DEV_REDIS_PORT:-8936}:6379"
+    volumes:
+      - warehub_redis_data:/data
+
+  warehub-minio:
+    image: minio/minio:latest
+    container_name: warehub-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "${DEV_MINIO_API_PORT:-9000}:9000"
+      - "${DEV_MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minio}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-CHANGE_ME}"
+    volumes:
+      - warehub_minio_data:/data
+
+  warehub-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: warehub-rabbitmq
+    ports:
+      - "${DEV_RABBITMQ_PORT:-8937}:5672"
+      - "${DEV_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: "${DEV_RABBITMQ_USER:-warehub}"
+      RABBITMQ_DEFAULT_PASS: "${DEV_RABBITMQ_PASSWORD:-warehub}"
+    volumes:
+      - warehub_rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  warehub_postgres_data:
+  warehub_redis_data:
+  warehub_minio_data:
+  warehub_rabbitmq_data:

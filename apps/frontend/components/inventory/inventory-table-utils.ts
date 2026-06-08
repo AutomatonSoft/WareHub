@@ -1,0 +1,114 @@
+export type KidDto = {
+  id: string;
+  entity: "order" | "kid";
+  kid_id: number;
+  kid_number: string;
+  kid_account?: string | null;
+  order_db_id?: number | null;
+  parent_order_id?: string | null;
+  additional_order_ids_text?: string | null;
+  place?: string | null;
+  platform?: string | null;
+  quantity?: number | null;
+  room?: string | null;
+  type?: string | null;
+  listing_status?: "listed" | "unlisted" | string;
+  sku?: string | null;
+  title: string;
+  memo?: string | null;
+  status: "paid" | "no_paid" | string;
+  date?: string | null;
+  global_price?: string | null;
+  photo?: unknown;
+  photo_count?: number | null;
+};
+
+export type InventoryRow = {
+  id: string;
+  kidNumber: string;
+  kidAccount: string;
+  kidId: number;
+  orderDbId: number | null;
+  entity: "order" | "kid";
+  place: string;
+  parentOrderId: string;
+  additionalOrderIds: string;
+  platform: string;
+  quantity: string;
+  title: string;
+  memo: string;
+  sku: string;
+  globalPrice: string;
+  status: string;
+  date: string;
+  photo: string;
+  photoCount: string;
+};
+
+export type VisibleColumns = {
+  date: boolean;
+  place: boolean;
+  platform: boolean;
+  quantity: boolean;
+};
+
+export function formatDate(value?: string | null): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString();
+}
+
+export function statusTone(status: string): "success" | "warning" {
+  return status === "paid" ? "success" : "warning";
+}
+
+export function normalizePhotoList(photo: unknown): string[] {
+  if (Array.isArray(photo)) {
+    return photo
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+  if (typeof photo === "string") {
+    const single = photo.trim();
+    return single ? [single] : [];
+  }
+  return [];
+}
+
+export function getPrimaryPhoto(photo: unknown): string {
+  const photos = normalizePhotoList(photo);
+  return photos[0] ?? "-";
+}
+
+export function compactText(value: string, max: number): string {
+  if (value === "-" || value.length <= max) {
+    return value;
+  }
+  return `${value.slice(0, max).trimEnd()}...`;
+}
+
+export function formatPriceWithoutDots(value: string): string {
+  if (value === "-") {
+    return value;
+  }
+  return value.replace(/\./g, "");
+}
+
+export function getVisibleColumnsByWidth(width: number): VisibleColumns {
+  if (width < 980) {
+    return { date: true, place: false, platform: false, quantity: false };
+  }
+  if (width < 1180) {
+    return { date: true, place: true, platform: false, quantity: false };
+  }
+  if (width < 1480) {
+    return { date: true, place: true, platform: true, quantity: false };
+  }
+  return { date: true, place: true, platform: true, quantity: true };
+}

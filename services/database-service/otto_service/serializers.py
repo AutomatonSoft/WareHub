@@ -1,0 +1,32 @@
+from rest_framework import serializers
+
+from .models import OttoProductJV, OttoProductXL
+
+
+class OttoProductJVSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OttoProductJV
+        fields = "__all__"
+
+
+class OttoProductXLSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OttoProductXL
+        fields = "__all__"
+
+
+class OttoProductPayloadSerializer(serializers.Serializer):
+    productReference = serializers.CharField(max_length=255)
+    sku = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    ean = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    pzn = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    mpn = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    moin = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    releaseDate = serializers.DateTimeField(required=False, allow_null=True)
+
+    productDescription = serializers.JSONField(required=False)
+    mediaAssets = serializers.JSONField(required=False)
+    order = serializers.JSONField(required=False)
+    pricing = serializers.JSONField(required=False)
+    logistics = serializers.JSONField(required=False)
+    compliance = serializers.JSONField(required=False)

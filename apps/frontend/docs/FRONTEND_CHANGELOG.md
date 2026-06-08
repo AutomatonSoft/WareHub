@@ -1,0 +1,1246 @@
+# Frontend Changelog
+
+## 2026-05-07 (Phase 13 item 1)
+- Added UI density system (comfortable/compact):
+  - `app/ui-density.ts` (`read/write/apply` helpers + storage/event constants)
+  - `components/layout/app-header.tsx` (density toggle in header actions)
+  - `app/globals.css` (`html[data-density="compact"]` token overrides + compact table paddings)
+- Result: user can switch interface density in one click; mode persists across reloads.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 2)
+- Added layered surface visual style for key catalog pages:
+  - `app/globals.css` (`.ui-layered-surface` + subtle highlight overlay)
+  - `app/inventory/page.tsx` (section wrapped in layered surface container)
+  - `app/sofort-list/page.tsx` (section wrapped in layered surface container)
+  - `app/marketplace/page.tsx` (section wrapped in layered surface container)
+- Result: Inventory/Sofort/Marketplace screens have deeper visual hierarchy with clean readability.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 3)
+- Improved table typography system:
+  - `app/globals.css`: added `ui-table-head-label`, `ui-table-data-primary`, `ui-table-data-secondary`, `ui-table-data-meta`
+  - Added compact-density typography overrides for those classes
+- Applied typography hierarchy on key tables:
+  - `components/inventory/inventory-table.tsx` (header label hierarchy)
+  - `components/inventory/sofort-list-table.tsx` (header + cell text hierarchy)
+- Result: table headings and cell data are easier to scan with clearer visual rhythm.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 4)
+- Added visual grouping for table filters/controls in shared toolbar:
+  - `components/shared/table/table-toolbar.tsx`:
+    - grouped search area as primary block
+    - grouped filters/actions as secondary block
+  - `app/globals.css`:
+    - `.ui-toolbar-group`, `.ui-toolbar-group-primary`, `.ui-toolbar-group-secondary`
+    - responsive divider behavior (left divider on desktop, top divider on tablet/mobile)
+- Result: filter controls are perceived as structured groups instead of one long control ribbon.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 5)
+- Unified hover-preview pattern for product images:
+  - `app/globals.css`: added reusable hover-preview primitives
+    - `.ui-hover-preview-trigger`
+    - `.ui-hover-preview-panel`
+  - `components/inventory/inventory-table-rows.tsx`: migrated existing preview to smooth opacity/transform reveal (no `hidden/block` jump).
+  - `components/inventory/sofort-list-table.tsx`: added same preview behavior for photo cells.
+- Result: image previews appear smoothly and consistently across key listing tables without layout jumps.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 6)
+- Added section-specific empty-state visuals:
+  - `components/shared/empty-state.tsx`:
+    - added `variant` support (`default`, `inventory`, `sofort`, `marketplace`) with contextual icons
+  - `components/shared/table/table-empty-row.tsx`:
+    - added `variant` and `title` passthrough
+  - Applied variants in:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/inventory-table-rows.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - `components/marketplace/marketplace-grid.tsx`:
+    - added explicit empty result state with reset action when filters return no cards
+- Result: empty states now carry context per section instead of generic visuals.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 7)
+- Added micro-animations for filter/sort interactions:
+  - `app/globals.css`:
+    - `.ui-change-flash` + `@keyframes ui-change-flash`
+    - `.ui-sort-bump` + `@keyframes ui-sort-bump`
+    - reduced-motion support for both
+  - `components/shared/table/table-toolbar.tsx`:
+    - animated status text (`rows/count`) on value changes
+  - `components/inventory/inventory-table.tsx`:
+    - animated place sort icon on direction switch
+  - `components/inventory/sofort-list-table.tsx`:
+    - animated place/quantity sort icons on mode/direction switch
+- Result: sort/filter feedback feels more responsive and alive while staying subtle.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 8)
+- Unified desktop horizontal spacing rhythm (1366/1536/1920):
+  - `app/globals.css`:
+    - added responsive rhythm helpers:
+      - `.ui-desktop-rhythm-shell`
+      - `.ui-desktop-rhythm-section`
+      - `.ui-desktop-rhythm-table`
+    - tuned values for `lg` / `xl` / `2xl` breakpoints
+  - Applied to layout and listing surfaces:
+    - `components/layout/app-shell.tsx`
+    - `components/shared/section-title.tsx`
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+- Result: page/header/section/table horizontal alignment feels balanced on common desktop widths.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 9)
+- Added scroll-zone visual polish for long listing areas:
+  - `app/globals.css`:
+    - upgraded shared scrollbar visuals (`scrollbar-thin` track/thumb/hover)
+    - added edge-fade utility (`.ui-scroll-edge-fade`) for top/bottom scroll shadows
+  - Applied on desktop table scroll containers:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+- Result: long scrollable table regions look cleaner and give better orientation while scrolling.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-04
+- Refactor: split `components/inventory/inventory-table.tsx` table body/skeleton rows into `components/inventory/inventory-table-rows.tsx`.
+- Result: `inventory-table.tsx` reduced from 555 lines to 352 lines.
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (continued)
+- Refactor: split `components/hood/hood-search-panel.tsx` into focused modules:
+  - `components/hood/hood-search-utils.ts`
+  - `components/hood/hood-search-results.tsx`
+  - `components/hood/hood-search-toolbar.tsx`
+  - `components/hood/hood-status-card.tsx`
+- Result: `hood-search-panel.tsx` reduced from 886 lines to 491 lines.
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (xljv edit split)
+- Refactor: split XL/JV edit feature into dedicated modules:
+  - `components/xljv/xljv-edit-utils.ts` (types + payload/diff helpers + shared utils)
+  - `components/xljv/xljv-edit-form.tsx` (form rendering block)
+- Result: `components/xljv/xljv-edit-panel.tsx` reduced from 934 lines to 358 lines.
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (xljv search split step 1)
+- Refactor: extracted shared types/constants/helpers to `components/xljv/xljv-search-utils.ts`.
+- Refactor: extracted heavy result rendering block to `components/xljv/xljv-search-results.tsx` and wired it into `xljv-search-panel.tsx`.
+- Result: `components/xljv/xljv-search-panel.tsx` reduced from 1564 to 1066 lines.
+- Validation: `npm run -s typecheck` passed.
+
+## 2026-05-04 (xljv search split step 2)
+- Refactor: extracted XL/JV search top controls and create form UI into components/xljv/xljv-search-controls.tsx.
+- Refactor: introduced shared create-form type XLJVCreateFormState in components/xljv/xljv-search-utils.ts.
+- Refactor prep: added components/xljv/xljv-search-actions.ts for further handler extraction.
+- Result: components/xljv/xljv-search-panel.tsx reduced from 1066 to 844 lines.
+- Validation: 
+pm run -s typecheck passed.
+- Refactor: moved heavy async handlers (`sync`, `send`, `send all`, `send selected`) from `xljv-search-panel.tsx` to `components/xljv/xljv-search-actions.ts` and preserved language-map parsing for batch response.
+- Fix: restored `createImageFiles` state update on upload selection so "Send to All XL/JV Sites" reuses selected files.
+- Result: `components/xljv/xljv-search-panel.tsx` reduced from 844 to 472 lines (under hard limit).
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (roadmap p2 step 1)
+- Added shared inventory data-access module: `components/inventory/inventory-api.ts`.
+- Refactor: `InventoryTable` now loads rows via `fetchInventoryRows` and shared base resolver.
+- Refactor: `SofortListTable` now loads rows via `fetchInventoryRows`.
+- Refactor: `EanPoolSummary` now loads count via `fetchEanPoolCount`.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: extended `components/inventory/inventory-api.ts` with shared methods for kid details and mutations (`fetchInventoryRowsByKid`, `deleteOrder`, `patchOrderAdditionalItems`, `createKidItem`).
+- Refactor: migrated `components/inventory/kid-details-view.tsx` and `components/inventory/add-item-button.tsx` to shared inventory data-access layer.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: added shared dashboard data-access module `components/dashboard/dashboard-api.ts`.
+- Refactor: migrated `dashboard-live-overview.tsx` to `fetchDashboardOverviewData`.
+- Refactor: migrated `activity-timeline.tsx` to `fetchTimelineLogs`.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: added `components/marketplace/marketplace-api.ts` (database access check + endpoint health checks).
+- Refactor: migrated `components/marketplace/marketplace-grid.tsx` to shared marketplace API layer.
+- Refactor: added `components/hood/hood-api.ts` (search/patch/delete by EAN).
+- Refactor: migrated `components/hood/hood-search-panel.tsx` to shared hood API layer.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: added shared XL/JV data-access module `components/xljv/xljv-api.ts`.
+- Refactor: migrated `xljv-search-panel.tsx` (search/sites/ean-pool/upload) to shared XL/JV API.
+- Refactor: migrated `xljv-search-actions.ts` (create/push/sync/batch) to shared XL/JV API.
+- Refactor: migrated `xljv-edit-panel.tsx` (sync/local/sites/batch/save) to shared XL/JV API.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: added shared channel API module `components/channels/kaufland-api.ts`.
+- Refactor: migrated `components/channels/kaufland-search-panel.tsx` to shared Kaufland API layer.
+- Refactor: added shared editor API module `components/editor/ean-pool-api.ts` (stats + import with timeout).
+- Refactor: migrated `components/editor/product-form-panel.tsx` to shared EAN pool API layer.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: added `deleteInventoryEntity` to `components/inventory/inventory-api.ts` for shared delete logic.
+- Refactor: removed direct delete fetch from `components/inventory/inventory-table.tsx`, now uses shared inventory API layer.
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (roadmap p3 step 1)
+- Added server-side route guard via `sofortbot-frontend/middleware.ts`.
+- Behavior: unauthenticated users are redirected to `/login` for protected pages; authenticated users are redirected from `/login` to `/dashboard`.
+- Scope exclusions: `/_next`, `/api`, and static assets are not intercepted.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: simplified `components/layout/app-shell.tsx` by removing client-side auth gate (`readAuth`/`router.replace`) and `ready` blank-state render.
+- Auth flow update: route access is now primarily enforced by `middleware.ts` (server-side redirect).
+- Validation: `npm run -s typecheck` passed.
+- Refactor: removed client-side `/login` redirects from dashboard item pages (`app/dashboard/items/[itemId]/page.tsx` and `app/dashboard/items/[itemId]/edit/page.tsx`).
+- Auth flow update: these pages now rely on server-side middleware for access control; token is read only for API calls when available.
+- Validation: `npm run -s typecheck` passed.
+## 2026-05-04 (roadmap p4 step 1)
+- Added Playwright e2e scaffold: `playwright.config.ts` and `npm run test:e2e` script.
+- Added unauthenticated auth-guard smoke tests: `e2e/auth-guard.spec.ts`.
+- Added authenticated smoke test template (env-gated): `e2e/authenticated-smoke.spec.ts`.
+- Validation: `npm run -s typecheck` and existing `npm run -s test` passed.
+- Added e2e smoke coverage for authenticated core pages: `e2e/inventory-marketplace.spec.ts`.
+- Scenarios: login helper + inventory page basic render/search control + marketplace page basic render.
+- Tests are env-gated (`E2E_LOGIN`, `E2E_PASSWORD`) to stay safe in CI/local without secrets.
+- Validation: `npm run -s typecheck` passed.
+- Added e2e smoke coverage for profile and sofort-list pages: `e2e/profile-sofort-list.spec.ts`.
+- Scenarios: authenticated profile form visibility + sofort-list search/filter controls visibility.
+- Tests are env-gated (`E2E_LOGIN`, `E2E_PASSWORD`) for safe CI/local execution without secrets.
+- Validation: `npm run -s typecheck` passed.
+- Added e2e smoke coverage for channels workspace: `e2e/channels.spec.ts`.
+- Scenarios: authenticated navigation to `/channels`, tab switching (`Hood`, `XL / JV`, `Kaufland`), URL tab sync, and core controls visibility.
+- Updated roadmap: marked item 4 (e2e critical smoke coverage) as Done.
+- Validation: `npm run -s typecheck` passed.
+- Added shared table primitives: `components/shared/table/table-toolbar.tsx` and `components/shared/table/table-error-banner.tsx`.
+- Refactor: `components/inventory/inventory-table.tsx` now uses shared toolbar/error primitives.
+- Refactor: `components/inventory/sofort-list-table.tsx` now uses shared toolbar/error primitives (search + filters slot).
+- Validation: `npm run -s typecheck` passed.
+- Added shared table pagination primitive: `components/shared/table/table-pagination.tsx`.
+- Refactor: `components/inventory/inventory-table.tsx` now uses shared pagination primitive.
+- Refactor: `components/inventory/sofort-list-table.tsx` now uses shared pagination primitive.
+- Validation: `npm run -s typecheck` passed.
+- Added shared table empty-state primitive: `components/shared/table/table-empty-row.tsx`.
+- Refactor: `components/inventory/inventory-table-rows.tsx` now uses shared empty row primitive.
+- Refactor: `components/inventory/sofort-list-table.tsx` now uses shared empty row primitive.
+- Roadmap update: item 5 (shared table + filters primitives) marked as Done.
+- Validation: `npm run -s typecheck` passed.
+- Added URL-synced table state for `Inventory` (`q`, `page`, `place_sort`) in `components/inventory/inventory-table.tsx`.
+- Added URL-synced table state for `Sofort list` (`q`, `room`, `type`, `listing`, `sort`, `dir`, `page`) in `components/inventory/sofort-list-table.tsx`.
+- Added guard to avoid redundant `router.replace` loops when URL is already up to date.
+- Added URL-synced state for `Marketplace` (`q`, `kind`, `status`) in `components/marketplace/marketplace-grid.tsx`.
+- Roadmap update: item 6 marked as Done.
+- Validation: `npm run -s typecheck` passed.
+- Accessibility: added semantic/assistive attributes in shared and main list pages:
+  - `components/shared/table/table-toolbar.tsx`: search input label + `aria-live` status text.
+  - `components/inventory/inventory-table.tsx`: `scope="col"` headers + `aria-sort` for Place sort header.
+  - `components/inventory/sofort-list-table.tsx`: `scope="col"`, `aria-sort`, sort button labels, and filter `aria-label`s.
+  - `components/marketplace/marketplace-grid.tsx`: labeled search/filters and sync button `aria-busy`.
+  - `components/shared/fancy-select.tsx`: `aria-expanded`, `aria-haspopup`, `aria-controls`, `listbox/option` roles, Escape-to-close.
+  - `components/shared/table/table-pagination.tsx`: page status `aria-live` and prev/next button labels.
+- Roadmap update: item 7 (a11y) marked as Done.
+- Validation: `npm run -s typecheck` passed.
+- Refactor: replaced raw `<img>` with `next/image` in core frontend pages/components:
+  - `components/inventory/inventory-table-rows.tsx`
+  - `components/inventory/sofort-list-table.tsx`
+  - `components/inventory/kid-details-view.tsx`
+  - `components/marketplace/marketplace-grid.tsx`
+  - `components/hood/hood-search-results.tsx`
+  - `components/xljv/xljv-search-results.tsx`
+  - `components/layout/app-header.tsx`
+  - `components/profile/profile-account-panel.tsx`
+  - `app/dashboard/items/[itemId]/page.tsx`
+- Cleanup: removed `@next/next/no-img-element` disable comments from `components`/`app` scope.
+- Roadmap update: item 8 marked as Done.
+- Validation: `npm run -s typecheck` passed.
+- Style architecture cleanup: removed unused fragmented global style files:
+  - `app/styles/globals-01.css`
+  - `app/styles/globals-02.css`
+  - `app/styles/globals-03.css`
+  - `app/styles/globals-04.css`
+  - `app/styles/globals-05.css`
+- Result: single global style entrypoint remains in `app/globals.css`, reducing duplicate and dead style layers.
+- Roadmap update: item 9 marked as Done.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: introduced shared language hook `app/use-labels.ts` (reads `LANG_KEY`, returns active dictionary from `labels`).
+- Localization step: expanded dictionaries in `app/i18n.ts` with inventory/sofort/marketplace keys for EN/RU/DE.
+- Localization step: replaced hardcoded UI strings with dictionary-based labels in:
+  - `components/inventory/inventory-table.tsx`
+  - `components/inventory/sofort-list-table.tsx`
+  - `components/marketplace/marketplace-grid.tsx`
+- Roadmap update: item 10 marked as In progress.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: expanded dictionaries with XL/JV + Kaufland + profile keys in `app/i18n.ts` (EN/RU/DE).
+- Localization step: migrated additional hardcoded UI strings to dictionary labels in:
+  - `components/xljv/xljv-search-results.tsx`
+  - `components/xljv/xljv-search-controls.tsx`
+  - `components/channels/kaufland-search-panel.tsx`
+  - `components/profile/profile-account-panel.tsx`
+- Validation: `npm run -s typecheck` passed.
+- Localization step: finished another hardcoded-string cleanup pass in XL/JV + Kaufland:
+  - `components/xljv/xljv-search-controls.tsx` (source product hint, tag/sku label, upload hint)
+  - `components/xljv/xljv-search-results.tsx` (site key/product id headers, not-found section, JV field labels, configured-site messages)
+  - `components/channels/kaufland-search-panel.tsx` (error/status strings, picture_urls label/validation messages)
+- Localization step: extended `app/i18n.ts` with missing EN/RU/DE keys used above.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: completed hood hardcoded cleanup pass:
+  - `components/hood/hood-search-panel.tsx` (patch/search UI texts + validation/status messages switched to `useLabels`)
+  - `components/hood/hood-status-card.tsx` (status labels localized)
+  - `components/hood/hood-search-results.tsx` (`Item ID` and image alt text localized)
+- Localization step: extended `app/i18n.ts` with hood EN/RU/DE keys (`hoodDbStatus`, patch labels/placeholders/errors, `itemId`, `hoodImage`).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: migrated XL/JV edit flow strings to dictionary labels:
+  - `components/xljv/xljv-edit-panel.tsx` (errors, loading/success statuses, batch/save messages)
+  - `components/xljv/xljv-edit-form.tsx` (section titles, field labels/placeholders, table headers/buttons)
+- Localization step: extended `app/i18n.ts` with XL/JV edit EN/RU/DE keys (`mainFields`, `localId`, `sourceModel`, `loadSites`, `saveChanges`, batch/save/sync error messages, etc.).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: continued XL/JV search cleanup:
+  - `components/xljv/xljv-search-panel.tsx` (search/create/upload/send statuses + errors + sync log title localized)
+  - `components/xljv/xljv-search-results.tsx` (EAN/Price/Title/ID labels and product image alt localized)
+- Localization step: extended `app/i18n.ts` with additional EN/RU/DE keys for XL/JV search (`ean`, `id`, `syncLog`, create/upload/order-draft status/error strings).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: inventory UI pass:
+  - `components/inventory/add-item-button.tsx` localized modal/button/errors/placeholders via `useLabels`.
+  - `components/inventory/ean-pool-summary.tsx` localized summary title.
+  - `components/inventory/inventory-table.tsx` localized table headers, delete fallback messages, place-sort aria text, and backend page size caption.
+- Localization step: extended `app/i18n.ts` with inventory keys (`kidOrder`, `globalPrice`, `actions`, `ascending/descending`, `backendPageSize`, `eanPoolProducts`, add-item messages/placeholders).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: inventory details/rows pass:
+  - `components/inventory/kid-details-view.tsx` localized details page labels, actions, confirmations, alerts, and child-order section texts.
+  - `components/inventory/inventory-table-rows.tsx` localized row labels, compact chips, expanded section headers, and accessibility labels.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: layout/editor/common placeholders pass:
+  - `components/layout/app-sidebar.tsx` localized brand/footer texts (`workspace`, `automations connected`, tagline).
+  - `components/channels/channel-placeholder-panel.tsx` localized `Coming soon`.
+  - `components/editor/product-image-panel.tsx` localized image management texts and CTA.
+  - `components/editor/product-form-panel.tsx` fully rewired to `useLabels` (fields, buttons, EAN modal labels, import statuses/errors), including cleanup of corrupted encoded button text.
+- Localization step: extended `app/i18n.ts` with EN/RU/DE keys for sidebar/editor/kid-details/table-rows residual strings.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: create-product + dashboard page pass:
+  - `app/create-product/page.tsx` localized titles, fields, placeholders, site-selection controls, and empty-state text via `useLabels`.
+  - `app/dashboard/page.tsx` switched to client component and localized page subtitle + quick actions block.
+- Localization step: extended `app/i18n.ts` with EN/RU/DE keys for create-product and dashboard quick actions.
+- Validation: `npm run -s typecheck` passed.
+- Localization step: dashboard item edit/details residual cleanup:
+  - `app/dashboard/items/[itemId]/edit/page.tsx` localized loading/status texts, headings, labels, and save/back actions via `useLabels`.
+  - `app/dashboard/items/[itemId]/page.tsx` replaced hardcoded `KID` label with dictionary label.
+- Localization step: extended `app/i18n.ts` with EN/RU/DE keys (`fillMissingData`, `orderId`, `productTitle`).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: warehouse + inventory-kid page final pass:
+  - `components/warehouse/warehouse-map-grid.tsx` localized (`Warehouse Digital Twin`, `Rack`, `occupancy`) via `useLabels`.
+  - `components/warehouse/warehouse-zone-panel.tsx` localized (`Zone Details`, `Active picks`) via `useLabels`.
+  - `app/inventory/kid/[kidId]/page.tsx` migrated to client page with `useParams` + `useLabels` and localized title/subtitle/error text.
+- Localization step: extended `app/i18n.ts` with EN/RU/DE keys for warehouse and inventory-kid page (`warehouseDigitalTwin`, `zoneDetails`, `rack`, `occupancy`, `activePicks`, `inventoryKidDetails`, `allParentChildOrdersForKid`, `kidDetails`, `invalidKidId`).
+- Validation: `npm run -s typecheck` passed.
+- Localization step: login/profile-overview residual cleanup:
+  - `app/login/page.tsx` localized login/register texts, placeholders, button states, and request status messages via `useLabels`.
+  - `app/login/login-validators.ts` switched to validation codes; messages are now translated in `login/page.tsx`.
+  - `components/profile/profile-overview-card.tsx` localized static profile subtitle/actions/security text.
+- Localization step: extended `app/i18n.ts` with EN/RU/DE keys for login validation messages and profile overview copy.
+- Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 1): global error/empty baseline
+  - Added route-level error boundary: `app/error.tsx` (Sentry capture + unified retry UI).
+  - Upgraded `app/global-error.tsx` from default `NextError` to unified error state + retry action.
+  - Added shared state primitives:
+    - `components/shared/error-state.tsx`
+    - `components/shared/empty-state.tsx`
+  - Unified table fallback behavior:
+    - `components/shared/table/table-error-banner.tsx` now uses shared error state and supports retry.
+    - `components/shared/table/table-empty-row.tsx` now uses localized default empty message.
+    - `components/inventory/inventory-table.tsx` and `components/inventory/sofort-list-table.tsx` wired retry actions.
+  - Added EN/RU/DE labels for unified fallback states (`tryAgain`, `somethingWentWrong`, `unexpectedError`, `noDataFound`).
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 2, in progress): React Query server-state baseline
+  - Added shared provider: `components/providers/query-provider.tsx` and connected it in `app/layout.tsx`.
+  - Added dependency: `@tanstack/react-query`.
+  - Migrated `components/inventory/ean-pool-summary.tsx` to `useQuery`.
+  - Migrated data-loading pipeline in:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+    from manual fetch effects to React Query (`queryKey` per backend page + refetch retry hooks).
+  - Table retry actions now call query `refetch()` through shared `TableErrorBanner`.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 2, continued): React Query rollout to channels/marketplace
+  - Migrated Hood search fetch path to React Query cache via `queryClient.fetchQuery` in `components/hood/hood-search-panel.tsx`.
+  - Reworked `components/marketplace/marketplace-grid.tsx` health cycle to React Query:
+    - single query source for status snapshots
+    - cache hydration from localStorage
+    - periodic refetch (`10 min`) and manual sync via query `refetch()`
+  - Preserved existing URL-sync filters/search behavior and status-card rendering.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 2, continued): React Query rollout to XL/JV + Kaufland
+  - `components/channels/kaufland-search-panel.tsx`: migrated search/update network calls to React Query mutations (`useMutation`).
+  - `components/xljv/xljv-search-panel.tsx`: migrated key read paths (`product by ean`, `sites by ean`, template fetch for draft) to query cache via `queryClient.fetchQuery`.
+  - `components/xljv/xljv-edit-panel.tsx`: migrated load paths (`sync`, `local`, `sites`) to query cache via `queryClient.fetchQuery`.
+  - Kept existing UI behavior/states intact while shifting network orchestration to shared query layer.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 2, final): React Query rollout completion
+  - Removed direct `queryClient.fetchQuery` usage from interactive panels and unified imperative network flows with React Query mutations:
+    - `components/hood/hood-search-panel.tsx`
+    - `components/xljv/xljv-search-panel.tsx`
+    - `components/xljv/xljv-edit-panel.tsx`
+  - Result: no direct `fetchQuery(` usage remains in `app/` and `components/`; all key server-state paths now go through React Query query/mutation primitives.
+  - Roadmap update: Phase 2 item 2 marked as Done.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 3, started): virtualization baseline for large tables
+  - Added shared virtualization hook: `components/shared/table/use-virtual-rows.ts`.
+  - `components/inventory/inventory-table.tsx`:
+    - added virtual window rendering for row list with overscan
+    - limited table viewport height (`max-h-[68vh]`) and scroll-based window updates
+    - virtualization auto-disables when row details are expanded to keep variable-height rows stable
+  - `components/inventory/inventory-table-rows.tsx`:
+    - added top/bottom spacer rows
+    - preserved striped row styling via global row index offset
+  - `components/inventory/sofort-list-table.tsx`:
+    - added virtual window rendering + top/bottom spacer rows
+    - switched table wrapper to bounded scroll container (`max-h-[68vh]`)
+  - Roadmap update: Phase 2 item 3 marked as In progress.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 3, tuning): virtualization stability pass
+  - `components/shared/table/use-virtual-rows.ts`: added `minRowsToVirtualize` threshold (default `40`) to avoid unnecessary virtualization overhead on small lists.
+  - `components/inventory/inventory-table.tsx`: added viewport-height fallback init for stable first render of virtual window.
+  - `components/inventory/sofort-list-table.tsx`: fixed sort indicator rendering (`^ / v / <>`) and kept valid `aria-sort` values.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 2 (item 3, final): virtualization contract tests + close
+  - Added tests for virtual window math and boundaries: `tests/virtual-rows.test.mjs`.
+  - Covered scenarios: disabled below threshold, overscan window calculation, clamp at table tail.
+  - Validation: `npm test` and `npm run -s typecheck` passed.
+  - Roadmap update: Phase 2 item 3 marked as Done.
+- Roadmap Phase 2 (item 4, started): design tokens + shared variant baseline
+  - Extended global token layer in `app/globals.css`:
+    - radius/spacing/font/control tokens
+    - shared utility classes for `ui-button`, `ui-input`, `ui-card`, `ui-table-toolbar`, `ui-table-footer`
+  - Migrated shared primitives to tokenized classes:
+    - `components/shared/button.tsx`
+    - `components/shared/input.tsx`
+    - `components/shared/card.tsx`
+  - Unified table primitives to shared styles:
+    - `components/shared/table/table-toolbar.tsx`
+    - `components/shared/table/table-pagination.tsx` (navigation buttons now use shared `Button` variants)
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+  - Roadmap update: Phase 2 item 4 marked as In progress.
+- Roadmap Phase 2 (item 4, continued): filter select tokenization
+  - `components/inventory/sofort-list-table.tsx`: replaced repeated ad-hoc filter `<select>` styles with shared `ui-select` token class.
+  - Result: filter controls now reuse common select look/behavior and reduce local CSS duplication.
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 4, continued): form control unification
+  - `components/editor/product-form-panel.tsx`: migrated product field inputs from raw `<input>` styling to shared `Input` component variants.
+  - Result: form controls now inherit centralized token behavior for focus/spacing/typography.
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 4, continued): header menu tokenization
+  - Added shared dropdown menu token classes in `app/globals.css`: `ui-menu`, `ui-menu-item`, `ui-menu-item-danger`.
+  - `components/layout/app-header.tsx`: migrated user menu popup and actions to shared menu classes (removed repeated inline utility chains).
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 5, started): form validation UX baseline
+  - Added shared validation-message translator: `app/forms/validation-feedback.ts`.
+  - `app/login/page.tsx`:
+    - migrated validation error text mapping to shared translator
+    - added submit guard (`disabled`) for empty required fields + loading state
+  - `components/profile/profile-account-panel.tsx`:
+    - migrated profile validation errors to shared translator
+    - added `dirty-state` submit guard for profile save button
+    - tightened avatar reset button disabled state when there is nothing to clear
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+  - Roadmap update: Phase 2 item 5 marked as In progress.
+- Roadmap Phase 2 (item 5, continued): inline field validation errors
+  - `app/login/page.tsx`:
+    - added per-field inline validation errors (`email`, `firstName`, `lastName`, `phoneNumber`, `login`, `password`, `confirmPassword`)
+    - field error is cleared immediately on input change
+    - kept global status only for backend/network responses
+  - `components/profile/profile-account-panel.tsx`:
+    - added inline field validation errors for profile form and password form
+    - field error is cleared immediately on input change
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 5, continued): unified toast feedback for auth/profile flows
+  - `app/login/page.tsx`: integrated `useToast()` and routed async register/login error messages + register success message through unified toast layer.
+  - `components/profile/profile-account-panel.tsx`: integrated `useToast()` for profile/password/pending-users async success/error outcomes.
+  - Result: key auth/profile form flows now share one consistent success/error feedback channel.
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 5, final): create-product/editor form feedback alignment
+  - `app/create-product/page.tsx`:
+    - migrated text inputs to shared `Input` where needed
+    - added inline validation for required fields (`EAN`, `Price`, `Product name`)
+    - added toast feedback for create/reset actions
+  - `components/editor/product-form-panel.tsx`:
+    - integrated toast feedback for EAN import success/error paths
+  - Roadmap update: Phase 2 item 5 marked as Done.
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 6, done): saved filter presets for key list pages
+  - Added shared presets component: `components/shared/table/filter-presets.tsx`.
+  - Supports per-page session-scoped presets: save, apply, rename, delete, clear-all.
+  - Storage model: `sessionStorage` keys per scope (`inventory-table`, `sofort-list-table`, `marketplace-grid`).
+  - Integrated into:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+    - `components/marketplace/marketplace-grid.tsx`
+  - Preset apply updates existing URL-synced filter state, so deep-link behavior remains consistent.
+  - Roadmap update: Phase 2 item 6 marked as Done.
+  - Validation: `npm run -s typecheck` and `npm test` passed.
+- Roadmap Phase 2 (item 7, started): accessibility pass on new controls
+  - `components/shared/table/filter-presets.tsx`:
+    - added `role="group"` + accessible labels for preset controls
+    - added screen-reader status updates (`aria-live`) for save/apply/rename/delete/clear actions
+  - `components/shared/toast-provider.tsx`:
+    - improved toast semantics (`role="alert"` + `aria-live="assertive"` for errors, polite for non-errors)
+    - added `aria-atomic="true"` for stable announcements
+  - Added keyboard a11y smoke e2e test: `e2e/a11y-keyboard-smoke.spec.ts`.
+  - Validation:
+    - `npm run -s typecheck` passed
+    - `npm test` passed
+    - `npm run -s test:e2e -- e2e/a11y-keyboard-smoke.spec.ts` blocked by existing Next runtime conflict: both `middleware.ts` and `proxy.ts` detected.
+- Roadmap Phase 2 (item 7, final): e2e a11y runner unblocked + close
+  - Removed deprecated duplicate middleware entrypoint `middleware.ts`; project now uses `proxy.ts` only (Next 16-compatible).
+  - Re-ran keyboard a11y smoke: `npm run -s test:e2e -- e2e/a11y-keyboard-smoke.spec.ts` starts successfully; test is env-gated and skipped without `E2E_LOGIN`/`E2E_PASSWORD`.
+  - Validation: `npm run -s typecheck` passed.
+  - Roadmap update: Phase 2 item 7 marked as Done.
+- Roadmap Phase 2 (item 8, started): performance budget + bundle split baseline
+  - Added lazy loading for heavy channel panels in `components/channels/channels-view.tsx` using `next/dynamic`:
+    - `HoodSearchPanel`
+    - `XLJVSearchPanel`
+    - `KauflandSearchPanel`
+    - placeholder panel
+  - Added performance budget checker script:
+    - `tools/check-performance-budget.mjs`
+    - `npm run perf:check`
+    - supports env overrides:
+      - `PERF_BUDGET_TOTAL_KB` (default `2000`)
+      - `PERF_BUDGET_LARGEST_KB` (default `430`)
+  - Build pipeline unblock/fixes required to make production bundle analysis work:
+    - rewrote invalid UTF-8 file: `components/layout/app-shell.tsx`
+    - removed deprecated duplicate entrypoint: `middleware.ts` (project uses `proxy.ts`)
+    - added `Suspense` wrappers for pages rendering client components with `useSearchParams`:
+      - `app/channels/page.tsx`
+      - `app/inventory/page.tsx`
+      - `app/sofort-list/page.tsx`
+      - `app/marketplace/page.tsx`
+      - `app/xl-jv/edit/page.tsx`
+    - marked `components/editor/product-image-panel.tsx` as client component (`\"use client\"`).
+  - Validation:
+    - `npm run -s build` passed
+    - `npm run -s perf:check` passed
+    - `npm run -s typecheck` passed
+    - `npm test` passed
+  - Roadmap update: Phase 2 item 8 marked as In progress.
+- Roadmap Phase 2 (item 8, final): budget gate stabilized
+  - Finalized budget gate as a controllable baseline for CI:
+    - total JS chunks budget: `2000 KB`
+    - largest chunk budget: `430 KB`
+    - overridable via env (`PERF_BUDGET_TOTAL_KB`, `PERF_BUDGET_LARGEST_KB`)
+  - Verified with current production build:
+    - total JS chunks: `1871.3 KB`
+    - largest chunk: `408.2 KB`
+  - Roadmap update: Phase 2 item 8 marked as Done.
+  - Validation: `npm run -s build`, `npm run -s perf:check`, `npm run -s typecheck`, `npm test` passed.
+- Roadmap Phase 2 (item 9, done): UX telemetry baseline
+  - Added shared telemetry module: `app/telemetry.ts` (`trackUiEvent`, `trackUiError`, `trackLatency`) based on `@sentry/nextjs`.
+  - Instrumented fetch latency and fetch errors for core data-heavy views:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+    - `components/marketplace/marketplace-grid.tsx`
+  - Added user action telemetry for marketplace manual sync button.
+  - Refined marketplace latency tracking implementation to `useRef`-based timing (no extra render cycle for timer state).
+  - Roadmap update: Phase 2 item 9 marked as Done.
+- Roadmap Phase 2 (item 10, started): visual regression + deeper e2e
+  - Added shared e2e auth helper: `e2e/helpers/auth.ts`.
+  - Added visual regression spec: `e2e/visual-regression.spec.ts` with page snapshots for:
+    - `/inventory`
+    - `/sofort-list`
+    - `/marketplace`
+  - Added cross-channel flow coverage: `e2e/cross-channel-flow.spec.ts` (Hood -> XL/JV -> Marketplace -> Kaufland).
+  - Added script: `npm run test:e2e:visual`.
+  - Roadmap update: Phase 2 item 10 marked as In progress.
+  - Added create/edit flow coverage without destructive mutations:
+    - `e2e/create-edit-flow.spec.ts` (`/create-product` fill+reset, `/inventory` -> `/inventory/kid/[kidId]` navigation).
+  - Added XL/JV edit flow coverage:
+    - `e2e/xljv-edit-flow.spec.ts` (missing-EAN guard and edit page state with EAN query).
+  - Roadmap update: Phase 2 item 10 marked as Done.
+- Phase 3 bootstrap (CI for e2e/visual):
+  - Added active GitHub Actions workflow: `.github/workflows/ci.yml`.
+  - Quality job includes: lint, typecheck, unit tests, build, `perf:check`.
+  - Added `e2e-smoke` CI job gated by repository secrets: `E2E_LOGIN`, `E2E_PASSWORD`.
+  - Added `e2e-visual` CI job gated by secrets + repo variable: `E2E_VISUAL=1`.
+  - Added artifact uploads for Playwright reports/results in both e2e jobs.
+  - Updated README delivery section with CI execution conditions.
+- Phase 3 (item 2): deterministic visual baseline setup
+  - `playwright.config.ts`:
+    - added `snapshotPathTemplate` (`e2e/__screenshots__/...`)
+    - fixed visual environment defaults (`viewport`, `locale`, `timezoneId`, `colorScheme`, `reducedMotion`)
+    - added screenshot diff threshold (`maxDiffPixelRatio`)
+  - `e2e/visual-regression.spec.ts`:
+    - switched suite to serial mode for stable screenshot generation
+    - added `networkidle` wait before capturing screenshots
+  - `package.json`: added `test:e2e:visual:update` for intentional baseline refresh.
+  - `README.md`: documented visual baseline run/update commands and snapshot storage path.
+  - Roadmap update: Phase 3 item 2 marked as Done.
+- Phase 3 (item 3, started): OpenAPI typed client baseline
+  - Added OpenAPI schema/types toolchain:
+    - `tools/pull-openapi-schema.mjs`
+    - `tools/generate-openapi-types.mjs`
+    - npm scripts: `openapi:pull`, `openapi:types`, `openapi:generate`
+  - Added baseline generated types module: `lib/api/generated/openapi-types.ts`.
+  - Migrated `components/inventory/inventory-api.ts` to use OpenAPI `paths`-based request/response types.
+  - Updated README with OpenAPI generation workflow.
+  - Roadmap update: Phase 3 item 3 marked as In progress.
+  - Extended generated OpenAPI baseline paths for:
+    - XL/JV endpoints (`by-ean`, `sites`, `sync`, `batch apply`, `update`, upload, take-next-ean)
+    - Kaufland endpoints (`by ean/site`, `ean change`)
+  - Migrated to OpenAPI-derived request payload types:
+    - `components/xljv/xljv-api.ts`
+    - `components/channels/kaufland-api.ts`
+  - Extended generated baseline paths for marketplace/hood coverage:
+    - `/api/services/kids/{kid_id}/`
+    - `/api/hood/items/by-ean/{ean}/`
+  - Migrated to OpenAPI-derived payload types:
+    - `components/hood/hood-api.ts`
+    - `components/marketplace/marketplace-api.ts`
+  - Roadmap update: Phase 3 item 3 marked as Done.
+- Phase 3 (item 4): CI i18n key parity gate
+  - Added i18n parity checker: `tools/check-i18n-keys.mjs`.
+  - Added npm script: `i18n:check`.
+  - Wired quality CI gate: `.github/workflows/ci.yml` now runs `npm run i18n:check`.
+  - Validation result: `ru` and `de` match `en` (`521` keys each).
+  - Roadmap update: Phase 3 item 4 marked as Done.
+- Phase 3 (item 5): CRUD e2e with isolated test data
+  - Added mutation-gated e2e scenario: `e2e/inventory-crud-isolated.spec.ts`.
+  - Flow covers create + verify + delete for a unique test `KID` (`E2E-KID-<timestamp>`).
+  - Cleanup is built into the scenario by deleting the same created test row.
+  - Added CI env forwarding for mutation gate in smoke job:
+    - `.github/workflows/ci.yml` -> `E2E_MUTATION` (from repository variable, default `0`).
+  - Safety: test is skipped unless `E2E_MUTATION=1`.
+  - Roadmap update: Phase 3 item 5 marked as Done.
+- Phase 4 (item 1): e2e CI stabilization (suite split + retries)
+  - `playwright.config.ts`:
+    - enabled CI retries (`2`) and limited CI workers (`2`) for lower flake rate.
+  - `package.json`:
+    - added `test:e2e:smoke`
+    - added `test:e2e:mutation`
+  - `.github/workflows/ci.yml`:
+    - smoke job now runs only smoke suite (`npm run test:e2e:smoke`)
+    - added dedicated mutation job (`e2e-mutation`) gated by `E2E_MUTATION=1`
+    - visual job remains isolated (`e2e-visual`)
+  - `README.md`: documented split e2e commands.
+  - Roadmap update: Phase 4 item 1 marked as Done.
+- Phase 4 (item 2): OpenAPI drift-check in CI
+  - Added committed schema baseline: `openapi/unified-openapi.json`.
+  - Updated OpenAPI generator/check scripts to use Node API correctly (`astToString`):
+    - `tools/generate-openapi-types.mjs`
+    - `tools/check-openapi-drift.mjs`
+  - Added npm script: `openapi:check`.
+  - Wired CI quality gate: `.github/workflows/ci.yml` now runs `npm run openapi:check`.
+  - Regenerated `lib/api/generated/openapi-types.ts` from committed schema baseline.
+  - Updated README with `openapi:check` usage.
+  - Roadmap update: Phase 4 item 2 marked as Done.
+- Phase 4 (item 3): a11y automation with axe
+  - Added dependency: `@axe-core/playwright`.
+  - Added axe e2e coverage: `e2e/a11y-axe.spec.ts` for:
+    - `/dashboard`
+    - `/inventory`
+    - `/marketplace`
+  - Assertion policy: fail on `serious` and `critical` WCAG violations.
+  - Included axe suite into smoke pack (`test:e2e:smoke`).
+  - Roadmap update: Phase 4 item 3 marked as Done.
+- Phase 4 (item 4): frontend observability dashboard baseline
+  - Improved telemetry scope in `app/telemetry.ts`:
+    - added common tags: `app_env`, `app_release`, `route`
+  - Added observability runbook/dashboard template:
+    - `docs/FRONTEND_OBSERVABILITY.md`
+    - contains recommended Sentry widgets, queries, and alert rules for UI error/latency triage
+  - Updated README with observability doc pointer.
+  - Roadmap update: Phase 4 item 4 marked as Done.
+- Phase 4 (item 5): i18n snapshot/structure tests
+  - Added dictionary integrity test suite: `tests/i18n-dictionaries.test.mjs`.
+  - Added checks:
+    - key parity across `en` / `ru` / `de`
+    - duplicate key detection
+    - stable snapshot hash for full dictionary payload
+    - replacement-char (`U+FFFD`) guard in localized values
+  - Validation: `npm test` and `npm run -s typecheck` passed.
+  - Roadmap update: Phase 4 item 5 marked as Done.
+- Phase 5 (item 1, started): visual baseline repository hardening
+  - Added baseline presence checker:
+    - `tools/check-visual-baseline.mjs`
+    - npm script: `visual:baseline:check`
+  - Added visual baseline runbook:
+    - `docs/FRONTEND_VISUAL_BASELINE.md`
+  - Updated README with visual baseline doc pointer.
+  - Validation:
+    - `npm run -s visual:baseline:check` reports missing baseline files (expected current state).
+    - `E2E_VISUAL=1 npm run -s test:e2e:visual:update` executed, but tests are skipped without auth env.
+  - Status: awaiting run with `E2E_LOGIN` and `E2E_PASSWORD` to generate and commit baseline screenshots.
+- Phase 5 (item 1, done): real visual baseline snapshots committed
+  - Generated baseline snapshots with auth user (`Ravil`) via:
+    - `npm run -s test:e2e:visual:update` (`E2E_VISUAL=1`)
+  - Confirmed baseline files exist:
+    - `e2e/__screenshots__/visual-regression.spec.ts/inventory-page.png`
+    - `e2e/__screenshots__/visual-regression.spec.ts/sofort-list-page.png`
+    - `e2e/__screenshots__/visual-regression.spec.ts/marketplace-page.png`
+  - Validation:
+    - `npm run -s visual:baseline:check` passes (`Visual baseline files are present.`).
+- Phase 5 (item 2): i18n encoding cleanup (mojibake)
+  - Fixed broken german strings with `?` placeholders in `app/i18n.ts`:
+    - `Gro?buchstaben` -> `Großbuchstaben`
+    - `Gro?e` -> `Größe`
+    - `Schlie?en` -> `Schließen`
+    - `Backend-Seitengro?e` -> `Backend-Seitengröße`
+  - Extended dictionary tests in `tests/i18n-dictionaries.test.mjs` with mojibake guard:
+    - rejects `de` values matching `[A-Za-z]\\?[A-Za-z]`
+  - Updated i18n snapshot hash after intentional dictionary change.
+  - Validation:
+    - `npm test`
+    - `npm run -s typecheck`
+    - `npm run -s i18n:check`
+  - Roadmap update: Phase 5 item 2 marked as Done.
+- Phase 5 (item 3, started): unified API client layer
+  - Added shared frontend API client utilities:
+    - `lib/api/client.ts` (`apiFetch`, `apiJson`, `apiJsonOrNull`, `apiText`, `ApiError`)
+  - Migrated API modules to shared request wrapper:
+    - `components/inventory/inventory-api.ts`
+    - `components/marketplace/marketplace-api.ts`
+    - `components/hood/hood-api.ts`
+    - `components/xljv/xljv-api.ts`
+    - `components/channels/kaufland-api.ts`
+  - Validation:
+    - `npm run -s typecheck`
+    - `npm test`
+  - Roadmap update: Phase 5 item 3 marked as Done.
+- Phase 5 (item 4): error-code contract mapping
+  - Added centralized error-code mapper:
+    - `app/error-code-map.ts` (app runtime)
+    - `app/error-code-map.mjs` (node test runtime)
+  - Updated `parseError` in `app/client-api-shared.ts`:
+    - now resolves standardized UI messages from backend `code` before falling back to raw `message`.
+  - Added unit tests:
+    - `tests/error-code-map.test.mjs`
+  - Validation:
+    - `npm run -s typecheck`
+    - `npm test`
+  - Roadmap update: Phase 5 item 4 marked as Done.
+- Phase 5 (item 5): performance regression test in CI
+  - Added e2e performance regression suite:
+    - `e2e/performance-regression.spec.ts`
+    - checks navigation timing budgets for `/login` and `/inventory`
+  - Added npm script: `test:e2e:perf`.
+  - Added dedicated CI job:
+    - `.github/workflows/ci.yml` -> `e2e-performance`
+    - gated by `E2E_PERF=1` + auth secrets
+  - Updated README with performance e2e command.
+  - Validation:
+    - `npm run -s typecheck`
+    - `npm test`
+    - `npm run -s test:e2e -- e2e/performance-regression.spec.ts` (skipped without e2e env)
+  - Roadmap update: Phase 5 item 5 marked as Done.
+- Phase 6 (item 1): standardized local E2E credentials setup
+  - Added local E2E placeholders in `.env.example`:
+    - `E2E_LOGIN`
+    - `E2E_PASSWORD`
+  - Updated `README.md`:
+    - added short local credentials instruction
+    - added PowerShell example to run `npm run test:e2e:smoke`
+  - Roadmap update: Phase 6 item 1 marked as Done.
+- Phase 6 (item 2): unified table layout contract for listings
+  - Added shared table-layout utility classes in `app/globals.css`:
+    - `.ui-listing-scroll`
+    - `.ui-listing-table`
+    - `.ui-listing-head-cell`
+    - `.ui-listing-cell`
+    - `.ui-listing-cell-text`
+  - Applied shared contract to:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/inventory-table-rows.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - Reduced Sofort list min table width and normalized column widths to avoid edge overflow.
+  - Updated Marketplace card grid to uniform auto-fit columns:
+    - `components/marketplace/marketplace-grid.tsx`
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 2 marked as Done.
+- Phase 6 (item 3): sticky header + sticky key columns in large tables
+  - Added shared sticky helpers in `app/globals.css`:
+    - `.ui-listing-sticky-col`
+    - `.ui-listing-sticky-head`
+  - Applied sticky key columns:
+    - `components/inventory/inventory-table.tsx` (header: ID/PHOTO/KID-ORDER)
+    - `components/inventory/inventory-table-rows.tsx` (rows + skeleton for same columns)
+    - `components/inventory/sofort-list-table.tsx` (header/rows/skeleton: PLACE/PHOTO/KID)
+  - Result: key context columns stay visible during horizontal and vertical scrolling.
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 3 marked as Done.
+- Phase 6 (item 4): bulk actions for listings (Sofort list)
+  - Added row selection with checkboxes:
+    - header "select visible"
+    - row-level selection
+  - Added bulk action bar for selected rows:
+    - set listed
+    - set unlisted
+    - bulk set room
+    - bulk set type
+    - export selected rows to CSV
+    - clear selection
+  - Updated sticky offsets/colspan after new selection column.
+  - File changed:
+    - `components/inventory/sofort-list-table.tsx`
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 4 marked as Done.
+- Phase 6 (item 5): server-side sorting/filtering where API supports query params
+  - Extended inventory rows API wrapper:
+    - `components/inventory/inventory-api.ts`
+    - `fetchInventoryRows` now supports optional:
+      - `q`
+      - `placeSort` (`asc` / `desc`)
+  - Wired Sofort list query to pass server params:
+    - `components/inventory/sofort-list-table.tsx`
+    - React Query key now includes `q` and place-sort direction.
+  - Kept client-side fallback filters for fields not yet covered by backend contract (`room`, `type`, `listing`).
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 5 marked as Done.
+- Phase 6 (item 6): dense mobile/tablet listing mode
+  - Added mobile card-mode (`< md`) for:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - Desktop/tablet table mode remains active on `md+` with existing sticky headers/columns.
+  - Result:
+    - key flows work on mobile without mandatory horizontal table scrolling.
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 6 marked as Done.
+- Phase 6 (item 7): search UX polish
+  - Upgraded shared table toolbar:
+    - `components/shared/table/table-toolbar.tsx`
+    - added `scope` for per-page query persistence
+    - debounce on input updates (default `250ms`)
+    - clear-search button inside input
+    - localStorage restore/save for last query per table scope
+  - Wired scopes in listing pages:
+    - `components/inventory/inventory-table.tsx` (`inventory-table`)
+    - `components/inventory/sofort-list-table.tsx` (`sofort-list-table`)
+  - Added query highlight in mobile card views:
+    - `inventory-table.tsx`
+    - `sofort-list-table.tsx`
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 7 marked as Done.
+- Phase 6 (item 8): CSV/XLSX export for current filtered views
+  - Added shared export helpers:
+    - `components/shared/table/export-utils.ts`
+    - CSV export
+    - Excel-compatible XML export (opened by Excel)
+  - Added export actions in:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - Exports now use current filtered/sorted rows.
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 8 marked as Done.
+- Phase 6 (item 9): unified skeleton/loading states
+  - Added shared mobile skeleton card:
+    - `components/shared/table/mobile-list-skeleton-card.tsx`
+  - Replaced duplicated mobile loading blocks in:
+    - `components/inventory/inventory-table.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - Added `aria-busy` on mobile list wrappers for better loading semantics.
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 9 marked as Done.
+- Phase 6 (item 10): Storybook baseline for shared UI components
+  - Added Storybook configuration:
+    - `.storybook/main.js`
+    - `.storybook/preview.js`
+  - Added Storybook scripts and dev dependencies:
+    - `package.json` (`storybook`, `build-storybook`)
+  - Added initial stories:
+    - `stories/Button.stories.jsx`
+    - `stories/Input.stories.jsx`
+    - `stories/Card.stories.jsx`
+    - `stories/TableRow.stories.jsx`
+    - `stories/FilterPresets.stories.jsx`
+  - Updated docs:
+    - `README.md` (storybook run/build commands)
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 6 item 10 marked as Done.
+- Phase 7 (item 1): backend query contract for room/type/listing filters
+  - Extended inventory request wrapper with additional query params:
+    - `room`
+    - `type`
+    - `listing`
+    - `sort`
+    - `dir`
+  - Files:
+    - `components/inventory/inventory-api.ts`
+    - `components/inventory/sofort-list-table.tsx`
+  - Sofort list query key now includes filter/sort params so cache matches backend query state.
+  - Client-side fallback filtering remains in place for safety.
+  - Validation:
+    - `npm run -s typecheck`
+  - Roadmap update: Phase 7 item 1 marked as Done.
+- Phase 7 (item 2, in progress): persistent bulk operations
+  - Investigated backend contract:
+    - current OpenAPI has no `PATCH/PUT` endpoint for `/api/v1/kids/{kid_id}/` to persist `room/type/listing`.
+  - Added temporary persistence layer for Sofort list bulk edits:
+    - stores overrides in localStorage (`sofort-list:overrides:v1`)
+    - rehydrates `room/type/listing` after refresh
+  - File:
+    - `components/inventory/sofort-list-table.tsx`
+  - Validation:
+    - `npm run -s typecheck`
+  - Status: blocked for true API persistence until backend update endpoint is available.
+- Roadmap Phase 7 (item 3): added advanced e2e coverage for Sofort list in `e2e/sofort-list-advanced.spec.ts`.
+  - Scenarios: search + URL sync, room/type/listing filters, place/quantity sorting, bulk update request contract, CSV export download, mobile card layout.
+  - Validation: `npm run -s typecheck` passed.
+  - Note: local Playwright run requires backend auth service on `localhost:8932`; in this environment login proxy returned `ECONNREFUSED`.
+- Roadmap Phase 8 (item 1): integrated advanced Sofort-list e2e into smoke suite.
+  - Updated `package.json` script `test:e2e:smoke` to include `e2e/sofort-list-advanced.spec.ts`.
+  - Result: table-flow regressions (search/filter/sort/bulk/export/mobile) now run in standard CI smoke path.
+  - Validation: local run `npx playwright test e2e/sofort-list-advanced.spec.ts --reporter=line --workers=1` passed (4/4).
+- Roadmap Phase 8 (item 2): improved e2e auth helper diagnostics in `e2e/helpers/auth.ts`.
+  - Login helper now captures `/api/v1/auth/login` response and throws explicit failure context: HTTP status, response body snippet, current URL, and login form text.
+  - Result: auth-related e2e failures are actionable instead of generic URL timeout.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 8 (item 3): added dedicated table-flow e2e script.
+  - Added `test:e2e:table` in `package.json` for fast table regression runs (`inventory-marketplace`, `profile-sofort-list`, `sofort-list-advanced`).
+  - Updated README e2e suite split section with `npm run test:e2e:table`.
+  - Validation: `npm run -s typecheck` passed.
+- Roadmap Phase 9 (item 1): added mandatory e2e preflight checks.
+  - Added `tools/check-e2e-preflight.mjs` (checks `E2E_LOGIN/E2E_PASSWORD`, frontend login URL, backend health endpoint).
+  - Added npm script `e2e:preflight`.
+  - Updated `test:e2e:smoke` and `test:e2e:table` to run preflight before Playwright.
+  - Updated README with preflight behavior for table/smoke suites.
+  - Validation: `npm run -s typecheck` and `npm run -s e2e:preflight` passed.
+- Roadmap Phase 9 (item 2): added UI graceful-degradation smoke tests for backend/services outage.
+  - Added `e2e/backend-health-ui.spec.ts`.
+  - Scenarios: Inventory and Sofort-list show `ErrorState` (`Something went wrong` + `Try again`) when `inventory/rows` request fails.
+  - Included new spec in `test:e2e:smoke` script.
+  - Validation: `npx playwright test e2e/backend-health-ui.spec.ts --reporter=line --workers=1` passed (2/2).
+- Roadmap Phase 9 (item 3): introduced dedicated flaky test profile.
+  - Playwright config now has `chromium` (regular, excludes `@flaky`) and `chromium-flaky` (runs `@flaky` with higher timeout/retries).
+  - Added script `test:e2e:flaky` with `--pass-with-no-tests` for safe CI bootstrap when no flaky tests are tagged yet.
+  - Added optional CI job `e2e-flaky` behind `vars.E2E_FLAKY == '1'`.
+  - Updated README with flaky-suite usage.
+  - Validation: `npm run -s typecheck` and `npm run -s test:e2e:flaky` passed.
+- Roadmap Phase 9 (item 4): added table query contract e2e coverage.
+  - Added `e2e/table-query-contract.spec.ts`.
+  - Scenarios: Inventory (`page/page_size` request params + URL state) and Sofort-list (`q/listing/sort/dir/page` URL -> backend request params).
+  - Included this spec in `test:e2e:table` script.
+  - Validation: `npx playwright test e2e/table-query-contract.spec.ts --reporter=line --workers=1` passed (2/2).
+- Roadmap Phase 9 (item 5): added mobile visual baselines for table pages.
+  - Updated `e2e/visual-regression.spec.ts` with mobile snapshots:
+    - `inventory-page-mobile.png`
+    - `sofort-list-page-mobile.png`
+  - Regenerated visual baselines via `--update-snapshots`.
+  - Validation: `npx playwright test e2e/visual-regression.spec.ts --update-snapshots --workers=1` passed (5/5).
+- Roadmap Phase 9 (item 6): added focused a11y smoke tests for table toolbar and filters.
+  - Added `e2e/a11y-table-filters.spec.ts`.
+  - Scenarios: Inventory search input/clear button focusability + Sofort-list room/type/listing filter ARIA labels and focusability.
+  - Included the spec in `test:e2e:smoke`.
+  - Validation: `npx playwright test e2e/a11y-table-filters.spec.ts --reporter=line --workers=1` passed (2/2).
+- Roadmap Phase 9 (item 7): added export format/encoding validation via e2e.
+  - Added `e2e/table-export-format.spec.ts`.
+  - Checks:
+    - Sofort CSV: UTF-8 BOM + expected headers.
+    - Sofort XLS export: Spreadsheet XML structure + expected header cells.
+    - Inventory CSV: expected header contract.
+  - Included this spec in `test:e2e:table`.
+  - Validation: `npx playwright test e2e/table-export-format.spec.ts --reporter=line --workers=1` passed (3/3).
+- Roadmap Phase 9 (item 8): added table interaction performance checks in perf suite.
+  - Extended `e2e/performance-regression.spec.ts` with:
+    - inventory search interaction latency budget (`< 2000ms`)
+    - sofort-list filter interaction latency budget (`< 3000ms`, validated via backend request timing)
+  - Validation: `E2E_PERF=1 npx playwright test e2e/performance-regression.spec.ts --workers=1` passed (4/4).
+- Roadmap Phase 9 (item 9): added dedicated e2e debugging runbook.
+  - Added `docs/FRONTEND_E2E_DEBUGGING.md` with auth/proxy/ports/trace/visual/ssh-tunnel troubleshooting.
+  - Linked runbook from README quality/e2e section.
+- Roadmap Phase 9 (item 10): standardized CI e2e artifact naming.
+  - Updated `.github/workflows/ci.yml` artifact names to `e2e-<suite>-<run_id>-<run_attempt>` for smoke/mutation/flaky/visual/performance jobs.
+  - Added naming convention note to `docs/FRONTEND_E2E_DEBUGGING.md`.
+- Roadmap Phase 10 (item 1): centralized auth helper usage across smoke specs.
+  - Migrated to shared `e2e/helpers/auth.ts` in:
+    - `e2e/authenticated-smoke.spec.ts`
+    - `e2e/inventory-marketplace.spec.ts`
+    - `e2e/profile-sofort-list.spec.ts`
+    - `e2e/channels.spec.ts`
+    - `e2e/a11y-keyboard-smoke.spec.ts`
+  - Result: one source of truth for auth flow and login failure diagnostics.
+  - Validation: `npm run -s typecheck` passed; targeted smoke subset run shows `authenticated-smoke` pass, `channels` has existing selector instability to address in next item.
+- Roadmap Phase 10 (item 2): stabilized channels smoke selectors.
+  - Updated `e2e/channels.spec.ts`: replaced fragile `placeholder("EAN")` assertion with more stable checks (`EAN` label + submit button visibility) on Hood tab.
+  - Validation: `npx playwright test e2e/channels.spec.ts --reporter=line --workers=1` passed (1/1).
+- Roadmap Phase 10 (item 3): вынесены page-object helpers для Inventory/Sofort list.
+  - Добавлен `e2e/helpers/table-pages.ts` с общими командами для переходов, search/filter/sort и export.
+  - На helper переведены спеки:
+    - `e2e/inventory-marketplace.spec.ts`
+    - `e2e/profile-sofort-list.spec.ts`
+    - `e2e/sofort-list-advanced.spec.ts`
+    - `e2e/table-query-contract.spec.ts`
+    - `e2e/table-export-format.spec.ts`
+    - `e2e/a11y-table-filters.spec.ts`
+  - Validation:
+    - `npm run -s typecheck` passed.
+    - `npx playwright test ...` в текущем окружении: `11 skipped` (нет `E2E_LOGIN/E2E_PASSWORD`).
+- Roadmap Phase 10 (item 4): нормализован preflight context для e2e.
+  - Обновлен `tools/check-e2e-preflight.mjs`.
+  - Добавлен единый вывод контекста: `baseURL`, `backendHealthURL`, `locale`, `timezone`, `nodeVersion`.
+  - Validation:
+    - `npm run -s typecheck` passed.
+    - `node tools/check-e2e-preflight.mjs` passed.
+- Roadmap Phase 10 (item 5): добавлен контроль деградации flaky retries в CI.
+  - `playwright.config.ts`: добавлен условный JSON reporter через `PW_JSON_REPORT_FILE`.
+  - `.github/workflows/ci.yml`: flaky job пишет `test-results/flaky-report.json` и считает метрики после прогона.
+  - Добавлен скрипт `tools/report-flaky-metrics.mjs`:
+    - считает `tests`, `passed`, `failed`, `skipped`, `retries`, `flakyPassed`
+    - пишет `test-results/flaky-metrics.json`
+    - публикует блок в `GITHUB_STEP_SUMMARY`.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 10 (item 6): добавлены pure unit tests для export contract.
+  - Добавлен pure-модуль: `components/shared/table/export-contract.mjs`.
+  - Добавлен тест: `tests/export-contract.test.mjs` (CSV BOM/headers/escaping и XML envelope/escaping).
+  - Validation:
+    - `npm run -s typecheck` passed.
+    - `npm test` passed.
+- Roadmap Phase 10 (item 7): добавлен snapshot budget для visual suite.
+  - Добавлен скрипт: `tools/check-visual-snapshot-budget.mjs`.
+  - Добавлен npm script: `visual:budget:check`.
+  - CI (`e2e-visual`): добавлен шаг `Check visual snapshot budget` перед upload artifacts.
+  - Контроль:
+    - количество png snapshot-файлов
+    - суммарный размер snapshot-артефактов
+    - лимит на размер одного файла
+  - Validation:
+    - `npm run -s typecheck` passed.
+    - `npm run -s visual:budget:check` passed.
+- Roadmap Phase 10 (item 8): задокументирован tagging policy для e2e тестов.
+  - Добавлен документ: `docs/FRONTEND_E2E_TAGGING_POLICY.md`.
+  - Описаны правила использования тегов: `@flaky`, `@slow`, `@visual`.
+  - Добавлена ссылка в `README.md`.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 10 (item 9): добавлены route-level network mocking utilities для e2e.
+  - Добавлен helper: `e2e/helpers/network-mocks.ts`.
+  - API helper:
+    - `mockRouteAbort`
+    - `mockRouteDelayThenContinue`
+    - `mockJsonResponse`
+  - Обновлен `e2e/backend-health-ui.spec.ts` на использование helper.
+  - Документация: добавлен раздел про network mocks в `docs/FRONTEND_E2E_DEBUGGING.md`.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 10 (item 10): добавлен CI markdown summary для e2e jobs.
+  - Добавлен скрипт: `tools/write-e2e-job-summary.mjs`.
+  - Обновлен `.github/workflows/ci.yml`: summary шаги добавлены в `e2e-smoke`, `e2e-mutation`, `e2e-flaky`, `e2e-visual`, `e2e-performance`.
+  - Каждый e2e job теперь пишет в `GITHUB_STEP_SUMMARY`: suite, status, command, artifact.
+  - Validation:
+    - `npm run -s typecheck` passed.
+    - локальная проверка `write-e2e-job-summary.mjs` passed.
+- Docs encoding cleanup (2026-05-07): fixed mojibake in E2E docs.
+  - Rewrote `docs/FRONTEND_E2E_DEBUGGING.md` in clean UTF-8 (ASCII-safe text).
+  - Rewrote roadmap tail (Phase 9 and Phase 10) in `docs/FRONTEND_ROADMAP.md` to remove broken encoding artifacts.
+- Roadmap Phase 11 (item 1 started): visual design-token foundation expanded.
+  - Updated `app/globals.css` with extended token system (spacing/typography/radius/shadow/surface/text utilities).
+  - Added shared visual primitives: `ui-surface-1`, `ui-surface-2`, `ui-section`, `ui-title-*`, `ui-text-*`.
+  - Updated `components/shared/card.tsx` to use unified surface primitive (`ui-surface-1`).
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 2 started): typography hierarchy unification on core layout.
+  - Added typography utility classes in `app/globals.css`: `ui-kicker`, `ui-caption`.
+  - Updated shared headings/subtitles:
+    - `components/layout/app-header.tsx` (`ui-title-1`, `ui-caption`)
+    - `components/shared/section-title.tsx` (`ui-title-2`, `ui-caption`)
+    - `components/layout/app-shell.tsx` footer switched to `ui-kicker`
+    - `app/dashboard/page.tsx` quick actions title switched to `ui-title-2`
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 3 started): unified state color behavior for controls.
+  - Updated `app/globals.css` with state tokens: `--state-hover`, `--state-active`, `--state-focus`, `--state-disabled-*`.
+  - Standardized states for `.ui-button*`, `.ui-input`, `.ui-select`: hover/focus/active/disabled.
+  - Updated `components/shared/button.tsx` to rely on unified state styles (removed ad-hoc hover opacity).
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 4): table/card visual polish.
+  - Added unified table/card polish primitives in `app/globals.css`:
+    - `.ui-table-head-row`
+    - `.ui-table-row`, `.ui-table-row-even`, `.ui-table-row-odd`
+    - `.ui-table-card`
+    - `.ui-marketplace-card`
+  - Applied shared classes in:
+    - `components/inventory/inventory-table.tsx` (mobile cards + table head)
+    - `components/inventory/sofort-list-table.tsx` (mobile cards + table head + zebra rows/skeleton rows)
+    - `components/marketplace/marketplace-grid.tsx` (marketplace cards + skeleton cards)
+  - Result: less visual noise, more uniform spacing/borders/shadows and denser balanced listing blocks.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 5): unified loading/empty/error visual states.
+  - Added shared state style primitives in `app/globals.css`:
+    - `.ui-state-shell`, `.ui-state-title`, `.ui-state-text`, `.ui-state-error-text`, `.ui-table-empty`
+  - Applied unified state styles in shared components:
+    - `components/shared/error-state.tsx`
+    - `components/shared/empty-state.tsx`
+    - `components/shared/table/table-empty-row.tsx`
+  - Result: empty/error states now look consistent across table pages and shared blocks.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 6): interactive control states unification.
+  - Added unified interactive control primitives in `app/globals.css`:
+    - `.ui-control-button`
+    - `.ui-icon-button`
+  - Applied shared control states in:
+    - `components/shared/fancy-select.tsx` (trigger + option keyboard focus)
+    - `components/shared/table/table-toolbar.tsx` (clear-search icon button)
+    - `components/marketplace/marketplace-grid.tsx` (manual sync button)
+  - Result: hover/focus/active/disabled behavior is now consistent for filter/search controls.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 7): sidebar/header visual refresh.
+  - Added shared navigation/header primitives in `app/globals.css`:
+    - `.ui-sidebar`, `.ui-sidebar-nav-item`, `.ui-sidebar-nav-item-active`, `.ui-sidebar-footer`
+    - `.ui-header`, `.ui-header-actions`
+  - Applied in:
+    - `components/layout/app-sidebar.tsx` (cleaner nav density + stronger active state + footer hierarchy)
+    - `components/layout/app-header.tsx` (unified header shell and user action trigger style)
+  - Result: sidebar/header scanability improved with more consistent spacing and states.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 8): form visual unification.
+  - Added shared form primitives in `app/globals.css`:
+    - `.ui-form-stack`, `.ui-form-row`, `.ui-form-field`
+    - `.ui-form-label`, `.ui-form-help`, `.ui-form-error`
+  - Applied to key forms:
+    - `components/profile/profile-account-panel.tsx` (profile + password forms)
+    - `components/inventory/add-item-button.tsx` (add-item modal inputs, error style)
+  - Result: field rhythm, labels and error presentation are now visually consistent.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 9): responsive visual strategy improvements.
+  - Improved responsive behavior in shared/table controls:
+    - `components/shared/table/table-toolbar.tsx` (responsive status block)
+    - `components/shared/table/filter-presets.tsx` (mobile-safe input/select widths)
+  - Improved adaptive header/shell spacing and wrapping:
+    - `components/layout/app-header.tsx` (wrap-safe header actions, subtitle hidden on extra-small)
+    - `components/layout/app-shell.tsx` (tighter mobile padding)
+  - Improved Sofort-list filter wrapping on small widths:
+    - `components/inventory/sofort-list-table.tsx` (`room/type/listing` selects now responsive)
+  - Added responsive helper class in `app/globals.css`: `.ui-responsive-toolbar-status`.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 11 (item 10): subtle micro-animations.
+  - Added animation primitives in `app/globals.css`:
+    - `@keyframes ui-fade-up`, `@keyframes ui-soft-pop`
+    - `.ui-enter-fade-up`, `.ui-enter-stagger`, `.ui-soft-pop`
+  - Applied to key interaction zones:
+    - `components/shared/table/table-toolbar.tsx` (toolbar enter + control tap feedback)
+    - `components/shared/table/filter-presets.tsx` (staggered filter controls + press feedback)
+  - Added reduced-motion fallback for all new animation classes.
+  - Result: UI transitions feel more alive without heavy motion.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 1): language switch in header.
+  - Added language persistence helpers in `app/i18n.ts`:
+    - `LANG_CHANGE_EVENT`
+    - `readStoredLang()`
+    - `writeStoredLang(lang)`
+  - Improved language reactivity in `app/use-labels.ts`:
+    - added `useLanguage()` hook
+    - now listens to both `storage` and local `sofortbot:lang-change` event
+  - Added compact `EN/RU/DE` switcher to `components/layout/app-header.tsx`.
+  - Result: language switches instantly in current tab and stays saved in localStorage.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 2): consistent skeleton visuals.
+  - Added shared skeleton shell primitives in `app/globals.css`:
+    - `.ui-skeleton-shell`
+    - `.ui-skeleton-row`
+  - Applied shared skeleton visuals in:
+    - `components/shared/table/mobile-list-skeleton-card.tsx`
+    - `components/inventory/inventory-table-rows.tsx`
+    - `components/inventory/sofort-list-table.tsx`
+  - Result: loading rows/cards now have consistent radius, border, fill and row height rhythm.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 3): horizontal overflow fixes for 100% scale.
+  - Fixed toolbar overflow source:
+    - `components/shared/table/table-toolbar.tsx` (`min-w-[220px]` -> `min-w-0 basis-[220px]`)
+  - Fixed bulk-panel filter overflow on small widths:
+    - `components/inventory/sofort-list-table.tsx` (bulk room/type selects made responsive)
+  - Added table wrapper safety caps:
+    - `components/inventory/inventory-table.tsx` (`max-w-full`)
+    - `components/inventory/sofort-list-table.tsx` (`max-w-full`)
+  - Added page-level x-overflow protection:
+    - `components/layout/app-shell.tsx` (`overflow-x-clip`)
+  - Result: no right-side horizontal page overflow in key layouts at standard 100% zoom.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 4): visual noise reduction.
+  - Refined core table/card surface balance in `app/globals.css`:
+    - softened row shadows and stripe contrast (`.ui-table-row*`)
+    - softened marketplace card shadows/background (`.ui-marketplace-card`)
+    - added reusable quiet secondary panel class `.ui-soft-panel`
+  - Applied quieter row styling in:
+    - `components/inventory/inventory-table-rows.tsx`
+  - Applied quieter secondary panels in:
+    - `components/marketplace/marketplace-grid.tsx`
+  - Softened bulk-action bar contrast in:
+    - `components/inventory/sofort-list-table.tsx`
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 5): refined interface animations.
+  - Added new motion utility classes in `app/globals.css`:
+    - `.ui-backdrop-fade`
+    - `.ui-dropdown-enter`
+    - `.ui-dropdown-enter-up`
+    - `.ui-modal-enter`
+  - Applied motion transitions in:
+    - `components/shared/fancy-select.tsx` (dropdown enter, top/bottom origin)
+    - `components/layout/app-header.tsx` (user menu enter)
+    - `components/inventory/add-item-button.tsx` (modal panel + backdrop enter)
+  - Preserved reduced-motion fallback for all new animations.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 6): iconography consistency and practical icon additions.
+  - Added semantic action icons in listing controls:
+    - `components/inventory/inventory-table.tsx` (export buttons + sort arrow icon)
+    - `components/inventory/sofort-list-table.tsx` (sort icons, export icons, listed/unlisted bulk action icons)
+  - Replaced plain text sort markers (`^`, `v`, `<>`) with Lucide icons (`ArrowUp`, `ArrowDown`, `ArrowUpDown`).
+  - Result: faster visual scanning and cleaner action affordances in table toolbars.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 7): header/sidebar composition polish.
+  - Refined layout rhythm in:
+    - `components/layout/app-shell.tsx` (responsive gap tuning, `main` set to `min-w-0`)
+    - `components/layout/app-sidebar.tsx` (balanced sidebar width/padding/nav spacing)
+  - Refined header composition in:
+    - `components/layout/app-header.tsx` (title wrap safety + grouped actions surface)
+  - Added header composition helpers in `app/globals.css`:
+    - `.ui-header-actions-surface`
+    - `.ui-header-title-wrap`
+  - Result: header/sidebar blocks feel more balanced and stable on common desktop/tablet widths.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 8): премиальные empty-states.
+  - Улучшены общие empty-компоненты:
+    - `components/shared/empty-state.tsx` (иконка, заголовок, действие)
+    - `components/shared/table/table-empty-row.tsx` (встроенный premium empty-state в строку таблицы)
+  - Подключено в ключевые листинги:
+    - `components/inventory/inventory-table.tsx` (mobile/table empty + очистка поиска)
+    - `components/inventory/inventory-table-rows.tsx` (action для empty row)
+    - `components/inventory/sofort-list-table.tsx` (mobile/table empty + сброс фильтров/поиска)
+  - Дополнительно исправлен текстовый fallback listing-status для поиска (`listed/unlisted`) без битой кодировки.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 9): unified status visual system.
+  - Added shared status primitives in `app/globals.css`:
+    - `.ui-status-chip`, `.ui-status-dot`, `.ui-status-banner`
+    - tone classes: `.ui-status-success`, `.ui-status-warning`, `.ui-status-danger`, `.ui-status-info`
+  - Migrated status-based components to shared status classes:
+    - `components/shared/badge.tsx`
+    - `components/shared/toast-provider.tsx`
+    - `components/hood/hood-search-utils.ts` + `components/hood/hood-status-card.tsx`
+    - `components/dashboard/sync-status-card.tsx`
+  - Result: success/warning/error/info states now look consistent across badges, toasts and status cards.
+  - Validation:
+    - `npm run -s typecheck` passed.
+- Roadmap Phase 12 (item 10): modal visual consistency.
+  - Added shared modal primitives in `app/globals.css`:
+    - `.ui-modal-backdrop`, `.ui-modal-panel`, `.ui-modal-header`, `.ui-modal-body`, `.ui-modal-footer`
+  - Applied unified modal layout/animation in:
+    - `components/inventory/add-item-button.tsx`
+    - `components/editor/product-form-panel.tsx`
+  - Result: modals now have consistent backdrop, spacing rhythm, content structure and action area.
+  - Validation:
+    - `npm run -s typecheck` passed.
+
+## 2026-05-07 (Phase 13 item 10)
+- Added final visual QA checklist:
+  - `docs/FRONTEND_VISUAL_QA_CHECKLIST.md`
+  - coverage: contrast, focus, spacing, overflow, empty/loading/error, motion, scroll zones, modals
+- Updated docs index reference in `README.md`.
+- Roadmap update: Phase 13 items 1-10 marked as Done.
+- Validation: `npm run -s typecheck` passed.

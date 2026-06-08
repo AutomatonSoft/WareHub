@@ -1,0 +1,29 @@
+[package]
+name = "sofortbot-backend"
+default-run = "sofortbot-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+argon2 = "0.5.3"
+axum = { version = "0.7.9", features = ["macros", "multipart", "ws"] }
+chrono = { version = "0.4.40", features = ["serde"] }
+dotenvy = "0.15.7"
+rand_core = { version = "0.6.4", features = ["std", "getrandom"] }
+regex = "1.11.1"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
+sentry = { version = "0.37.0", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
+thiserror = "1.0.69"
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
+lettre = { version = "0.11.7", default-features = false, features = ["builder", "smtp-transport", "rustls-tls"] }
+sqlx = { version = "0.8.3", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros", "migrate"] }
+tokio = { version = "1.43.0", features = ["macros", "net", "rt-multi-thread", "signal", "fs", "sync"] }
+tower = { version = "0.5.2", features = ["util"] }
+tower-http = { version = "0.6.2", features = ["cors", "request-id", "trace", "fs"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
+suppaftp = "6.3.0"
+uuid = { version = "1.15.1", features = ["serde", "v4"] }
+validator = { version = "0.18.1", features = ["derive"] }

@@ -1,0 +1,53 @@
+name: sofortbot_mobile
+description: SofortBot mobile thin client built with Flutter.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  image_picker: ^1.1.2
+  mobile_scanner: ^6.0.2
+  niimbot_label_printer:
+    path: vendor/niimbot_label_printer
+  permission_handler: ^11.3.1
+  package_info_plus: ^8.1.2
+  qr_flutter: ^4.1.0
+  sentry_flutter: ^9.7.0
+  shared_preferences: ^2.2.2
+  local_auth: ^2.2.0
+  flutter_secure_storage: ^9.2.2
+  url_launcher: ^6.3.1
+  web_socket_channel: ^3.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/logo.png
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Montserrat-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Montserrat-Black.ttf
+          weight: 900
