@@ -46,29 +46,42 @@ export default function AdminUsersPage() {
   const isAllowed = auth?.user.role === "admin" && auth.user.status === "approved";
 
   return (
-    <AppShell title={t.adminTitle} subtitle={t.adminSubtitle}>
-      {auth === undefined ? (
-        <Card>
+    <AppShell title="Admin users" subtitle="Manage user approvals and roles.">
+      <div className="space-y-6">
+        <header className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Administration
+          </p>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Admin users</h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Manage user approvals and roles.
+            </p>
+          </div>
+        </header>
+
+        {auth === undefined ? (
+        <Card className="wh-section-card border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle>{t.adminTitle}</CardTitle>
+            <CardTitle>Admin users</CardTitle>
             <CardDescription>{t.loading}</CardDescription>
           </CardHeader>
         </Card>
       ) : null}
 
       {auth === null ? (
-        <Card>
+        <Card className="wh-section-card border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle>{t.adminTitle}</CardTitle>
+            <CardTitle>Admin users</CardTitle>
             <CardDescription>{t.redirecting}</CardDescription>
           </CardHeader>
         </Card>
       ) : null}
 
       {auth && !isAllowed ? (
-        <Card>
+        <Card className="wh-section-card border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle>{t.adminTitle}</CardTitle>
+            <CardTitle>Access denied</CardTitle>
             <CardDescription>Access denied</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
@@ -87,6 +100,7 @@ export default function AdminUsersPage() {
           currentUserId={auth.user.id}
         />
       ) : null}
+      </div>
     </AppShell>
   );
 }
