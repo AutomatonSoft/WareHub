@@ -10,7 +10,7 @@ import { writeStoredLang } from "../../app/i18n";
 import { resolveMobileApkUrlFromEnv } from "../../app/mobile-apk-url";
 import { useLanguage } from "../../app/use-labels";
 import { useLabels } from "../../app/use-labels";
-import { navigationItems } from "../../lib/navigation";
+import { adminNavigationItem, navigationItems } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
 import { Button, buttonVariants } from "../ui/button";
 import {
@@ -63,6 +63,12 @@ export function AppSidebar({
     if (currentUser?.login && currentUser.login.trim().length > 0) return `@${currentUser.login}`;
     return "";
   }, [currentUser]);
+  const visibleNavigationItems = useMemo(() => {
+    if (currentUser?.role === "admin") {
+      return [...navigationItems, adminNavigationItem];
+    }
+    return navigationItems;
+  }, [currentUser?.role]);
   const avatarLetter = (currentUser?.username ?? currentUser?.login ?? "U").slice(0, 1).toUpperCase();
 
   const avatarSrc = !currentUser?.avatar_url || avatarLoadError ? null : resolvePhotoUrl(apiBase, currentUser.avatar_url);
@@ -117,7 +123,7 @@ export function AppSidebar({
       ) : null}
 
       <nav className="wh-sidebar__nav flex flex-1 flex-col gap-2 !pb-0">
-        {navigationItems.map((item) => {
+        {visibleNavigationItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
 

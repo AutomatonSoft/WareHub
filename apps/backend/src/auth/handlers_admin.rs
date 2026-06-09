@@ -65,22 +65,23 @@ pub(crate) async fn admin_list_users(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let mut qb = QueryBuilder::<Postgres>::new(
-        "SELECT id, username, login, email, role, status, created_at, approved_at FROM users",
-    );
+    let mut qb =
+        QueryBuilder::<Postgres>::new(admin_users_select_clause("u"));
+    qb.push(" FROM users u");
+    qb.push(" LEFT JOIN users approver ON approver.id = u.approved_by");
     let mut has_where = false;
 
     if let Some(role) = role_filter {
-        qb.push(" WHERE role = ");
+        qb.push(" WHERE u.role = ");
         qb.push_bind(role);
         has_where = true;
     }
 
     if let Some(status) = status_filter {
         if has_where {
-            qb.push(" AND status = ");
+            qb.push(" AND u.status = ");
         } else {
-            qb.push(" WHERE status = ");
+            qb.push(" WHERE u.status = ");
             has_where = true;
         }
         qb.push_bind(status);
@@ -93,22 +94,26 @@ pub(crate) async fn admin_list_users(
         } else {
             qb.push(" WHERE ");
         }
-        qb.push("(LOWER(username) LIKE ");
+        qb.push("(LOWER(u.username) LIKE ");
         qb.push_bind(pattern.clone());
-        qb.push(" OR LOWER(login) LIKE ");
+        qb.push(" OR LOWER(u.login) LIKE ");
         qb.push_bind(pattern.clone());
-        qb.push(" OR LOWER(COALESCE(email, '')) LIKE ");
+        qb.push(" OR LOWER(COALESCE(u.email, '')) LIKE ");
         qb.push_bind(pattern.clone());
-        qb.push(" OR LOWER(role) LIKE ");
+        qb.push(" OR LOWER(COALESCE(u.first_name, '')) LIKE ");
         qb.push_bind(pattern.clone());
-        qb.push(" OR LOWER(status) LIKE ");
+        qb.push(" OR LOWER(COALESCE(u.last_name, '')) LIKE ");
+        qb.push_bind(pattern.clone());
+        qb.push(" OR LOWER(u.role) LIKE ");
+        qb.push_bind(pattern.clone());
+        qb.push(" OR LOWER(u.status) LIKE ");
         qb.push_bind(pattern);
         qb.push(")");
     }
 
-    qb.push(" ORDER BY created_at ");
+    qb.push(" ORDER BY u.created_at ");
     qb.push(sort_order);
-    qb.push(", id ");
+    qb.push(", u.id ");
     qb.push(sort_order);
     qb.push(" LIMIT ");
     qb.push_bind(limit);
@@ -145,7 +150,7 @@ pub(crate) async fn admin_approve_registration(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<RegisterResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<AdminUserDto>, (StatusCode, Json<ErrorResponse>)> {
     let admin = require_admin_user(&state, &headers).await?;
 
     let affected = sqlx::query(
@@ -161,17 +166,29 @@ pub(crate) async fn admin_approve_registration(
     .await
     .map_err(|error| internal_error(format!("failed to approve registration: {error}")))?;
 
-    if affected.rows_affected() == 0 {
+    if affected.rows_affected() > 0 {
+        let user = load_admin_user(&state, user_id)
+            .await?
+            .ok_or_else(|| internal_error("approved user disappeared after update".to_string()))?;
+        return Ok(Json(user));
+    }
+
+    let current = load_admin_user(&state, user_id).await?;
+
+    if let Some(user) = current {
+        if user.status == "approved" {
+            return Ok(Json(user));
+        }
         return Err(validation_error(
-            "registration_not_found",
-            "pending registration not found",
+            "registration_not_pending",
+            "registration is not pending",
         ));
     }
 
-    Ok(Json(RegisterResponse {
-        message: "registration approved".to_string(),
-        status: "approved",
-    }))
+    Err(validation_error(
+        "registration_not_found",
+        "pending registration not found",
+    ))
 }
 
 pub(crate) async fn admin_reject_registration(
@@ -216,11 +233,7 @@ pub(crate) async fn admin_update_user_role(
     let next_role = normalize_user_role(&payload.role)?;
 
     let current = sqlx::query_as::<_, AdminUserDto>(
-        r#"
-        SELECT id, username, login, email, role, status, created_at, approved_at
-        FROM users
-        WHERE id = $1
-        "#,
+        &format!("{} FROM users u LEFT JOIN users approver ON approver.id = u.approved_by WHERE u.id = $1", admin_users_select_clause("u")),
     )
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -258,19 +271,22 @@ pub(crate) async fn admin_update_user_role(
         }
     }
 
-    let updated = sqlx::query_as::<_, AdminUserDto>(
+    sqlx::query(
         r#"
         UPDATE users
         SET role = $1
         WHERE id = $2
-        RETURNING id, username, login, email, role, status, created_at, approved_at
         "#,
     )
     .bind(next_role)
     .bind(user_id)
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await
     .map_err(|error| internal_error(format!("failed to update user role: {error}")))?;
+
+    let updated = load_admin_user(&state, user_id)
+        .await?
+        .ok_or_else(|| internal_error("updated user disappeared after role change".to_string()))?;
 
     Ok(Json(updated))
 }
@@ -360,6 +376,26 @@ fn normalize_admin_users_offset(
     } else {
         Err(validation_error("invalid_offset", "offset must be >= 0"))
     }
+}
+
+async fn load_admin_user(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<Option<AdminUserDto>, (StatusCode, Json<ErrorResponse>)> {
+    sqlx::query_as::<_, AdminUserDto>(&format!(
+        "{} FROM users u LEFT JOIN users approver ON approver.id = u.approved_by WHERE u.id = $1",
+        admin_users_select_clause("u")
+    ))
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|error| internal_error(format!("failed to load admin user: {error}")))
+}
+
+fn admin_users_select_clause(alias: &str) -> String {
+    format!(
+        "SELECT {alias}.id, {alias}.username, {alias}.login, {alias}.email, {alias}.first_name, {alias}.last_name, {alias}.role, {alias}.status, {alias}.created_at, {alias}.approved_at, {alias}.approved_by, approver.login AS approved_by_login"
+    )
 }
 
 #[cfg(test)]
