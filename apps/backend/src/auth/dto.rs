@@ -127,10 +127,14 @@ pub(crate) struct AdminUserDto {
     pub username: String,
     pub login: String,
     pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub role: String,
     pub status: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub approved_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub approved_by: Option<uuid::Uuid>,
+    pub approved_by_login: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

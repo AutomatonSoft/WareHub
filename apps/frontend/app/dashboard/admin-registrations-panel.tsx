@@ -106,6 +106,19 @@ export function AdminRegistrationsPanel({
     },
     [locale]
   );
+  const formatFullName = useCallback((user: AdminUser) => {
+    const value = [user.first_name?.trim(), user.last_name?.trim()].filter(Boolean).join(" ");
+    return value.length > 0 ? value : null;
+  }, []);
+  const formatApprover = useCallback((user: AdminUser) => {
+    if (user.approved_by_login && user.approved_by_login.trim().length > 0) {
+      return `@${user.approved_by_login}`;
+    }
+    if (user.approved_by && user.approved_by.trim().length > 0) {
+      return user.approved_by;
+    }
+    return null;
+  }, []);
 
   const hasActiveFilters = useMemo(
     () =>
@@ -118,7 +131,7 @@ export function AdminRegistrationsPanel({
     if (loading) {
       return t.loading;
     }
-    if (hasActiveFilters) {
+    if (hasActiveFilters && query.trim().length > 0) {
       return `${t.noMatches} "${query.trim()}".`;
     }
     return t.noUsers;
@@ -311,6 +324,7 @@ export function AdminRegistrationsPanel({
             <div className="admin-user-card" key={user.id}>
               <div className="admin-user-meta">
                 <b>{user.username}</b>
+                {formatFullName(user) ? <span>{formatFullName(user)}</span> : null}
                 <span>{user.login}</span>
                 <span>{user.email ?? "-"}</span>
                 <span className="admin-badge-row">
@@ -318,6 +332,8 @@ export function AdminRegistrationsPanel({
                   <span className={`admin-badge admin-badge-status-${user.status}`}>{statusName(user.status)}</span>
                 </span>
                 <span>{t.created} {formatDate(user.created_at)}</span>
+                {user.approved_at ? <span>Approved {formatDate(user.approved_at)}</span> : null}
+                {formatApprover(user) ? <span>Approved by {formatApprover(user)}</span> : null}
               </div>
               <div className="admin-actions">
                 {user.status === "pending" ? (

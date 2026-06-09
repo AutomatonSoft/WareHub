@@ -7,6 +7,7 @@ import {
   PanelsTopLeft,
   PlusSquare,
   PencilRuler,
+  Users,
 } from "lucide-react";
 
 export const navigationItems = [
@@ -19,3 +20,9 @@ export const navigationItems = [
   { href: "/marketplace", label: "Marketplace", icon: ChartColumnBig },
   { href: "/warehouse-map", label: "WareHouseMap", icon: Map }
 ] as const;
+
+export const adminNavigationItem = {
+  href: "/admin/users",
+  label: "Admin users",
+  icon: Users
+} as const;
