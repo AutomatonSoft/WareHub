@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This runbook describes the Slice 3B local development recovery path for the WareHub monorepo.
+This runbook describes the root-level local development startup flow for the WareHub monorepo.
 
 - Scope: local developer setup only
 - Not for stage
@@ -10,13 +10,12 @@ This runbook describes the Slice 3B local development recovery path for the Ware
 - Not for deploy automation
 - Not for migration execution
 
-The recommended mode is hybrid local development:
+The recommended mode is root-driven local development:
 
-- Docker Compose starts local dependencies
-- backend runs manually from `apps/backend`
-- frontend runs manually from `apps/frontend`
-- database-service runs manually from `services/database-service`
-- orchestrator runs manually from `services/orchestrator`
+- `start-dev.ps1` starts local Docker dependencies from `infra/local/docker-compose.dev.yml`
+- `start-dev.ps1` prepares local untracked env files from examples if they do not exist
+- `start-dev.ps1` can launch frontend, backend, database-service, and orchestrator
+- `stop-dev.ps1` stops only the local Docker dependencies from the same compose file
 
 ## 2. Prerequisites
 
@@ -71,7 +70,7 @@ Important:
 - do not use production credentials
 - keep local defaults on `localhost` or `127.0.0.1`
 
-## 5. Start Local Dependencies
+## 5. Root Startup Flow
 
 Validate compose:
 
@@ -79,12 +78,69 @@ Validate compose:
 docker compose -f infra/local/docker-compose.dev.yml config
 ```
 
-Start local dependencies:
+Default local startup from repo root:
 
 ```powershell
 Set-Location I:\WareHub
 .\start-dev.ps1
 ```
+
+This now does all of the following:
+
+- verifies you are running from repo root
+- verifies Docker and `docker compose`
+- validates `infra/local/docker-compose.dev.yml`
+- starts only local dependencies from `infra/local/docker-compose.dev.yml`
+- waits for local Postgres to become healthy
+- creates local env files only if they do not already exist:
+  - `apps/backend/.env`
+  - `apps/frontend/.env.local`
+  - `services/database-service/.env`
+  - `services/orchestrator/.env`
+- does not overwrite existing local env files
+- prefers PowerShell 7 `pwsh` for app windows and printed helper commands, but falls back to Windows PowerShell `powershell` when `pwsh` is not installed
+- launches app processes in separate PowerShell windows by default
+- prints local URLs and manual smoke commands
+
+Dependency-only mode:
+
+```powershell
+Set-Location I:\WareHub
+.\start-dev.ps1 -DepsOnly
+```
+
+`-NoApps` is an alias-equivalent mode for dependency-only startup.
+
+Print-only mode for app commands:
+
+```powershell
+Set-Location I:\WareHub
+.\start-dev.ps1 -NoNewWindows
+```
+
+This mode still starts local Docker dependencies, but prints the exact app commands instead of opening new PowerShell windows.
+The printed commands use the resolved local PowerShell executable instead of assuming `pwsh`.
+
+Selective app skipping:
+
+```powershell
+.\start-dev.ps1 -SkipFrontend
+.\start-dev.ps1 -SkipBackend
+.\start-dev.ps1 -SkipServices
+.\start-dev.ps1 -SkipOrchestrator
+```
+
+Optional explicit Django migrations:
+
+```powershell
+.\start-dev.ps1 -WithMigrations
+```
+
+Important:
+
+- Django migrations are not run automatically by default
+- backend keeps `SKIP_DB_MIGRATIONS=true` by default in local env bootstrap
+- stage and production are not touched by this flow
 
 Stop local dependencies:
 
@@ -93,13 +149,29 @@ Set-Location I:\WareHub
 .\stop-dev.ps1
 ```
 
-The current Slice 3B compose file starts only safe local dependencies. Application services are started manually.
+`stop-dev.ps1` runs only:
+
+- `docker compose -f infra/local/docker-compose.dev.yml down`
+
+It does not:
+
+- stop stage or prod containers
+- run unscoped Docker cleanup
+- stop manually launched app windows
 
 ## 6. Backend Local Run
 
-1. Copy `apps/backend/.env.example` to `apps/backend/.env` and adjust only local placeholder values.
-2. Keep `SKIP_DB_MIGRATIONS=true` unless you intentionally handle migrations outside this slice.
-3. Start manually from `apps/backend`:
+`start-dev.ps1` creates `apps/backend/.env` automatically from `apps/backend/.env.example` if it is missing.
+
+Seeded local defaults:
+
+- `DATABASE_URL=postgres://warehub:warehub@localhost:8933/warehub`
+- `APP_ENV=dev`
+- `APP_PORT=8932`
+- `SKIP_DB_MIGRATIONS=true`
+- `CORS_ALLOW_ORIGINS=http://localhost:8931`
+
+The helper launches the backend from `apps/backend` with:
 
 ```powershell
 Set-Location I:\WareHub\apps\backend
@@ -114,9 +186,19 @@ Notes:
 
 ## 7. Frontend Local Run
 
-1. Copy `apps/frontend/.env.example` to `apps/frontend/.env.local`.
-2. Keep local URLs pointed at `localhost`.
-3. Start manually from `apps/frontend`:
+`start-dev.ps1` creates `apps/frontend/.env.local` automatically from `apps/frontend/.env.example` if it is missing.
+
+Seeded local defaults:
+
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:8932/api/v1`
+- `BACKEND_INTERNAL_API_BASE_URL=http://127.0.0.1:8932/api/v1`
+- `NEXT_PUBLIC_SERVICES_API_BASE_URL=http://localhost:8934`
+- `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=http://localhost:8935`
+- `BACKEND_ORIGIN=http://localhost:8932`
+- `SERVICES_ORIGIN=http://localhost:8934`
+- `PORT=8931`
+
+The helper launches the frontend from `apps/frontend` with:
 
 ```powershell
 Set-Location I:\WareHub\apps\frontend
@@ -130,12 +212,43 @@ Notes:
 
 ## 8. Database-Service Local Run
 
-1. Copy `services/database-service/.env.example` to `services/database-service/.env`.
+`start-dev.ps1` creates `services/database-service/.env` automatically from `services/database-service/.env.example` if it is missing.
+
+Seeded local defaults:
+
+- `POSTGRES_DB=warehub`
+- `POSTGRES_USER=warehub`
+- `POSTGRES_PASSWORD=warehub`
+- `POSTGRES_HOST=localhost`
+- `POSTGRES_PORT=8933`
+- `DATABASE_URL=postgresql://warehub:warehub@localhost:8933/warehub`
+- `DEBUG=true`
+- `ALLOWED_HOSTS=127.0.0.1,localhost`
+
+Default helper command:
+
+```powershell
+Set-Location I:\WareHub\services\database-service
+python manage.py runserver 0.0.0.0:8934
+```
+
+Optional explicit migration mode:
+
+```powershell
+Set-Location I:\WareHub\services\database-service
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8934
+```
+
+The root script uses the migration variant only when `-WithMigrations` is passed.
+
+Legacy notes retained:
+
 2. Dependency manifest source of truth is `services/database-service/requirements.txt`.
 3. `services/requirements.txt` is deprecated and must not be used as the source of truth for active Python service bootstrap.
-3. Django entrypoint remains `services/database-service/manage.py`.
-4. Preferred future host-local installer is `uv`.
-5. Documentation-only target bootstrap sequence:
+4. Django entrypoint remains `services/database-service/manage.py`.
+5. Preferred future host-local installer is `uv`.
+6. Documentation-only target bootstrap sequence:
 
 ```powershell
 Set-Location I:\WareHub\services\database-service
@@ -143,24 +256,24 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
-6. `uv` install validation was not executed in this slice.
-7. If you run the service directly on the host, keep startup and migrations explicit and separate.
-6. If you use the service-local Docker flow, validate it from repo root:
+7. `uv` install validation was not executed in this slice.
+8. If you run the service directly on the host, keep startup and migrations explicit and separate.
+9. If you use the service-local Docker flow, validate it from repo root:
 
 ```powershell
 Set-Location I:\WareHub
 docker compose -f services/database-service/docker-compose.yml config
 ```
 
-8. The normalized service-local Docker flow uses:
+10. The normalized service-local Docker flow uses:
    - build context `services`
    - Dockerfile `database-service/Dockerfile`
    - dependency manifest `database-service/requirements.txt`
    - Django API on `localhost:8934`
    - service-local Postgres on `localhost:8543`
-9. The service-local compose file is `services/database-service/docker-compose.yml`.
-10. The service-local compose command does not auto-run migrations.
-11. If you inspect or repair this later, use [slice-3k-database-service-requirements-audit-report.md](/I:/WareHub/docs/runbooks/slice-3k-database-service-requirements-audit-report.md) as the source of truth for the current state.
+11. The service-local compose file is `services/database-service/docker-compose.yml`.
+12. The service-local compose command does not auto-run migrations.
+13. If you inspect or repair this later, use [slice-3k-database-service-requirements-audit-report.md](/I:/WareHub/docs/runbooks/slice-3k-database-service-requirements-audit-report.md) as the source of truth for the current state.
 
 Do not enable implicit migrations as part of automated startup in this slice.
 
@@ -171,14 +284,21 @@ Current limitation:
 
 ## 9. Orchestrator Local Run
 
-1. Copy `services/orchestrator/.env.example` to `services/orchestrator/.env`.
-2. Keep `DATABASE_SERVICE_BASE_URL=http://localhost:8934`.
-3. Dependency manifest source of truth is `services/orchestrator/requirements.txt`.
-3. Start manually from `services/orchestrator`:
+`start-dev.ps1` creates `services/orchestrator/.env` automatically from `services/orchestrator/.env.example` if it is missing.
+
+Seeded local defaults:
+
+- `DATABASE_SERVICE_BASE_URL=http://localhost:8934`
+- `ORCHESTRATOR_HOST=0.0.0.0`
+- `ORCHESTRATOR_PORT=8935`
+
+Dependency manifest source of truth is `services/orchestrator/requirements.txt`.
+
+Default helper command:
 
 ```powershell
 Set-Location I:\WareHub\services\orchestrator
-uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8011 --reload
+uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload
 ```
 
 Optional containerized orchestrator mode is deferred because the current local recovery slice avoids Dockerfile-path changes.
@@ -208,6 +328,13 @@ Run from `I:\WareHub`:
 ```powershell
 git status --short
 docker compose -f infra/local/docker-compose.dev.yml config
+.\start-dev.ps1 -DepsOnly
+.\start-dev.ps1 -NoNewWindows
+@'
+[void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\start-dev.ps1',[ref]$null,[ref]$null)
+[void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\stop-dev.ps1',[ref]$null,[ref]$null)
+[void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\tools\local\start-local-apps.ps1',[ref]$null,[ref]$null)
+'@ | powershell -NoProfile -
 Get-ChildItem -Recurse -Force -File | Where-Object { $_.Name -match '^\.env(\..*)?$' } | Select-Object FullName
 Get-ChildItem -Recurse -Force -Directory | Where-Object { $_.Name -in @('node_modules','target','.next','build','dist','.venv','venv','env','__pycache__','.pytest_cache','.ruff_cache','.mypy_cache','.dart_tool','coverage') } | Select-Object FullName
 Get-ChildItem -Recurse -Force -Directory | Where-Object { $_.FullName -match '\\\.gitea$|\\\.github$' } | Select-Object FullName
@@ -220,6 +347,7 @@ Get-ChildItem -Recurse -Force -File | Where-Object { $_.Name -match '(\.pem$|\.k
 - If frontend proxy requests fail, verify `apps/frontend/.env.local` and local backend/services ports.
 - If database-service fails to connect, verify `services/database-service/.env` and local Postgres port `8933`.
 - If orchestrator fails, verify `services/orchestrator/.env` and that database-service is already running on `8934`.
+- If `-NoNewWindows` is used, remember that `start-dev.ps1` prints commands but does not launch app processes.
 - If mobile on device cannot reach backend, replace `127.0.0.1` with a LAN-reachable host IP in your local mobile config.
 
 ## 14. Do Not Use In Stage/Prod

@@ -1,12 +1,16 @@
+[CmdletBinding()]
+param()
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 
 function Assert-RepoRoot {
-  $current = (Get-Location).Path
-  if ($current -ne $repoRoot) {
-    throw "Run stop-dev.ps1 from repo root: $repoRoot"
+  $current = (Resolve-Path ".").Path.TrimEnd("\")
+  $expected = (Resolve-Path $repoRoot).Path.TrimEnd("\")
+  if ($current -ne $expected) {
+    throw "Run stop-dev.ps1 from repo root: $expected"
   }
 }
 
@@ -26,3 +30,4 @@ Assert-ComposeConfig
 Write-Host "Stopping WareHub local dependencies from $composeFile"
 docker compose -f $composeFile down
 Write-Host "Local dependencies are stopped."
+Write-Host "Note: stop-dev.ps1 does not stop manually launched app windows."
