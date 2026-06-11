@@ -6,6 +6,9 @@ param(
   [switch]$SkipBackend,
   [switch]$SkipServices,
   [switch]$SkipOrchestrator,
+  [switch]$ResetDeps,
+  [switch]$ReinstallDeps,
+  [switch]$SkipDependencyInstall,
   [switch]$WithMigrations,
   [switch]$NoNewWindows
 )
@@ -18,6 +21,9 @@ $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 $helperScript = Join-Path $repoRoot "tools\local\start-local-apps.ps1"
 $processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
 $localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
+$localDependencyCacheDirectory = Join-Path $repoRoot ".venv\local-dev"
+$pythonBootstrapExecutable = $null
+$npmExecutable = $null
 $script:StartedLogPaths = @{}
 $script:LoadedRootEnvKeys = @()
 
@@ -60,6 +66,32 @@ $appPlans = @(
   }
 )
 
+$pythonServicePlans = @(
+  @{
+    Name = "database-service"
+    WorkingDirectory = Join-Path $repoRoot "services\database-service"
+    VenvPath = Join-Path $repoRoot ".venv\database-service"
+    RequirementFiles = @("requirements.txt")
+    PythonEnvName = "DATABASE_SERVICE_PYTHON_EXE"
+    VenvEnvName = "DATABASE_SERVICE_VENV_PATH"
+  },
+  @{
+    Name = "orchestrator"
+    WorkingDirectory = Join-Path $repoRoot "services\orchestrator"
+    VenvPath = Join-Path $repoRoot ".venv\orchestrator"
+    RequirementFiles = @("requirements.txt")
+    PythonEnvName = "ORCHESTRATOR_PYTHON_EXE"
+    VenvEnvName = "ORCHESTRATOR_VENV_PATH"
+  }
+)
+
+$dockerDependencyPlans = @(
+  @{ Service = "warehub-postgres"; Label = "Postgres"; RequireHealthy = $true },
+  @{ Service = "warehub-redis"; Label = "Redis"; RequireHealthy = $false },
+  @{ Service = "warehub-minio"; Label = "MinIO"; RequireHealthy = $false },
+  @{ Service = "warehub-rabbitmq"; Label = "RabbitMQ"; RequireHealthy = $false }
+)
+
 function Assert-RepoRoot {
   $current = (Resolve-Path ".").Path.TrimEnd("\")
   $expected = (Resolve-Path $repoRoot).Path.TrimEnd("\")
@@ -71,6 +103,24 @@ function Assert-RepoRoot {
 function Assert-Docker {
   $null = Get-Command docker -ErrorAction Stop
   docker compose version | Out-Null
+}
+
+function Resolve-PythonExecutable {
+  $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+  if ($pythonCommand) {
+    return $pythonCommand.Source
+  }
+
+  throw "Unable to find Python on PATH."
+}
+
+function Resolve-NpmExecutable {
+  $npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+  if ($npmCommand) {
+    return $npmCommand.Source
+  }
+
+  throw "Unable to find npm on PATH."
 }
 
 function Assert-RootEnvFile {
@@ -119,6 +169,39 @@ function Write-Utf8NoBomLines {
   [System.IO.File]::WriteAllLines($Path, $Lines, $utf8NoBom)
 }
 
+function Invoke-ExternalCommand {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @(),
+    [string]$WorkingDirectory
+  )
+
+  if ($WorkingDirectory) {
+    Push-Location $WorkingDirectory
+  }
+
+  try {
+    & $FilePath @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+      throw "Command exited with code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
+    }
+  } finally {
+    if ($WorkingDirectory) {
+      Pop-Location
+    }
+  }
+}
+
+function Ensure-Directory {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path
+  )
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+  }
+}
+
 function Get-DotenvValues {
   param(
     [Parameter(Mandatory = $true)][string]$Path
@@ -153,6 +236,57 @@ function Get-DotenvValues {
   }
 
   return $values
+}
+
+function Get-TextSha256 {
+  param(
+    [Parameter(Mandatory = $true)][string]$Text
+  )
+
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+    $hashBytes = $sha256.ComputeHash($bytes)
+    return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+  } finally {
+    $sha256.Dispose()
+  }
+}
+
+function Get-CombinedFileHash {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Paths
+  )
+
+  $parts = foreach ($path in ($Paths | Sort-Object)) {
+    $resolvedPath = (Resolve-Path $path).Path
+    $fileHash = (Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$resolvedPath|$fileHash"
+  }
+
+  return Get-TextSha256 -Text ($parts -join "`n")
+}
+
+function Get-ServiceDependencyInputPaths {
+  param(
+    [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+    [Parameter(Mandatory = $true)][string[]]$CandidateFiles
+  )
+
+  $paths = @(
+    foreach ($candidateFile in $CandidateFiles) {
+    $candidatePath = Join-Path $WorkingDirectory $candidateFile
+    if (Test-Path -LiteralPath $candidatePath) {
+      (Resolve-Path $candidatePath).Path
+    }
+  }
+  )
+
+  if ($paths.Count -eq 0) {
+    throw "No dependency manifest found in $WorkingDirectory"
+  }
+
+  return @($paths)
 }
 
 function Import-RootEnv {
@@ -298,6 +432,182 @@ function Initialize-LocalRuntimeEnv {
   Write-Host "Derived local runtime env from root .env for frontend, backend, services, and orchestrator."
 }
 
+function Ensure-LocalDependencyCacheDirectory {
+  Ensure-Directory -Path $localDependencyCacheDirectory
+}
+
+function Test-AppSelectedForStartup {
+  param(
+    [Parameter(Mandatory = $true)][string]$AppName
+  )
+
+  if ($DepsOnly -or $NoApps) {
+    return $false
+  }
+
+  $appPlan = $appPlans | Where-Object { $_.Name -eq $AppName } | Select-Object -First 1
+  if (-not $appPlan) {
+    return $false
+  }
+
+  return (-not $appPlan.Skip)
+}
+
+function Get-VenvPythonPath {
+  param(
+    [Parameter(Mandatory = $true)][string]$VenvPath
+  )
+
+  return Join-Path $VenvPath "Scripts\python.exe"
+}
+
+function Ensure-PythonServiceDependencies {
+  param(
+    [Parameter(Mandatory = $true)][hashtable]$ServicePlan
+  )
+
+  $serviceName = $ServicePlan.Name
+  $workingDirectory = $ServicePlan.WorkingDirectory
+  $venvPath = $ServicePlan.VenvPath
+  $venvPythonPath = Get-VenvPythonPath -VenvPath $venvPath
+  $hashFilePath = Join-Path $localDependencyCacheDirectory "$serviceName.requirements.sha256"
+  $manifestPaths = Get-ServiceDependencyInputPaths -WorkingDirectory $workingDirectory -CandidateFiles $ServicePlan.RequirementFiles
+
+  Write-Host "$serviceName venv path: $venvPath"
+
+  if ($SkipDependencyInstall) {
+    if (-not (Test-Path -LiteralPath $venvPythonPath)) {
+      throw "$serviceName virtual environment is missing at $venvPath. Re-run without -SkipDependencyInstall."
+    }
+
+    Write-Host "$serviceName dependency install checks skipped."
+    Set-ProcessEnvValue -Name $ServicePlan.PythonEnvName -Value $venvPythonPath
+    Set-ProcessEnvValue -Name $ServicePlan.VenvEnvName -Value $venvPath
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $venvPythonPath)) {
+    Write-Host "$serviceName virtual environment missing; creating $venvPath"
+    Ensure-Directory -Path $venvPath
+    Invoke-ExternalCommand -FilePath $pythonBootstrapExecutable -ArgumentList @("-m", "venv", $venvPath)
+  }
+
+  $currentHash = Get-CombinedFileHash -Paths $manifestPaths
+  $previousHash = if (Test-Path -LiteralPath $hashFilePath) {
+    (Get-Content -LiteralPath $hashFilePath -Raw).Trim()
+  } else {
+    ""
+  }
+
+  $shouldInstall = $ReinstallDeps -or [string]::IsNullOrWhiteSpace($previousHash) -or $currentHash -ne $previousHash
+  if ($ReinstallDeps) {
+    Write-Host "ReinstallDeps requested; reinstalling $serviceName dependencies."
+  } elseif (-not $shouldInstall) {
+    Write-Host "$serviceName dependencies unchanged; skipping install."
+  } else {
+    Write-Host "$serviceName dependency hash changed; installing dependencies."
+  }
+
+  if ($shouldInstall) {
+    $requirementsPath = $manifestPaths | Where-Object { $_.EndsWith("requirements.txt") } | Select-Object -First 1
+    if (-not $requirementsPath) {
+      throw "$serviceName currently requires a requirements.txt manifest for local startup."
+    }
+
+    $pipArguments = @("-m", "pip", "install", "--disable-pip-version-check")
+    if ($ReinstallDeps) {
+      $pipArguments += "--force-reinstall"
+    }
+    $pipArguments += @("-r", $requirementsPath)
+
+    Invoke-ExternalCommand -FilePath $venvPythonPath -ArgumentList $pipArguments -WorkingDirectory $workingDirectory
+    Write-Utf8NoBomLines -Path $hashFilePath -Lines @($currentHash)
+  }
+
+  Set-ProcessEnvValue -Name $ServicePlan.PythonEnvName -Value $venvPythonPath
+  Set-ProcessEnvValue -Name $ServicePlan.VenvEnvName -Value $venvPath
+}
+
+function Ensure-FrontendDependencies {
+  $frontendDirectory = Join-Path $repoRoot "apps\frontend"
+  $packageJsonPath = Join-Path $frontendDirectory "package.json"
+  $packageLockPath = Join-Path $frontendDirectory "package-lock.json"
+  $pnpmLockPath = Join-Path $frontendDirectory "pnpm-lock.yaml"
+  $yarnLockPath = Join-Path $frontendDirectory "yarn.lock"
+  $hashFilePath = Join-Path $localDependencyCacheDirectory "frontend.dependencies.sha256"
+  $nodeModulesPath = Join-Path $frontendDirectory "node_modules"
+
+  $dependencyInputs = @($packageJsonPath)
+  $installCommand = @("install")
+  if (Test-Path -LiteralPath $packageLockPath) {
+    $dependencyInputs += $packageLockPath
+    $installCommand = @("ci")
+  } elseif (Test-Path -LiteralPath $pnpmLockPath) {
+    $dependencyInputs += $pnpmLockPath
+  } elseif (Test-Path -LiteralPath $yarnLockPath) {
+    $dependencyInputs += $yarnLockPath
+  }
+
+  Write-Host "frontend dependency cache path: $hashFilePath"
+
+  if ($SkipDependencyInstall) {
+    if (-not (Test-Path -LiteralPath $nodeModulesPath)) {
+      throw "Frontend dependencies are missing at $nodeModulesPath. Re-run without -SkipDependencyInstall."
+    }
+    Write-Host "frontend dependency install checks skipped."
+    return
+  }
+
+  $currentHash = Get-CombinedFileHash -Paths $dependencyInputs
+  $previousHash = if (Test-Path -LiteralPath $hashFilePath) {
+    (Get-Content -LiteralPath $hashFilePath -Raw).Trim()
+  } else {
+    ""
+  }
+
+  $shouldInstall = $ReinstallDeps -or -not (Test-Path -LiteralPath $nodeModulesPath) -or [string]::IsNullOrWhiteSpace($previousHash) -or $currentHash -ne $previousHash
+  if ($ReinstallDeps) {
+    Write-Host "ReinstallDeps requested; reinstalling frontend dependencies."
+  } elseif (-not $shouldInstall) {
+    Write-Host "frontend dependencies unchanged; skipping install."
+  } else {
+    Write-Host "frontend dependency hash changed or node_modules missing; installing dependencies."
+  }
+
+  if ($shouldInstall) {
+    Invoke-ExternalCommand -FilePath $npmExecutable -ArgumentList $installCommand -WorkingDirectory $frontendDirectory
+    Write-Utf8NoBomLines -Path $hashFilePath -Lines @($currentHash)
+  }
+}
+
+function Get-DockerComposeContainerId {
+  param(
+    [Parameter(Mandatory = $true)][string]$ServiceName
+  )
+
+  $output = @(docker compose -f $composeFile ps -q $ServiceName 2>$null)
+  if (-not $output -or $output.Count -eq 0) {
+    return ""
+  }
+
+  $containerId = [string]($output | Select-Object -First 1)
+  if ([string]::IsNullOrWhiteSpace($containerId)) {
+    return ""
+  }
+
+  return $containerId.Trim()
+}
+
+function Resolve-PostgresComposeServiceName {
+  $services = @(docker compose -f $composeFile config --services 2>$null)
+  if ($services -contains "postgres") {
+    return "postgres"
+  }
+  if ($services -contains "warehub-postgres") {
+    return "warehub-postgres"
+  }
+  return "postgres"
+}
 function Wait-ForPostgresHealthy {
   param(
     [int]$TimeoutSeconds = 90
@@ -307,7 +617,7 @@ function Wait-ForPostgresHealthy {
   $containerId = $null
 
   while ((Get-Date) -lt $deadline) {
-    $containerId = (docker compose -f $composeFile ps -q warehub-postgres).Trim()
+    $containerId = Get-DockerComposeContainerId -ServiceName (Resolve-PostgresComposeServiceName)
     if ($containerId) {
       break
     }
@@ -333,12 +643,95 @@ function Wait-ForPostgresHealthy {
   throw "Timed out waiting for Postgres to become healthy."
 }
 
+function Get-DependencyContainerState {
+  param(
+    [Parameter(Mandatory = $true)][string]$ServiceName
+  )
+
+  $containerId = Get-DockerComposeContainerId -ServiceName $ServiceName
+  if (-not $containerId) {
+    return "missing"
+  }
+
+  $state = (docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $containerId).Trim()
+  if ([string]::IsNullOrWhiteSpace($state)) {
+    return "unknown"
+  }
+
+  return $state
+}
+
+function Test-LocalDependenciesHealthy {
+  foreach ($dependencyPlan in $dockerDependencyPlans) {
+    $state = Get-DependencyContainerState -ServiceName $dependencyPlan.Service
+    if ($dependencyPlan.RequireHealthy) {
+      if ($state -ne "healthy") {
+        return $false
+      }
+      continue
+    }
+
+    if ($state -notin @("running", "healthy")) {
+      return $false
+    }
+  }
+
+  return $true
+}
+
+function Wait-ForDependencyState {
+  param(
+    [Parameter(Mandatory = $true)][hashtable]$DependencyPlan,
+    [int]$TimeoutSeconds = 90
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $state = Get-DependencyContainerState -ServiceName $DependencyPlan.Service
+    if ($DependencyPlan.RequireHealthy) {
+      if ($state -eq "healthy") {
+        return
+      }
+      if ($state -in @("unhealthy", "exited", "dead")) {
+        throw "$($DependencyPlan.Label) container is not healthy: $state"
+      }
+    } elseif ($state -in @("running", "healthy")) {
+      return
+    } elseif ($state -in @("exited", "dead")) {
+      throw "$($DependencyPlan.Label) container is not running: $state"
+    }
+
+    Start-Sleep -Seconds 2
+  }
+
+  throw "Timed out waiting for $($DependencyPlan.Label) local dependency readiness."
+}
+
+function Wait-ForLocalDependenciesReady {
+  foreach ($dependencyPlan in $dockerDependencyPlans) {
+    Wait-ForDependencyState -DependencyPlan $dependencyPlan
+  }
+  Write-Host "Local Docker dependencies are ready."
+}
+
 function Start-LocalDependencies {
-  Write-Host "Restarting local Docker dependencies..."
-  docker compose -f $composeFile down
-  Write-Host "Starting WareHub local dependencies from $composeFile"
+  if ($ResetDeps) {
+    Write-Host "ResetDeps requested; recreating local Docker dependencies."
+    docker compose -f $composeFile down
+    Write-Host "Starting WareHub local dependencies from $composeFile"
+    docker compose -f $composeFile up -d
+    Wait-ForLocalDependenciesReady
+    return
+  }
+
+  if (Test-LocalDependenciesHealthy) {
+    Write-Host "Docker dependencies already running; reusing existing containers."
+    return
+  }
+
+  Write-Host "Starting missing or unhealthy Docker dependencies..."
   docker compose -f $composeFile up -d
-  Wait-ForPostgresHealthy
+  Wait-ForLocalDependenciesReady
 }
 
 function Ensure-LocalDevLogDirectory {
@@ -534,13 +927,25 @@ Assert-HelperScript
 Assert-ProcessHelperScript
 . $processHelperScript
 $powerShellExecutable = Resolve-PowerShellExecutable
+$pythonBootstrapExecutable = Resolve-PythonExecutable
+$npmExecutable = Resolve-NpmExecutable
 Import-RootEnv
 Initialize-LocalRuntimeEnv
 Assert-ComposeConfig
 Ensure-LocalDevLogDirectory
+Ensure-LocalDependencyCacheDirectory
 Write-Host "Cleaning previous WareHub local app processes..."
 Stop-WareHubLocalAppProcesses
 Start-LocalDependencies
+if (Test-AppSelectedForStartup -AppName "frontend") {
+  Ensure-FrontendDependencies
+}
+foreach ($pythonServicePlan in $pythonServicePlans) {
+  $appName = if ($pythonServicePlan.Name -eq "database-service") { "services" } else { "orchestrator" }
+  if (Test-AppSelectedForStartup -AppName $appName) {
+    Ensure-PythonServiceDependencies -ServicePlan $pythonServicePlan
+  }
+}
 
 if (-not ($DepsOnly -or $NoApps)) {
   Start-LocalApps -PowerShellExecutable $powerShellExecutable

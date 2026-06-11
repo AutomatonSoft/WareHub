@@ -12,7 +12,7 @@ This runbook describes the root-level local development startup flow for the War
 
 The recommended mode is root-driven local development:
 
-- `start-dev.ps1` performs a clean local dev restart from `infra/local/docker-compose.dev.yml`
+- `start-dev.ps1` performs a cache-aware local dev startup from `infra/local/docker-compose.dev.yml`
 - `start-dev.ps1` loads repo-root `.env` as the local source of truth
 - `start-dev.ps1` can launch frontend, backend, database-service, and orchestrator
 - `start-dev.ps1 -NoNewWindows` runs local apps as hidden background processes and writes logs to `logs/local-dev/`
@@ -89,9 +89,14 @@ This now does all of the following:
 - derives a safe local Postgres target from `DEV_POSTGRES_*` for backend and database-service child processes
 - normalizes local Postgres credentials to the dedicated local dev contract before compose/app startup
 - stops previous WareHub local app listeners on `8931`, `8932`, `8934`, and `8935`
-- runs `docker compose -f infra/local/docker-compose.dev.yml down`
-- starts local dependencies from `infra/local/docker-compose.dev.yml`
-- waits for local Postgres to become healthy
+- reuses healthy local Docker dependencies by default
+- starts only missing or unhealthy local Docker dependencies with `docker compose -f infra/local/docker-compose.dev.yml up -d`
+- recreates local Docker dependencies only when `-ResetDeps` is passed
+- reuses frontend dependencies when `package-lock.json` is unchanged
+- reuses Python virtual environments for `database-service` and `orchestrator`
+- skips Python dependency installs when `requirements.txt` hashes are unchanged
+- stores local dependency hash markers under repo-local `.venv\local-dev\`
+- waits for local Docker dependency readiness after startup
 - prefers PowerShell 7 `pwsh` for app windows and printed helper commands, but falls back to Windows PowerShell `powershell` when `pwsh` is not installed
 - launches app processes in separate PowerShell windows by default
 - when `-NoNewWindows` is used, launches hidden background app processes and writes logs to:
@@ -101,7 +106,7 @@ This now does all of the following:
   - `logs/local-dev/orchestrator.log`
 - prints local URLs and manual smoke commands
 
-You no longer need to run `.\stop-dev.ps1` manually before `.\start-dev.ps1`. The start script now cleans and restarts the local environment itself.
+You no longer need to run `.\stop-dev.ps1` manually before `.\start-dev.ps1`. The start script now reuses healthy local dependencies and restarts only the app processes by default.
 
 Dependency-only mode:
 
@@ -119,7 +124,7 @@ Set-Location I:\WareHub
 .\start-dev.ps1
 ```
 
-This mode still performs the same clean local restart, but launches app processes in separate PowerShell windows.
+This mode still performs the same cache-aware startup, but launches app processes in separate PowerShell windows.
 
 Background mode:
 
@@ -128,7 +133,7 @@ Set-Location I:\WareHub
 .\start-dev.ps1 -NoNewWindows
 ```
 
-This mode performs the same clean local restart and launches the app processes in hidden background windows.
+This mode performs the same cache-aware startup and launches the app processes in hidden background windows.
 Use `.\stop-dev.ps1` when you want to shut the local environment down explicitly.
 
 Selective app skipping:
@@ -152,6 +157,18 @@ Important:
 - backend keeps `SKIP_DB_MIGRATIONS=true` by default in local env bootstrap
 - stage and production are not touched by this flow
 
+Explicit dependency/cache flags:
+
+```powershell
+.\start-dev.ps1 -ResetDeps
+.\start-dev.ps1 -ReinstallDeps
+.\start-dev.ps1 -SkipDependencyInstall
+```
+
+- `-ResetDeps` is the destructive local dependency reset path. It runs `docker compose -f infra/local/docker-compose.dev.yml down` and recreates only the local dev dependency containers.
+- `-ReinstallDeps` forces frontend and Python dependency reinstalls without resetting Docker dependencies.
+- `-SkipDependencyInstall` skips dependency install checks entirely and expects existing `node_modules` and Python virtual environments to already exist.
+
 Stop local dev explicitly:
 
 ```powershell
@@ -159,7 +176,7 @@ Set-Location I:\WareHub
 .\stop-dev.ps1
 ```
 
-`start-dev.ps1` = clean restart local dev.
+`start-dev.ps1` = cache-aware startup for local dev.
 
 `stop-dev.ps1` = shutdown local dev.
 
@@ -196,6 +213,7 @@ Notes:
 
 - backend loads repo-root `.env` before service-local fallback files
 - do not run this against stage or production databases
+- backend dependency reuse is handled by Cargo's normal local cache; this startup slice does not add a separate Rust install layer
 
 ## 7. Frontend Local Run
 
@@ -212,10 +230,13 @@ Notes:
 
 - Next resolves repo-root `.env` before service-local fallback files
 - browser-visible variables must still use `NEXT_PUBLIC_*`
+- `start-dev.ps1` treats `apps/frontend/package-lock.json` as the dependency hash source of truth for startup installs
+- if `node_modules` already exists and the lock hash is unchanged, startup logs `frontend dependencies unchanged; skipping install.`
 
 ## 8. Database-Service Local Run
 
 `start-dev.ps1` provides database-service env from repo-root `.env`.
+It also reuses a repo-local virtual environment at `I:\WareHub\.venv\database-service`.
 
 Default helper command:
 
@@ -233,6 +254,13 @@ python manage.py runserver 0.0.0.0:8934
 ```
 
 The root script uses the migration variant only when `-WithMigrations` is passed.
+
+Dependency cache notes:
+
+1. `start-dev.ps1` hashes `services/database-service/requirements.txt`.
+2. Hash markers are stored under `.venv\local-dev\`.
+3. If the hash is unchanged, startup logs `database-service dependencies unchanged; skipping install.`
+4. If the hash changes or `-ReinstallDeps` is passed, startup reinstalls into the existing venv.
 
 Legacy notes retained:
 
@@ -277,6 +305,7 @@ Current limitation:
 ## 9. Orchestrator Local Run
 
 `start-dev.ps1` provides orchestrator env from repo-root `.env`.
+It also reuses a repo-local virtual environment at `I:\WareHub\.venv\orchestrator`.
 
 Dependency manifest source of truth is `services/orchestrator/requirements.txt`.
 
@@ -288,6 +317,12 @@ uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload
 ```
 
 Optional containerized orchestrator mode is deferred because the current local recovery slice avoids Dockerfile-path changes.
+
+Dependency cache notes:
+
+- `start-dev.ps1` hashes `services/orchestrator/requirements.txt`.
+- Hash markers are stored under `.venv\local-dev\`.
+- If the hash is unchanged, startup logs `orchestrator dependencies unchanged; skipping install.`
 
 ## 10. Mobile Local Run
 
@@ -333,7 +368,7 @@ Get-ChildItem -Recurse -Force -File | Where-Object { $_.Name -match '(\.pem$|\.k
 - If frontend proxy requests fail, verify `apps/frontend/.env.local` and local backend/services ports.
 - If database-service fails to connect, verify `services/database-service/.env` and local Postgres port `8933`.
 - If orchestrator fails, verify `services/orchestrator/.env` and that database-service is already running on `8934`.
-- If `-NoNewWindows` is used, remember that `start-dev.ps1` prints commands but does not launch app processes.
+- If `-SkipDependencyInstall` is used and a venv or `node_modules` is missing, rerun without that flag.
 - If mobile on device cannot reach backend, replace `127.0.0.1` with a LAN-reachable host IP in your local mobile config.
 
 ## 14. Do Not Use In Stage/Prod
