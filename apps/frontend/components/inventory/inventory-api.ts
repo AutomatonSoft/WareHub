@@ -124,7 +124,7 @@ export async function fetchInventoryRows(params: {
         ? payload.details.hint.trim()
         : "";
     if (response.status === 403) {
-      throw new Error("Admin session required for database_service. Login again and retry.");
+      throw new Error("Database service session required. Login again and retry.");
     }
     if (backendMessage) {
       const suffix = [backendCode, requestId].filter(Boolean).join(", ");
@@ -152,7 +152,7 @@ export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Pr
   }
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("Admin session required for database_service. Login again and retry.");
+      throw new Error("Database service session required. Login again and retry.");
     }
     throw new Error(`Inventory details request failed: HTTP ${response.status}`);
   }

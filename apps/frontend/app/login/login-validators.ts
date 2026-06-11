@@ -42,7 +42,7 @@ export function validatePassword(value: string): string | null {
   if (value.length < 8 || value.length > 128) {
     return "password_len_8_128";
   }
-  if (!/[A-Z]/.test(value) || !/[0-9]/.test(value)) {
+  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value)) {
     return PASSWORD_REQUIREMENTS;
   }
   return null;

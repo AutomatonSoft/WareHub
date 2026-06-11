@@ -1,6 +1,12 @@
 import type { AuthUser, ChangePasswordPayload, UpdateProfilePayload } from "./client-api-types";
 import { parseError } from "./client-api-shared";
 
+type PasswordResetConfirmPayload = {
+  email: string;
+  code: string;
+  password: string;
+};
+
 export async function logout(apiBase: string, token: string): Promise<void> {
   await fetch(`${apiBase}/auth/logout`, {
     method: "POST",
@@ -56,6 +62,39 @@ export async function changeCurrentUserPassword(
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Password change failed: HTTP ${response.status}`));
+  }
+}
+
+export async function requestPasswordReset(apiBase: string, email: string): Promise<void> {
+  const response = await fetch(`${apiBase}/auth/password/reset/request`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email })
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(parseError(body, `Password reset request failed: HTTP ${response.status}`));
+  }
+}
+
+export async function confirmPasswordReset(
+  apiBase: string,
+  payload: PasswordResetConfirmPayload
+): Promise<void> {
+  const response = await fetch(`${apiBase}/auth/password/reset/confirm`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(parseError(body, `Password reset failed: HTTP ${response.status}`));
   }
 }
 

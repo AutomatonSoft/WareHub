@@ -170,11 +170,11 @@ class DevBackendSessionSyncAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        if role != "admin":
+        if role not in {"admin", "user"}:
             return Response(
                 {
-                    "code": "services_session_admin_required",
-                    "message": "Admin role is required for database_service session sync.",
+                    "code": "services_session_role_invalid",
+                    "message": "Backend role is not allowed for database_service session sync.",
                     "request_id": request_id,
                 },
                 status=status.HTTP_403_FORBIDDEN,

@@ -30,9 +30,11 @@ export {
 } from "./client-api-shared";
 
 export {
+  confirmPasswordReset,
   changeCurrentUserPassword,
   fetchCurrentUser,
   logout,
+  requestPasswordReset,
   updateCurrentUser
 } from "./client-api-auth";
 

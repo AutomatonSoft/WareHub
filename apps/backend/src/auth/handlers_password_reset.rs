@@ -60,9 +60,17 @@ pub(crate) async fn request_password_reset(
     .await
     .map_err(|error| internal_error(format!("failed to store reset code: {error}")))?;
 
-    send_password_reset_email(&email, &code)
-        .await
-        .map_err(internal_error)?;
+    if password_reset_log_codes_enabled() {
+        tracing::warn!(
+            email = %email,
+            code = %code,
+            "local password reset code generated"
+        );
+    } else {
+        send_password_reset_email(&email, &code)
+            .await
+            .map_err(internal_error)?;
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -183,4 +191,15 @@ fn generate_reset_code() -> String {
     rng.fill_bytes(&mut bytes);
     let value = u32::from_le_bytes(bytes) % 1_000_000;
     format!("{:06}", value)
+}
+fn password_reset_log_codes_enabled() -> bool {
+    std::env::var("PASSWORD_RESET_LOG_CODES")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false)
 }
