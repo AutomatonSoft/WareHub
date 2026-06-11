@@ -15,7 +15,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 $helperScript = Join-Path $repoRoot "tools\local\start-local-apps.ps1"
+$processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
 $localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
+$script:StartedLogPaths = @{}
 
 $appPlans = @(
   @{
@@ -76,6 +78,12 @@ function Assert-ComposeConfig {
 function Assert-HelperScript {
   if (-not (Test-Path -LiteralPath $helperScript)) {
     throw "Missing local apps helper: $helperScript"
+  }
+}
+
+function Assert-ProcessHelperScript {
+  if (-not (Test-Path -LiteralPath $processHelperScript)) {
+    throw "Missing local process helper: $processHelperScript"
   }
 }
 
@@ -239,6 +247,8 @@ function Wait-ForPostgresHealthy {
 }
 
 function Start-LocalDependencies {
+  Write-Host "Restarting local Docker dependencies..."
+  docker compose -f $composeFile down
   Write-Host "Starting WareHub local dependencies from $composeFile"
   docker compose -f $composeFile up -d
   Wait-ForPostgresHealthy
@@ -260,11 +270,38 @@ function Reset-LocalDevLogFile {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
   }
 
+  $resolvedPath = $Path
+
   if (Test-Path -LiteralPath $Path) {
-    Remove-Item -LiteralPath $Path -Force
+    try {
+      Remove-Item -LiteralPath $Path -Force
+    } catch {
+      $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+      $extension = [System.IO.Path]::GetExtension($Path)
+      $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      $resolvedPath = Join-Path $directory "${baseName}-${timestamp}${extension}"
+      Write-Warning "Log file is locked and cannot be replaced: $Path"
+      Write-Host "Using fallback log file: $resolvedPath"
+    }
   }
 
-  New-Item -ItemType File -Path $Path -Force | Out-Null
+  if (-not (Test-Path -LiteralPath $resolvedPath)) {
+    New-Item -ItemType File -Path $resolvedPath -Force | Out-Null
+  } else {
+    try {
+      Clear-Content -LiteralPath $resolvedPath -Force
+    } catch {
+      $baseName = [System.IO.Path]::GetFileNameWithoutExtension($resolvedPath)
+      $extension = [System.IO.Path]::GetExtension($resolvedPath)
+      $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      $resolvedPath = Join-Path $directory "${baseName}-${timestamp}${extension}"
+      Write-Warning "Unable to clear existing log file: $Path"
+      Write-Host "Using fallback log file: $resolvedPath"
+      New-Item -ItemType File -Path $resolvedPath -Force | Out-Null
+    }
+  }
+
+  return $resolvedPath
 }
 
 function Get-LaunchCommandText {
@@ -292,9 +329,11 @@ function Start-LocalApps {
   }
 
   if ($NoNewWindows) {
+    Write-Host "Starting local apps..."
     foreach ($app in $enabledApps) {
-      $logPath = Join-Path $localDevLogDirectory $app.LogFileName
-      Reset-LocalDevLogFile -Path $logPath
+      $defaultLogPath = Join-Path $localDevLogDirectory $app.LogFileName
+      $logPath = Reset-LocalDevLogFile -Path $defaultLogPath
+      $script:StartedLogPaths[$app.Name] = $logPath
 
       $arguments = @(
         "-NoLogo"
@@ -321,7 +360,9 @@ function Start-LocalApps {
     return
   }
 
+  Write-Host "Starting local apps..."
   foreach ($app in $enabledApps) {
+    $script:StartedLogPaths[$app.Name] = $null
     $arguments = @(
       "-NoExit"
       "-ExecutionPolicy"
@@ -358,7 +399,10 @@ function Print-StartupSummary {
     Write-Host ""
     Write-Host "Logs:"
     foreach ($app in $enabledApps) {
-      $logPath = Join-Path $localDevLogDirectory $app.LogFileName
+      $logPath = $script:StartedLogPaths[$app.Name]
+      if (-not $logPath) {
+        $logPath = Join-Path $localDevLogDirectory $app.LogFileName
+      }
       Write-Host "  $($app.Label): $logPath"
     }
     Write-Host ""
@@ -399,9 +443,13 @@ Assert-RepoRoot
 Assert-Docker
 Assert-ComposeConfig
 Assert-HelperScript
+Assert-ProcessHelperScript
+. $processHelperScript
 $powerShellExecutable = Resolve-PowerShellExecutable
 Ensure-LocalEnvFiles
 Ensure-LocalDevLogDirectory
+Write-Host "Cleaning previous WareHub local app processes..."
+Stop-WareHubLocalAppProcesses
 Start-LocalDependencies
 
 if (-not ($DepsOnly -or $NoApps)) {
