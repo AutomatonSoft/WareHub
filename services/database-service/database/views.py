@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import DisallowedHost
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
@@ -76,13 +77,12 @@ def _extract_bearer_header(request) -> str | None:
     return auth_header
 
 
-def _is_local_backend_session_bridge_enabled(request) -> bool:
-    host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
-    backend_auth_base = str(settings.BACKEND_AUTH_BASE_URL or "").strip().lower()
-    return host in {"localhost", "127.0.0.1"} and (
-        backend_auth_base.startswith("http://127.0.0.1:")
-        or backend_auth_base.startswith("http://localhost:")
-    )
+def _is_backend_session_bridge_enabled(request) -> bool:
+    try:
+        host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    except DisallowedHost:
+        return False
+    return host in set(getattr(settings, "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", []))
 
 
 def _fetch_backend_auth_user(auth_header: str, request_id: str) -> tuple[int, dict]:
@@ -115,7 +115,7 @@ class DevBackendSessionSyncAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        if not _is_local_backend_session_bridge_enabled(request):
+        if not _is_backend_session_bridge_enabled(request):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         request_id = _request_id_from_request(request)
