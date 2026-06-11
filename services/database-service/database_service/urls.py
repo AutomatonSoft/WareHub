@@ -33,6 +33,7 @@ from database.views import (
     KidEanSummaryAPIView,
     KidMarketplaceEansAPIView,
     KidOrderIDsAPIView,
+    DevBackendSessionSyncAPIView,
     MarketplaceHoodHealthAPIView,
     MarketplaceKauflandHealthAPIView,
     ServiceHealthAPIView,
@@ -87,6 +88,7 @@ from kaufland.views import (
 api_v1_patterns = [
     path("api/v1/healthz", ServiceHealthAPIView.as_view(), name="service-health-v1-noslash"),
     path("api/v1/healthz/", ServiceHealthAPIView.as_view(), name="service-health-v1"),
+    path("api/v1/dev/session/sync/", DevBackendSessionSyncAPIView.as_view(), name="dev-backend-session-sync-v1"),
     path("api/v1/kids/", KidListCreateAPIView.as_view(), name="kid-list-create-v1"),
     path("api/v1/kids/<int:pk>/", KidRetrieveUpdateAPIView.as_view(), name="kid-detail-v1"),
     path("api/v1/kids/bulk-update/", KidsBulkUpdateAPIView.as_view(), name="kids-bulk-update-v1"),

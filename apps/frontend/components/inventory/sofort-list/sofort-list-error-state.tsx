@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 
+function getInventoryApiErrorLabel(message: string): string {
+  const httpMatch = message.match(/\bHTTP\s+(\d{3})\b/i);
+  if (httpMatch) {
+    return `Error ${httpMatch[1]}`;
+  }
+  if (/admin session is required|no access/i.test(message)) {
+    return "Error 403";
+  }
+  return "Error unknown";
+}
+
 export function SofortListErrorState({
   message,
   onRetry,
@@ -19,6 +30,7 @@ export function SofortListErrorState({
     () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     []
   );
+  const inventoryApiErrorLabel = useMemo(() => getInventoryApiErrorLabel(message), [message]);
 
   async function copyError() {
     try {
@@ -51,7 +63,7 @@ export function SofortListErrorState({
       </div>
 
       <div className="w-full rounded-xl border border-[#FECACA] bg-white px-3 py-2 text-xs text-[#64748B]">
-        Inventory API: <span className="font-medium text-destructive">Error 500</span> · Last checked: {checkedAt} · Marketplace Sync: Unknown
+        Inventory API: <span className="font-medium text-destructive">{inventoryApiErrorLabel}</span> · Last checked: {checkedAt} · Marketplace Sync: Unknown
       </div>
     </div>
   );
