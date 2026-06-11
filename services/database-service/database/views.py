@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import DisallowedHost
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
@@ -77,7 +78,10 @@ def _extract_bearer_header(request) -> str | None:
 
 
 def _is_backend_session_bridge_enabled(request) -> bool:
-    host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    try:
+        host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    except DisallowedHost:
+        return False
     return host in set(getattr(settings, "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", []))
 
 
