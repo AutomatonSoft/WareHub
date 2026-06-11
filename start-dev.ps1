@@ -15,6 +15,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 $helperScript = Join-Path $repoRoot "tools\local\start-local-apps.ps1"
+$localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
 
 $appPlans = @(
   @{
@@ -23,6 +24,8 @@ $appPlans = @(
     WorkingDirectory = Join-Path $repoRoot "apps\frontend"
     Label = "Frontend"
     HealthUrl = "http://localhost:8931"
+    Url = "http://localhost:8931"
+    LogFileName = "frontend.log"
   },
   @{
     Name = "backend"
@@ -30,6 +33,8 @@ $appPlans = @(
     WorkingDirectory = Join-Path $repoRoot "apps\backend"
     Label = "Backend"
     HealthUrl = "http://localhost:8932/healthz"
+    Url = "http://localhost:8932/healthz"
+    LogFileName = "backend.log"
   },
   @{
     Name = "services"
@@ -37,6 +42,8 @@ $appPlans = @(
     WorkingDirectory = Join-Path $repoRoot "services\database-service"
     Label = "Database-service"
     HealthUrl = "http://localhost:8934/healthz"
+    Url = "http://localhost:8934/healthz"
+    LogFileName = "database-service.log"
   },
   @{
     Name = "orchestrator"
@@ -44,6 +51,8 @@ $appPlans = @(
     WorkingDirectory = Join-Path $repoRoot "services\orchestrator"
     Label = "Orchestrator"
     HealthUrl = "http://localhost:8935/healthz"
+    Url = "http://localhost:8935/healthz"
+    LogFileName = "orchestrator.log"
   }
 )
 
@@ -71,17 +80,17 @@ function Assert-HelperScript {
 }
 
 function Resolve-PowerShellExecutable {
-  $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
-  if ($pwshCommand) {
-    return $pwshCommand.Source
-  }
-
   $windowsPowerShellCommand = Get-Command powershell -ErrorAction SilentlyContinue
   if ($windowsPowerShellCommand) {
     return $windowsPowerShellCommand.Source
   }
 
-  throw "Unable to find a PowerShell executable. Install PowerShell 7 'pwsh' or ensure Windows PowerShell 'powershell' is available on PATH."
+  $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
+  if ($pwshCommand) {
+    return $pwshCommand.Source
+  }
+
+  throw "Unable to find a PowerShell executable. Ensure Windows PowerShell 'powershell' is available on PATH."
 }
 
 function Write-Utf8NoBomLines {
@@ -235,6 +244,29 @@ function Start-LocalDependencies {
   Wait-ForPostgresHealthy
 }
 
+function Ensure-LocalDevLogDirectory {
+  if (-not (Test-Path -LiteralPath $localDevLogDirectory)) {
+    New-Item -ItemType Directory -Path $localDevLogDirectory -Force | Out-Null
+  }
+}
+
+function Reset-LocalDevLogFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path
+  )
+
+  $directory = Split-Path -Parent $Path
+  if ($directory -and -not (Test-Path -LiteralPath $directory)) {
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+  }
+
+  if (Test-Path -LiteralPath $Path) {
+    Remove-Item -LiteralPath $Path -Force
+  }
+
+  New-Item -ItemType File -Path $Path -Force | Out-Null
+}
+
 function Get-LaunchCommandText {
   param(
     [Parameter(Mandatory = $true)][string]$AppName,
@@ -260,13 +292,31 @@ function Start-LocalApps {
   }
 
   if ($NoNewWindows) {
-    Write-Host ""
-    Write-Host "NoNewWindows mode enabled. Run these commands manually:"
     foreach ($app in $enabledApps) {
-      Write-Host ""
-      Write-Host "$($app.Label):"
-      Write-Host "  cd `"$($app.WorkingDirectory)`""
-      Write-Host "  $(Get-LaunchCommandText -AppName $app.Name -PowerShellExecutable $PowerShellExecutable)"
+      $logPath = Join-Path $localDevLogDirectory $app.LogFileName
+      Reset-LocalDevLogFile -Path $logPath
+
+      $arguments = @(
+        "-NoLogo"
+        "-NoProfile"
+        "-ExecutionPolicy"
+        "Bypass"
+        "-File"
+        $helperScript
+        "-App"
+        $app.Name
+        "-RepoRoot"
+        $repoRoot
+        "-LogPath"
+        $logPath
+      )
+
+      if ($WithMigrations -and $app.Name -eq "services") {
+        $arguments += "-WithMigrations"
+      }
+
+      Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -WindowStyle Hidden
+      Write-Host "Started $($app.Label) in background. Log: $logPath"
     }
     return
   }
@@ -294,10 +344,27 @@ function Start-LocalApps {
 }
 
 function Print-StartupSummary {
-  $appMode = if ($DepsOnly -or $NoApps) { "Dependencies only" } elseif ($NoNewWindows) { "Dependencies started, app commands printed" } else { "Dependencies started, app windows launched" }
+  $enabledApps = @($appPlans | Where-Object { -not $_.Skip })
+  $appMode = if ($DepsOnly -or $NoApps) { "Dependencies only" } elseif ($NoNewWindows) { "Dependencies started, apps running in background" } else { "Dependencies started, app windows launched" }
   Write-Host ""
   Write-Host "WareHub local dev startup complete."
   Write-Host "Mode: $appMode"
+  if ($NoNewWindows -and -not ($DepsOnly -or $NoApps)) {
+    Write-Host ""
+    Write-Host "Started services:"
+    foreach ($app in $enabledApps) {
+      Write-Host "  $($app.Label): $($app.Url)"
+    }
+    Write-Host ""
+    Write-Host "Logs:"
+    foreach ($app in $enabledApps) {
+      $logPath = Join-Path $localDevLogDirectory $app.LogFileName
+      Write-Host "  $($app.Label): $logPath"
+    }
+    Write-Host ""
+    Write-Host "Stop command:"
+    Write-Host "  .\stop-dev.ps1"
+  }
   Write-Host ""
   Write-Host "Local URLs:"
   Write-Host "  Frontend:           http://localhost:8931"
@@ -334,6 +401,7 @@ Assert-ComposeConfig
 Assert-HelperScript
 $powerShellExecutable = Resolve-PowerShellExecutable
 Ensure-LocalEnvFiles
+Ensure-LocalDevLogDirectory
 Start-LocalDependencies
 
 if (-not ($DepsOnly -or $NoApps)) {

@@ -33,6 +33,7 @@ _audit/
 _release_reports/
 tmp/
 temp/
+logs/local-dev/
 
 # Local orchestrator runtime data
 services/orchestrator/data/
