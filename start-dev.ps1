@@ -13,11 +13,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$rootEnvPath = Join-Path $repoRoot ".env"
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 $helperScript = Join-Path $repoRoot "tools\local\start-local-apps.ps1"
 $processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
 $localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
 $script:StartedLogPaths = @{}
+$script:LoadedRootEnvKeys = @()
 
 $appPlans = @(
   @{
@@ -71,6 +73,12 @@ function Assert-Docker {
   docker compose version | Out-Null
 }
 
+function Assert-RootEnvFile {
+  if (-not (Test-Path -LiteralPath $rootEnvPath)) {
+    throw "Missing root .env file: $rootEnvPath"
+  }
+}
+
 function Assert-ComposeConfig {
   docker compose -f $composeFile config | Out-Null
 }
@@ -111,104 +119,183 @@ function Write-Utf8NoBomLines {
   [System.IO.File]::WriteAllLines($Path, $Lines, $utf8NoBom)
 }
 
-function Set-DotenvValue {
+function Get-DotenvValues {
   param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][hashtable]$Values
+    [Parameter(Mandatory = $true)][string]$Path
   )
 
-  $lines = Get-Content -LiteralPath $Path
-  $updatedKeys = New-Object System.Collections.Generic.HashSet[string]
-
-  for ($index = 0; $index -lt $lines.Count; $index++) {
-    foreach ($entry in $Values.GetEnumerator()) {
-      $escapedKey = [regex]::Escape($entry.Key)
-      if ($lines[$index] -match "^${escapedKey}=") {
-        $lines[$index] = "$($entry.Key)=$($entry.Value)"
-        $null = $updatedKeys.Add($entry.Key)
-        break
-      }
+  $values = @{}
+  foreach ($rawLine in Get-Content -LiteralPath $Path) {
+    $line = $rawLine.Trim()
+    if (-not $line -or $line.StartsWith("#")) {
+      continue
     }
+
+    $separatorIndex = $line.IndexOf("=")
+    if ($separatorIndex -le 0) {
+      continue
+    }
+
+    $key = $line.Substring(0, $separatorIndex).Trim()
+    if (-not ($key -match '^[A-Za-z_][A-Za-z0-9_]*$')) {
+      continue
+    }
+
+    $value = $line.Substring($separatorIndex + 1).Trim()
+    if (
+      ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+      ($value.StartsWith("'") -and $value.EndsWith("'"))
+    ) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+
+    $values[$key] = $value
   }
 
-  foreach ($entry in $Values.GetEnumerator()) {
-    if (-not $updatedKeys.Contains($entry.Key)) {
-      $lines += "$($entry.Key)=$($entry.Value)"
-    }
-  }
-
-  Write-Utf8NoBomLines -Path $Path -Lines ([string[]]$lines)
+  return $values
 }
 
-function Ensure-LocalEnvFile {
+function Import-RootEnv {
+  $values = Get-DotenvValues -Path $rootEnvPath
+  if ($values.Count -eq 0) {
+    throw "Root .env does not contain any KEY=value entries: $rootEnvPath"
+  }
+
+  foreach ($entry in $values.GetEnumerator()) {
+    [System.Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
+  }
+
+  $script:LoadedRootEnvKeys = @($values.Keys | Sort-Object)
+  Write-Host "Loaded root .env into startup environment ($($script:LoadedRootEnvKeys.Count) keys)."
+}
+
+function Get-ProcessEnvValue {
   param(
-    [Parameter(Mandatory = $true)][string]$TargetPath,
-    [Parameter(Mandatory = $true)][string]$ExamplePath,
-    [Parameter(Mandatory = $true)][hashtable]$SeedValues
+    [Parameter(Mandatory = $true)][string]$Name
   )
 
-  if (Test-Path -LiteralPath $TargetPath) {
-    Write-Host "Keeping existing local env file: $TargetPath"
+  return [System.Environment]::GetEnvironmentVariable($Name, "Process")
+}
+
+function Set-ProcessEnvValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  [System.Environment]::SetEnvironmentVariable($Name, $Value, "Process")
+}
+
+function Set-ProcessEnvDefault {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  $currentValue = Get-ProcessEnvValue -Name $Name
+  if ([string]::IsNullOrWhiteSpace($currentValue)) {
+    Set-ProcessEnvValue -Name $Name -Value $Value
+  }
+}
+
+function Set-ProcessEnvFromSource {
+  param(
+    [Parameter(Mandatory = $true)][string]$TargetName,
+    [Parameter(Mandatory = $true)][string]$SourceName,
+    [string]$FallbackValue
+  )
+
+  $sourceValue = Get-ProcessEnvValue -Name $SourceName
+  if (-not [string]::IsNullOrWhiteSpace($sourceValue)) {
+    Set-ProcessEnvValue -Name $TargetName -Value $sourceValue
     return
   }
 
-  if (-not (Test-Path -LiteralPath $ExamplePath)) {
-    throw "Missing env example: $ExamplePath"
+  $targetValue = Get-ProcessEnvValue -Name $TargetName
+  if (-not [string]::IsNullOrWhiteSpace($targetValue)) {
+    return
   }
 
-  Copy-Item -LiteralPath $ExamplePath -Destination $TargetPath
-  Set-DotenvValue -Path $TargetPath -Values $SeedValues
-  Write-Host "Created local env file from example: $TargetPath"
+  if (-not [string]::IsNullOrWhiteSpace($FallbackValue)) {
+    Set-ProcessEnvValue -Name $TargetName -Value $FallbackValue
+  }
 }
 
-function Ensure-LocalEnvFiles {
-  Ensure-LocalEnvFile `
-    -TargetPath (Join-Path $repoRoot "apps\backend\.env") `
-    -ExamplePath (Join-Path $repoRoot "apps\backend\.env.example") `
-    -SeedValues @{
-      "DATABASE_URL" = "postgres://warehub:warehub@localhost:8933/warehub"
-      "APP_ENV" = "dev"
-      "APP_PORT" = "8932"
-      "SKIP_DB_MIGRATIONS" = "true"
-      "CORS_ALLOW_ORIGINS" = "http://localhost:8931"
-    }
+function Initialize-LocalRuntimeEnv {
+  $frontendPort = (Get-ProcessEnvValue -Name "DEV_FRONTEND_PORT")
+  if ([string]::IsNullOrWhiteSpace($frontendPort)) { $frontendPort = "8931" }
 
-  Ensure-LocalEnvFile `
-    -TargetPath (Join-Path $repoRoot "apps\frontend\.env.local") `
-    -ExamplePath (Join-Path $repoRoot "apps\frontend\.env.example") `
-    -SeedValues @{
-      "NEXT_PUBLIC_API_BASE_URL" = "http://localhost:8932/api/v1"
-      "BACKEND_INTERNAL_API_BASE_URL" = "http://127.0.0.1:8932/api/v1"
-      "NEXT_PUBLIC_SERVICES_API_BASE_URL" = "http://localhost:8934"
-      "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" = "http://localhost:8935"
-      "BACKEND_ORIGIN" = "http://localhost:8932"
-      "SERVICES_ORIGIN" = "http://localhost:8934"
-      "PORT" = "8931"
-      "NODE_ENV" = "development"
-    }
+  $backendPort = (Get-ProcessEnvValue -Name "DEV_BACKEND_PORT")
+  if ([string]::IsNullOrWhiteSpace($backendPort)) { $backendPort = "8932" }
 
-  Ensure-LocalEnvFile `
-    -TargetPath (Join-Path $repoRoot "services\database-service\.env") `
-    -ExamplePath (Join-Path $repoRoot "services\database-service\.env.example") `
-    -SeedValues @{
-      "POSTGRES_DB" = "warehub"
-      "POSTGRES_USER" = "warehub"
-      "POSTGRES_PASSWORD" = "warehub"
-      "POSTGRES_HOST" = "localhost"
-      "POSTGRES_PORT" = "8933"
-      "DATABASE_URL" = "postgresql://warehub:warehub@localhost:8933/warehub"
-      "DEBUG" = "true"
-      "ALLOWED_HOSTS" = "127.0.0.1,localhost"
-    }
+  $servicesPort = (Get-ProcessEnvValue -Name "DEV_SERVICES_PORT")
+  if ([string]::IsNullOrWhiteSpace($servicesPort)) { $servicesPort = "8934" }
 
-  Ensure-LocalEnvFile `
-    -TargetPath (Join-Path $repoRoot "services\orchestrator\.env") `
-    -ExamplePath (Join-Path $repoRoot "services\orchestrator\.env.example") `
-    -SeedValues @{
-      "DATABASE_SERVICE_BASE_URL" = "http://localhost:8934"
-      "ORCHESTRATOR_PORT" = "8935"
-      "ORCHESTRATOR_HOST" = "0.0.0.0"
-    }
+  $orchestratorPort = (Get-ProcessEnvValue -Name "DEV_ORCHESTRATOR_PORT")
+  if ([string]::IsNullOrWhiteSpace($orchestratorPort)) { $orchestratorPort = "8935" }
+
+  $postgresDb = "warehub"
+  $postgresUser = "warehub"
+  $postgresPassword = "warehub"
+  $rootDevPostgresHost = (Get-ProcessEnvValue -Name "DEV_POSTGRES_HOST")
+  $postgresHost = "localhost"
+
+  $postgresPort = Get-ProcessEnvValue -Name "DEV_POSTGRES_PORT"
+  if ([string]::IsNullOrWhiteSpace($postgresPort)) { $postgresPort = "8933" }
+
+  $backendOrigin = "http://localhost:$backendPort"
+  $servicesOrigin = "http://localhost:$servicesPort"
+  $orchestratorOrigin = "http://localhost:$orchestratorPort"
+  $frontendOrigin = "http://localhost:$frontendPort"
+  $databaseUrlUser = [uri]::EscapeDataString($postgresUser)
+  $databaseUrlPassword = [uri]::EscapeDataString($postgresPassword)
+  $databaseUrlDatabase = [uri]::EscapeDataString($postgresDb)
+  $databaseUrl = "postgres://$databaseUrlUser`:$databaseUrlPassword@$postgresHost`:$postgresPort/$databaseUrlDatabase"
+
+  Set-ProcessEnvValue -Name "DEV_POSTGRES_DB" -Value $postgresDb
+  Set-ProcessEnvValue -Name "DEV_POSTGRES_USER" -Value $postgresUser
+  Set-ProcessEnvValue -Name "DEV_POSTGRES_PASSWORD" -Value $postgresPassword
+  Set-ProcessEnvValue -Name "DEV_POSTGRES_HOST" -Value $postgresHost
+  Set-ProcessEnvValue -Name "DEV_POSTGRES_HOST_PORT" -Value $postgresPort
+  Set-ProcessEnvValue -Name "WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE" -Value "true"
+  Set-ProcessEnvValue -Name "APP_ENV" -Value "dev"
+  Set-ProcessEnvValue -Name "APP_PORT" -Value $backendPort
+  Set-ProcessEnvValue -Name "PORT" -Value $frontendPort
+  Set-ProcessEnvValue -Name "POSTGRES_DB" -Value $postgresDb
+  Set-ProcessEnvValue -Name "POSTGRES_USER" -Value $postgresUser
+  Set-ProcessEnvValue -Name "POSTGRES_PASSWORD" -Value $postgresPassword
+  Set-ProcessEnvValue -Name "POSTGRES_HOST" -Value $postgresHost
+  Set-ProcessEnvValue -Name "POSTGRES_PORT" -Value $postgresPort
+  Set-ProcessEnvValue -Name "DATABASE_URL" -Value $databaseUrl
+  Set-ProcessEnvValue -Name "BACKEND_ORIGIN" -Value $backendOrigin
+  Set-ProcessEnvValue -Name "SERVICES_ORIGIN" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_ORIGIN" -Value $orchestratorOrigin
+  Set-ProcessEnvValue -Name "NEXT_PUBLIC_API_BASE_URL" -Value "$backendOrigin/api/v1"
+  Set-ProcessEnvValue -Name "BACKEND_INTERNAL_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
+  Set-ProcessEnvValue -Name "BACKEND_API_BASE_URL" -Value "$backendOrigin/api/v1"
+  Set-ProcessEnvValue -Name "NEXT_PUBLIC_SERVICES_API_BASE_URL" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "SERVICES_API_BASE_URL" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
+  Set-ProcessEnvValue -Name "MOBILE_DEV_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
+  Set-ProcessEnvValue -Name "DATABASE_SERVICE_BASE_URL" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_HOST" -Value "0.0.0.0"
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_PORT" -Value $orchestratorPort
+
+  Set-ProcessEnvDefault -Name "SKIP_DB_MIGRATIONS" -Value "true"
+  Set-ProcessEnvDefault -Name "CORS_ALLOW_ORIGINS" -Value "$frontendOrigin,http://127.0.0.1:$frontendPort"
+  Set-ProcessEnvDefault -Name "ALLOWED_HOSTS" -Value "127.0.0.1,localhost"
+  Set-ProcessEnvDefault -Name "CORS_ALLOWED_ORIGINS" -Value "$frontendOrigin,http://127.0.0.1:$frontendPort"
+  Set-ProcessEnvDefault -Name "CSRF_TRUSTED_ORIGINS" -Value "$frontendOrigin,http://127.0.0.1:$frontendPort"
+  Set-ProcessEnvDefault -Name "BACKEND_AUTH_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
+  Set-ProcessEnvDefault -Name "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS" -Value "localhost,127.0.0.1"
+  Set-ProcessEnvDefault -Name "NEXT_PUBLIC_APP_ENV" -Value "dev"
+
+  if (-not [string]::IsNullOrWhiteSpace($rootDevPostgresHost) -and $rootDevPostgresHost -notin @("localhost", "127.0.0.1")) {
+    Write-Host "Overriding nonlocal DEV_POSTGRES_HOST for local runtime with localhost."
+  }
+
+  Write-Host "Derived local runtime env from root .env for frontend, backend, services, and orchestrator."
 }
 
 function Wait-ForPostgresHealthy {
@@ -390,6 +477,7 @@ function Print-StartupSummary {
   Write-Host ""
   Write-Host "WareHub local dev startup complete."
   Write-Host "Mode: $appMode"
+  Write-Host "Local env source of truth: $rootEnvPath"
   if ($NoNewWindows -and -not ($DepsOnly -or $NoApps)) {
     Write-Host ""
     Write-Host "Started services:"
@@ -441,12 +529,14 @@ function Print-StartupSummary {
 
 Assert-RepoRoot
 Assert-Docker
-Assert-ComposeConfig
+Assert-RootEnvFile
 Assert-HelperScript
 Assert-ProcessHelperScript
 . $processHelperScript
 $powerShellExecutable = Resolve-PowerShellExecutable
-Ensure-LocalEnvFiles
+Import-RootEnv
+Initialize-LocalRuntimeEnv
+Assert-ComposeConfig
 Ensure-LocalDevLogDirectory
 Write-Host "Cleaning previous WareHub local app processes..."
 Stop-WareHubLocalAppProcesses

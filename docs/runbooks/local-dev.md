@@ -13,7 +13,7 @@ This runbook describes the root-level local development startup flow for the War
 The recommended mode is root-driven local development:
 
 - `start-dev.ps1` performs a clean local dev restart from `infra/local/docker-compose.dev.yml`
-- `start-dev.ps1` prepares local untracked env files from examples if they do not exist
+- `start-dev.ps1` loads repo-root `.env` as the local source of truth
 - `start-dev.ps1` can launch frontend, backend, database-service, and orchestrator
 - `start-dev.ps1 -NoNewWindows` runs local apps as hidden background processes and writes logs to `logs/local-dev/`
 - `stop-dev.ps1` is the explicit local dev shutdown command
@@ -27,7 +27,7 @@ The recommended mode is root-driven local development:
 - Python 3 plus service dependencies for Django/orchestrator work
 - Flutter SDK for mobile work
 
-Do not reuse old tracked env files. Create only local untracked env files from the provided `.env.example` files.
+Do not commit any real `.env` file. Maintain only repo-root `.env` for normal local startup.
 
 ## 3. Local Architecture
 
@@ -57,19 +57,13 @@ Use only example files as templates:
 - orchestrator: `services/orchestrator/.env.example`
 - mobile: `apps/mobile/.env.example`
 
-Create local untracked files only when needed:
-
-- `apps/backend/.env`
-- `apps/frontend/.env.local`
-- `services/database-service/.env`
-- `services/orchestrator/.env`
-- `apps/mobile/.env` if your local Flutter workflow needs it
-
 Important:
 
+- repo-root `.env` is the only manually maintained local env file
 - do not commit any real `.env`
 - do not use production credentials
 - keep local defaults on `localhost` or `127.0.0.1`
+- see [env-contract.md](/I:/WareHub/docs/runbooks/env-contract.md) for the unified env contract
 
 ## 5. Root Startup Flow
 
@@ -91,16 +85,13 @@ This now does all of the following:
 - verifies you are running from repo root
 - verifies Docker and `docker compose`
 - validates `infra/local/docker-compose.dev.yml`
+- loads repo-root `.env` into the startup process and child app processes
+- derives a safe local Postgres target from `DEV_POSTGRES_*` for backend and database-service child processes
+- normalizes local Postgres credentials to the dedicated local dev contract before compose/app startup
 - stops previous WareHub local app listeners on `8931`, `8932`, `8934`, and `8935`
 - runs `docker compose -f infra/local/docker-compose.dev.yml down`
 - starts local dependencies from `infra/local/docker-compose.dev.yml`
 - waits for local Postgres to become healthy
-- creates local env files only if they do not already exist:
-  - `apps/backend/.env`
-  - `apps/frontend/.env.local`
-- `services/database-service/.env`
-- `services/orchestrator/.env`
-- does not overwrite existing local env files
 - prefers PowerShell 7 `pwsh` for app windows and printed helper commands, but falls back to Windows PowerShell `powershell` when `pwsh` is not installed
 - launches app processes in separate PowerShell windows by default
 - when `-NoNewWindows` is used, launches hidden background app processes and writes logs to:
@@ -192,15 +183,7 @@ Primary local URLs:
 
 ## 6. Backend Local Run
 
-`start-dev.ps1` creates `apps/backend/.env` automatically from `apps/backend/.env.example` if it is missing.
-
-Seeded local defaults:
-
-- `DATABASE_URL=postgres://warehub:warehub@localhost:8933/warehub`
-- `APP_ENV=dev`
-- `APP_PORT=8932`
-- `SKIP_DB_MIGRATIONS=true`
-- `CORS_ALLOW_ORIGINS=http://localhost:8931`
+`start-dev.ps1` provides backend env from repo-root `.env`.
 
 The helper launches the backend from `apps/backend` with:
 
@@ -211,23 +194,12 @@ cargo run
 
 Notes:
 
-- current backend source still contains a legacy shared-env lookup
-- fallback local `.env` loading still allows manual local startup
+- backend loads repo-root `.env` before service-local fallback files
 - do not run this against stage or production databases
 
 ## 7. Frontend Local Run
 
-`start-dev.ps1` creates `apps/frontend/.env.local` automatically from `apps/frontend/.env.example` if it is missing.
-
-Seeded local defaults:
-
-- `NEXT_PUBLIC_API_BASE_URL=http://localhost:8932/api/v1`
-- `BACKEND_INTERNAL_API_BASE_URL=http://127.0.0.1:8932/api/v1`
-- `NEXT_PUBLIC_SERVICES_API_BASE_URL=http://localhost:8934`
-- `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=http://localhost:8935`
-- `BACKEND_ORIGIN=http://localhost:8932`
-- `SERVICES_ORIGIN=http://localhost:8934`
-- `PORT=8931`
+`start-dev.ps1` provides frontend env from repo-root `.env`.
 
 The helper launches the frontend from `apps/frontend` with:
 
@@ -238,23 +210,12 @@ npm run dev
 
 Notes:
 
-- current `next.config.mjs` still contains a legacy shared-env lookup
-- Next local env files remain the monorepo-safe workaround for Slice 3B
+- Next resolves repo-root `.env` before service-local fallback files
+- browser-visible variables must still use `NEXT_PUBLIC_*`
 
 ## 8. Database-Service Local Run
 
-`start-dev.ps1` creates `services/database-service/.env` automatically from `services/database-service/.env.example` if it is missing.
-
-Seeded local defaults:
-
-- `POSTGRES_DB=warehub`
-- `POSTGRES_USER=warehub`
-- `POSTGRES_PASSWORD=warehub`
-- `POSTGRES_HOST=localhost`
-- `POSTGRES_PORT=8933`
-- `DATABASE_URL=postgresql://warehub:warehub@localhost:8933/warehub`
-- `DEBUG=true`
-- `ALLOWED_HOSTS=127.0.0.1,localhost`
+`start-dev.ps1` provides database-service env from repo-root `.env`.
 
 Default helper command:
 
@@ -315,13 +276,7 @@ Current limitation:
 
 ## 9. Orchestrator Local Run
 
-`start-dev.ps1` creates `services/orchestrator/.env` automatically from `services/orchestrator/.env.example` if it is missing.
-
-Seeded local defaults:
-
-- `DATABASE_SERVICE_BASE_URL=http://localhost:8934`
-- `ORCHESTRATOR_HOST=0.0.0.0`
-- `ORCHESTRATOR_PORT=8935`
+`start-dev.ps1` provides orchestrator env from repo-root `.env`.
 
 Dependency manifest source of truth is `services/orchestrator/requirements.txt`.
 

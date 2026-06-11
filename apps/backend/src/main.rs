@@ -1,6 +1,6 @@
 #![recursion_limit = "256"]
 
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::PgPool;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
@@ -16,11 +16,12 @@ fn load_local_env() {
         .and_then(|path| path.parent())
         .map(PathBuf::from);
 
-    let mut candidates = vec![manifest_dir.join(".env")];
+    let mut candidates = Vec::new();
     if let Some(repo_root) = repo_root {
         candidates.push(repo_root.join(".env"));
         candidates.push(repo_root.join("infra").join(".env"));
     }
+    candidates.push(manifest_dir.join(".env"));
 
     for candidate in candidates {
         if candidate.is_file() {
@@ -37,7 +38,7 @@ async fn main() {
     let app_env = env::var("APP_ENV").unwrap_or_else(|_| "dev".to_string());
     let _sentry_guard = init_sentry(&app_env);
     let app_port = env::var("APP_PORT").unwrap_or_else(|_| "8932".to_string());
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL is required");
+    let postgres_connection_target = load_postgres_connection_target();
     let db_connect_retries = env::var("DB_CONNECT_RETRIES")
         .ok()
         .and_then(|raw| raw.parse::<u32>().ok())
@@ -58,7 +59,7 @@ async fn main() {
         .unwrap_or_else(|| matches!(app_env.as_str(), "dev" | "local"));
 
     let db = connect_postgres_with_retry(
-        &database_url,
+        &postgres_connection_target,
         10,
         db_connect_retries,
         Duration::from_millis(db_connect_delay_ms),
@@ -111,19 +112,75 @@ async fn main() {
         .expect("axum server failed");
 }
 
+#[derive(Clone, Debug)]
+enum PostgresConnectionTarget {
+    DatabaseUrl(String),
+    LocalSettings(Box<PgConnectOptions>),
+}
+
+fn env_flag_is_enabled(name: &str) -> bool {
+    env::var(name)
+        .ok()
+        .map(|raw| {
+            let normalized = raw.trim().to_ascii_lowercase();
+            matches!(normalized.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false)
+}
+
+fn required_env(name: &str) -> String {
+    env::var(name).unwrap_or_else(|_| panic!("{name} is required"))
+}
+
+fn load_postgres_connection_target() -> PostgresConnectionTarget {
+    if env_flag_is_enabled("WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE") {
+        let host = required_env("POSTGRES_HOST");
+        let port = required_env("POSTGRES_PORT")
+            .parse::<u16>()
+            .expect("POSTGRES_PORT must be a valid u16");
+        let username = required_env("POSTGRES_USER");
+        let password = required_env("POSTGRES_PASSWORD");
+        let database = required_env("POSTGRES_DB");
+        info!(
+            postgres_host = %host,
+            postgres_port = port,
+            postgres_target = "local",
+            "using local POSTGRES_* connection target"
+        );
+
+        let options = PgConnectOptions::new()
+            .host(&host)
+            .port(port)
+            .username(&username)
+            .password(&password)
+            .database(&database);
+        return PostgresConnectionTarget::LocalSettings(Box::new(options));
+    }
+
+    PostgresConnectionTarget::DatabaseUrl(
+        env::var("DATABASE_URL").expect("DATABASE_URL is required"),
+    )
+}
+
 async fn connect_postgres_with_retry(
-    database_url: &str,
+    target: &PostgresConnectionTarget,
     max_connections: u32,
     retries: u32,
     delay: Duration,
 ) -> Result<PgPool, sqlx::Error> {
     let mut attempt = 1_u32;
     loop {
-        match PgPoolOptions::new()
-            .max_connections(max_connections)
-            .connect(database_url)
-            .await
-        {
+        let pool_options = PgPoolOptions::new().max_connections(max_connections);
+        let connect_result = match target {
+            PostgresConnectionTarget::DatabaseUrl(database_url) => {
+                pool_options.connect(database_url).await
+            }
+            PostgresConnectionTarget::LocalSettings(options) => {
+                pool_options.connect_with(options.as_ref().clone()).await
+            }
+        };
+
+        match connect_result {
             Ok(pool) => {
                 if attempt > 1 {
                     info!(attempt, "postgres connection recovered");
