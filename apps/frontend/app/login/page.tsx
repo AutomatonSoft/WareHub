@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useToast } from "../../components/shared/toast-provider";
 import { useLabels } from "../use-labels";
 import { DEFAULT_API_BASE, parseError, saveAuth } from "../client-api";
+import { syncDatabaseServiceSession } from "../services-session";
 import { validateEmail, validateLogin, validatePassword, validatePersonName, validatePhoneNumber } from "./login-validators";
 import { translateValidationErrorCode } from "../forms/validation-feedback";
 
@@ -166,6 +167,7 @@ export default function LoginPage() {
       };
 
       saveAuth(payload.token, payload.user);
+      await syncDatabaseServiceSession(payload.token).catch(() => false);
       router.replace("/profile");
     } catch (error) {
       const message = `${t.loginFailed}: ${error instanceof Error ? error.message : t.unknownError}`;

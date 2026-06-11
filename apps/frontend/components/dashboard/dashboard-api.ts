@@ -28,7 +28,12 @@ function getServicesApiBase(): string {
     process.env.NEXT_PUBLIC_API_BASE_URL ??
     "/api/services/v1";
   const normalized = raw.replace(/\/+$/, "");
-  if (normalized.startsWith("http://localhost:8934/api/v1") || normalized.startsWith("http://127.0.0.1:8934/api/v1")) {
+  if (
+    normalized === "http://localhost:8934" ||
+    normalized === "http://127.0.0.1:8934" ||
+    normalized.startsWith("http://localhost:8934/api/v1") ||
+    normalized.startsWith("http://127.0.0.1:8934/api/v1")
+  ) {
     return "/api/services/v1";
   }
   return normalized;
