@@ -39,6 +39,10 @@ export function getServicesApiBase(): string {
   ) {
     return "/api/services/v1";
   }
+  if (normalized.endsWith("/services")) {
+    return `${normalized}/api/v1`;
+  }
+
   return normalized;
 }
 function buildServicesUrl(path: string, params: URLSearchParams): string {
@@ -100,7 +104,7 @@ export async function fetchInventoryRows(params: {
     searchParams.set("dir", params.dir);
   }
 
-  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows", searchParams));
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows/", searchParams));
   let response = await requestFactory();
 
   if (!response.ok) {
@@ -142,7 +146,7 @@ export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Pr
   searchParams.set("kid_id", String(kidId));
   searchParams.set("page_size", String(pageSize));
 
-  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows", searchParams));
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows/", searchParams));
   let response = await requestFactory();
   if (!response.ok && response.status === 403) {
     const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
