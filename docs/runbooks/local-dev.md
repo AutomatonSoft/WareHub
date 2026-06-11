@@ -12,10 +12,11 @@ This runbook describes the root-level local development startup flow for the War
 
 The recommended mode is root-driven local development:
 
-- `start-dev.ps1` starts local Docker dependencies from `infra/local/docker-compose.dev.yml`
+- `start-dev.ps1` performs a clean local dev restart from `infra/local/docker-compose.dev.yml`
 - `start-dev.ps1` prepares local untracked env files from examples if they do not exist
 - `start-dev.ps1` can launch frontend, backend, database-service, and orchestrator
-- `stop-dev.ps1` stops only the local Docker dependencies from the same compose file
+- `start-dev.ps1 -NoNewWindows` runs local apps as hidden background processes and writes logs to `logs/local-dev/`
+- `stop-dev.ps1` is the explicit local dev shutdown command
 
 ## 2. Prerequisites
 
@@ -78,11 +79,11 @@ Validate compose:
 docker compose -f infra/local/docker-compose.dev.yml config
 ```
 
-Default local startup from repo root:
+Recommended local startup from repo root:
 
 ```powershell
 Set-Location I:\WareHub
-.\start-dev.ps1
+.\start-dev.ps1 -NoNewWindows
 ```
 
 This now does all of the following:
@@ -90,17 +91,26 @@ This now does all of the following:
 - verifies you are running from repo root
 - verifies Docker and `docker compose`
 - validates `infra/local/docker-compose.dev.yml`
-- starts only local dependencies from `infra/local/docker-compose.dev.yml`
+- stops previous WareHub local app listeners on `8931`, `8932`, `8934`, and `8935`
+- runs `docker compose -f infra/local/docker-compose.dev.yml down`
+- starts local dependencies from `infra/local/docker-compose.dev.yml`
 - waits for local Postgres to become healthy
 - creates local env files only if they do not already exist:
   - `apps/backend/.env`
   - `apps/frontend/.env.local`
-  - `services/database-service/.env`
-  - `services/orchestrator/.env`
+- `services/database-service/.env`
+- `services/orchestrator/.env`
 - does not overwrite existing local env files
 - prefers PowerShell 7 `pwsh` for app windows and printed helper commands, but falls back to Windows PowerShell `powershell` when `pwsh` is not installed
 - launches app processes in separate PowerShell windows by default
+- when `-NoNewWindows` is used, launches hidden background app processes and writes logs to:
+  - `logs/local-dev/frontend.log`
+  - `logs/local-dev/backend.log`
+  - `logs/local-dev/database-service.log`
+  - `logs/local-dev/orchestrator.log`
 - prints local URLs and manual smoke commands
+
+You no longer need to run `.\stop-dev.ps1` manually before `.\start-dev.ps1`. The start script now cleans and restarts the local environment itself.
 
 Dependency-only mode:
 
@@ -111,15 +121,24 @@ Set-Location I:\WareHub
 
 `-NoApps` is an alias-equivalent mode for dependency-only startup.
 
-Print-only mode for app commands:
+Default visible-window mode:
+
+```powershell
+Set-Location I:\WareHub
+.\start-dev.ps1
+```
+
+This mode still performs the same clean local restart, but launches app processes in separate PowerShell windows.
+
+Background mode:
 
 ```powershell
 Set-Location I:\WareHub
 .\start-dev.ps1 -NoNewWindows
 ```
 
-This mode still starts local Docker dependencies, but prints the exact app commands instead of opening new PowerShell windows.
-The printed commands use the resolved local PowerShell executable instead of assuming `pwsh`.
+This mode performs the same clean local restart and launches the app processes in hidden background windows.
+Use `.\stop-dev.ps1` when you want to shut the local environment down explicitly.
 
 Selective app skipping:
 
@@ -142,22 +161,34 @@ Important:
 - backend keeps `SKIP_DB_MIGRATIONS=true` by default in local env bootstrap
 - stage and production are not touched by this flow
 
-Stop local dependencies:
+Stop local dev explicitly:
 
 ```powershell
 Set-Location I:\WareHub
 .\stop-dev.ps1
 ```
 
-`stop-dev.ps1` runs only:
+`start-dev.ps1` = clean restart local dev.
 
+`stop-dev.ps1` = shutdown local dev.
+
+`stop-dev.ps1` runs:
+
+- safe port-based stop for WareHub local app listeners on `8931`, `8932`, `8934`, and `8935`
 - `docker compose -f infra/local/docker-compose.dev.yml down`
 
 It does not:
 
 - stop stage or prod containers
 - run unscoped Docker cleanup
-- stop manually launched app windows
+- stop stage or prod infrastructure
+
+Primary local URLs:
+
+- frontend: `http://localhost:8931`
+- backend health: `http://localhost:8932/healthz`
+- database-service health: `http://localhost:8934/healthz`
+- orchestrator health: `http://localhost:8935/healthz`
 
 ## 6. Backend Local Run
 
