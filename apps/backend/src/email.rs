@@ -12,8 +12,16 @@ struct SmtpConfig {
     insecure: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SmtpSecurityMode {
+    Plaintext,
+    TlsWrapper,
+    StartTlsRequired,
+}
+
 pub(crate) async fn send_password_reset_email(to: &str, code: &str) -> Result<(), String> {
     let smtp = load_smtp_config()?;
+    let mut builder = build_smtp_transport_builder(&smtp)?;
     let to: Mailbox = to
         .parse()
         .map_err(|error| format!("invalid reset email address: {error}"))?;
@@ -22,19 +30,11 @@ pub(crate) async fn send_password_reset_email(to: &str, code: &str) -> Result<()
     let body = format!("Your password reset code is: {code}\n\nThis code will expire soon.");
 
     let email = Message::builder()
-        .from(smtp.from)
+        .from(smtp.from.clone())
         .to(to)
         .subject(subject)
         .body(body)
         .map_err(|error| format!("failed to build email: {error}"))?;
-
-    let mut builder = if smtp.insecure {
-        SmtpTransport::builder_dangerous(&smtp.host).port(smtp.port)
-    } else {
-        SmtpTransport::relay(&smtp.host)
-            .map_err(|error| format!("failed to configure SMTP transport: {error}"))?
-            .port(smtp.port)
-    };
 
     if let Some(credentials) = smtp.credentials {
         builder = builder.credentials(credentials);
@@ -45,7 +45,7 @@ pub(crate) async fn send_password_reset_email(to: &str, code: &str) -> Result<()
     tokio::task::spawn_blocking(move || transport.send(&email))
         .await
         .map_err(|error| format!("email send task failed: {error}"))?
-        .map_err(|error| format!("failed to send reset email: {error}"))?;
+        .map_err(|error| sanitize_smtp_runtime_error(&error.to_string()))?;
 
     Ok(())
 }
@@ -124,6 +124,82 @@ where
             Some(trimmed)
         }
     })
+}
+
+fn smtp_security_mode(smtp: &SmtpConfig) -> SmtpSecurityMode {
+    if smtp.insecure {
+        return SmtpSecurityMode::Plaintext;
+    }
+
+    if smtp.port == 587 {
+        return SmtpSecurityMode::StartTlsRequired;
+    }
+
+    SmtpSecurityMode::TlsWrapper
+}
+
+fn build_smtp_transport_builder(
+    smtp: &SmtpConfig,
+) -> Result<lettre::transport::smtp::SmtpTransportBuilder, String> {
+    let builder = match smtp_security_mode(smtp) {
+        SmtpSecurityMode::Plaintext => SmtpTransport::builder_dangerous(&smtp.host).port(smtp.port),
+        SmtpSecurityMode::TlsWrapper => SmtpTransport::relay(&smtp.host)
+            .map_err(|error| sanitize_smtp_config_error(&error.to_string()))?
+            .port(smtp.port),
+        SmtpSecurityMode::StartTlsRequired => SmtpTransport::starttls_relay(&smtp.host)
+            .map_err(|error| sanitize_smtp_config_error(&error.to_string()))?
+            .port(smtp.port),
+    };
+
+    Ok(builder)
+}
+
+fn sanitize_smtp_config_error(error: &str) -> String {
+    let normalized = error.to_ascii_lowercase();
+
+    if normalized.contains("invalid dns name") || normalized.contains("domain") {
+        return "failed to configure SMTP transport: SMTP_HOST is not a valid relay host"
+            .to_string();
+    }
+
+    if normalized.contains("tls") || normalized.contains("starttls") {
+        return "failed to configure SMTP transport: SMTP TLS configuration is invalid"
+            .to_string();
+    }
+
+    "failed to configure SMTP transport: invalid SMTP transport configuration".to_string()
+}
+
+fn sanitize_smtp_runtime_error(error: &str) -> String {
+    let normalized = error.to_ascii_lowercase();
+
+    let detail = if normalized.contains("failed to lookup address information")
+        || normalized.contains("name or service not known")
+        || normalized.contains("dns")
+    {
+        "SMTP host resolution failed"
+    } else if normalized.contains("authentication")
+        || normalized.contains("credentials")
+        || normalized.contains("invalid login")
+    {
+        "SMTP authentication failed"
+    } else if normalized.contains("starttls")
+        || normalized.contains("tls")
+        || normalized.contains("ssl")
+    {
+        "SMTP TLS negotiation failed"
+    } else if normalized.contains("sender address rejected")
+        || normalized.contains("mail from")
+        || normalized.contains("from address")
+    {
+        "SMTP sender rejected"
+    } else if normalized.contains("connection error") {
+        "SMTP connection failed"
+    } else {
+        "SMTP delivery failed"
+    };
+
+    format!("failed to send reset email: {detail}")
 }
 
 #[cfg(test)]
@@ -212,5 +288,47 @@ mod tests {
         .expect("must parse config");
 
         assert!(config.insecure);
+    }
+
+    #[test]
+    fn smtp_security_mode_uses_starttls_for_port_587() {
+        let config = load_smtp_config_with(|key| match key {
+            "SMTP_HOST" => Some("smtp.example.com".to_string()),
+            "SMTP_FROM" => Some("WareHub <no-reply@example.com>".to_string()),
+            "SMTP_PORT" => Some("587".to_string()),
+            _ => None,
+        })
+        .expect("must parse config");
+
+        assert_eq!(smtp_security_mode(&config), SmtpSecurityMode::StartTlsRequired);
+    }
+
+    #[test]
+    fn smtp_security_mode_uses_tls_wrapper_for_port_465() {
+        let config = load_smtp_config_with(|key| match key {
+            "SMTP_HOST" => Some("smtp.example.com".to_string()),
+            "SMTP_FROM" => Some("WareHub <no-reply@example.com>".to_string()),
+            "SMTP_PORT" => Some("465".to_string()),
+            _ => None,
+        })
+        .expect("must parse config");
+
+        assert_eq!(smtp_security_mode(&config), SmtpSecurityMode::TlsWrapper);
+    }
+
+    #[test]
+    fn smtp_runtime_error_sanitizes_dns_failures() {
+        let error = sanitize_smtp_runtime_error(
+            "Connection error: failed to lookup address information: Name or service not known",
+        );
+
+        assert_eq!(error, "failed to send reset email: SMTP host resolution failed");
+    }
+
+    #[test]
+    fn smtp_runtime_error_sanitizes_auth_failures() {
+        let error = sanitize_smtp_runtime_error("authentication failed");
+
+        assert_eq!(error, "failed to send reset email: SMTP authentication failed");
     }
 }

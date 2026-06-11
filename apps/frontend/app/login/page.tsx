@@ -57,6 +57,10 @@ export default function LoginPage() {
   const [resetFieldErrors, setResetFieldErrors] = useState<Partial<Record<ResetFieldKey, string>>>({});
 
   const apiBase = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE, []);
+  const resetSuccessMessage = useMemo(() => {
+    const isLocalDev = (process.env.NEXT_PUBLIC_APP_ENV ?? "").toLowerCase() === "dev";
+    return isLocalDev ? `${t.codeSent} ${t.codeSentLocalDevHint}` : t.codeSent;
+  }, [t]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -243,8 +247,8 @@ export default function LoginPage() {
       await requestPasswordReset(apiBase, normalizedEmail);
       setResetEmail(normalizedEmail);
       setResetStep("confirm");
-      setResetStatus(t.codeSent);
-      showToast(t.codeSent, "success");
+      setResetStatus(resetSuccessMessage);
+      showToast(resetSuccessMessage, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : t.unexpectedError;
       setResetStatus(message);
@@ -322,7 +326,7 @@ export default function LoginPage() {
   const title = showReset ? t.resetPassword : mode === "login" ? t.welcomeBack : t.createAccount;
   const description = showReset
     ? resetStep === "request"
-      ? t.codeSent
+      ? resetSuccessMessage
       : t.enterCode
     : mode === "login"
       ? t.signInManageProfileWorkspace
