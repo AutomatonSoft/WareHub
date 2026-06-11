@@ -223,3 +223,8 @@ REST_FRAMEWORK = {
 }
 
 BACKEND_AUTH_BASE_URL = (os.getenv("BACKEND_AUTH_BASE_URL") or "http://127.0.0.1:8932/api/v1").rstrip("/")
+BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS = [
+    h.strip().lower()
+    for h in os.getenv("BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if h.strip()
+]
