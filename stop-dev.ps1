@@ -1,12 +1,17 @@
+[CmdletBinding()]
+param()
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
+$processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
 
 function Assert-RepoRoot {
-  $current = (Get-Location).Path
-  if ($current -ne $repoRoot) {
-    throw "Run stop-dev.ps1 from repo root: $repoRoot"
+  $current = (Resolve-Path ".").Path.TrimEnd("\")
+  $expected = (Resolve-Path $repoRoot).Path.TrimEnd("\")
+  if ($current -ne $expected) {
+    throw "Run stop-dev.ps1 from repo root: $expected"
   }
 }
 
@@ -19,9 +24,19 @@ function Assert-ComposeConfig {
   docker compose -f $composeFile config | Out-Null
 }
 
+function Assert-ProcessHelperScript {
+  if (-not (Test-Path -LiteralPath $processHelperScript)) {
+    throw "Missing local process helper: $processHelperScript"
+  }
+}
+
 Assert-RepoRoot
 Assert-Docker
 Assert-ComposeConfig
+Assert-ProcessHelperScript
+. $processHelperScript
+
+Stop-WareHubLocalAppProcesses
 
 Write-Host "Stopping WareHub local dependencies from $composeFile"
 docker compose -f $composeFile down

@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.core.exceptions import DisallowedHost
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
@@ -57,6 +59,146 @@ class ServiceHealthAPIView(APIView):
 
     def get(self, request):
         return Response({"status": "ok", "service": "database_service"}, status=status.HTTP_200_OK)
+
+
+def _request_id_from_request(request) -> str:
+    return (
+        request.headers.get("x-request-id")
+        or request.META.get("HTTP_X_REQUEST_ID")
+        or request.META.get("REQUEST_ID")
+        or ""
+    )
+
+
+def _extract_bearer_header(request) -> str | None:
+    auth_header = str(request.headers.get("authorization") or request.META.get("HTTP_AUTHORIZATION") or "").strip()
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    return auth_header
+
+
+def _is_backend_session_bridge_enabled(request) -> bool:
+    try:
+        host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    except DisallowedHost:
+        return False
+    return host in set(getattr(settings, "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", []))
+
+
+def _fetch_backend_auth_user(auth_header: str, request_id: str) -> tuple[int, dict]:
+    target_url = f"{settings.BACKEND_AUTH_BASE_URL}/auth/me"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": auth_header,
+    }
+    if request_id:
+        headers["X-Request-Id"] = request_id
+
+    req = urllib.request.Request(target_url, method="GET", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read()
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+            return resp.status, payload
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        payload = {}
+        if raw:
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                payload = {"message": raw[:2000]}
+        return exc.code, payload
+
+
+class DevBackendSessionSyncAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not _is_backend_session_bridge_enabled(request):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        request_id = _request_id_from_request(request)
+        auth_header = _extract_bearer_header(request)
+        if not auth_header:
+            return Response(
+                {
+                    "code": "services_session_authorization_required",
+                    "message": "Authorization Bearer token is required to sync database_service session.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            upstream_status, payload = _fetch_backend_auth_user(auth_header, request_id)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            return Response(
+                {
+                    "code": "services_session_backend_unreachable",
+                    "message": "Unable to reach backend auth service.",
+                    "request_id": request_id,
+                    "details": {"error": str(exc)},
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if upstream_status != status.HTTP_200_OK:
+            return Response(
+                {
+                    "code": "services_session_backend_auth_failed",
+                    "message": str(payload.get("message") or "Backend auth validation failed."),
+                    "request_id": str(payload.get("request_id") or request_id),
+                    "details": payload if isinstance(payload, dict) else None,
+                },
+                status=upstream_status,
+            )
+
+        role = str(payload.get("role") or "").strip().lower()
+        account_status = str(payload.get("status") or "").strip().lower()
+        login = str(payload.get("login") or "").strip()
+        username = str(payload.get("username") or "").strip()
+        email = str(payload.get("email") or "").strip()
+
+        if account_status != "approved":
+            return Response(
+                {
+                    "code": "services_session_account_not_approved",
+                    "message": "Backend account is not approved for database_service session sync.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if role not in {"admin", "user"}:
+            return Response(
+                {
+                    "code": "services_session_role_invalid",
+                    "message": "Backend role is not allowed for database_service session sync.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        request.session["role"] = role
+        request.session["user"] = login or username or role
+        request.session["username"] = username or login or role
+        request.session["login"] = login or username or role
+        request.session["email"] = email
+        request.session["auth_source"] = "backend_token_bridge"
+        request.session["auth_request_id"] = request_id
+        request.session.modified = True
+        request.session.save()
+
+        return Response(
+            {
+                "status": "ok",
+                "role": role,
+                "login": login or username or None,
+                "request_id": request_id,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class InventoryRowsPagination(PageNumberPagination):
@@ -618,12 +760,7 @@ class InventoryRowsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
     def get(self, request):
-        request_id = (
-            request.headers.get("x-request-id")
-            or request.META.get("HTTP_X_REQUEST_ID")
-            or request.META.get("REQUEST_ID")
-            or ""
-        )
+        request_id = _request_id_from_request(request)
         try:
             rows = build_inventory_rows()
         except (ProgrammingError, OperationalError) as exc:

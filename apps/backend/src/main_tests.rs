@@ -1,6 +1,6 @@
 use super::*;
 use crate::afterbuy_html::decode_html_entities;
-use axum::body::Body;
+use axum::body::{to_bytes, Body};
 use axum::http::HeaderMap;
 use axum::http::Request;
 use axum::http::StatusCode;
@@ -304,10 +304,7 @@ async fn new_request_id_uses_request_context_when_available() {
 
 #[tokio::test]
 async fn logs_endpoint_requires_authorization() {
-    let db = PgPoolOptions::new()
-        .max_connections(1)
-        .connect_lazy("postgres://sofortbot:sofortbot@localhost:8933/sofortbot")
-        .expect("must create lazy pool");
+    let db = lazy_test_db_pool();
     let (tx, _) = broadcast::channel(8);
     let state = AppState {
         app_env: "test".to_string(),
@@ -328,4 +325,83 @@ async fn logs_endpoint_requires_authorization() {
         .expect("request must complete");
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn password_reset_request_rejects_malformed_json_body() {
+    let app = build_app(test_app_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/password/reset/request")
+                .header("content-type", "application/json")
+                .body(Body::from("{ email = \"user@example.com\" }"))
+                .expect("must build request"),
+        )
+        .await
+        .expect("request must complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("must read response body");
+    let text = String::from_utf8(body.to_vec()).expect("response must be utf-8");
+    assert!(text.contains("Failed to parse the request body as JSON"));
+}
+
+#[tokio::test]
+async fn password_reset_request_accepts_valid_json_and_reaches_handler() {
+    let app = build_app(test_app_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/password/reset/request")
+                .header("content-type", "application/json")
+                .body(Body::from("{\"email\":\"user@example.com\"}"))
+                .expect("must build request"),
+        )
+        .await
+        .expect("request must complete");
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("must read response body");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&body).expect("must parse error payload");
+    assert_eq!(
+        payload.get("code"),
+        Some(&serde_json::Value::String("internal_error".to_string()))
+    );
+    assert_eq!(
+        payload.get("message"),
+        Some(&serde_json::Value::String(
+            "internal server error".to_string()
+        ))
+    );
+}
+
+fn lazy_test_db_pool() -> sqlx::PgPool {
+    let db = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_lazy("postgres://sofortbot:sofortbot@localhost:8933/sofortbot")
+        .expect("must create lazy pool");
+    db
+}
+
+fn test_app_state() -> AppState {
+    let db = lazy_test_db_pool();
+    let (tx, _) = broadcast::channel(8);
+    AppState {
+        app_env: "test".to_string(),
+        db,
+        intake_events: tx,
+        logs: Arc::new(RwLock::new(InMemoryLogs::default())),
+    }
 }

@@ -2,6 +2,8 @@ import { KidDto } from "./inventory-table-utils";
 import { normalizeKidEanSummaryPayload, type KidEanSummaryModel } from "./kid-ean-summary-model";
 import type { paths } from "../../lib/api/generated/openapi-types";
 import { apiFetch } from "../../lib/api/client";
+import { readAuth } from "../../app/client-api-shared";
+import { syncDatabaseServiceSession } from "../../app/services-session";
 
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
 
@@ -29,14 +31,41 @@ export function getServicesApiBase(): string {
     process.env.NEXT_PUBLIC_API_BASE_URL ??
     "/api/services/v1";
   const normalized = raw.replace(/\/+$/, "");
-  if (normalized.startsWith("http://localhost:8934/api/v1") || normalized.startsWith("http://127.0.0.1:8934/api/v1")) {
+  if (
+    normalized === "http://localhost:8934" ||
+    normalized === "http://127.0.0.1:8934" ||
+    normalized.startsWith("http://localhost:8934/api/v1") ||
+    normalized.startsWith("http://127.0.0.1:8934/api/v1")
+  ) {
     return "/api/services/v1";
   }
+  if (normalized.endsWith("/services")) {
+    return `${normalized}/api/v1`;
+  }
+
   return normalized;
 }
 function buildServicesUrl(path: string, params: URLSearchParams): string {
   const query = params.toString();
   return `${getServicesApiBase()}${path}${query ? `?${query}` : ""}`;
+}
+
+async function retryWithSyncedDatabaseServiceSession(requestFactory: () => Promise<Response>): Promise<Response | null> {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const auth = readAuth();
+  if (!auth?.token) {
+    return null;
+  }
+
+  const synced = await syncDatabaseServiceSession(auth.token).catch(() => false);
+  if (!synced) {
+    return null;
+  }
+
+  return requestFactory();
 }
 
 export async function fetchInventoryRows(params: {
@@ -75,7 +104,17 @@ export async function fetchInventoryRows(params: {
     searchParams.set("dir", params.dir);
   }
 
-  const response = await apiFetch(buildServicesUrl("/inventory/rows", searchParams));
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows/", searchParams));
+  let response = await requestFactory();
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+      if (retriedResponse) {
+        response = retriedResponse;
+      }
+    }
+  }
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as
@@ -89,7 +128,7 @@ export async function fetchInventoryRows(params: {
         ? payload.details.hint.trim()
         : "";
     if (response.status === 403) {
-      throw new Error("No access to services inventory. Admin session is required in database_service.");
+      throw new Error("Database service session required. Login again and retry.");
     }
     if (backendMessage) {
       const suffix = [backendCode, requestId].filter(Boolean).join(", ");
@@ -107,10 +146,17 @@ export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Pr
   searchParams.set("kid_id", String(kidId));
   searchParams.set("page_size", String(pageSize));
 
-  const response = await apiFetch(buildServicesUrl("/inventory/rows", searchParams));
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/rows/", searchParams));
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("No access to inventory details. Admin session is required.");
+      throw new Error("Database service session required. Login again and retry.");
     }
     throw new Error(`Inventory details request failed: HTTP ${response.status}`);
   }

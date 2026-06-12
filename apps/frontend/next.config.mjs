@@ -7,10 +7,10 @@ function loadMonorepoEnv() {
   const dirname = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(dirname, "..");
   const candidates = [
-    path.resolve(dirname, ".env.local"),
-    path.resolve(dirname, ".env"),
     path.resolve(repoRoot, ".env"),
-    path.resolve(repoRoot, "infra", ".env")
+    path.resolve(repoRoot, "infra", ".env"),
+    path.resolve(dirname, ".env.local"),
+    path.resolve(dirname, ".env")
   ];
 
   for (const candidate of candidates) {

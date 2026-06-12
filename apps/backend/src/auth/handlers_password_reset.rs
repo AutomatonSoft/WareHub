@@ -60,9 +60,17 @@ pub(crate) async fn request_password_reset(
     .await
     .map_err(|error| internal_error(format!("failed to store reset code: {error}")))?;
 
-    send_password_reset_email(&email, &code)
-        .await
-        .map_err(internal_error)?;
+    if password_reset_log_codes_enabled() {
+        tracing::warn!(
+            email = %email,
+            code = %code,
+            "local password reset code generated"
+        );
+    } else {
+        send_password_reset_email(&email, &code, password_reset_ttl_minutes())
+            .await
+            .map_err(internal_error)?;
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -168,10 +176,16 @@ pub(crate) async fn confirm_password_reset(
 }
 
 fn password_reset_ttl_minutes() -> i64 {
+    password_reset_ttl_minutes_with(|key| std::env::var(key).ok())
+}
+
+fn password_reset_ttl_minutes_with<F>(get_var: F) -> i64
+where
+    F: Fn(&str) -> Option<String>,
+{
     const DEFAULT_MINUTES: i64 = 10;
     const MAX_MINUTES: i64 = 60;
-    std::env::var("PASSWORD_RESET_CODE_TTL_MINUTES")
-        .ok()
+    get_var("PASSWORD_RESET_CODE_TTL_MINUTES")
         .and_then(|raw| raw.trim().parse::<i64>().ok())
         .filter(|minutes| *minutes > 0 && *minutes <= MAX_MINUTES)
         .unwrap_or(DEFAULT_MINUTES)
@@ -183,4 +197,62 @@ fn generate_reset_code() -> String {
     rng.fill_bytes(&mut bytes);
     let value = u32::from_le_bytes(bytes) % 1_000_000;
     format!("{:06}", value)
+}
+fn password_reset_log_codes_enabled() -> bool {
+    password_reset_log_codes_enabled_with(|key| std::env::var(key).ok())
+}
+
+fn password_reset_log_codes_enabled_with<F>(get_var: F) -> bool
+where
+    F: Fn(&str) -> Option<String>,
+{
+    get_var("PASSWORD_RESET_LOG_CODES")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        password_reset_log_codes_enabled_with, password_reset_ttl_minutes_with,
+    };
+
+    #[test]
+    fn password_reset_ttl_defaults_to_ten_minutes() {
+        assert_eq!(password_reset_ttl_minutes_with(|_| None), 10);
+    }
+
+    #[test]
+    fn password_reset_ttl_rejects_out_of_range_values() {
+        assert_eq!(
+            password_reset_ttl_minutes_with(|_| Some("120".to_string())),
+            10
+        );
+
+        assert_eq!(
+            password_reset_ttl_minutes_with(|_| Some("15".to_string())),
+            15
+        );
+    }
+
+    #[test]
+    fn password_reset_log_codes_defaults_to_false() {
+        assert!(!password_reset_log_codes_enabled_with(|_| None));
+    }
+
+    #[test]
+    fn password_reset_log_codes_parses_truthy_values() {
+        assert!(password_reset_log_codes_enabled_with(|_| {
+            Some("true".to_string())
+        }));
+
+        assert!(!password_reset_log_codes_enabled_with(|_| {
+            Some("0".to_string())
+        }));
+    }
 }

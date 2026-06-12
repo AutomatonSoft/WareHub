@@ -14,6 +14,7 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
   const rawPathPart = path.join("/");
   const pathPart = rawPathPart.endsWith("/") ? rawPathPart : `${rawPathPart}/`;
   const cookieHeader = request.headers.get("cookie") ?? "";
+  const authorizationHeader = request.headers.get("authorization");
   const requestId = request.headers.get("x-request-id") ?? createRequestId();
   const body =
     request.method === "GET" || request.method === "HEAD"
@@ -29,25 +30,41 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
   for (const base of candidates) {
     const targetUrl = `${base}/${pathPart}${query}`;
     try {
+      const headers: Record<string, string> = {
+        "content-type": request.headers.get("content-type") ?? "application/json",
+        cookie: cookieHeader,
+        "x-request-id": requestId
+      };
+      if (authorizationHeader) {
+        headers.authorization = authorizationHeader;
+      }
+
       const response = await fetch(targetUrl, {
         method: request.method,
-        headers: {
-          "content-type": request.headers.get("content-type") ?? "application/json",
-          cookie: cookieHeader,
-          "x-request-id": requestId
-        },
+        headers,
         body,
         cache: "no-store"
       });
 
       const text = await response.text();
-      return new NextResponse(text, {
+      const proxiedResponse = new NextResponse(text, {
         status: response.status,
         headers: {
           "content-type": response.headers.get("content-type") ?? "application/json",
           "x-request-id": response.headers.get("x-request-id") ?? requestId
         }
       });
+      const responseHeaders = response.headers as Headers & { getSetCookie?: () => string[] };
+      const setCookieValues =
+        typeof responseHeaders.getSetCookie === "function"
+          ? responseHeaders.getSetCookie()
+          : response.headers.get("set-cookie")
+            ? [response.headers.get("set-cookie") as string]
+            : [];
+      for (const cookieValue of setCookieValues) {
+        proxiedResponse.headers.append("set-cookie", cookieValue);
+      }
+      return proxiedResponse;
     } catch (error) {
       lastError = error;
     }

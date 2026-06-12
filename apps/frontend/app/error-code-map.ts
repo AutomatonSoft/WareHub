@@ -5,6 +5,10 @@ type ErrorPayload = {
 const UI_ERROR_BY_CODE: Record<string, string> = {
   INVALID_CREDENTIALS: "Invalid login or password.",
   AUTH_INVALID_CREDENTIALS: "Invalid login or password.",
+  INVALID_CODE: "Reset code is invalid.",
+  CODE_EXPIRED: "This reset code has expired. Request a new one.",
+  CODE_LOCKED: "Too many invalid attempts. Request a new reset code.",
+  EMAIL_NOT_FOUND: "Reset code is invalid.",
   ACCOUNT_PENDING: "Your account is pending approval.",
   AUTH_ACCOUNT_PENDING: "Your account is pending approval.",
   ACCOUNT_REJECTED: "Your account was rejected. Contact administrator.",
@@ -13,6 +17,7 @@ const UI_ERROR_BY_CODE: Record<string, string> = {
   AUTH_FORBIDDEN: "You do not have enough permissions for this action.",
   UNAUTHORIZED: "Please login again.",
   AUTH_UNAUTHORIZED: "Please login again.",
+  INTERNAL_ERROR: "Something went wrong. Please try again.",
   VALIDATION_ERROR: "Please check input fields and try again.",
   BAD_REQUEST: "Please check input fields and try again."
 };

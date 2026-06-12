@@ -26,10 +26,14 @@ export type AdminUser = {
   username: string;
   login: string;
   email: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   role: "admin" | "user";
   status: "pending" | "approved" | "rejected";
   created_at: string;
   approved_at: string | null;
+  approved_by?: string | null;
+  approved_by_login?: string | null;
 };
 
 export type AdminUsersQueryParams = {

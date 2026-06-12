@@ -26,7 +26,7 @@ export async function approveRegistration(
   apiBase: string,
   token: string,
   userId: string
-): Promise<void> {
+): Promise<AdminUser> {
   const response = await fetch(`${apiBase}/admin/registrations/${userId}/approve`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` }
@@ -35,6 +35,7 @@ export async function approveRegistration(
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Approve failed: HTTP ${response.status}`));
   }
+  return (await response.json()) as AdminUser;
 }
 
 export async function rejectRegistration(

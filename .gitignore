@@ -3,16 +3,26 @@
 !.env.example
 !.env.*.example
 *.local
+.env.bak*
+apps/backend/.env
+apps/backend/.env.bak*
+apps/frontend/.env.local
+services/database-service/.env
+services/orchestrator/.env
 
 node_modules/
 .next/
 dist/
 coverage/
+apps/frontend/test-results/
+apps/frontend/playwright-report/
 
 target/
 
 .venv/
+**/.venv/
 __pycache__/
+**/__pycache__/
 .pytest_cache/
 .ruff_cache/
 *.pyc
@@ -33,3 +43,7 @@ _audit/
 _release_reports/
 tmp/
 temp/
+logs/local-dev/
+
+# Local orchestrator runtime data
+services/orchestrator/data/

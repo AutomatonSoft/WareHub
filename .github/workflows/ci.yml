@@ -142,6 +142,16 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Cache uv downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py313-database-service-${{ hashFiles('services/database-service/requirements.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py313-database-service-
+            uv-${{ runner.os }}-py313-
+            uv-${{ runner.os }}-
+
       - name: Show uv version
         run: uv --version
 
@@ -209,6 +219,18 @@ jobs:
         with:
           flutter-version: "3.41.4"
           channel: stable
+          cache: true
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            apps/mobile/.gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/**/gradle-wrapper.properties', 'apps/mobile/**/*.gradle*', 'apps/mobile/**/settings.gradle*', 'apps/mobile/pubspec.lock') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Show Flutter version
         run: flutter --version
@@ -246,6 +268,16 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Cache uv downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py313-orchestrator-${{ hashFiles('services/orchestrator/requirements.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py313-orchestrator-
+            uv-${{ runner.os }}-py313-
+            uv-${{ runner.os }}-
 
       - name: Show uv version
         run: uv --version
@@ -288,6 +320,17 @@ jobs:
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust cargo and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/backend/target
+          key: rust-${{ runner.os }}-${{ hashFiles('apps/backend/Cargo.lock', 'apps/backend/Cargo.toml') }}
+          restore-keys: |
+            rust-${{ runner.os }}-
+
       - name: Run rustfmt check
         run: cargo fmt --all -- --check
 
@@ -314,11 +357,28 @@ jobs:
       - name: Show Docker Compose version
         run: docker compose version
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build database-service image
-        run: docker build -f services/database-service/Dockerfile -t warehub-database-service:ci-validation services
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/database-service/Dockerfile
+          load: true
+          tags: warehub-database-service:ci-validation
+          cache-from: type=gha,scope=ci-database-service
+          cache-to: type=gha,mode=max,scope=ci-database-service
 
       - name: Build orchestrator image
-        run: docker build -f services/orchestrator/Dockerfile -t warehub-orchestrator:ci-validation services/orchestrator
+        uses: docker/build-push-action@v6
+        with:
+          context: services/orchestrator
+          file: services/orchestrator/Dockerfile
+          load: true
+          tags: warehub-orchestrator:ci-validation
+          cache-from: type=gha,scope=ci-orchestrator
+          cache-to: type=gha,mode=max,scope=ci-orchestrator
 
       - name: List validation images
         run: docker image ls --filter "reference=warehub-*:*"
@@ -334,8 +394,19 @@ jobs:
       - name: Show Docker version
         run: docker --version
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build frontend image
-        run: docker build --target prod -f apps/frontend/Dockerfile -t warehub-frontend:ci-validation apps/frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          file: apps/frontend/Dockerfile
+          target: prod
+          load: true
+          tags: warehub-frontend:ci-validation
+          cache-from: type=gha,scope=ci-frontend
+          cache-to: type=gha,mode=max,scope=ci-frontend
 
       - name: List validation image
         run: docker image ls --filter "reference=warehub-frontend:*"
@@ -351,14 +422,41 @@ jobs:
       - name: Show Docker version
         run: docker --version
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build backend image
-        run: docker build --target prod -f apps/backend/Dockerfile -t warehub-backend:ci-validation apps/backend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          target: prod
+          load: true
+          tags: warehub-backend:ci-validation
+          cache-from: type=gha,scope=ci-backend
+          cache-to: type=gha,mode=max,scope=ci-backend
 
       - name: Build mobile image
-        run: docker build --target prod -f apps/mobile/Dockerfile -t warehub-mobile:ci-validation apps/mobile
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/mobile
+          file: apps/mobile/Dockerfile
+          target: prod
+          load: true
+          tags: warehub-mobile:ci-validation
+          cache-from: type=gha,scope=ci-mobile
+          cache-to: type=gha,mode=max,scope=ci-mobile
 
       - name: Build infra image
-        run: docker build --target prod -f infra/Dockerfile -t warehub-infra:ci-validation infra
+        uses: docker/build-push-action@v6
+        with:
+          context: infra
+          file: infra/Dockerfile
+          target: prod
+          load: true
+          tags: warehub-infra:ci-validation
+          cache-from: type=gha,scope=ci-infra
+          cache-to: type=gha,mode=max,scope=ci-infra
 
       - name: List validation images
         run: docker image ls --filter "reference=warehub-*:*"
