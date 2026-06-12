@@ -21,9 +21,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = BASE_DIR.parent.parent.parent
 REPO_ROOT = WORKSPACE_ROOT
 for env_path in (
-    BASE_DIR / ".env",
     REPO_ROOT / ".env",
     REPO_ROOT / "infra" / ".env",
+    BASE_DIR / ".env",
 ):
     if env_path.is_file():
         load_dotenv(env_path)
@@ -121,13 +121,28 @@ def _db_config_from_url(raw_url: str):
 
 
 # Priority:
-# 1) DATABASE_URL (postgres://... or postgresql://...)
-# 2) POSTGRES_* variables
-# 3) sqlite for local quick start
+# 1) POSTGRES_* variables when WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE=true
+# 2) DATABASE_URL (postgres://... or postgresql://...)
+# 3) POSTGRES_* variables
+# 4) sqlite for local quick start
+_local_root_env_active = (os.getenv("WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE", "false") or "").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 _database_url = (os.getenv("DATABASE_URL") or "").strip()
 _database_url_config = _db_config_from_url(_database_url) if _database_url else None
 
-if _database_url_config:
+if _local_root_env_active and os.getenv('POSTGRES_DB'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB', 'sofortbot'),
+            'USER': os.getenv('POSTGRES_USER', 'sofortbot'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'sofortbot'),
+            'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'),
+            'PORT': os.getenv('POSTGRES_PORT', '8933'),
+        }
+    }
+elif _database_url_config:
     DATABASES = {"default": _database_url_config}
 elif os.getenv('POSTGRES_DB'):
     DATABASES = {
