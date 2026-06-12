@@ -94,6 +94,8 @@ jobs:
           tags: |
             ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.BACKEND_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-backend
+          cache-to: type=gha,mode=max,scope=ghcr-backend
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v6
@@ -105,6 +107,8 @@ jobs:
           tags: |
             ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.FRONTEND_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-frontend
+          cache-to: type=gha,mode=max,scope=ghcr-frontend
 
       - name: Build and push mobile image
         uses: docker/build-push-action@v6
@@ -116,6 +120,8 @@ jobs:
           tags: |
             ${{ env.MOBILE_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.MOBILE_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-mobile
+          cache-to: type=gha,mode=max,scope=ghcr-mobile
 
       - name: Build and push services image
         uses: docker/build-push-action@v6
@@ -126,6 +132,8 @@ jobs:
           tags: |
             ${{ env.SERVICES_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.SERVICES_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-services
+          cache-to: type=gha,mode=max,scope=ghcr-services
 
       - name: Build and push orchestrator image
         uses: docker/build-push-action@v6
@@ -136,6 +144,8 @@ jobs:
           tags: |
             ${{ env.ORCHESTRATOR_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.ORCHESTRATOR_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-orchestrator
+          cache-to: type=gha,mode=max,scope=ghcr-orchestrator
 
       - name: Build and push infra image
         uses: docker/build-push-action@v6
@@ -147,6 +157,8 @@ jobs:
           tags: |
             ${{ env.INFRA_IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.INFRA_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-infra
+          cache-to: type=gha,mode=max,scope=ghcr-infra
 
       - name: Write publish summary
         shell: bash
