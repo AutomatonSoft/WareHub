@@ -1,4 +1,4 @@
-# Local Dev
+﻿# Local Dev
 
 ## 1. Purpose
 
@@ -353,3 +353,4 @@ This runbook is for local developer recovery only.
 - `services/requirements.txt` is deprecated legacy/shared manifest only.
 - Do not add new dependencies to `services/requirements.txt`.
 - No local bootstrap flow in this runbook auto-runs migrations.
+

@@ -1,4 +1,4 @@
-# Env Contract
+﻿# Env Contract
 
 ## Purpose
 
@@ -91,7 +91,7 @@ Do not copy local secrets into stage/prod templates.
 2. Add a safe placeholder to root `.env.example`.
 3. If browser-visible, prefix it with `NEXT_PUBLIC_`.
 4. Update this runbook inventory row or family pattern.
-5. Run `scripts/env/validate-env-contract.ps1`.
+5. Run `scripts/environment/validate-env-contract.ps1`.
 6. Validate local startup from repo root.
 
 ## Validation
@@ -99,7 +99,7 @@ Do not copy local secrets into stage/prod templates.
 Run from `I:\WareHub`:
 
 ```powershell
-.\scripts\env\validate-env-contract.ps1
+.\scripts\environment\validate-env-contract.ps1
 .\start-dev.ps1 -NoNewWindows
 curl.exe -i http://localhost:8932/api/v1/healthz
 curl.exe -i http://localhost:8934/healthz
@@ -145,3 +145,4 @@ Use a JSON file or `ConvertTo-Json` for password reset verification. Do not use 
 | `JV_SOURCE_<SITE>_DB_*` | database-service | Optional | `3306` / `oc_` for some keys | same family | `JV_SOURCE_JV_DE_DB_HOST=...` | runtime-specific | secret | `jv_services/source_config.py` |
 | `XL_SOURCE_<SITE>_DB_*` | database-service | Optional | `3306` / `oc_` for some keys | same family | `XL_SOURCE_XLMOEBEL_DE_DB_HOST=...` | runtime-specific | secret | `xl_services/source_config.py` |
 | `FTP_<SITE>_*` | database-service | Optional | `21` for port | same family | `FTP_DE_HOST=...` | runtime-specific | secret | `jv_services/sync_utils.py` |
+
