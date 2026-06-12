@@ -1,4 +1,4 @@
-﻿# Env Contract
+# Env Contract
 
 ## Purpose
 
@@ -145,4 +145,3 @@ Use a JSON file or `ConvertTo-Json` for password reset verification. Do not use 
 | `JV_SOURCE_<SITE>_DB_*` | database-service | Optional | `3306` / `oc_` for some keys | same family | `JV_SOURCE_JV_DE_DB_HOST=...` | runtime-specific | secret | `jv_services/source_config.py` |
 | `XL_SOURCE_<SITE>_DB_*` | database-service | Optional | `3306` / `oc_` for some keys | same family | `XL_SOURCE_XLMOEBEL_DE_DB_HOST=...` | runtime-specific | secret | `xl_services/source_config.py` |
 | `FTP_<SITE>_*` | database-service | Optional | `21` for port | same family | `FTP_DE_HOST=...` | runtime-specific | secret | `jv_services/sync_utils.py` |
-
