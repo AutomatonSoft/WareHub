@@ -67,7 +67,7 @@ pub(crate) async fn request_password_reset(
             "local password reset code generated"
         );
     } else {
-        send_password_reset_email(&email, &code)
+        send_password_reset_email(&email, &code, password_reset_ttl_minutes())
             .await
             .map_err(internal_error)?;
     }

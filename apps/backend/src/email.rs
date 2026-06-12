@@ -1,4 +1,4 @@
-use lettre::message::Mailbox;
+use lettre::message::{header::ContentType, Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 use std::env;
@@ -19,22 +19,19 @@ enum SmtpSecurityMode {
     StartTlsRequired,
 }
 
-pub(crate) async fn send_password_reset_email(to: &str, code: &str) -> Result<(), String> {
+const PASSWORD_RESET_EMAIL_SUBJECT: &str = "Your WareHub password reset code";
+
+pub(crate) async fn send_password_reset_email(
+    to: &str,
+    code: &str,
+    expires_in_minutes: i64,
+) -> Result<(), String> {
     let smtp = load_smtp_config()?;
     let mut builder = build_smtp_transport_builder(&smtp)?;
     let to: Mailbox = to
         .parse()
         .map_err(|error| format!("invalid reset email address: {error}"))?;
-
-    let subject = "SofortBot password reset code";
-    let body = format!("Your password reset code is: {code}\n\nThis code will expire soon.");
-
-    let email = Message::builder()
-        .from(smtp.from.clone())
-        .to(to)
-        .subject(subject)
-        .body(body)
-        .map_err(|error| format!("failed to build email: {error}"))?;
+    let email = build_password_reset_email(&smtp.from, &to, code, expires_in_minutes)?;
 
     if let Some(credentials) = smtp.credentials {
         builder = builder.credentials(credentials);
@@ -48,6 +45,68 @@ pub(crate) async fn send_password_reset_email(to: &str, code: &str) -> Result<()
         .map_err(|error| sanitize_smtp_runtime_error(&error.to_string()))?;
 
     Ok(())
+}
+
+fn build_password_reset_email(
+    from: &Mailbox,
+    to: &Mailbox,
+    code: &str,
+    expires_in_minutes: i64,
+) -> Result<Message, String> {
+    let plain_body = build_password_reset_plain_text(code, expires_in_minutes);
+    let html_body = build_password_reset_html(code, expires_in_minutes);
+
+    Message::builder()
+        .from(from.clone())
+        .to(to.clone())
+        .subject(PASSWORD_RESET_EMAIL_SUBJECT)
+        .multipart(
+            MultiPart::alternative()
+                .singlepart(SinglePart::plain(plain_body))
+                .singlepart(
+                    SinglePart::builder()
+                        .header(ContentType::TEXT_HTML)
+                        .body(html_body),
+                ),
+        )
+        .map_err(|error| format!("failed to build email: {error}"))
+}
+
+fn build_password_reset_plain_text(code: &str, expires_in_minutes: i64) -> String {
+    format!(
+        "Reset your WareHub password\n\nUse the code below to reset your password. This code expires in {expires_in_minutes} minutes.\n\n{code}\n\nIf you did not request this, you can safely ignore this email."
+    )
+}
+
+fn build_password_reset_html(code: &str, expires_in_minutes: i64) -> String {
+    format!(
+        concat!(
+            "<!doctype html>",
+            "<html lang=\"en\">",
+            "<body style=\"margin:0;padding:0;background:#f3f0e8;font-family:Arial,sans-serif;color:#1f2937;\">",
+            "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#f3f0e8;padding:32px 16px;\">",
+            "<tr><td align=\"center\">",
+            "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:560px;background:#ffffff;border:1px solid #e5dfd0;border-radius:24px;overflow:hidden;\">",
+            "<tr><td style=\"padding:32px 32px 24px;background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%);color:#ffffff;\">",
+            "<div style=\"font-size:12px;letter-spacing:0.16em;text-transform:uppercase;opacity:0.82;\">WareHub</div>",
+            "<h1 style=\"margin:12px 0 0;font-size:28px;line-height:1.2;\">Reset your WareHub password</h1>",
+            "<p style=\"margin:12px 0 0;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.86);\">Use the code below to reset your password. This code expires in {expires_in_minutes} minutes.</p>",
+            "</td></tr>",
+            "<tr><td style=\"padding:32px;\">",
+            "<div style=\"margin:0 0 12px;font-size:13px;line-height:1.6;color:#6b7280;\">Password reset code</div>",
+            "<div style=\"margin:0 0 24px;padding:18px 20px;border:1px solid #dbe4ff;border-radius:18px;background:#f8fbff;font-size:32px;line-height:1;letter-spacing:0.32em;font-weight:700;text-align:center;color:#0f172a;\">{code}</div>",
+            "<p style=\"margin:0 0 16px;font-size:14px;line-height:1.7;color:#4b5563;\">Enter this code in the WareHub password reset form to continue.</p>",
+            "<p style=\"margin:0;font-size:13px;line-height:1.7;color:#6b7280;\">If you did not request this, you can safely ignore this email.</p>",
+            "</td></tr>",
+            "</table>",
+            "</td></tr>",
+            "</table>",
+            "</body>",
+            "</html>"
+        ),
+        code = code,
+        expires_in_minutes = expires_in_minutes
+    )
 }
 
 fn load_smtp_config() -> Result<SmtpConfig, String> {
@@ -330,5 +389,25 @@ mod tests {
         let error = sanitize_smtp_runtime_error("authentication failed");
 
         assert_eq!(error, "failed to send reset email: SMTP authentication failed");
+    }
+
+    #[test]
+    fn password_reset_email_uses_warehub_subject_and_multipart_content() {
+        let from: Mailbox = "WareHub <no-reply@example.com>"
+            .parse()
+            .expect("must parse sender");
+        let to: Mailbox = "user@example.com".parse().expect("must parse recipient");
+
+        let email = build_password_reset_email(&from, &to, "123456", 10)
+            .expect("must build password reset email");
+        let formatted =
+            String::from_utf8(email.formatted()).expect("formatted email must be valid utf-8");
+
+        assert!(formatted.contains("Subject: Your WareHub password reset code"));
+        assert!(formatted.contains("Reset your WareHub password"));
+        assert!(formatted.contains("This code expires in 10 minutes."));
+        assert!(formatted.contains("123456"));
+        assert!(formatted.contains("Content-Type: text/html"));
+        assert!(formatted.contains("Content-Type: text/plain"));
     }
 }
