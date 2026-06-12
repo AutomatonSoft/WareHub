@@ -244,6 +244,18 @@ function Get-DatabaseUrlSummary {
 Import-RootEnv
 Initialize-LocalRuntimeEnv
 
+$databaseServicePythonExe = [System.Environment]::GetEnvironmentVariable("DATABASE_SERVICE_PYTHON_EXE", "Process")
+if ([string]::IsNullOrWhiteSpace($databaseServicePythonExe)) {
+  $databaseServicePythonExe = "python"
+}
+$databaseServiceVenvPath = [System.Environment]::GetEnvironmentVariable("DATABASE_SERVICE_VENV_PATH", "Process")
+
+$orchestratorPythonExe = [System.Environment]::GetEnvironmentVariable("ORCHESTRATOR_PYTHON_EXE", "Process")
+if ([string]::IsNullOrWhiteSpace($orchestratorPythonExe)) {
+  $orchestratorPythonExe = "python"
+}
+$orchestratorVenvPath = [System.Environment]::GetEnvironmentVariable("ORCHESTRATOR_VENV_PATH", "Process")
+
 switch ($App) {
   "frontend" {
     $workingDirectory = Join-Path $resolvedRepoRoot "apps\frontend"
@@ -267,32 +279,34 @@ switch ($App) {
 
   "services" {
     $workingDirectory = Join-Path $resolvedRepoRoot "services\database-service"
+    $quotedPython = '"' + $databaseServicePythonExe + '"'
     $loggedCommandLine = if ($WithMigrations) {
-      "python manage.py migrate && python manage.py runserver 0.0.0.0:8934"
+      "$quotedPython manage.py migrate && $quotedPython manage.py runserver 0.0.0.0:8934"
     } else {
-      "python manage.py runserver 0.0.0.0:8934"
+      "$quotedPython manage.py runserver 0.0.0.0:8934"
     }
-    $startupMessage = "Starting database-service in $workingDirectory`nEnv: $(Get-SafeEnvSummary -Keys @('DATABASE_URL','POSTGRES_DB','POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_HOST','POSTGRES_PORT','ALLOWED_HOSTS','CORS_ALLOWED_ORIGINS','CSRF_TRUSTED_ORIGINS','BACKEND_AUTH_BASE_URL')); $(Get-DatabaseUrlSummary)"
+    $startupMessage = "Starting database-service in $workingDirectory`nVenv: $databaseServiceVenvPath`nEnv: $(Get-SafeEnvSummary -Keys @('DATABASE_URL','POSTGRES_DB','POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_HOST','POSTGRES_PORT','ALLOWED_HOSTS','CORS_ALLOWED_ORIGINS','CSRF_TRUSTED_ORIGINS','BACKEND_AUTH_BASE_URL')); $(Get-DatabaseUrlSummary)"
 
     Invoke-LoggedCommand `
       -WorkingDirectory $workingDirectory `
       -StartupMessage $startupMessage `
       -ForegroundCommand {
         if ($WithMigrations) {
-          python manage.py migrate
+          & $databaseServicePythonExe manage.py migrate
         }
-        python manage.py runserver 0.0.0.0:8934
+        & $databaseServicePythonExe manage.py runserver 0.0.0.0:8934
       } `
       -LoggedCommandLine $loggedCommandLine
   }
 
   "orchestrator" {
     $workingDirectory = Join-Path $resolvedRepoRoot "services\orchestrator"
-    $startupMessage = "Starting orchestrator in $workingDirectory`nEnv: $(Get-SafeEnvSummary -Keys @('DATABASE_SERVICE_BASE_URL','ORCHESTRATOR_HOST','ORCHESTRATOR_PORT','ORCHESTRATOR_HTTP_TIMEOUT_SECONDS','ORCHESTRATOR_HTTP_RETRIES'))"
+    $quotedPython = '"' + $orchestratorPythonExe + '"'
+    $startupMessage = "Starting orchestrator in $workingDirectory`nVenv: $orchestratorVenvPath`nEnv: $(Get-SafeEnvSummary -Keys @('DATABASE_SERVICE_BASE_URL','ORCHESTRATOR_HOST','ORCHESTRATOR_PORT','ORCHESTRATOR_HTTP_TIMEOUT_SECONDS','ORCHESTRATOR_HTTP_RETRIES'))"
     Invoke-LoggedCommand `
       -WorkingDirectory $workingDirectory `
       -StartupMessage $startupMessage `
-      -ForegroundCommand { uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload } `
-      -LoggedCommandLine "uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload"
+      -ForegroundCommand { & $orchestratorPythonExe -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload } `
+      -LoggedCommandLine "$quotedPython -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload"
   }
 }
