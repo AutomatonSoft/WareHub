@@ -30,6 +30,24 @@ type ResetStep = "request" | "confirm";
 type LoginFieldKey = "email" | "firstName" | "lastName" | "phoneNumber" | "login" | "password" | "confirmPassword";
 type ResetFieldKey = "email" | "code" | "password" | "confirmPassword";
 
+const GENERIC_AUTH_ERROR_MESSAGE = "Something went wrong. Please try again.";
+const RESET_REQUEST_SUCCESS_MESSAGE = "Reset code sent. Check your email.";
+const PASSWORD_RESET_SUCCESS_MESSAGE = "Password updated. You can sign in now.";
+const RESET_REQUEST_HINT = "Enter your email to receive a reset code.";
+
+function getAuthActionErrorMessage(payload: unknown, fallback: string, status: number): string {
+  if (status >= 500) {
+    return GENERIC_AUTH_ERROR_MESSAGE;
+  }
+
+  const message = parseError(payload, fallback);
+  if (/http 5\d\d/i.test(message) || /internal server error/i.test(message)) {
+    return GENERIC_AUTH_ERROR_MESSAGE;
+  }
+
+  return message;
+}
+
 export default function LoginPage() {
   const t = useLabels();
   const { showToast } = useToast();
@@ -37,8 +55,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [showReset, setShowReset] = useState(false);
   const [resetStep, setResetStep] = useState<ResetStep>("request");
-  const [status, setStatus] = useState<string | null>(null);
-  const [resetStatus, setResetStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
 
@@ -57,10 +73,6 @@ export default function LoginPage() {
   const [resetFieldErrors, setResetFieldErrors] = useState<Partial<Record<ResetFieldKey, string>>>({});
 
   const apiBase = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE, []);
-  const resetSuccessMessage = useMemo(() => {
-    const isLocalDev = (process.env.NEXT_PUBLIC_APP_ENV ?? "").toLowerCase() === "dev";
-    return isLocalDev ? `${t.codeSent} ${t.codeSentLocalDevHint}` : t.codeSent;
-  }, [t]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -76,7 +88,6 @@ export default function LoginPage() {
   function openReset() {
     setShowReset(true);
     setResetStep("request");
-    setResetStatus(null);
     setResetFieldErrors({});
     setResetCode("");
     setResetPasswordValue("");
@@ -89,7 +100,6 @@ export default function LoginPage() {
   function closeReset() {
     setShowReset(false);
     setResetStep("request");
-    setResetStatus(null);
     setResetFieldErrors({});
     setResetCode("");
     setResetPasswordValue("");
@@ -99,7 +109,6 @@ export default function LoginPage() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus(null);
     setFieldErrors({});
 
     if (mode === "register") {
@@ -161,8 +170,7 @@ export default function LoginPage() {
 
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          const message = parseError(payload, `${t.registrationFailed}: HTTP ${response.status}`);
-          setStatus(message);
+          const message = getAuthActionErrorMessage(payload, GENERIC_AUTH_ERROR_MESSAGE, response.status);
           showToast(message, "error");
           return;
         }
@@ -174,12 +182,9 @@ export default function LoginPage() {
         setLastName("");
         setPhoneNumber("");
         setFieldErrors({});
-        setStatus(t.registrationSubmittedWaitApprovalLogin);
         showToast(t.registrationSubmittedWaitApprovalLogin, "success");
       } catch (error) {
-        const message = `${t.registrationFailed}: ${error instanceof Error ? error.message : t.unknownError}`;
-        setStatus(message);
-        showToast(message, "error");
+        showToast(GENERIC_AUTH_ERROR_MESSAGE, "error");
       } finally {
         setLoading(false);
       }
@@ -196,8 +201,7 @@ export default function LoginPage() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        const message = parseError(payload, `${t.loginFailed}: HTTP ${response.status}`);
-        setStatus(message);
+        const message = getAuthActionErrorMessage(payload, GENERIC_AUTH_ERROR_MESSAGE, response.status);
         showToast(message, "error");
         return;
       }
@@ -221,10 +225,8 @@ export default function LoginPage() {
       saveAuth(payload.token, payload.user);
       await syncDatabaseServiceSession(payload.token).catch(() => false);
       router.replace("/profile");
-    } catch (error) {
-      const message = `${t.loginFailed}: ${error instanceof Error ? error.message : t.unknownError}`;
-      setStatus(message);
-      showToast(message, "error");
+    } catch {
+      showToast(GENERIC_AUTH_ERROR_MESSAGE, "error");
     } finally {
       setLoading(false);
     }
@@ -232,7 +234,6 @@ export default function LoginPage() {
 
   async function onRequestReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setResetStatus(null);
     setResetFieldErrors({});
 
     const normalizedEmail = resetEmail.trim().toLowerCase();
@@ -247,11 +248,9 @@ export default function LoginPage() {
       await requestPasswordReset(apiBase, normalizedEmail);
       setResetEmail(normalizedEmail);
       setResetStep("confirm");
-      setResetStatus(resetSuccessMessage);
-      showToast(resetSuccessMessage, "success");
+      showToast(RESET_REQUEST_SUCCESS_MESSAGE, "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.unexpectedError;
-      setResetStatus(message);
+      const message = error instanceof Error ? error.message : GENERIC_AUTH_ERROR_MESSAGE;
       showToast(message, "error");
     } finally {
       setResetLoading(false);
@@ -260,7 +259,6 @@ export default function LoginPage() {
 
   async function onConfirmReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setResetStatus(null);
     setResetFieldErrors({});
 
     const nextErrors: Partial<Record<ResetFieldKey, string>> = {};
@@ -301,11 +299,9 @@ export default function LoginPage() {
       setMode("login");
       setPassword("");
       setConfirmPassword("");
-      setStatus(t.passwordResetSuccess);
-      showToast(t.passwordResetSuccess, "success");
+      showToast(PASSWORD_RESET_SUCCESS_MESSAGE, "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.unexpectedError;
-      setResetStatus(message);
+      const message = error instanceof Error ? error.message : GENERIC_AUTH_ERROR_MESSAGE;
       showToast(message, "error");
     } finally {
       setResetLoading(false);
@@ -326,7 +322,7 @@ export default function LoginPage() {
   const title = showReset ? t.resetPassword : mode === "login" ? t.welcomeBack : t.createAccount;
   const description = showReset
     ? resetStep === "request"
-      ? resetSuccessMessage
+      ? RESET_REQUEST_HINT
       : t.enterCode
     : mode === "login"
       ? t.signInManageProfileWorkspace
@@ -457,8 +453,6 @@ export default function LoginPage() {
                   </div>
                 ) : null}
 
-                {status ? <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{status}</p> : null}
-
                 <Button type="submit" className="w-full" disabled={isAuthSubmitDisabled}>
                   {loading ? t.pleaseWait : mode === "login" ? t.login : t.register}
                 </Button>
@@ -481,11 +475,6 @@ export default function LoginPage() {
                     />
                     {resetFieldErrors.email ? <p className="mt-1 text-xs text-destructive">{resetFieldErrors.email}</p> : null}
                   </div>
-
-                  {resetStatus ? (
-                    <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{resetStatus}</p>
-                  ) : null}
-
                   <Button type="submit" className="w-full" disabled={resetLoading || resetEmail.trim().length === 0}>
                     {resetLoading ? t.sending : t.sendCode}
                   </Button>
@@ -538,11 +527,6 @@ export default function LoginPage() {
                       <p className="mt-1 text-xs text-destructive">{resetFieldErrors.confirmPassword}</p>
                     ) : null}
                   </div>
-
-                  {resetStatus ? (
-                    <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{resetStatus}</p>
-                  ) : null}
-
                   <Button
                     type="submit"
                     className="w-full"
