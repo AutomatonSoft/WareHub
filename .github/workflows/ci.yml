@@ -221,7 +221,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Show Flutter version
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
@@ -233,6 +232,7 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
+      - name: Show Flutter version
         run: flutter --version
 
       - name: Show Dart version
