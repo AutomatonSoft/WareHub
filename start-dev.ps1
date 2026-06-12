@@ -102,7 +102,55 @@ function Assert-RepoRoot {
 
 function Assert-Docker {
   $null = Get-Command docker -ErrorAction Stop
-  docker compose version | Out-Null
+  Invoke-DockerCommand -ArgumentList @("compose", "version") | Out-Null
+}
+
+function Invoke-DockerCommand {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$ArgumentList
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = @(& docker @ArgumentList 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($exitCode -ne 0) {
+    $details = ($output |
+      ForEach-Object { $_.ToString().Trim() } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    if ([string]::IsNullOrWhiteSpace($details)) {
+      $details = "docker exited with code $exitCode."
+    }
+    throw "Docker command failed: docker $($ArgumentList -join ' ')`n$details"
+  }
+
+  return @($output | ForEach-Object { $_.ToString() })
+}
+
+function Assert-DockerDaemonReady {
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = @(& docker info --format '{{.ServerVersion}}' 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($exitCode -ne 0) {
+    $details = ($output |
+      ForEach-Object { $_.ToString().Trim() } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    if ([string]::IsNullOrWhiteSpace($details)) {
+      $details = "docker info exited with code $exitCode."
+    }
+    throw "Docker daemon is unavailable. Start Docker Desktop and wait until 'docker info' succeeds.`n$details"
+  }
 }
 
 function Resolve-PythonExecutable {
@@ -130,7 +178,7 @@ function Assert-RootEnvFile {
 }
 
 function Assert-ComposeConfig {
-  docker compose -f $composeFile config | Out-Null
+  Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "config") | Out-Null
 }
 
 function Assert-HelperScript {
@@ -585,7 +633,7 @@ function Get-DockerComposeContainerId {
     [Parameter(Mandatory = $true)][string]$ServiceName
   )
 
-  $output = @(docker compose -f $composeFile ps -q $ServiceName 2>$null)
+  $output = @(Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "ps", "-q", $ServiceName))
   if (-not $output -or $output.Count -eq 0) {
     return ""
   }
@@ -599,7 +647,7 @@ function Get-DockerComposeContainerId {
 }
 
 function Resolve-PostgresComposeServiceName {
-  $services = @(docker compose -f $composeFile config --services 2>$null)
+  $services = @(Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "config", "--services"))
   if ($services -contains "postgres") {
     return "postgres"
   }
@@ -629,7 +677,7 @@ function Wait-ForPostgresHealthy {
   }
 
   while ((Get-Date) -lt $deadline) {
-    $health = (docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $containerId).Trim()
+    $health = ([string](Invoke-DockerCommand -ArgumentList @("inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", $containerId) | Select-Object -First 1)).Trim()
     if ($health -eq "healthy") {
       Write-Host "Postgres is healthy."
       return
@@ -653,7 +701,7 @@ function Get-DependencyContainerState {
     return "missing"
   }
 
-  $state = (docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $containerId).Trim()
+  $state = ([string](Invoke-DockerCommand -ArgumentList @("inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", $containerId) | Select-Object -First 1)).Trim()
   if ([string]::IsNullOrWhiteSpace($state)) {
     return "unknown"
   }
@@ -717,9 +765,9 @@ function Wait-ForLocalDependenciesReady {
 function Start-LocalDependencies {
   if ($ResetDeps) {
     Write-Host "ResetDeps requested; recreating local Docker dependencies."
-    docker compose -f $composeFile down
+    Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "down") | Out-Null
     Write-Host "Starting WareHub local dependencies from $composeFile"
-    docker compose -f $composeFile up -d
+    Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "up", "-d") | Out-Null
     Wait-ForLocalDependenciesReady
     return
   }
@@ -730,7 +778,7 @@ function Start-LocalDependencies {
   }
 
   Write-Host "Starting missing or unhealthy Docker dependencies..."
-  docker compose -f $composeFile up -d
+  Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "up", "-d") | Out-Null
   Wait-ForLocalDependenciesReady
 }
 
@@ -922,6 +970,7 @@ function Print-StartupSummary {
 
 Assert-RepoRoot
 Assert-Docker
+Assert-DockerDaemonReady
 Assert-RootEnvFile
 Assert-HelperScript
 Assert-ProcessHelperScript
