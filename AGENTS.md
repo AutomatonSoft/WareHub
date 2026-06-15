@@ -113,6 +113,105 @@ WareHub - production-grade система. Любое изменение в эт
 - Automation helpers.
 - Production business logic здесь запрещена.
 
+## 3.1. Team ownership и execution boundaries
+
+### Ravil ownership
+
+Ravil является основным владельцем следующих областей:
+
+- `apps/backend/**`
+- `apps/frontend/**`
+- `apps/mobile/**`
+- `deploy/**`
+- `infra/**`
+- `.github/**`
+
+Ravil также отвечает за:
+
+- CI/CD;
+- Docker и Compose integration;
+- GHCR publish;
+- stage и production rollout;
+- nginx;
+- certbot;
+- server configuration;
+- deployment scripts;
+- выполнение migrations на stage и production;
+- promotion `stage -> main`;
+- интеграцию изменений между `apps/**` и `services/**`.
+
+Агенты, работающие от имени Ravil, могут анализировать и изменять эти области в пределах явно заданного task scope.
+
+### Said ownership
+
+Said является основным владельцем:
+
+- `services/**`;
+- `services/database-service/**`;
+- `services/orchestrator/**`;
+- service business logic;
+- Django/DRF API;
+- FastAPI service logic;
+- service adapters и integrations;
+- service-owned models;
+- service-owned database schema;
+- service-owned migrations;
+- service tests.
+
+Database ownership определяется не только каталогом, но и владельцем таблицы.
+
+Said не должен изменять SQLx migrations или таблицы, принадлежащие `apps/backend`, без отдельного согласования с Ravil.
+
+Агенты, работающие от имени Ravil, не должны самостоятельно реализовывать изменения внутри `services/**`, если задача явно не содержит owner override. Вместо этого агент обязан подготовить полное техническое задание для Said.
+
+Агенты, работающие от имени Said, не должны самостоятельно изменять `apps/**`, `deploy/**`, `infra/**` или `.github/**`. Вместо этого агент обязан подготовить техническое задание для Ravil.
+
+### Shared and cross-cutting ownership
+
+Следующие области являются совместными:
+
+- `AGENTS.md`;
+- root `docker-compose*.yml`;
+- root `.env.example`;
+- `start-dev.ps1`;
+- `start-dev-mac.sh`;
+- root scripts;
+- shared API contracts;
+- OpenAPI schemas;
+- root configuration;
+- documentation, одновременно влияющая на `apps/**` и `services/**`.
+
+Изменения в совместных областях требуют явного согласования scope.
+
+Ни один агент не должен молча изменять одновременно Ravil-owned и Said-owned области.
+
+Cross-zone изменение должно выполняться одним из способов:
+
+1. два отдельных coordinated PR;
+2. один явно согласованный integration PR;
+3. отдельные commits с чётко разделённым ownership.
+
+### Required ownership check
+
+Перед изменением файлов агент обязан:
+
+1. перечислить предполагаемые файлы;
+2. определить владельца каждого файла;
+3. подтвердить, что файлы находятся в разрешённом scope;
+4. остановиться при пересечении ownership без явного approval.
+
+Если задача находится вне ownership агента, агент обязан вернуть:
+
+- root cause;
+- требуемое изменение;
+- точные файлы;
+- API или data contract;
+- acceptance criteria;
+- validation requirements;
+- полное ТЗ для соответствующего владельца.
+
+Агент не должен выполнять изменение вне своей ownership-зоны только потому, что технически может это сделать.
+
 ## 4. OOP, SOLID и модульный дизайн
 
 ### Object-Oriented / Modular Design
@@ -355,10 +454,20 @@ WareHub - production-grade система. Любое изменение в эт
   - `feature/*`
   - `fix/*`
   - `hotfix/*`
+  - `integration/*`
+  - `said/*`
+  - `docs/*`
 - Flow:
   - `feature/*` -> PR -> `stage`
+  - `said/*` -> PR -> `stage`
+  - `integration/*` -> PR -> `stage`
+  - `docs/*` -> PR -> `stage`
   - `stage` -> PR -> `main`
   - `hotfix/*` -> PR -> `main` -> back-merge `main` to `stage`
+- Старая legacy-ветка `SAID` заморожена и не должна использоваться для новой работы.
+- Новые ветки Said обязаны использовать формат `said/<task-name>`.
+- Direct push в `said/*` другим разработчиком запрещён без согласования с Said.
+- Force-push в team branches запрещён.
 - Direct push в `main` запрещен.
 - Direct push в `stage` запрещен.
 - Перед merge обязательны required checks.
