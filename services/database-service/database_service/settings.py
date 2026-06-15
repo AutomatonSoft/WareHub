@@ -243,3 +243,9 @@ BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS = [
     for h in os.getenv("BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if h.strip()
 ]
+ORCHESTRATOR_SERVICE_AUTH_TOKEN = (os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN") or "").strip()
+ORCHESTRATOR_SERVICE_ALLOWED_HOSTS = [
+    h.strip().lower()
+    for h in os.getenv("ORCHESTRATOR_SERVICE_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if h.strip()
+]

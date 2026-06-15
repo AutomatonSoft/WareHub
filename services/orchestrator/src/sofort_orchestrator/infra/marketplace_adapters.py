@@ -13,12 +13,15 @@ class AdapterResult:
 
 
 class MarketplaceAdapters:
-    def __init__(self, base_url: str, http_client: HttpClient) -> None:
+    def __init__(self, base_url: str, http_client: HttpClient, service_auth_token: str = "") -> None:
         self.base_url = base_url
         self.http = http_client
+        self.service_auth_token = service_auth_token
 
     def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict) -> AdapterResult:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
+        if self.service_auth_token:
+            headers["X-WareHub-Service-Token"] = self.service_auth_token
 
         if channel.marketplace is Marketplace.HOOD:
             account = (channel.account or "jv").strip().lower()

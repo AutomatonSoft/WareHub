@@ -409,6 +409,90 @@ ensure_local_dev_log_directory() {
   mkdir -p "$local_dev_log_directory"
 }
 
+warn_if_root_env_has_nonlocal_postgres_host() {
+  local root_env_path="$repo_root/.env"
+  local root_host
+
+  [[ -f "$root_env_path" ]] || return
+
+  root_host="$(
+    awk -F= '
+      $1 == "DEV_POSTGRES_HOST" {
+        sub(/\r$/, "", $2)
+        print $2
+        exit
+      }
+    ' "$root_env_path"
+  )"
+
+  if [[ -n "$root_host" && "$root_host" != "localhost" && "$root_host" != "127.0.0.1" ]]; then
+    info "Overriding nonlocal DEV_POSTGRES_HOST for local runtime with localhost."
+  fi
+}
+
+build_local_runtime_env_lines() {
+  local frontend_port="8931"
+  local backend_port="8932"
+  local services_port="8934"
+  local orchestrator_port="8935"
+  local postgres_db="warehub"
+  local postgres_user="warehub"
+  local postgres_password="warehub"
+  local postgres_host="localhost"
+  local postgres_port="8933"
+  local backend_origin="http://localhost:$backend_port"
+  local services_origin="http://localhost:$services_port"
+  local orchestrator_origin="http://localhost:$orchestrator_port"
+  local frontend_origin="http://localhost:$frontend_port"
+  local database_url="postgres://warehub:warehub@localhost:8933/warehub"
+
+  cat <<EOF
+DEV_FRONTEND_PORT=$frontend_port
+DEV_BACKEND_PORT=$backend_port
+DEV_SERVICES_PORT=$services_port
+DEV_ORCHESTRATOR_PORT=$orchestrator_port
+DEV_POSTGRES_DB=$postgres_db
+DEV_POSTGRES_USER=$postgres_user
+DEV_POSTGRES_PASSWORD=$postgres_password
+DEV_POSTGRES_HOST=$postgres_host
+DEV_POSTGRES_HOST_PORT=$postgres_port
+WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE=true
+APP_ENV=dev
+APP_PORT=$backend_port
+PORT=$frontend_port
+POSTGRES_DB=$postgres_db
+POSTGRES_USER=$postgres_user
+POSTGRES_PASSWORD=$postgres_password
+POSTGRES_HOST=$postgres_host
+POSTGRES_PORT=$postgres_port
+DATABASE_URL=$database_url
+BACKEND_ORIGIN=$backend_origin
+SERVICES_ORIGIN=$services_origin
+ORCHESTRATOR_ORIGIN=$orchestrator_origin
+NEXT_PUBLIC_API_BASE_URL=$backend_origin/api/v1
+BACKEND_INTERNAL_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
+BACKEND_API_BASE_URL=$backend_origin/api/v1
+NEXT_PUBLIC_SERVICES_API_BASE_URL=$services_origin
+SERVICES_API_BASE_URL=$services_origin
+NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=$orchestrator_origin
+ORCHESTRATOR_API_BASE_URL=$orchestrator_origin
+MOBILE_DEV_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
+DATABASE_SERVICE_BASE_URL=$services_origin
+ORCHESTRATOR_SERVICE_AUTH_TOKEN=warehub-local-orchestrator
+ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=localhost,127.0.0.1
+ORCHESTRATOR_HOST=0.0.0.0
+ORCHESTRATOR_PORT=$orchestrator_port
+SKIP_DB_MIGRATIONS=true
+CORS_ALLOW_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
+ALLOWED_HOSTS=127.0.0.1,localhost
+CORS_ALLOWED_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
+CSRF_TRUSTED_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
+BACKEND_AUTH_BASE_URL=http://127.0.0.1:$backend_port/api/v1
+BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS=localhost,127.0.0.1
+NEXT_PUBLIC_APP_ENV=dev
+EOF
+}
+
 clear_frontend_dev_cache() {
   local frontend_cache_dir="$repo_root/apps/frontend/.next"
   if [[ -d "$frontend_cache_dir" ]]; then
@@ -482,14 +566,17 @@ start_app_in_background() {
   local log_path="$5"
   local command_text
   local launcher_python
+  local runtime_env_lines
   command_text="$(get_command_for_app "$app_name")"
   started_log_paths[$app_index]="$log_path"
   launcher_python="$(resolve_python)"
+  runtime_env_lines="$(build_local_runtime_env_lines)"
 
   APP_WORKING_DIRECTORY="$working_directory" \
   APP_LOG_PATH="$log_path" \
   APP_COMMAND_TEXT="$command_text" \
   APP_NAME="$app_name" \
+  APP_RUNTIME_ENV_LINES="$runtime_env_lines" \
   "$launcher_python" - <<'PY'
 import os
 import subprocess
@@ -498,6 +585,7 @@ working_directory = os.environ["APP_WORKING_DIRECTORY"]
 log_path = os.environ["APP_LOG_PATH"]
 command_text = os.environ["APP_COMMAND_TEXT"]
 app_name = os.environ["APP_NAME"]
+runtime_env_lines = os.environ.get("APP_RUNTIME_ENV_LINES", "")
 
 shell_command = (
     f"cd {subprocess.list2cmdline([working_directory])} && "
@@ -506,9 +594,18 @@ shell_command = (
     f"status=$?; echo Process {app_name} exited with status $status >> {subprocess.list2cmdline([log_path])}"
 )
 
+child_env = os.environ.copy()
+for raw_line in runtime_env_lines.splitlines():
+    line = raw_line.strip()
+    if not line or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    child_env[key] = value
+
 with open(os.devnull, "rb") as stdin_stream:
     subprocess.Popen(
         ["bash", "-lc", shell_command],
+        env=child_env,
         stdin=stdin_stream,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -708,6 +805,7 @@ ensure_local_dev_log_directory
 info "Cleaning previous WareHub local app processes..."
 stop_warehub_local_app_processes
 start_local_dependencies
+warn_if_root_env_has_nonlocal_postgres_host
 
 if [[ "$deps_only" == false && "$no_apps" == false ]]; then
   if [[ "$skip_frontend" == false ]]; then

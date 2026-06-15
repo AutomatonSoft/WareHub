@@ -41,7 +41,7 @@ def test_load_local_env_uses_nearest_dotenv_without_overriding_existing_values(t
 
     nearest_env = module_path.parents[3] / ".env"
     nearest_env.write_text(
-        "DATABASE_SERVICE_BASE_URL=http://from-dotenv:8000\nORCHESTRATOR_HTTP_RETRIES=7\n",
+        "DATABASE_SERVICE_BASE_URL=http://from-dotenv:8000\nORCHESTRATOR_HTTP_RETRIES=7\nORCHESTRATOR_SERVICE_AUTH_TOKEN=test-token\n",
         encoding="utf-8",
     )
 
@@ -52,6 +52,7 @@ def test_load_local_env_uses_nearest_dotenv_without_overriding_existing_values(t
 
     assert module.settings.base_url == "http://already-set:9000"
     assert module.settings.retries == 7
+    assert module.settings.service_auth_token == "test-token"
 
 
 def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):

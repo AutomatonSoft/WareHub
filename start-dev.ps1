@@ -461,6 +461,8 @@ function Initialize-LocalRuntimeEnv {
   Set-ProcessEnvValue -Name "ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
   Set-ProcessEnvValue -Name "MOBILE_DEV_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
   Set-ProcessEnvValue -Name "DATABASE_SERVICE_BASE_URL" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_AUTH_TOKEN" -Value "warehub-local-orchestrator"
+  Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_ALLOWED_HOSTS" -Value "localhost,127.0.0.1"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_HOST" -Value "0.0.0.0"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_PORT" -Value $orchestratorPort
 

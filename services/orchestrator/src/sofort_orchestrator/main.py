@@ -47,7 +47,11 @@ def _build_http_client() -> HttpClient:
 
 def _build_service() -> OrchestratorService:
     http_client = _build_http_client()
-    adapters = MarketplaceAdapters(base_url=settings.base_url, http_client=http_client)
+    adapters = MarketplaceAdapters(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     circuit_breaker = InMemoryCircuitBreaker(
         failure_threshold=settings.circuit_breaker_failure_threshold,
         open_seconds=settings.circuit_breaker_open_seconds,
@@ -77,7 +81,11 @@ def _build_metrics() -> InMemoryMetrics:
 
 def _build_product_editor_service(*, job_store: SqliteJobStore) -> ProductEditorService:
     http_client = _build_http_client()
-    gateway = ProductEditorGateway(base_url=settings.base_url, http_client=http_client)
+    gateway = ProductEditorGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3")
     store = SqliteProductEditorStore(db_path=_ensure_sqlite_parent_dir(store_path))
     return ProductEditorService(
