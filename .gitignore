@@ -47,3 +47,8 @@ logs/local-dev/
 
 # Local orchestrator runtime data
 services/orchestrator/data/
+
+.vscode/
+.vscode
+.venv
+venv
