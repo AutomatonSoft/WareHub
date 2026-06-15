@@ -1,6 +1,7 @@
 import re
 import logging
 
+from django.conf import settings
 from django.db import connections
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
@@ -16,6 +17,9 @@ def _norm_ean(value: object) -> str:
 
 
 def load_kid_ean_map() -> dict[str, dict[str, str]]:
+    if "ean_map" not in settings.DATABASES:
+        return {}
+
     try:
         with connections["ean_map"].cursor() as cursor:
             cursor.execute(
