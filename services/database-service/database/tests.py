@@ -81,10 +81,13 @@ class DatabaseApiTests(APITestCase):
     def test_get_kid_ean_summary(self):
         self.kid.place = "A-01"
         self.kid.room = "ROOM-1"
-        self.kid.furniture_type = "chair"
         self.kid.listing_status = "listed"
         self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
-        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "photo"])
+        self.kid.save(update_fields=["place", "room", "listing_status", "photo"])
+        ProductAttributes.objects.update_or_create(
+            kid=self.kid,
+            defaults={"furniture_type": "chair"},
+        )
 
         self.order.additional_items = [
             {"sku": "extra sku 4006381333931"},
@@ -380,5 +383,4 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["code"], "INVENTORY_ROWS_SCHEMA_ERROR")
         self.assertEqual(response.data["request_id"], "req-test-500")
         self.assertIn("hint", response.data["details"])
-
 

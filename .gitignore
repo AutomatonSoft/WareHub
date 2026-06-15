@@ -52,3 +52,6 @@ services/orchestrator/data/
 .vscode
 .venv
 venv
+.codex/.DS_Store
+.DS_Store
+DS_Store
