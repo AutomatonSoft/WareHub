@@ -12,48 +12,57 @@ class GatewayResult:
 
 
 class ProductEditorGateway:
-    def __init__(self, base_url: str, http_client: HttpClient) -> None:
+    def __init__(self, base_url: str, http_client: HttpClient, service_auth_token: str = "") -> None:
         self.base_url = base_url
         self.http = http_client
+        self.service_auth_token = service_auth_token
+
+    def _headers(self, request_id: str, *, content_type: str | None = None) -> dict[str, str]:
+        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        if content_type:
+            headers["Content-Type"] = content_type
+        if self.service_auth_token:
+            headers["X-WareHub-Service-Token"] = self.service_auth_token
+        return headers
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        headers = self._headers(request_id)
         url = f"{self.base_url}/api/hood/items/by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"account": account})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def patch_hood_by_ean(self, *, ean: str, account: str, request_id: str, payload: dict) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
+        headers = self._headers(request_id, content_type="application/json")
         url = f"{self.base_url}/api/hood/items/by-ean/{ean}/"
         response = self.http.request("PATCH", url, headers=headers, params={"account": account}, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        headers = self._headers(request_id)
         url = f"{self.base_url}/api/jv/sites/by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"site": "JV"})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        headers = self._headers(request_id)
         url = f"{self.base_url}/api/jv/products/local-by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"site": "JV", "site_key": site_key})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def sync_jv_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
+        headers = self._headers(request_id, content_type="application/json")
         url = f"{self.base_url}/api/jv/products/sync-by-ean/{ean}/"
         response = self.http.request("POST", url, headers=headers, params={"site": "JV", "site_key": site_key}, json={})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
+        headers = self._headers(request_id, content_type="application/json")
         url = f"{self.base_url}/api/jv/batch/update-by-ean/{ean}/apply/"
         response = self.http.request("POST", url, headers=headers, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_batch_job_status(self, *, job_id: int, request_id: str) -> GatewayResult:
-        headers = {"X-Request-Id": request_id, "Accept": "application/json"}
+        headers = self._headers(request_id)
         url = f"{self.base_url}/api/jv/batch/jobs/{job_id}/"
         response = self.http.request("GET", url, headers=headers)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
