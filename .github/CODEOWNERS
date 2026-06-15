@@ -1,24 +1,23 @@
 # WareHub code ownership.
-# Later matching rules override earlier rules.
+# Current operating mode: Ravil is the sole active developer.
+# Ownership will be revised when Said officially returns to WareHub.
 
 # Default repository owner.
 * @RavilkaDev0
 
-# Ravil-owned application and infrastructure areas.
+# Application, service and infrastructure areas.
 /apps/ @RavilkaDev0
+/services/ @RavilkaDev0
 /deploy/ @RavilkaDev0
 /infra/ @RavilkaDev0
 /.github/ @RavilkaDev0
 
-# Said-owned service area.
-/services/ @saidmangano
-
-# Shared and cross-cutting files.
-/AGENTS.md @RavilkaDev0 @saidmangano
-/docker-compose*.yml @RavilkaDev0 @saidmangano
-/.env.example @RavilkaDev0 @saidmangano
-/start-dev.ps1 @RavilkaDev0 @saidmangano
-/start-dev-mac.sh @RavilkaDev0 @saidmangano
-/stop-dev.ps1 @RavilkaDev0 @saidmangano
-/stop-dev-mac.sh @RavilkaDev0 @saidmangano
-/scripts/ @RavilkaDev0 @saidmangano
+# Root and cross-cutting files.
+/AGENTS.md @RavilkaDev0
+/docker-compose*.yml @RavilkaDev0
+/.env.example @RavilkaDev0
+/start-dev.ps1 @RavilkaDev0
+/start-dev-mac.sh @RavilkaDev0
+/stop-dev.ps1 @RavilkaDev0
+/stop-dev-mac.sh @RavilkaDev0
+/scripts/ @RavilkaDev0

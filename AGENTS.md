@@ -115,6 +115,35 @@ WareHub - production-grade система. Любое изменение в эт
 
 ## 3.1. Team ownership и execution boundaries
 
+### Current operating mode
+
+Текущий режим проекта: `single-developer`.
+
+До отдельного явного решения о возвращении Said:
+
+- Ravil является единственным активным implementation и review owner всего репозитория;
+- Ravil может самостоятельно выполнять задачи в `apps/**`, `services/**`, `deploy/**`, `infra/**` и `.github/**`;
+- агенты, работающие от имени Ravil, могут анализировать и изменять `services/**`, включая service business logic, tests, models и migrations, если это входит в явно утверждённый task scope;
+- Said не получает новые WareHub-задачи и не должен автоматически назначаться reviewer;
+- существующее описание Said ownership ниже считается целевой командной моделью на момент его возвращения, а не текущим активным назначением.
+
+Этот current operating mode является явным owner override и имеет приоритет над ограничениями, запрещающими агентам Ravil изменять `services/**`.
+
+Ограничения безопасности сохраняются независимо от operating mode:
+
+- migrations сначала диагностируются и тестируются локально;
+- server migrations требуют отдельного разрешения;
+- deploy, GHCR publish, stage/prod changes требуют отдельного разрешения;
+- destructive commands запрещены;
+- secrets нельзя выводить или коммитить.
+
+При возвращении Said требуется отдельный PR, который:
+
+1. отключает `single-developer` override;
+2. возвращает Said активное ownership для `services/**`;
+3. обновляет `.github/CODEOWNERS`;
+4. синхронизирует его новую ветку с актуальным `stage`.
+
 ### Ravil ownership
 
 Ravil является основным владельцем следующих областей:
