@@ -26,7 +26,7 @@ pub(crate) async fn healthz(State(state): State<AppState>) -> Json<HealthRespons
 pub(crate) async fn readyz(
     State(state): State<AppState>,
 ) -> Result<(StatusCode, Json<HealthResponse>), (StatusCode, Json<ErrorResponse>)> {
-    match sqlx::query_scalar::<_, i64>("SELECT 1")
+    match sqlx::query_scalar::<_, i64>("SELECT 1::BIGINT")
         .fetch_one(&state.db)
         .await
     {
