@@ -1,41 +1,62 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "SofortBOT Unified API Baseline",
-    "version": "v1"
+    "title": "WareHub Unified API",
+    "version": "v1",
+    "description": "Combined OpenAPI schema from backend and services repositories."
   },
   "paths": {
-    "/api/services/kids/{kid_id}/": {
+    "/api/v1/hood/items/by-ean/{ean}/": {
       "get": {
+        "operationId": "services_get_api_v1_hood_items_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "ok",
             "content": {
               "application/json": {
                 "schema": {}
               }
-            }
+            },
+            "description": ""
           }
-        }
-      }
-    },
-    "/api/hood/items/by-ean/{ean}/": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
+        },
+        "tags": [
+          "services/hood",
+          "api"
+        ],
+        "x-repository": "services"
       },
       "patch": {
+        "operationId": "services_patch_api_v1_hood_items_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
               "schema": {}
             },
             "multipart/form-data": {
@@ -45,293 +66,101 @@
         },
         "responses": {
           "200": {
-            "description": "ok",
             "content": {
               "application/json": {
                 "schema": {}
               }
-            }
+            },
+            "description": ""
           }
-        }
+        },
+        "tags": [
+          "services/hood",
+          "api"
+        ],
+        "x-repository": "services"
       },
       "delete": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
+        "operationId": "services_delete_api_v1_hood_items_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
             }
           }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/products/by-ean/{ean}": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/sites/by-ean/{ean}": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/ean-pool/take-next-free/": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/uploads/images/": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/products/create-and-push/": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/products/sync-by-ean/{ean}": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/batch/update-by-ean/{ean}/apply/": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/products/local-by-ean/{ean}": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/xl-jv/products/update-by-ean/{ean}": {
-      "patch": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/kaufland/{ean}/{site}/": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services/kaufland/products/ean/change/": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/inventory/rows/": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orders/{order_db_id}/": {
-      "delete": {
+        ],
         "responses": {
           "204": {
-            "description": "deleted"
-          }
-        }
-      },
-      "patch": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
+            "description": ""
           }
         },
+        "tags": [
+          "services/hood",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/batch/jobs/{job_id}/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_batch_jobs_job_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "ok",
             "content": {
               "application/json": {
                 "schema": {}
               }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/batch/update-by-ean/{ean}/apply/": {
+      "post": {
+        "operationId": "services_post_api_v1_jv_batch_update_by_ean_ean_apply",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
             }
           }
-        }
-      }
-    },
-    "/api/v1/kids/{kid_id}/": {
-      "delete": {
-        "responses": {
-          "204": {
-            "description": "deleted"
-          }
-        }
-      }
-    },
-    "/api/v1/kids/": {
-      "post": {
+        ],
         "requestBody": {
           "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
             "multipart/form-data": {
               "schema": {}
             }
@@ -339,15 +168,5048 @@
         },
         "responses": {
           "201": {
-            "description": "created",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/batch/update-by-ean/{ean}/plan/": {
+      "post": {
+        "operationId": "services_post_api_v1_jv_batch_update_by_ean_ean_plan",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/delivery-options/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_delivery_options",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/products/by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_products_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/products/create-and-push/": {
+      "post": {
+        "operationId": "services_post_api_v1_jv_products_create_and_push",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/products/local-by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_products_local_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/products/sync-by-ean/{ean}/": {
+      "post": {
+        "operationId": "services_post_api_v1_jv_products_sync_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/products/update-by-ean/{ean}/": {
+      "patch": {
+        "operationId": "services_patch_api_v1_jv_products_update_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/rubrics/tree/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_rubrics_tree",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/jv/sites/by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_jv_sites_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/jv",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/orchestrator/healthz": {
+      "get": {
+        "summary": "Healthz",
+        "operationId": "orchestrator_get_api_v1_orchestrator_healthz",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Healthz Api V1 Healthz Get"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-healthz"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs": {
+      "post": {
+        "summary": "Create Orchestrator Job",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Orchestrator Job",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}/attempts": {
+      "get": {
+        "summary": "Get Orchestrator Job Attempts",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id_attempts",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}/events": {
+      "get": {
+        "summary": "Get Orchestrator Job Events",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id_events",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs/batch": {
+      "post": {
+        "summary": "Create Orchestrator Jobs Batch",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs_batch",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/jobs/status/batch": {
+      "post": {
+        "summary": "Get Orchestrator Jobs Status Batch",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs_status_batch",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchJobStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-jobs"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/metrics": {
+      "get": {
+        "summary": "Metrics",
+        "operationId": "orchestrator_get_api_v1_orchestrator_metrics",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Metrics Api V1 Metrics Get"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-metrics"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_apply",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply/": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_apply",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/discover": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_discover",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/discover/": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_discover",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}/": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_load",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load/": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_load",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan/": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-product-editor"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/products/{ean}/update": {
+      "post": {
+        "summary": "Orchestrate Update",
+        "operationId": "orchestrator_post_api_v1_orchestrator_products_ean_update",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ean"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestrateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-products"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/readyz": {
+      "get": {
+        "summary": "Readyz",
+        "operationId": "orchestrator_get_api_v1_orchestrator_readyz",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
               }
             }
           }
-        }
+        },
+        "tags": [
+          "orchestrator/orchestrator-readyz"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/diff": {
+      "post": {
+        "summary": "Reconcile Orchestrator State",
+        "operationId": "orchestrator_post_api_v1_orchestrator_reconciliation_diff",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-reconciliation"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/reports": {
+      "get": {
+        "summary": "List Reconciliation Reports",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reconciliation_reports",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ean"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-reconciliation"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/reports/{report_id}": {
+      "get": {
+        "summary": "Get Reconciliation Report",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reconciliation_reports_report_id",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "orchestrator/orchestrator-reconciliation"
+        ],
+        "x-repository": "orchestrator"
+      }
+    },
+    "/api/v1/services/afterbuy/items/search": {
+      "get": {
+        "operationId": "services_get_api_v1_services_afterbuy_items_search",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/afterbuy/items/search-web": {
+      "get": {
+        "operationId": "services_get_api_v1_services_afterbuy_items_search_web",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/afterbuy/orders/create": {
+      "post": {
+        "operationId": "services_post_api_v1_services_afterbuy_orders_create",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/dev/session/sync": {
+      "get": {
+        "operationId": "services_get_api_v1_services_dev_session_sync",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/{ean}/usage": {
+      "get": {
+        "operationId": "services_get_api_v1_services_ean_pool_ean_usage",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/import": {
+      "post": {
+        "operationId": "services_post_api_v1_services_ean_pool_import",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/mark-used": {
+      "post": {
+        "operationId": "services_post_api_v1_services_ean_pool_mark_used",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/reserve": {
+      "post": {
+        "operationId": "services_post_api_v1_services_ean_pool_reserve",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/stats": {
+      "get": {
+        "operationId": "services_get_api_v1_services_ean_pool_stats",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/ean-pool/take-next-free": {
+      "post": {
+        "operationId": "services_post_api_v1_services_ean_pool_take_next_free",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/healthz": {
+      "get": {
+        "operationId": "services_get_api_v1_services_healthz",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/inventory/rows": {
+      "get": {
+        "operationId": "services_get_api_v1_services_inventory_rows",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kaufland/{ean}/{site}": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kaufland_ean_site",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "site",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kaufland/products/create": {
+      "post": {
+        "operationId": "services_post_api_v1_services_kaufland_products_create",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kaufland/products/delete": {
+      "post": {
+        "operationId": "services_post_api_v1_services_kaufland_products_delete",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kaufland/products/ean/change": {
+      "post": {
+        "operationId": "services_post_api_v1_services_kaufland_products_ean_change",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kids",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KidModel"
+                  }
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "post": {
+        "operationId": "services_post_api_v1_services_kids",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids/{id}": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kids_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this kid.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "put": {
+        "operationId": "services_put_api_v1_services_kids_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this kid.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "patch": {
+        "operationId": "services_patch_api_v1_services_kids_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this kid.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/KidModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "delete": {
+        "operationId": "services_delete_api_v1_services_kids_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this kid.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids/{kid_id}/ean-summary": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kids_kid_id_ean_summary",
+        "description": "",
+        "parameters": [
+          {
+            "name": "kid_id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids/{kid_id}/marketplace-eans": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kids_kid_id_marketplace_eans",
+        "description": "",
+        "parameters": [
+          {
+            "name": "kid_id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "patch": {
+        "operationId": "services_patch_api_v1_services_kids_kid_id_marketplace_eans",
+        "description": "",
+        "parameters": [
+          {
+            "name": "kid_id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids/{kid_id}/order-ids": {
+      "get": {
+        "operationId": "services_get_api_v1_services_kids_kid_id_order_ids",
+        "description": "",
+        "parameters": [
+          {
+            "name": "kid_id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/kids/bulk-update": {
+      "patch": {
+        "operationId": "services_patch_api_v1_services_kids_bulk_update",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/marketplace/hood/health": {
+      "get": {
+        "operationId": "services_get_api_v1_services_marketplace_hood_health",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/marketplace/kaufland/health": {
+      "get": {
+        "operationId": "services_get_api_v1_services_marketplace_kaufland_health",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/orders": {
+      "get": {
+        "operationId": "services_get_api_v1_services_orders",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderModel"
+                  }
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "post": {
+        "operationId": "services_post_api_v1_services_orders",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/orders/{id}": {
+      "get": {
+        "operationId": "services_get_api_v1_services_orders_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this orders.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "put": {
+        "operationId": "services_put_api_v1_services_orders_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this orders.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "patch": {
+        "operationId": "services_patch_api_v1_services_orders_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this orders.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderModel"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      },
+      "delete": {
+        "operationId": "services_delete_api_v1_services_orders_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A unique integer value identifying this orders.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/{profile}/products": {
+      "get": {
+        "operationId": "services_get_api_v1_services_otto_profile_products",
+        "description": "",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/{profile}/products/{id}": {
+      "get": {
+        "operationId": "services_get_api_v1_services_otto_profile_products_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/{profile}/products/upsert": {
+      "post": {
+        "operationId": "services_post_api_v1_services_otto_profile_products_upsert",
+        "description": "",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/products": {
+      "get": {
+        "operationId": "services_get_api_v1_services_otto_products",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/products/{id}": {
+      "get": {
+        "operationId": "services_get_api_v1_services_otto_products_id",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/otto/products/upsert": {
+      "post": {
+        "operationId": "services_post_api_v1_services_otto_products_upsert",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/services/readyz": {
+      "get": {
+        "operationId": "services_get_api_v1_services_readyz",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/services",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/uploads/images/": {
+      "post": {
+        "operationId": "services_post_api_v1_uploads_images",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/uploads",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/batch/update-by-ean/{ean}/apply/": {
+      "post": {
+        "operationId": "services_post_api_v1_xl_batch_update_by_ean_ean_apply",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/batch/update-by-ean/{ean}/plan/": {
+      "post": {
+        "operationId": "services_post_api_v1_xl_batch_update_by_ean_ean_plan",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/delivery-options/": {
+      "get": {
+        "operationId": "services_get_api_v1_xl_delivery_options",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/products/by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_xl_products_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/products/create-and-push/": {
+      "post": {
+        "operationId": "services_post_api_v1_xl_products_create_and_push",
+        "description": "",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/products/local-by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_xl_products_local_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/products/sync-by-ean/{ean}/": {
+      "post": {
+        "operationId": "services_post_api_v1_xl_products_sync_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/products/update-by-ean/{ean}/": {
+      "patch": {
+        "operationId": "services_patch_api_v1_xl_products_update_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {}
+            },
+            "multipart/form-data": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/rubrics/tree/": {
+      "get": {
+        "operationId": "services_get_api_v1_xl_rubrics_tree",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
+      }
+    },
+    "/api/v1/xl/sites/by-ean/{ean}/": {
+      "get": {
+        "operationId": "services_get_api_v1_xl_sites_by_ean_ean",
+        "description": "",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "services/xl",
+          "api"
+        ],
+        "x-repository": "services"
       }
     }
-  }
+  },
+  "components": {
+    "schemas": {
+      "KidModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "kid_number": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "account": {
+            "enum": [
+              "JV",
+              "XL",
+              "CH"
+            ],
+            "type": "string",
+            "nullable": true
+          },
+          "place": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "photo": {
+            "type": "object"
+          },
+          "room": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 128
+          },
+          "listing_status": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "b_ware": {
+            "type": "boolean"
+          },
+          "commentary": {
+            "type": "string",
+            "nullable": true
+          },
+          "in_transit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kid_number"
+        ]
+      },
+      "OrderModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "order_id": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "platform": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "buyer": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "enum": [
+              "paid",
+              "no_paid"
+            ],
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "payment_status": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "additional_items": {
+            "type": "object"
+          },
+          "kid": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "order_id",
+          "title",
+          "kid"
+        ]
+      },
+      "BatchCreateJobItem": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "command": {
+            "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "scheduled_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At Unix Ms"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobPriority",
+            "default": "normal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "command"
+        ],
+        "title": "BatchCreateJobItem"
+      },
+      "BatchCreateJobRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchCreateJobItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchCreateJobRequest"
+      },
+      "BatchJobStatusRequest": {
+        "properties": {
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_ids"
+        ],
+        "title": "BatchJobStatusRequest"
+      },
+      "CanonicalPayload": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          },
+          "picture_urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Picture Urls"
+          },
+          "storefront": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storefront"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "productReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Productreference"
+          },
+          "ean": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ean"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          },
+          "pzn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pzn"
+          },
+          "mpn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mpn"
+          },
+          "moin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moin"
+          },
+          "releaseDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releasedate"
+          },
+          "productDescription": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Productdescription"
+          },
+          "mediaAssets": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediaassets"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing"
+          },
+          "logistics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logistics"
+          },
+          "compliance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compliance"
+          },
+          "source_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model"
+          },
+          "source_sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sku"
+          },
+          "source_ean_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ean Field"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "manufacturer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Id"
+          },
+          "stock_status_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Status Id"
+          },
+          "tax_class_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class Id"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "date_available": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Available"
+          },
+          "descriptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descriptions"
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "stores": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stores"
+          },
+          "specials": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specials"
+          },
+          "jv_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jv Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CanonicalPayload"
+      },
+      "ChannelTarget": {
+        "properties": {
+          "marketplace": {
+            "$ref": "#/components/schemas/Marketplace"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site"
+          },
+          "site_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Key"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "marketplace"
+        ],
+        "title": "ChannelTarget"
+      },
+      "CreateJobRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "command": {
+            "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "scheduled_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At Unix Ms"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobPriority",
+            "default": "normal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "command"
+        ],
+        "title": "CreateJobRequest"
+      },
+      "ErrorContract": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id"
+        ],
+        "title": "ErrorContract"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JobPriority": {
+        "type": "string",
+        "enum": [
+          "urgent",
+          "normal",
+          "background"
+        ],
+        "title": "JobPriority"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "JobStatus"
+      },
+      "Marketplace": {
+        "type": "string",
+        "enum": [
+          "hood",
+          "kaufland",
+          "otto",
+          "xljv"
+        ],
+        "title": "Marketplace"
+      },
+      "Operation": {
+        "type": "string",
+        "enum": [
+          "publish",
+          "update",
+          "unpublish",
+          "relist"
+        ],
+        "title": "Operation"
+      },
+      "OrchestrateRequest": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation",
+            "default": "update"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/CanonicalPayload"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelTarget"
+            },
+            "type": "array",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payload",
+          "channels"
+        ],
+        "title": "OrchestrateRequest"
+      },
+      "ProductEditorApplyRequest": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "title": "Confirmation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id"
+        ],
+        "title": "ProductEditorApplyRequest"
+      },
+      "ProductEditorApplyResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status",
+          "active_group"
+        ],
+        "title": "ProductEditorApplyResponse"
+      },
+      "ProductEditorCapability": {
+        "properties": {
+          "discover": {
+            "type": "boolean",
+            "title": "Discover",
+            "default": false
+          },
+          "load": {
+            "type": "boolean",
+            "title": "Load",
+            "default": false
+          },
+          "plan": {
+            "type": "boolean",
+            "title": "Plan",
+            "default": false
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          },
+          "job_status": {
+            "type": "boolean",
+            "title": "Job Status",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ProductEditorCapability"
+      },
+      "ProductEditorDiscoverRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean"
+        ],
+        "title": "ProductEditorDiscoverRequest"
+      },
+      "ProductEditorDiscoverResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "recommended_baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Baseline Target Id"
+          },
+          "selected_group_id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "groups",
+          "selected_group_id"
+        ],
+        "title": "ProductEditorDiscoverResponse"
+      },
+      "ProductEditorGroup": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "description"
+        ],
+        "title": "ProductEditorGroup"
+      },
+      "ProductEditorGroupId": {
+        "type": "string",
+        "enum": [
+          "JV",
+          "XL",
+          "HOOD",
+          "OTTO",
+          "KAUFLAND",
+          "EBAY"
+        ],
+        "title": "ProductEditorGroupId"
+      },
+      "ProductEditorJobResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobStatus"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Status"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "targets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorContract"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status"
+        ],
+        "title": "ProductEditorJobResponse"
+      },
+      "ProductEditorLoadRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadRequest"
+      },
+      "ProductEditorLoadResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported",
+            "default": false
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadResponse"
+      },
+      "ProductEditorPlanRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanRequest"
+      },
+      "ProductEditorPlanResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "plan_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanResponse"
+      },
+      "ProductEditorRiskLevel": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "ProductEditorRiskLevel"
+      },
+      "ProductEditorTarget": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/ProductEditorTargetType"
+          },
+          "account_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Family"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "baseline_eligible": {
+            "type": "boolean",
+            "title": "Baseline Eligible",
+            "default": false
+          },
+          "auto_baseline_eligible": {
+            "type": "boolean",
+            "title": "Auto Baseline Eligible",
+            "default": false
+          },
+          "selected_by_default": {
+            "type": "boolean",
+            "title": "Selected By Default",
+            "default": false
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductEditorTargetStatus",
+            "default": "unknown"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "group",
+          "target_type"
+        ],
+        "title": "ProductEditorTarget"
+      },
+      "ProductEditorTargetStatus": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "found",
+          "missing",
+          "error",
+          "planned",
+          "unsupported",
+          "read_only"
+        ],
+        "title": "ProductEditorTargetStatus"
+      },
+      "ProductEditorTargetType": {
+        "type": "string",
+        "enum": [
+          "source_site",
+          "marketplace_account"
+        ],
+        "title": "ProductEditorTargetType"
+      },
+      "ProductEditorWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProductEditorWarning"
+      },
+      "ReconciliationChannelState": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ChannelTarget"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "ReconciliationChannelState"
+      },
+      "ReconciliationRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "desired": {
+            "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "actual": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationChannelState"
+            },
+            "type": "array",
+            "title": "Actual"
+          },
+          "apply_repair": {
+            "type": "boolean",
+            "title": "Apply Repair",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "desired"
+        ],
+        "title": "ReconciliationRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "orchestrator/orchestrator-healthz",
+      "description": "Endpoints from orchestrator grouped by orchestrator-healthz"
+    },
+    {
+      "name": "orchestrator/orchestrator-jobs",
+      "description": "Endpoints from orchestrator grouped by orchestrator-jobs"
+    },
+    {
+      "name": "orchestrator/orchestrator-metrics",
+      "description": "Endpoints from orchestrator grouped by orchestrator-metrics"
+    },
+    {
+      "name": "orchestrator/orchestrator-product-editor",
+      "description": "Endpoints from orchestrator grouped by orchestrator-product-editor"
+    },
+    {
+      "name": "orchestrator/orchestrator-products",
+      "description": "Endpoints from orchestrator grouped by orchestrator-products"
+    },
+    {
+      "name": "orchestrator/orchestrator-readyz",
+      "description": "Endpoints from orchestrator grouped by orchestrator-readyz"
+    },
+    {
+      "name": "orchestrator/orchestrator-reconciliation",
+      "description": "Endpoints from orchestrator grouped by orchestrator-reconciliation"
+    },
+    {
+      "name": "services/hood",
+      "description": "Endpoints from services grouped by hood"
+    },
+    {
+      "name": "services/jv",
+      "description": "Endpoints from services grouped by jv"
+    },
+    {
+      "name": "services/services",
+      "description": "Endpoints from services grouped by services"
+    },
+    {
+      "name": "services/uploads",
+      "description": "Endpoints from services grouped by uploads"
+    },
+    {
+      "name": "services/xl",
+      "description": "Endpoints from services grouped by xl"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "orchestrator",
+      "tags": [
+        "orchestrator/orchestrator-healthz",
+        "orchestrator/orchestrator-jobs",
+        "orchestrator/orchestrator-metrics",
+        "orchestrator/orchestrator-product-editor",
+        "orchestrator/orchestrator-products",
+        "orchestrator/orchestrator-readyz",
+        "orchestrator/orchestrator-reconciliation"
+      ]
+    },
+    {
+      "name": "services",
+      "tags": [
+        "services/hood",
+        "services/jv",
+        "services/services",
+        "services/uploads",
+        "services/xl"
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://localhost:8931",
+      "description": "Local docs origin"
+    }
+  ]
 }

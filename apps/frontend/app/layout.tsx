@@ -1,10 +1,12 @@
 import "./globals.css";
+import "react-image-crop/dist/ReactCrop.css";
 import type { Metadata } from "next";
 import React from "react";
 import { Montserrat } from "next/font/google";
 import { ThemeProvider } from "../components/theme/theme-provider";
 import { ToastProvider } from "../components/shared/toast-provider";
 import { QueryProvider } from "../components/providers/query-provider";
+import { AuthBootstrap } from "../components/providers/auth-bootstrap";
 import { TooltipProvider } from "../components/ui/tooltip";
 
 const montserrat = Montserrat({
@@ -64,7 +66,9 @@ export default function RootLayout({
           <QueryProvider>
             <ThemeProvider>
               <TooltipProvider>
-                <ToastProvider>{children}</ToastProvider>
+                <ToastProvider>
+                  <AuthBootstrap>{children}</AuthBootstrap>
+                </ToastProvider>
               </TooltipProvider>
             </ThemeProvider>
           </QueryProvider>

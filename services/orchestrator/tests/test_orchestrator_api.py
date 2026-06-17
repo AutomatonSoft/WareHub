@@ -326,7 +326,7 @@ def test_metrics_exposes_required_sections(tmp_path):
         "channels": [{"marketplace": "hood", "account": "jv", "changed_fields": ["title", "price"]}],
     }
     client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
-    response = client.get("/metrics")
+    response = client.get("/api/v1/metrics")
     assert response.status_code == 200
     payload = response.json()
     assert "request_rate" in payload
@@ -344,7 +344,7 @@ def test_readyz_returns_not_ready_on_store_failure(tmp_path):
     previous_store = Deps.idempotency_store
     try:
         Deps.idempotency_store = BrokenIdempotencyStore()  # type: ignore[assignment]
-        response = client.get("/readyz")
+        response = client.get("/api/v1/readyz")
         assert response.status_code == 503
         assert response.json()["status"] == "not_ready"
     finally:
@@ -1169,3 +1169,22 @@ def test_orchestrator_jobs_batch_rate_limited_by_background_bucket(tmp_path):
         settings.job_intake_rate_limit_window_seconds = prev_window
         settings.job_intake_rate_limit_max_jobs = prev_max
         settings.job_intake_rate_limit_max_background_jobs = prev_background
+
+
+def test_orchestrator_openapi_is_normalized(tmp_path):
+    client = _client_with_fake_adapters(FakeAdapters(), tmp_path)
+    response = client.get("/api/v1/openapi.json")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["tags"]
+    assert payload["x-tagGroups"]
+
+    create_job = payload["paths"]["/api/v1/orchestrator/jobs"]["post"]
+    assert create_job["tags"] == ["Jobs"]
+    assert create_job["description"]
+    assert "200" in create_job["responses"]
+
+    product_editor_load = payload["paths"]["/api/v1/orchestrator/product-editor/load"]["post"]
+    assert product_editor_load["tags"] == ["Product Editor"]
+    assert product_editor_load["description"]

@@ -5,16 +5,14 @@ import type {
   IntakeDeleteAuditQueryParams,
   PendingUser
 } from "./client-api-types";
-import { parseError } from "./client-api-shared";
+import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
+import { authorizedFetch, parseError } from "./client-api-shared";
 
 export async function fetchPendingRegistrations(
   apiBase: string,
   token: string
 ): Promise<PendingUser[]> {
-  const response = await fetch(`${apiBase}/admin/registrations/pending`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.pendingRegistrations), {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Pending registrations failed: HTTP ${response.status}`));
@@ -27,10 +25,9 @@ export async function approveRegistration(
   token: string,
   userId: string
 ): Promise<AdminUser> {
-  const response = await fetch(`${apiBase}/admin/registrations/${userId}/approve`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.approveRegistration(userId)), {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Approve failed: HTTP ${response.status}`));
@@ -43,10 +40,9 @@ export async function rejectRegistration(
   token: string,
   userId: string
 ): Promise<void> {
-  const response = await fetch(`${apiBase}/admin/registrations/${userId}/reject`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.rejectRegistration(userId)), {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Reject failed: HTTP ${response.status}`));
@@ -78,10 +74,7 @@ export async function fetchAdminUsers(
     query.set("sort", params.sort);
   }
   const suffix = query.toString().length > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(`${apiBase}/admin/users${suffix}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.admin.users)}${suffix}`, {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Users request failed: HTTP ${response.status}`));
@@ -95,14 +88,13 @@ export async function updateUserRole(
   userId: string,
   role: "admin" | "user"
 ): Promise<AdminUser> {
-  const response = await fetch(`${apiBase}/admin/users/${userId}/role`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.userRole(userId)), {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ role })
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Role update failed: HTTP ${response.status}`));
@@ -115,10 +107,9 @@ export async function deleteUser(
   token: string,
   userId: string
 ): Promise<void> {
-  const response = await fetch(`${apiBase}/admin/users/${userId}`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.user(userId)), {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Delete user failed: HTTP ${response.status}`));
@@ -150,10 +141,7 @@ export async function fetchIntakeDeleteAuditLogs(
     query.set("to", params.to.trim());
   }
   const suffix = query.toString().length > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(`${apiBase}/admin/audit/intakes/deletions${suffix}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.admin.intakeDeleteAudit)}${suffix}`, {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Delete audit request failed: HTTP ${response.status}`));

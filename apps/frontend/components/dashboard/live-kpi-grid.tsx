@@ -2,14 +2,16 @@
 
 import { StatCard } from "./stat-card";
 import type { KpiMetric } from "../../lib/mock-data";
-import { Card, CardContent } from "../ui/card";
+import { Card, CardContent, CardHeader } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 
 function KpiSkeletonCard() {
   return (
     <Card className="wh-stat-card wh-section-card relative overflow-hidden">
-      <CardContent>
+      <CardHeader className="pb-3">
         <Skeleton className="h-3 w-24" />
+      </CardHeader>
+      <CardContent className="pt-0">
         <Skeleton className="mt-3 h-9 w-28" />
         <Skeleton className="mt-3 h-7 w-20 rounded-full" />
       </CardContent>

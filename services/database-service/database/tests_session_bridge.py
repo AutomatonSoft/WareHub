@@ -48,7 +48,7 @@ class OrchestratorServicePermissionTests(SimpleTestCase):
     )
     def test_matching_service_token_on_localhost_is_allowed(self):
         request = self.factory.get(
-            "/api/jv/sites/by-ean/4062292558689/",
+            "/api/v1/jv/sites/by-ean/4062292558689/",
             HTTP_HOST="localhost",
             HTTP_X_WAREHUB_SERVICE_TOKEN="warehub-local-orchestrator",
         )
@@ -60,5 +60,5 @@ class OrchestratorServicePermissionTests(SimpleTestCase):
         ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=["localhost", "127.0.0.1"],
     )
     def test_missing_service_token_is_rejected_without_session_role(self):
-        request = self.factory.get("/api/jv/sites/by-ean/4062292558689/", HTTP_HOST="localhost")
+        request = self.factory.get("/api/v1/jv/sites/by-ean/4062292558689/", HTTP_HOST="localhost")
         self.assertFalse(self.permission.has_permission(request, view=None))

@@ -43,8 +43,9 @@ flowchart LR
 ```
 
 Auth/session:
-- token stored in `sessionStorage`
-- unauthorized responses should trigger login flow
+- access token kept in browser memory
+- refresh token stored in HttpOnly `sofortbot_refresh_token` cookie
+- unauthorized responses should trigger refresh or redirect to login
 
 ---
 
@@ -143,7 +144,7 @@ npm run test:e2e:smoke
 
 E2E without auth backend (mock-mode):
 
-- Set `E2E_BYPASS_AUTH=1` to bypass login flow and inject test auth cookie.
+- Set `E2E_BYPASS_AUTH=1` to bypass login flow and inject a test refresh cookie.
 - Use this for mocked orchestrator/UI contract tests when auth service is not ready.
 
 ```powershell
@@ -203,12 +204,12 @@ Deployment to hosts is managed by `sofortbot-infra`.
 
 ### Websocket reconnect loop
 - verify `/api/v1/intakes/ws` is reachable through proxy
-- verify token validity in session
+- verify auth bootstrap can refresh access token
 - verify nginx websocket headers
 
 ### 401 on logs or API requests
-- token expired or missing header
-- relogin and retest `/api/v1/auth/me`
+- access token expired, refresh cookie missing, or refresh session revoked
+- retest `/api/v1/auth/refresh` and `/api/v1/auth/me`
 
 ### Product photos not visible
 - check `photo_url` payload from backend

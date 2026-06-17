@@ -26,7 +26,7 @@ Release governance for `sb-sofort-orchestrator-service` changes before stage/pro
   - retry/circuit controls
 
 4. Observability gate
-- `/healthz`, `/readyz`, `/metrics` respond in target environment.
+- `/api/v1/healthz`, `/api/v1/readyz`, `/api/v1/metrics` respond in target environment.
 - key metrics visible:
   - `request_rate`
   - `error_rate`
@@ -48,8 +48,8 @@ Release governance for `sb-sofort-orchestrator-service` changes before stage/pro
 - deploy previous known-good image/tag.
 - restore previous environment config if release changed limits/flags.
 - validate post-rollback:
-  - `/healthz` = ok
-  - `/readyz` = ready
+  - `/api/v1/healthz` = ok
+  - `/api/v1/readyz` = ready
   - queue transition resumes (`queued -> running/completed`)
 
 3. Data safety checks

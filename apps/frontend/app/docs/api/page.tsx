@@ -12,7 +12,7 @@ export default function ApiDocsPage() {
   <body>
     <script
       id="api-reference"
-      data-url="/api/docs/openapi"
+      data-url="/api/v1/docs/openapi"
       data-configuration='{"theme":"purple","layout":"modern","showSidebar":true}'
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>

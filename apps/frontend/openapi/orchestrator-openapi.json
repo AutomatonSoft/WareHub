@@ -5,10 +5,568 @@
     "version": "1.0.0"
   },
   "paths": {
-    "/healthz": {
+    "/api/v1/orchestrator/product-editor/discover/": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "product_editor_discover_api_v1_orchestrator_product_editor_discover__post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/discover": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "product_editor_discover_api_v1_orchestrator_product_editor_discover_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load/": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "product_editor_load_api_v1_orchestrator_product_editor_load__post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "product_editor_load_api_v1_orchestrator_product_editor_load_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan/": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "product_editor_plan_api_v1_orchestrator_product_editor_plan__post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "product_editor_plan_api_v1_orchestrator_product_editor_plan_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply/": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "product_editor_apply_api_v1_orchestrator_product_editor_apply__post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "product_editor_apply_api_v1_orchestrator_product_editor_apply_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}/": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id___get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/healthz": {
       "get": {
         "summary": "Healthz",
-        "operationId": "healthz_healthz_get",
+        "operationId": "healthz_api_v1_healthz_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -17,7 +575,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Healthz Healthz Get"
+                  "title": "Response Healthz Api V1 Healthz Get"
                 }
               }
             }
@@ -25,10 +583,10 @@
         }
       }
     },
-    "/readyz": {
+    "/api/v1/readyz": {
       "get": {
         "summary": "Readyz",
-        "operationId": "readyz_readyz_get",
+        "operationId": "readyz_api_v1_readyz_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -41,10 +599,10 @@
         }
       }
     },
-    "/metrics": {
+    "/api/v1/metrics": {
       "get": {
         "summary": "Metrics",
-        "operationId": "metrics_metrics_get",
+        "operationId": "metrics_api_v1_metrics_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -53,7 +611,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Metrics Metrics Get"
+                  "title": "Response Metrics Api V1 Metrics Get"
                 }
               }
             }
@@ -160,6 +718,22 @@
               ],
               "title": "X-Request-Id"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -168,6 +742,130 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/jobs/batch": {
+      "post": {
+        "summary": "Create Orchestrator Jobs Batch",
+        "operationId": "create_orchestrator_jobs_batch_api_v1_orchestrator_jobs_batch_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/jobs/status/batch": {
+      "post": {
+        "summary": "Get Orchestrator Jobs Status Batch",
+        "operationId": "get_orchestrator_jobs_status_batch_api_v1_orchestrator_jobs_status_batch_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchJobStatusRequest"
               }
             }
           }
@@ -352,10 +1050,234 @@
           }
         }
       }
+    },
+    "/api/v1/orchestrator/reconciliation/diff": {
+      "post": {
+        "summary": "Reconcile Orchestrator State",
+        "operationId": "reconcile_orchestrator_state_api_v1_orchestrator_reconciliation_diff_post",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/reports/{report_id}": {
+      "get": {
+        "summary": "Get Reconciliation Report",
+        "operationId": "get_reconciliation_report_api_v1_orchestrator_reconciliation_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/reports": {
+      "get": {
+        "summary": "List Reconciliation Reports",
+        "operationId": "list_reconciliation_reports_api_v1_orchestrator_reconciliation_reports_get",
+        "parameters": [
+          {
+            "name": "ean",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ean"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "BatchCreateJobItem": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "command": {
+            "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "scheduled_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At Unix Ms"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobPriority",
+            "default": "normal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "command"
+        ],
+        "title": "BatchCreateJobItem"
+      },
+      "BatchCreateJobRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchCreateJobItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchCreateJobRequest"
+      },
+      "BatchJobStatusRequest": {
+        "properties": {
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_ids"
+        ],
+        "title": "BatchJobStatusRequest"
+      },
       "CanonicalPayload": {
         "properties": {
           "title": {
@@ -856,6 +1778,21 @@
           },
           "command": {
             "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "scheduled_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At Unix Ms"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobPriority",
+            "default": "normal"
           }
         },
         "type": "object",
@@ -864,6 +1801,34 @@
           "command"
         ],
         "title": "CreateJobRequest"
+      },
+      "ErrorContract": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id"
+        ],
+        "title": "ErrorContract"
       },
       "HTTPValidationError": {
         "properties": {
@@ -877,6 +1842,25 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JobPriority": {
+        "type": "string",
+        "enum": [
+          "urgent",
+          "normal",
+          "background"
+        ],
+        "title": "JobPriority"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "JobStatus"
       },
       "Marketplace": {
         "type": "string",
@@ -922,6 +1906,654 @@
         ],
         "title": "OrchestrateRequest"
       },
+      "ProductEditorApplyRequest": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "title": "Confirmation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id"
+        ],
+        "title": "ProductEditorApplyRequest"
+      },
+      "ProductEditorApplyResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status",
+          "active_group"
+        ],
+        "title": "ProductEditorApplyResponse"
+      },
+      "ProductEditorCapability": {
+        "properties": {
+          "discover": {
+            "type": "boolean",
+            "title": "Discover",
+            "default": false
+          },
+          "load": {
+            "type": "boolean",
+            "title": "Load",
+            "default": false
+          },
+          "plan": {
+            "type": "boolean",
+            "title": "Plan",
+            "default": false
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          },
+          "job_status": {
+            "type": "boolean",
+            "title": "Job Status",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ProductEditorCapability"
+      },
+      "ProductEditorDiscoverRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean"
+        ],
+        "title": "ProductEditorDiscoverRequest"
+      },
+      "ProductEditorDiscoverResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "recommended_baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Baseline Target Id"
+          },
+          "selected_group_id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "groups",
+          "selected_group_id"
+        ],
+        "title": "ProductEditorDiscoverResponse"
+      },
+      "ProductEditorGroup": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "description"
+        ],
+        "title": "ProductEditorGroup"
+      },
+      "ProductEditorGroupId": {
+        "type": "string",
+        "enum": [
+          "JV",
+          "XL",
+          "HOOD",
+          "OTTO",
+          "KAUFLAND",
+          "EBAY"
+        ],
+        "title": "ProductEditorGroupId"
+      },
+      "ProductEditorJobResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobStatus"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Status"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "targets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorContract"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status"
+        ],
+        "title": "ProductEditorJobResponse"
+      },
+      "ProductEditorLoadRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadRequest"
+      },
+      "ProductEditorLoadResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported",
+            "default": false
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadResponse"
+      },
+      "ProductEditorPlanRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanRequest"
+      },
+      "ProductEditorPlanResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "plan_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanResponse"
+      },
+      "ProductEditorRiskLevel": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "ProductEditorRiskLevel"
+      },
+      "ProductEditorTarget": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/ProductEditorTargetType"
+          },
+          "account_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Family"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "baseline_eligible": {
+            "type": "boolean",
+            "title": "Baseline Eligible",
+            "default": false
+          },
+          "auto_baseline_eligible": {
+            "type": "boolean",
+            "title": "Auto Baseline Eligible",
+            "default": false
+          },
+          "selected_by_default": {
+            "type": "boolean",
+            "title": "Selected By Default",
+            "default": false
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductEditorTargetStatus",
+            "default": "unknown"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "group",
+          "target_type"
+        ],
+        "title": "ProductEditorTarget"
+      },
+      "ProductEditorTargetStatus": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "found",
+          "missing",
+          "error",
+          "planned",
+          "unsupported",
+          "read_only"
+        ],
+        "title": "ProductEditorTargetStatus"
+      },
+      "ProductEditorTargetType": {
+        "type": "string",
+        "enum": [
+          "source_site",
+          "marketplace_account"
+        ],
+        "title": "ProductEditorTargetType"
+      },
+      "ProductEditorWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProductEditorWarning"
+      },
+      "ReconciliationChannelState": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ChannelTarget"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "ReconciliationChannelState"
+      },
+      "ReconciliationRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "desired": {
+            "$ref": "#/components/schemas/OrchestrateRequest"
+          },
+          "actual": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationChannelState"
+            },
+            "type": "array",
+            "title": "Actual"
+          },
+          "apply_repair": {
+            "type": "boolean",
+            "title": "Apply Repair",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "desired"
+        ],
+        "title": "ReconciliationRequest"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -945,13 +2577,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

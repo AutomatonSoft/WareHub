@@ -20,18 +20,18 @@ Alert rules for `sb-sofort-orchestrator-service` based on currently exposed metr
 ## Alert Rules
 
 1. Readiness failure (`P1`)
-- Condition: `/readyz` non-ready for 5 consecutive minutes.
+- Condition: `/api/v1/readyz` non-ready for 5 consecutive minutes.
 - Signal: readiness probe.
 - Action: trigger incident runbook, consider rollback criteria.
 
 2. API error-rate spike (`P1`)
 - Condition: `error_rate` > 5% for 10 minutes.
-- Signal: `/metrics` `error_rate`.
+- Signal: `/api/v1/metrics` `error_rate`.
 - Action: inspect top error codes and recent deploy/config changes.
 
 3. Job backlog growth (`P2`)
 - Condition: `job_store_metrics.jobs_by_status.queued` grows continuously for 15 minutes.
-- Signal: `/metrics` `job_store_metrics`.
+- Signal: `/api/v1/metrics` `job_store_metrics`.
 - Action: verify worker throughput, scheduled jobs share, upstream health.
 
 4. Rate-limit pressure (`P2`)
@@ -41,7 +41,7 @@ Alert rules for `sb-sofort-orchestrator-service` based on currently exposed metr
 
 5. Circuit breaker saturation (`P2`)
 - Condition: `circuit_breaker_metrics.open_channels_total >= 2` for 10 minutes.
-- Signal: `/metrics` `circuit_breaker_metrics`.
+- Signal: `/api/v1/metrics` `circuit_breaker_metrics`.
 - Action: investigate upstream marketplace instability and preserve fail-fast behavior.
 
 6. Reconciliation drift persistence (`P3`)
@@ -65,8 +65,8 @@ Alert rules for `sb-sofort-orchestrator-service` based on currently exposed metr
 ## Dependencies
 
 Alert rules depend on:
-- `GET /readyz`
-- `GET /metrics`
+- `GET /api/v1/readyz`
+- `GET /api/v1/metrics`
 - structured logs carrying `request_id`, route, status, latency.
 
 ## Handoff Artifact

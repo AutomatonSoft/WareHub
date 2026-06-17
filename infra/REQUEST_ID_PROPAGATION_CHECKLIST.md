@@ -13,8 +13,8 @@ Scope:
 ## 1. Preconditions
 
 1. Frontend proxy routes are reachable:
-   - `/api/services/*`
-   - `/api/orchestrator/*`
+   - `/api/v1/services/*`
+   - `/api/v1/orchestrator/*`
 2. Backend and orchestrator are running in the target environment.
 3. Use a unique marker id for each check.
 
@@ -24,7 +24,7 @@ Scope:
 RID="rid-services-$(date +%s)"
 curl -i \
   -H "x-request-id: ${RID}" \
-  "http://127.0.0.1:8931/api/services/v1/marketplace/hood/health/"
+  "http://127.0.0.1:8931/api/v1/services/marketplace/hood/health/"
 ```
 
 Expected:
@@ -38,7 +38,7 @@ Expected:
 RID="rid-orch-$(date +%s)"
 curl -i \
   -H "x-request-id: ${RID}" \
-  "http://127.0.0.1:8931/api/orchestrator/jobs/non-existent-job-id"
+  "http://127.0.0.1:8931/api/v1/orchestrator/jobs/non-existent-job-id"
 ```
 
 Expected:
@@ -49,8 +49,8 @@ Expected:
 ## 4. Auto-generation check (no incoming header)
 
 ```bash
-curl -i "http://127.0.0.1:8931/api/services/v1/marketplace/kaufland/health/"
-curl -i "http://127.0.0.1:8931/api/orchestrator/jobs/non-existent-job-id"
+curl -i "http://127.0.0.1:8931/api/v1/services/marketplace/kaufland/health/"
+curl -i "http://127.0.0.1:8931/api/v1/orchestrator/jobs/non-existent-job-id"
 ```
 
 Expected:
@@ -61,7 +61,6 @@ Expected:
 
 ```bash
 RID="rid-backend-$(date +%s)"
-curl -i -H "x-request-id: ${RID}" "http://127.0.0.1:8932/healthz"
 curl -i -H "x-request-id: ${RID}" "http://127.0.0.1:8932/api/v1/healthz"
 ```
 

@@ -17,7 +17,7 @@ function buildQuery(params: Record<string, string>): string {
 }
 
 function xljvBasePath(site: Site): string {
-  return site === "JV" ? "/api/jv" : "/api/xl";
+  return site === "JV" ? "/api/v1/jv" : "/api/v1/xl";
 }
 
 async function parseJsonSafe(response: Response): Promise<Record<string, unknown>> {
@@ -109,7 +109,7 @@ export async function xljvGetSitesByEan(params: {
 
 export async function xljvTakeNextEan(): Promise<{ response: Response; payload: Record<string, unknown> }> {
   return postJsonWithFallback(
-    ["/api/services/v1/ean-pool/take-next-free/", "/api/services/ean-pool/take-next-free/"],
+    ["/api/v1/services/ean-pool/take-next-free/"],
     {} satisfies TakeNextFreeBody
   );
 }
@@ -124,7 +124,7 @@ export async function xljvUploadImages(params: {
   const formData = new FormData();
   for (const file of params.files) formData.append("images", file);
   return postFormDataWithFallback(
-    ["/api/services/uploads/images"],
+    ["/api/v1/uploads/images"],
     formData,
     {
       ...(params.site ? { site: params.site } : {}),

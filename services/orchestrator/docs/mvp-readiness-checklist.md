@@ -24,9 +24,9 @@ Status date: 2026-05-16
 
 ## Observability
 
-- [x] `GET /healthz`.
-- [x] `GET /readyz` with dependency check (idempotency SQLite).
-- [x] `GET /metrics` with request/error/latency + store metrics.
+- [x] `GET /api/v1/healthz`.
+- [x] `GET /api/v1/readyz` with dependency check (idempotency SQLite).
+- [x] `GET /api/v1/metrics` with request/error/latency + store metrics.
 - [x] Structured logs with request metadata.
 - [x] Audit event log for state-changing update operation.
 

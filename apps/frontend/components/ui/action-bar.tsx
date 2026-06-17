@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 export function ActionBar({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-2 rounded-xl border bg-card/95 p-3 backdrop-blur", className)}>
+    <div className={cn("sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-2 rounded-[var(--radius-card)] border border-border bg-card/95 p-3", className)}>
       {children}
     </div>
   );

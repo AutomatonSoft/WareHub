@@ -28,6 +28,7 @@ from .infra.marketplace_adapters import MarketplaceAdapters
 from .infra.metrics import InMemoryMetrics
 from .infra.product_editor_gateway import ProductEditorGateway
 from .infra.product_editor_store import SqliteProductEditorStore
+from .openapi_schema import install_custom_openapi
 from .infra.settings import settings
 
 logger = logging.getLogger("sofort_orchestrator")
@@ -154,7 +155,15 @@ async def lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="sb-sofort-orchestrator-service", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="sb-sofort-orchestrator-service",
+    version="1.0.0",
+    lifespan=lifespan,
+    openapi_url="/api/v1/openapi.json",
+    docs_url=None,
+    redoc_url=None,
+)
+install_custom_openapi(app)
 
 
 @app.middleware("http")

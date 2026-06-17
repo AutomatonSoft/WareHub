@@ -44,6 +44,8 @@ _release_reports/
 tmp/
 temp/
 logs/local-dev/
+.tmp-auth-build/
+.tmp-dashboard-*.png
 
 # Local orchestrator runtime data
 services/orchestrator/data/
@@ -56,3 +58,9 @@ venv
 # macOS metadata
 .DS_Store
 **/.DS_Store
+
+# Local root runtime data
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.db
+data/*.db-*

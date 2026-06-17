@@ -42,8 +42,8 @@ $appPlans = @(
     Skip = $SkipBackend
     WorkingDirectory = Join-Path $repoRoot "apps\backend"
     Label = "Backend"
-    HealthUrl = "http://localhost:8932/healthz"
-    Url = "http://localhost:8932/healthz"
+    HealthUrl = "http://localhost:8932/api/v1/healthz"
+    Url = "http://localhost:8932/api/v1/healthz"
     LogFileName = "backend.log"
   },
   @{
@@ -51,8 +51,8 @@ $appPlans = @(
     Skip = $SkipServices
     WorkingDirectory = Join-Path $repoRoot "services\database-service"
     Label = "Database-service"
-    HealthUrl = "http://localhost:8934/healthz"
-    Url = "http://localhost:8934/healthz"
+    HealthUrl = "http://localhost:8934/api/v1/healthz"
+    Url = "http://localhost:8934/api/v1/healthz"
     LogFileName = "database-service.log"
   },
   @{
@@ -60,8 +60,8 @@ $appPlans = @(
     Skip = $SkipOrchestrator
     WorkingDirectory = Join-Path $repoRoot "services\orchestrator"
     Label = "Orchestrator"
-    HealthUrl = "http://localhost:8935/healthz"
-    Url = "http://localhost:8935/healthz"
+    HealthUrl = "http://localhost:8935/api/v1/healthz"
+    Url = "http://localhost:8935/api/v1/healthz"
     LogFileName = "orchestrator.log"
   }
 )
@@ -455,9 +455,9 @@ function Initialize-LocalRuntimeEnv {
   Set-ProcessEnvValue -Name "NEXT_PUBLIC_API_BASE_URL" -Value "$backendOrigin/api/v1"
   Set-ProcessEnvValue -Name "BACKEND_INTERNAL_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
   Set-ProcessEnvValue -Name "BACKEND_API_BASE_URL" -Value "$backendOrigin/api/v1"
-  Set-ProcessEnvValue -Name "NEXT_PUBLIC_SERVICES_API_BASE_URL" -Value $servicesOrigin
+  Set-ProcessEnvValue -Name "NEXT_PUBLIC_SERVICES_API_BASE_URL" -Value "$servicesOrigin/api/v1"
   Set-ProcessEnvValue -Name "SERVICES_API_BASE_URL" -Value $servicesOrigin
-  Set-ProcessEnvValue -Name "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
+  Set-ProcessEnvValue -Name "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" -Value "$orchestratorOrigin/api/v1"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
   Set-ProcessEnvValue -Name "MOBILE_DEV_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
   Set-ProcessEnvValue -Name "DATABASE_SERVICE_BASE_URL" -Value $servicesOrigin
@@ -945,11 +945,11 @@ function Print-StartupSummary {
   Write-Host "  Frontend:           http://localhost:8931"
   Write-Host "  Backend:            http://localhost:8932"
   Write-Host "  Backend API:        http://localhost:8932/api/v1"
-  Write-Host "  Backend health:     http://localhost:8932/healthz"
+  Write-Host "  Backend health:     http://localhost:8932/api/v1/healthz"
   Write-Host "  Database-service:   http://localhost:8934"
-  Write-Host "  Services health:    http://localhost:8934/healthz"
+  Write-Host "  Services health:    http://localhost:8934/api/v1/healthz"
   Write-Host "  Orchestrator:       http://localhost:8935"
-  Write-Host "  Orchestrator health:http://localhost:8935/healthz"
+  Write-Host "  Orchestrator health:http://localhost:8935/api/v1/healthz"
   Write-Host "  Postgres:           localhost:8933"
   Write-Host "  Redis:              localhost:8936"
   Write-Host "  RabbitMQ:           localhost:8937"
@@ -958,9 +958,9 @@ function Print-StartupSummary {
   Write-Host "  MinIO Console:      http://localhost:9001"
   Write-Host ""
   Write-Host "Manual smoke checks:"
-  Write-Host "  Invoke-WebRequest http://localhost:8932/healthz -UseBasicParsing"
-  Write-Host "  Invoke-WebRequest http://localhost:8934/healthz -UseBasicParsing"
-  Write-Host "  Invoke-WebRequest http://localhost:8935/healthz -UseBasicParsing"
+  Write-Host "  Invoke-WebRequest http://localhost:8932/api/v1/healthz -UseBasicParsing"
+  Write-Host "  Invoke-WebRequest http://localhost:8934/api/v1/healthz -UseBasicParsing"
+  Write-Host "  Invoke-WebRequest http://localhost:8935/api/v1/healthz -UseBasicParsing"
   Write-Host ""
   if ($WithMigrations) {
     Write-Host "WithMigrations enabled: database-service helper will run 'python manage.py migrate' before runserver."

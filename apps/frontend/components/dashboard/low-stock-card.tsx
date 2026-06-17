@@ -1,7 +1,7 @@
 import { AlertTriangle, Boxes } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "../ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 
 type LowStockAlert = {
@@ -14,11 +14,13 @@ type LowStockAlert = {
 export function LowStockCard({
   alerts,
   totalAlerts,
-  loading
+  loading,
+  error
 }: {
   alerts?: LowStockAlert[];
   totalAlerts?: number;
   loading?: boolean;
+  error?: string | null;
 }) {
   const displayAlerts = alerts ?? [];
   const resolvedTotalAlerts = totalAlerts ?? displayAlerts.length;
@@ -27,15 +29,20 @@ export function LowStockCard({
   return (
     <Card className="wh-section-card wh-dashboard__low-stock-card min-w-0">
       <CardHeader className="wh-section-card__header wh-dashboard__compact-header">
-        <CardTitle className="title-with-icon wh-section-card__title">
-          <span className="title-icon-chip"><Boxes size={14} /></span>
-          Low Stock Alerts
-        </CardTitle>
-        {loading ? (
-          <Skeleton className="h-7 w-20 rounded-full" />
-        ) : (
-          <Badge variant="secondary">{resolvedTotalAlerts} Items</Badge>
-        )}
+        <div className="min-w-0">
+          <CardTitle className="title-with-icon wh-section-card__title">
+            <span className="title-icon-chip"><Boxes aria-hidden="true" size={14} /></span>
+            Low Stock Alerts
+          </CardTitle>
+          <CardDescription className="wh-section-card__subtitle">Products that need replenishment attention.</CardDescription>
+        </div>
+        <CardAction>
+          {loading ? (
+            <Skeleton className="h-7 w-20 rounded-full" />
+          ) : (
+            <Badge variant={error ? "warning" : "secondary"}>{resolvedTotalAlerts} Items</Badge>
+          )}
+        </CardAction>
       </CardHeader>
       <CardContent className="wh-section-card__body">
       {loading ? (
@@ -49,6 +56,12 @@ export function LowStockCard({
                 <Skeleton className="h-6 w-16 rounded-full" />
             </div>
           ))}
+        </div>
+      ) : error ? (
+        <div className="wh-empty-state wh-empty-state--dashboard wh-dashboard-empty-state">
+          <AlertTriangle className="size-5 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">Low stock feed unavailable</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
         </div>
       ) : displayAlerts.length === 0 ? (
         <div className="wh-empty-state wh-empty-state--dashboard">

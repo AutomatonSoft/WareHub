@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "../input";
+import { Toolbar, ToolbarGroup } from "@/components/ui/toolbar";
 
 type TableToolbarProps = {
   scope: string;
@@ -59,15 +60,15 @@ export function TableToolbar({
   }, [debounceMs, inputValue, onQueryChange, storageKey]);
 
   return (
-    <div className="ui-table-toolbar ui-enter-fade-up">
-      <div className="ui-toolbar-group ui-toolbar-group-primary">
+    <Toolbar className="ui-table-toolbar ui-enter-fade-up">
+      <ToolbarGroup className="ui-toolbar-group ui-toolbar-group-primary flex-1">
         <div className="relative min-w-0 flex-1 basis-[220px]">
           <label htmlFor={searchInputId} className="sr-only">Search in table</label>
-          <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)]" />
+          <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             id={searchInputId}
             aria-label="Search in table"
-            className="ui-soft-pop h-11 rounded-xl bg-[color:rgba(255,255,255,0.58)] !pl-12 !pr-10"
+            className="ui-soft-pop h-10 bg-background !pl-12 !pr-10"
             placeholder={searchPlaceholder}
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
@@ -78,26 +79,26 @@ export function TableToolbar({
             <button
               type="button"
               aria-label="Clear search"
-              className="ui-icon-button ui-soft-pop absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center"
+              className="ui-icon-button ui-soft-pop absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-control)]"
               onClick={() => setInputValue("")}
             >
               <X size={14} />
             </button>
           ) : null}
         </div>
-      </div>
+      </ToolbarGroup>
 
-      {filtersSlot ? <div className="ui-toolbar-group ui-toolbar-group-secondary">{filtersSlot}</div> : null}
+      {filtersSlot ? <ToolbarGroup className="ui-toolbar-group ui-toolbar-group-secondary">{filtersSlot}</ToolbarGroup> : null}
 
       {statusText ? (
         <p
           key={`toolbar-status-${statusText}`}
           aria-live="polite"
-          className="ui-responsive-toolbar-status ui-change-flash text-sm font-medium text-[color:var(--text-muted)]"
+          className="ui-responsive-toolbar-status ui-change-flash text-sm font-medium text-muted-foreground"
         >
           {statusText}
         </p>
       ) : null}
-    </div>
+    </Toolbar>
   );
 }

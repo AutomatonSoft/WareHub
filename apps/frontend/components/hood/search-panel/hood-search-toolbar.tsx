@@ -39,9 +39,9 @@ export function HoodSearchToolbar(props: HoodSearchToolbarProps) {
           </Button>
         </div>
         <form className="grid gap-3 md:grid-cols-[1fr_180px_auto]" onSubmit={onSubmit}>
-          <Input placeholder="EAN" value={ean} onChange={(event) => onSetEan(event.target.value)} />
+          <Input id="hood-search-ean-input" placeholder="EAN" value={ean} onChange={(event) => onSetEan(event.target.value)} />
           <Select value={account} onValueChange={(value) => value && onSetAccount(value === "jv" ? "jv" : "xl")}>
-            <SelectTrigger className="h-9 w-full">
+            <SelectTrigger id="hood-search-account-trigger" className="h-9 w-full">
               <SelectValue placeholder={t.account} />
             </SelectTrigger>
             <SelectContent>

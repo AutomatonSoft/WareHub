@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { ShieldCheck, Sparkles } from "lucide-react";
 import {
   approveRegistration,
   changeCurrentUserPassword,
@@ -332,12 +333,34 @@ export function ProfileAccountPanel() {
   }
 
   if (!token || !user) {
-    return <ProfileAuthRequiredCard profileStatus={profileStatus} onLogin={() => router.push("/login")} onRegister={() => router.push("/login?mode=register")} />;
+    return <ProfileAuthRequiredCard profileStatus={profileStatus} onLogin={() => router.push("/login")} onRegister={() => router.push("/register")} />;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {loading ? <ProfileLoadingState /> : null}
+      <Card className="border-border/70 bg-gradient-to-r from-primary/8 via-background to-background">
+        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-card)] border border-primary/20 bg-primary/10 text-primary">
+              <Sparkles data-icon="inline-start" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Premium workspace profile</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">Manage identity, access, and trust settings</p>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                Keep your public-facing operator profile sharp, your credentials current, and pending access under control.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-start lg:self-center">
+            <div className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-border/70 bg-background/80 px-3 py-2 text-sm text-foreground">
+              <ShieldCheck data-icon="inline-start" />
+              <span className="font-medium">Role: {user.role}</span>
+            </div>
+          </div>
+        </div>
+      </Card>
       <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
         <ProfileOverviewCard user={user} avatarSrc={avatarSrc} avatarPreviewUrl={avatarPreviewUrl} />
         <ProfilePasswordCard
@@ -408,7 +431,7 @@ export function ProfileAccountPanel() {
         t={t}
       />
       {!isAdmin ? (
-        <Card>
+        <Card className="border-border/70">
           <div className="p-4 text-sm text-muted-foreground">Admin-only pending approvals are hidden for this account.</div>
         </Card>
       ) : null}

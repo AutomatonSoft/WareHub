@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:WareHubLocalAppPorts = @(8931, 8932, 8934, 8935)
+$script:WareHubManagedPathPattern = "*\WareHub\*"
 
 function Get-WareHubLocalAppPorts {
   return $script:WareHubLocalAppPorts
@@ -52,11 +53,51 @@ function Get-ChildProcessIds {
   return @($childIds)
 }
 
+function Get-ProcessSnapshot {
+  param(
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  return Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+}
+
+function Test-WareHubManagedProcess {
+  param(
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  $visitedIds = New-Object System.Collections.Generic.HashSet[int]
+  $currentId = $ProcessId
+
+  while ($currentId -gt 0 -and $visitedIds.Add($currentId)) {
+    $snapshot = Get-ProcessSnapshot -ProcessId $currentId
+    if (-not $snapshot) {
+      return $false
+    }
+
+    if (
+      $snapshot.ExecutablePath -like $script:WareHubManagedPathPattern -or
+      $snapshot.CommandLine -like $script:WareHubManagedPathPattern
+    ) {
+      return $true
+    }
+
+    $currentId = [int]$snapshot.ParentProcessId
+  }
+
+  return $false
+}
+
 function Stop-ProcessTreeForPort {
   param(
     [Parameter(Mandatory = $true)][int]$Port,
     [Parameter(Mandatory = $true)][int]$ListenerProcessId
   )
+
+  if (-not (Test-WareHubManagedProcess -ProcessId $ListenerProcessId)) {
+    Write-Warning "Skipping non-WareHub listener PID $ListenerProcessId on port $Port."
+    return
+  }
 
   $targetIds = New-Object System.Collections.Generic.List[int]
   $targetIds.Add($ListenerProcessId)

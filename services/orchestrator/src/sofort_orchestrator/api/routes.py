@@ -77,12 +77,12 @@ def get_job_store() -> SqliteJobStore:
     return Deps.job_store
 
 
-@router.get("/healthz")
+@router.get("/api/v1/healthz")
 def healthz() -> dict:
     return {"status": "ok"}
 
 
-@router.get("/readyz")
+@router.get("/api/v1/readyz")
 def readyz(idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store)):
     try:
         idempotency_store.ping()
@@ -91,7 +91,7 @@ def readyz(idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_s
         return JSONResponse(status_code=503, content={"status": "not_ready", "reason": str(exc)})
 
 
-@router.get("/metrics")
+@router.get("/api/v1/metrics")
 def metrics(
     idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store),
     app_metrics: InMemoryMetrics = Depends(get_metrics),

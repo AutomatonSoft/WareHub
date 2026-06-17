@@ -8,6 +8,7 @@ export type {
   AfterbuyOrderData,
   AuthUser,
   ChangePasswordPayload,
+  ChangePasswordCodeConfirmPayload,
   CreateIntakePayload,
   IntakeDeleteAuditEntry,
   IntakeDeleteAuditQueryParams,
@@ -32,8 +33,10 @@ export {
 export {
   confirmPasswordReset,
   changeCurrentUserPassword,
+  confirmCurrentUserPasswordChange,
   fetchCurrentUser,
   logout,
+  requestCurrentUserPasswordChangeCode,
   requestPasswordReset,
   updateCurrentUser
 } from "./client-api-auth";

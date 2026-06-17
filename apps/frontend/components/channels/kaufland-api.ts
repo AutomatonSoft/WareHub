@@ -9,7 +9,7 @@ export type KauflandResponse = {
 };
 
 type JsonBodyOf<T> = T extends { content: { "application/json": infer B } } ? B : Record<string, unknown>;
-type KauflandChangeBody = JsonBodyOf<paths["/api/services/kaufland/products/ean/change/"]["post"]["requestBody"]>;
+type KauflandChangeBody = JsonBodyOf<paths["/api/v1/services/kaufland/products/ean/change"]["post"]["requestBody"]>;
 type KauflandCreateBody = {
   ean: string;
   controller: "jv" | "xl";
@@ -36,7 +36,7 @@ export async function fetchKauflandByEan(params: {
   site: KauflandSite;
 }): Promise<{ response: Response; payload: KauflandResponse }> {
   const response = await apiFetch(
-    `/api/services/v1/kaufland/${encodeURIComponent(params.ean)}/${encodeURIComponent(params.site)}/`,
+    `/api/v1/services/kaufland/${encodeURIComponent(params.ean)}/${encodeURIComponent(params.site)}/`,
     {}
   );
 
@@ -49,7 +49,7 @@ export async function changeKauflandByEan(payload: KauflandChangeBody): Promise<
   rawText: string;
   parsed: unknown;
 }> {
-  const response = await apiFetch("/api/services/kaufland/products/ean/change/", {
+  const response = await apiFetch("/api/v1/services/kaufland/products/ean/change/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -75,7 +75,7 @@ export async function deleteKauflandByEan(payload: KauflandDeleteBody): Promise<
   rawText: string;
   parsed: unknown;
 }> {
-  const response = await apiFetch("/api/services/kaufland/products/delete/", {
+  const response = await apiFetch("/api/v1/services/kaufland/products/delete/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -101,7 +101,7 @@ export async function createKauflandByEan(payload: KauflandCreateBody): Promise<
   rawText: string;
   parsed: unknown;
 }> {
-  const response = await apiFetch("/api/services/kaufland/products/create/", {
+  const response = await apiFetch("/api/v1/services/kaufland/products/create/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)

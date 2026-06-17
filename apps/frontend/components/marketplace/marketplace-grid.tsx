@@ -18,11 +18,14 @@ import {
 import { checkDatabaseAccess, fetchMarketplaceHealth } from "./marketplace-api";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
+import { Card } from "../ui/card";
 import { EmptyState } from "../ui/empty-state";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
+import { SectionHeader } from "../ui/section-header";
+import { Surface } from "../ui/surface";
+import { Toolbar, ToolbarGroup } from "../ui/toolbar";
 import { FilterPresets } from "../shared/table/filter-presets";
 
 const logoByFamily: Record<SiteFamily, string> = {
@@ -54,8 +57,8 @@ function formatCheckTime(now: Date): string {
 
 const endpointHealthPaths: Partial<Record<SiteFamily, string>> = {
   // Otto is frozen and eBay is planned; do not call unsupported backend health routes yet.
-  KAUFLAND: "/api/services/v1/marketplace/kaufland/health/",
-  HOOD: "/api/services/v1/marketplace/hood/health/"
+  KAUFLAND: "/api/v1/services/marketplace/kaufland/health/",
+  HOOD: "/api/v1/services/marketplace/hood/health/"
 };
 
 const databaseHealthFamilies: SiteFamily[] = ["XL", "JVMOEBEL"];
@@ -286,26 +289,22 @@ export function MarketplaceGrid() {
 
   return (
     <div className="space-y-4">
-      <Card className="wh-command-panel ui-desktop-rhythm-section relative z-50 overflow-visible border-border/70 shadow-sm">
-        <CardHeader className="space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle>Marketplace Health</CardTitle>
-              <CardDescription>Filter connection state, product sync coverage, and site family availability.</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">{cards.length} sites</Badge>
-              <Badge variant="outline">{filteredSites.length} visible</Badge>
-              <Badge variant={isSyncing ? "default" : "outline"}>{isSyncing ? t.syncing : t.sync}</Badge>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4 pt-0">
-        <div className="grid gap-3 lg:grid-cols-[1.25fr_1fr]">
-          <div className="ui-filter-cluster">
-            <span className="ui-filter-cluster-label">Primary</span>
+      <Surface className="wh-command-panel ui-desktop-rhythm-section overflow-visible">
+        <div className="space-y-3">
+          <SectionHeader
+            title="Marketplace Health"
+            description="Filter connection state, product sync coverage, and site family availability."
+            actions={
+              <>
+                <Badge variant="secondary">{cards.length} sites</Badge>
+                <Badge variant="outline">{filteredSites.length} visible</Badge>
+              </>
+            }
+          />
+        <Toolbar className="grid gap-3 lg:grid-cols-[1.25fr_1fr]">
+          <ToolbarGroup className="ui-filter-cluster">
             <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)]" />
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
                 aria-label="Search marketplaces"
                 className="h-10 pl-9"
@@ -317,10 +316,9 @@ export function MarketplaceGrid() {
                 }}
               />
             </div>
-          </div>
+          </ToolbarGroup>
 
-          <div className="ui-filter-cluster">
-            <span className="ui-filter-cluster-label">Secondary</span>
+          <ToolbarGroup className="ui-filter-cluster">
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
               <Select
                 value={kindFilter}
@@ -367,8 +365,8 @@ export function MarketplaceGrid() {
                 {isSyncing ? t.syncing : t.sync}
               </Button>
             </div>
-          </div>
-        </div>
+          </ToolbarGroup>
+        </Toolbar>
         <div className="mt-3">
           <FilterPresets
             scope="marketplace-grid"
@@ -385,10 +383,10 @@ export function MarketplaceGrid() {
             }}
           />
         </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Surface>
 
-      <div className={`ui-desktop-rhythm-section wh-marketplace-health-grid stagger-children grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 ${interactionPulse % 2 === 0 ? "ui-change-flash" : ""}`}>
+      <div className={`ui-desktop-rhythm-section wh-marketplace-health-grid stagger-children grid auto-rows-fr grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 ${interactionPulse % 2 === 0 ? "ui-change-flash" : ""}`}>
         {initialLoading
           ? Array.from({ length: 12 }).map((_, index) => (
               <Card
@@ -398,7 +396,7 @@ export function MarketplaceGrid() {
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <Skeleton className="h-10 w-10 rounded-xl" />
+                      <Skeleton className="h-10 w-10 rounded-[var(--radius-control)]" />
                       <div className="space-y-1.5">
                         <Skeleton className="h-5 w-28" />
                         <Skeleton className="h-3 w-24" />
@@ -406,7 +404,7 @@ export function MarketplaceGrid() {
                     </div>
                     <Skeleton className="h-5 w-20 rounded-full" />
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/40 p-2">
+                  <div className="p-0">
                     <div className="flex items-center justify-between gap-2">
                       <Skeleton className="h-3 w-16" />
                       <Skeleton className="h-3 w-20" />
@@ -422,12 +420,12 @@ export function MarketplaceGrid() {
           : filteredSites.map((site) => (
           <Card
             key={site.id}
-            className="ui-marketplace-card relative flex flex-col justify-between overflow-hidden border-border/70 p-3.5 shadow-sm"
+            className="ui-marketplace-card relative flex h-full min-h-[168px] flex-col justify-between overflow-hidden border-border/70 p-3.5 shadow-[var(--wh-shadow-card)]"
           >
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="relative flex h-10 w-10 flex-none items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
+                  <div className="relative flex h-10 w-10 flex-none items-center justify-center overflow-hidden rounded-[var(--radius-control)] border border-border bg-card">
                     <Image
                       src={logoByFamily[site.logo]}
                       alt={`${site.family} logo`}
@@ -453,16 +451,18 @@ export function MarketplaceGrid() {
                     site.status === "CONNECTED"
                       ? "default"
                       : site.status === "NOT_FOUND"
-                        ? "destructive"
+                        ? "outline"
                         : "secondary"
                   }
-                  className="text-[10px] uppercase tracking-[0.06em]"
+                  className={`text-[10px] uppercase tracking-normal ${
+                    site.status === "NOT_FOUND" ? "border-destructive/30 bg-destructive/5 text-destructive" : ""
+                  }`}
                 >
                   {site.status === "CONNECTED" ? t.connected : site.status === "NOT_FOUND" ? t.notFound : t.disconnected}
                 </Badge>
               </div>
 
-              <div className="rounded-xl border border-border/60 bg-muted/40 p-2 text-sm text-muted-foreground">
+              <div className="mt-auto p-0 text-sm text-muted-foreground">
                 <p className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{t.lastSync}</span>
                   <strong className="truncate text-xs font-semibold text-foreground">{site.lastSync}</strong>

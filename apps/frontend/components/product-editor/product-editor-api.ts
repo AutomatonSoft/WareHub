@@ -61,7 +61,7 @@ function waitMs(ms: number): Promise<void> {
 }
 
 export async function discoverProductEditor(ean: string, activeGroup?: ProductEditorGroupId): Promise<ProductEditorDiscoverResponse> {
-  const response = await apiFetch("/api/orchestrator/product-editor/discover", {
+  const response = await apiFetch("/api/v1/orchestrator/product-editor/discover", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ean, active_group: activeGroup ?? null })
@@ -84,7 +84,7 @@ export async function loadProductEditorGroup(input: {
     baseline_target_id: input.baselineTargetId ?? null
   });
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await apiFetch("/api/orchestrator/product-editor/load", {
+    const response = await apiFetch("/api/v1/orchestrator/product-editor/load", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: requestBody
@@ -110,7 +110,7 @@ export async function planProductEditor(input: {
   draft: Record<string, unknown>;
   selectedTargetIds: string[];
 }): Promise<ProductEditorPlanResponse> {
-  const response = await apiFetch("/api/orchestrator/product-editor/plan", {
+  const response = await apiFetch("/api/v1/orchestrator/product-editor/plan", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -129,7 +129,7 @@ export async function planProductEditor(input: {
 }
 
 export async function applyProductEditorPlan(planId: string): Promise<ProductEditorApplyResponse> {
-  const response = await apiFetch("/api/orchestrator/product-editor/apply", {
+  const response = await apiFetch("/api/v1/orchestrator/product-editor/apply", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ plan_id: planId, confirmation: true })
@@ -142,7 +142,7 @@ export async function applyProductEditorPlan(planId: string): Promise<ProductEdi
 }
 
 export async function getProductEditorJob(jobId: string): Promise<ProductEditorJobResponse> {
-  const response = await apiFetch(`/api/orchestrator/product-editor/jobs/${encodeURIComponent(jobId)}`, {
+  const response = await apiFetch(`/api/v1/orchestrator/product-editor/jobs/${encodeURIComponent(jobId)}`, {
     method: "GET"
   });
   const body = await readJsonSafe(response);
@@ -163,7 +163,7 @@ export function extractProductEditorApiError(error: unknown): ProductEditorApiEr
 }
 
 export async function getJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOption[]> {
-  const response = await apiFetch("/api/jv/delivery-options/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+  const response = await apiFetch("/api/v1/jv/delivery-options/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV delivery options load failed.");
@@ -193,7 +193,7 @@ export async function getJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOpt
 }
 
 export async function getJvRubricOptions(): Promise<ProductEditorJvCategoryOption[]> {
-  const response = await apiFetch("/api/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+  const response = await apiFetch("/api/v1/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV rubric tree load failed.");
@@ -226,7 +226,7 @@ export async function getJvRubricOptions(): Promise<ProductEditorJvCategoryOptio
 }
 
 export async function getJvRubricTree(): Promise<ProductEditorJvRubricNode[]> {
-  const response = await apiFetch("/api/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+  const response = await apiFetch("/api/v1/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV rubric tree load failed.");
@@ -261,7 +261,7 @@ export async function uploadProductEditorImages(input: {
     formData.append("images", file);
   }
 
-  const response = await apiFetch(`/api/uploads/images/?${query.toString()}`, {
+  const response = await apiFetch(`/api/v1/uploads/images/?${query.toString()}`, {
     method: "POST",
     body: formData
   });

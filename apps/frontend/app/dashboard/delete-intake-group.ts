@@ -1,4 +1,6 @@
 import type { IntakeGroup } from "./types";
+import { API_V1_ROUTES, buildApiV1Url } from "../api-v1-routes";
+import { authorizedFetch } from "../client-api-shared";
 
 export type DeleteGroupResult =
   | { ok: true; deletedIds: string[] }
@@ -13,10 +15,9 @@ export async function deleteIntakeGroup(params: {
   const { apiBase, token, group, onUnauthorized } = params;
   const uniqueIds = Array.from(new Set(group.partIds));
   for (const id of uniqueIds) {
-    const response = await fetch(`${apiBase}/intakes/${id}?mode=hard`, {
+    const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.intakes.byId(id))}?mode=hard`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    }, { apiBase, token });
     if (!response.ok) {
       if (response.status === 401) {
         onUnauthorized();

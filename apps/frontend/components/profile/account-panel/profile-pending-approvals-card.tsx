@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card";
@@ -15,36 +15,45 @@ export function ProfilePendingApprovalsCard(props: PendingApprovalsProps) {
   if (!isAdmin) return null;
 
   return (
-    <Card>
+    <Card className="border-border/70">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <CardTitle>{t.pendingRegistrations}</CardTitle>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Approval queue</p>
+            <CardTitle className="mt-2">{t.pendingRegistrations}</CardTitle>
             <CardDescription>{t.approveOrRejectFromProfile}</CardDescription>
           </div>
           <Badge variant="secondary">{filteredPendingUsers.length}/{pendingUsers.length} {t.pending.toLowerCase()}</Badge>
         </div>
       </CardHeader>
       <CardContent>
-        <Input value={pendingQuery} onChange={(event) => onSetPendingQuery(event.target.value)} placeholder={t.searchPendingUsers} />
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={pendingQuery} onChange={(event) => onSetPendingQuery(event.target.value)} placeholder={t.searchPendingUsers} className="pl-9" />
+        </div>
         {filteredPendingUsers.length === 0 ? (
           <div className="mt-4">
             <EmptyState title={pendingUsers.length === 0 ? t.noPendingRegistrations : t.noMatchesForSearch} description="Pending registration requests will appear here for review." />
           </div>
         ) : (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 flex flex-col gap-3">
             {filteredPendingUsers.map((pending) => (
-              <div key={pending.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{pending.username}</p>
-                  <p className="text-xs text-muted-foreground">{pending.email ?? t.noEmail}</p>
+              <div key={pending.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-border/70 bg-gradient-to-r from-muted/35 via-background to-background px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{pending.username}</p>
+                    <Badge variant="outline" className="max-w-full truncate">@{pending.login}</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{pending.email ?? t.noEmail}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" size="icon" aria-label={`Approve ${pending.username}`} title={t.approve} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("approve", pending.id)}>
-                    <Check size={16} />
+                  <Button type="button" variant="secondary" size="sm" aria-label={`Approve ${pending.username}`} title={t.approve} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("approve", pending.id)}>
+                    <Check data-icon="inline-start" />
+                    {t.approve}
                   </Button>
-                  <Button type="button" variant="destructive" size="icon" aria-label={`Reject ${pending.username}`} title={t.reject} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("reject", pending.id)}>
-                    <X size={16} />
+                  <Button type="button" variant="destructive" size="sm" aria-label={`Reject ${pending.username}`} title={t.reject} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("reject", pending.id)}>
+                    <X data-icon="inline-start" />
+                    {t.reject}
                   </Button>
                 </div>
               </div>

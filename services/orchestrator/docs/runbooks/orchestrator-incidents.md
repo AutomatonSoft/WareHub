@@ -12,11 +12,11 @@ Runbook for `sb-sofort-orchestrator-service` incidents affecting:
 ## Fast Triage Checklist
 
 1. Check liveness/readiness:
-- `GET /healthz`
-- `GET /readyz`
+- `GET /api/v1/healthz`
+- `GET /api/v1/readyz`
 
 2. Check live metrics:
-- `GET /metrics`
+- `GET /api/v1/metrics`
 - focus on:
   - `error_rate`
   - `job_store_metrics.jobs_by_status`

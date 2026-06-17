@@ -25,9 +25,9 @@ app_workdirs=(
 )
 app_urls=(
   "http://localhost:8931"
-  "http://localhost:8932/healthz"
-  "http://localhost:8934/healthz"
-  "http://localhost:8935/healthz"
+  "http://localhost:8932/api/v1/healthz"
+  "http://localhost:8934/api/v1/healthz"
+  "http://localhost:8935/api/v1/healthz"
 )
 app_log_filenames=(
   "frontend.log"
@@ -339,8 +339,8 @@ ensure_local_env_files() {
     "$repo_root/apps/frontend/.env.example" \
     "NEXT_PUBLIC_API_BASE_URL" "http://localhost:8932/api/v1" \
     "BACKEND_INTERNAL_API_BASE_URL" "http://127.0.0.1:8932/api/v1" \
-    "NEXT_PUBLIC_SERVICES_API_BASE_URL" "http://localhost:8934" \
-    "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" "http://localhost:8935" \
+    "NEXT_PUBLIC_SERVICES_API_BASE_URL" "http://localhost:8934/api/v1" \
+    "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" "http://localhost:8935/api/v1" \
     "BACKEND_ORIGIN" "http://localhost:8932" \
     "SERVICES_ORIGIN" "http://localhost:8934" \
     "PORT" "8931" \
@@ -472,9 +472,9 @@ ORCHESTRATOR_ORIGIN=$orchestrator_origin
 NEXT_PUBLIC_API_BASE_URL=$backend_origin/api/v1
 BACKEND_INTERNAL_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
 BACKEND_API_BASE_URL=$backend_origin/api/v1
-NEXT_PUBLIC_SERVICES_API_BASE_URL=$services_origin
+NEXT_PUBLIC_SERVICES_API_BASE_URL=$services_origin/api/v1
 SERVICES_API_BASE_URL=$services_origin
-NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=$orchestrator_origin
+NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=$orchestrator_origin/api/v1
 ORCHESTRATOR_API_BASE_URL=$orchestrator_origin
 MOBILE_DEV_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
 DATABASE_SERVICE_BASE_URL=$services_origin
@@ -741,11 +741,11 @@ print_startup_summary() {
   info "  Frontend:            http://localhost:8931"
   info "  Backend:             http://localhost:8932"
   info "  Backend API:         http://localhost:8932/api/v1"
-  info "  Backend health:      http://localhost:8932/healthz"
+  info "  Backend health:      http://localhost:8932/api/v1/healthz"
   info "  Database-service:    http://localhost:8934"
-  info "  Services health:     http://localhost:8934/healthz"
+  info "  Services health:     http://localhost:8934/api/v1/healthz"
   info "  Orchestrator:        http://localhost:8935"
-  info "  Orchestrator health: http://localhost:8935/healthz"
+  info "  Orchestrator health: http://localhost:8935/api/v1/healthz"
   info "  Postgres:            localhost:8933"
   info "  Redis:               localhost:8936"
   info "  RabbitMQ:            localhost:8937"
@@ -755,9 +755,9 @@ print_startup_summary() {
 
   info ""
   info "Manual smoke checks:"
-  info "  curl -fsS http://localhost:8932/healthz"
-  info "  curl -fsS http://localhost:8934/healthz"
-  info "  curl -fsS http://localhost:8935/healthz"
+  info "  curl -fsS http://localhost:8932/api/v1/healthz"
+  info "  curl -fsS http://localhost:8934/api/v1/healthz"
+  info "  curl -fsS http://localhost:8935/api/v1/healthz"
 
   info ""
   if [[ "$with_migrations" == true || "$with_backend_migrations" == true ]]; then

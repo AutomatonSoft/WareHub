@@ -157,6 +157,13 @@ pub(crate) struct ChangePasswordRequest {
     pub new_password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct ChangePasswordCodeConfirmRequest {
+    pub current_password: String,
+    pub new_password: String,
+    pub code: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::RegisterRequest;
