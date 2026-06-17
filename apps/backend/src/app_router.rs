@@ -1,12 +1,12 @@
 use axum::{
     extract::DefaultBodyLimit,
-    http::{HeaderName, HeaderValue, Method},
+    http::{header, HeaderName, HeaderValue, Method},
     middleware,
     routing::{delete, get, patch, post},
     Router,
 };
 use tower_http::{
-    cors::{AllowOrigin, Any, CorsLayer},
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     services::ServeDir,
     trace::TraceLayer,
@@ -16,14 +16,15 @@ use crate::{
     admin_approve_registration, admin_delete_user, admin_list_pending_registrations,
     admin_list_users, admin_pending_registration_count, admin_reject_registration,
     admin_update_user_role, afterbuy_health, api_meta, auth_change_password, auth_me,
-    auth_update_me, backend_request_log_middleware, confirm_password_reset, create_intake,
-    create_service_log, cleanup_removed_intake_photos, delete_intake,
-    delete_oldest_intake_by_location, env_flag, fetch_afterbuy_order,
+    auth_update_me, backend_request_log_middleware, confirm_authenticated_password_change,
+    confirm_password_reset, create_intake, create_service_log, cleanup_removed_intake_photos,
+    delete_intake, delete_oldest_intake_by_location, env_flag, fetch_afterbuy_order,
     fetch_afterbuy_orders_by_kid, get_photo_cleanup_retry_queue_status,
-    get_label_layout_settings, get_printer_setup_settings, healthz, healthz_v1,
+    get_label_layout_settings, get_printer_setup_settings, healthz,
     intakes_ws_handler, list_intake_delete_audit_logs, list_intakes, list_product_stats,
     list_service_logs, login_user, logout_user, mobile_app_update, openapi_json, readyz,
-    readyz_v1, register_user, request_password_reset, scalar_ui, service_logs_page,
+    refresh_user, register_user, request_authenticated_password_change_code,
+    request_password_reset, scalar_ui, service_logs_page,
     suggest_placement, update_intake_photo, update_label_layout_settings, upload_photo, AppState,
     update_printer_setup_settings,
 };
@@ -33,6 +34,8 @@ pub(crate) fn build_app(state: AppState) -> Router {
     let log_state = state.clone();
 
     let api_v1 = Router::new()
+        .route("/openapi.json", get(openapi_json))
+        .route("/scalar", get(scalar_ui))
         .route("/meta", get(api_meta))
         .route("/mobile/app-update", get(mobile_app_update))
         .route("/logs", get(service_logs_page))
@@ -40,8 +43,8 @@ pub(crate) fn build_app(state: AppState) -> Router {
             "/logs/:channel",
             get(list_service_logs).post(create_service_log),
         )
-        .route("/healthz", get(healthz_v1))
-        .route("/readyz", get(readyz_v1))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/intakes", post(create_intake).get(list_intakes))
         .route("/kids", post(create_intake))
         .route("/kids/", post(create_intake))
@@ -72,8 +75,11 @@ pub(crate) fn build_app(state: AppState) -> Router {
         .route("/auth/register", post(register_user))
         .route("/auth/login", post(login_user))
         .route("/auth/logout", post(logout_user))
+        .route("/auth/refresh", post(refresh_user))
         .route("/auth/me", get(auth_me).patch(auth_update_me))
         .route("/auth/me/password", post(auth_change_password))
+        .route("/auth/me/password/request-code", post(request_authenticated_password_change_code))
+        .route("/auth/me/password/confirm", post(confirm_authenticated_password_change))
         .route("/auth/password/reset/request", post(request_password_reset))
         .route("/auth/password/reset/confirm", post(confirm_password_reset))
         .route(
@@ -108,12 +114,7 @@ pub(crate) fn build_app(state: AppState) -> Router {
         get(list_intake_delete_audit_logs),
     );
 
-    let mut app = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/openapi.json", get(openapi_json))
-        .route("/scalar", get(scalar_ui))
-        .nest("/api/v1", api_v1);
+    let mut app = Router::new().nest("/api/v1", api_v1);
 
     let expose_uploads_public = state.app_env == "dev" || env_flag("EXPOSE_UPLOADS_PUBLIC", false);
     if expose_uploads_public {
@@ -155,7 +156,13 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers(Any);
+        .allow_headers([
+            header::ACCEPT,
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static("x-request-id"),
+        ])
+        .allow_credentials(true);
 
     let configured_origins = std::env::var("CORS_ALLOW_ORIGINS").unwrap_or_default();
     let origins: Vec<HeaderValue> = configured_origins
@@ -167,11 +174,23 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
 
     if !origins.is_empty() {
         layer = layer.allow_origin(AllowOrigin::list(origins));
-    } else if state.app_env == "dev" {
-        layer = layer.allow_origin(Any);
+    } else if matches!(state.app_env.as_str(), "dev" | "local") {
+        layer = layer.allow_origin(AllowOrigin::list(default_dev_cors_origins()));
     }
 
     layer
+}
+
+fn default_dev_cors_origins() -> Vec<HeaderValue> {
+    [
+        "http://localhost:8931",
+        "http://127.0.0.1:8931",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    .into_iter()
+    .filter_map(|origin| HeaderValue::from_str(origin).ok())
+    .collect()
 }
 
 #[cfg(test)]

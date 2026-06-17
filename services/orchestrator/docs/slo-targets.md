@@ -10,7 +10,7 @@ This document defines service-level objectives for `sb-sofort-orchestrator-servi
 
 1. API availability
 - Definition: successful responses / total requests for orchestrator API routes.
-- Source: HTTP status codes in structured logs and `/metrics` request counters.
+- Source: HTTP status codes in structured logs and `/api/v1/metrics` request counters.
 
 2. Update request success quality
 - Definition: share of `POST /api/v1/orchestrator/products/{ean}/update` requests that finish without top-level validation/transport failure.
@@ -51,7 +51,7 @@ This document defines service-level objectives for `sb-sofort-orchestrator-servi
 ## Review Cadence
 
 1. Weekly:
-- inspect `/metrics` snapshots and top error codes.
+- inspect `/api/v1/metrics` snapshots and top error codes.
 
 2. Monthly:
 - adjust targets based on observed production traffic shape and incident history.

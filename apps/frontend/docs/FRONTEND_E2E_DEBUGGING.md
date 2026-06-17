@@ -11,7 +11,7 @@ npm run e2e:preflight
 Checks:
 - `E2E_LOGIN/E2E_PASSWORD` presence
 - frontend login reachability (`http://localhost:8931/login` or `E2E_BASE_URL`)
-- backend health reachability (`http://localhost:8932/healthz` or `E2E_BACKEND_HEALTH_URL`)
+- backend health reachability (`http://localhost:8932/api/v1/healthz` or `E2E_BACKEND_HEALTH_URL`)
 
 ## 2) Local ports and services
 
@@ -24,7 +24,7 @@ Check:
 
 ```powershell
 Invoke-WebRequest http://localhost:8931/login -UseBasicParsing
-Invoke-WebRequest http://localhost:8932/healthz -UseBasicParsing
+Invoke-WebRequest http://localhost:8932/api/v1/healthz -UseBasicParsing
 Invoke-WebRequest http://localhost:8934/api/v1/openapi.json -UseBasicParsing
 ```
 

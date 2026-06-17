@@ -34,3 +34,10 @@ pub(crate) struct PasswordResetCodeRow {
     pub expires_at: DateTime<Utc>,
     pub attempts: i32,
 }
+
+#[derive(Debug, FromRow)]
+pub(crate) struct RefreshSessionRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub status: String,
+}

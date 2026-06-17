@@ -126,7 +126,7 @@ export async function pushProductToOrchestrator(input: {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildDirectUpdatePayload(input as BuildOrchestratorPayloadInput);
 
-  const response = await apiFetch(`/api/orchestrator/products/${encodeURIComponent(input.ean)}/update`, {
+  const response = await apiFetch(`/api/v1/orchestrator/products/${encodeURIComponent(input.ean)}/update`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ operation: Operation.update satisfies OrchestratorOperation, payload, channels })
@@ -155,7 +155,7 @@ export async function createOrchestratorJob(input: {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildJobUpdatePayload(input as BuildOrchestratorPayloadInput);
 
-  const response = await apiFetch("/api/orchestrator/jobs", {
+  const response = await apiFetch("/api/v1/orchestrator/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -179,7 +179,7 @@ export async function createOrchestratorJob(input: {
 }
 
 export async function getOrchestratorJob(jobId: string): Promise<Record<string, unknown>> {
-  const response = await apiFetch(`/api/orchestrator/jobs/${encodeURIComponent(jobId)}`);
+  const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}`);
   const raw = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     throw new ApiError(
@@ -191,7 +191,7 @@ export async function getOrchestratorJob(jobId: string): Promise<Record<string, 
 }
 
 export async function getOrchestratorJobAttempts(jobId: string): Promise<Record<string, unknown>> {
-  const response = await apiFetch(`/api/orchestrator/jobs/${encodeURIComponent(jobId)}/attempts`);
+  const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}/attempts`);
   const raw = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     throw new ApiError(
@@ -203,7 +203,7 @@ export async function getOrchestratorJobAttempts(jobId: string): Promise<Record<
 }
 
 export async function getOrchestratorJobEvents(jobId: string): Promise<Record<string, unknown>> {
-  const response = await apiFetch(`/api/orchestrator/jobs/${encodeURIComponent(jobId)}/events`);
+  const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}/events`);
   const raw = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     throw new ApiError(
@@ -215,7 +215,7 @@ export async function getOrchestratorJobEvents(jobId: string): Promise<Record<st
 }
 
 export async function listReconciliationReportsByEan(ean: string): Promise<Record<string, unknown>> {
-  const url = `/api/orchestrator/reconciliation/reports?ean=${encodeURIComponent(ean)}`;
+  const url = `/api/v1/orchestrator/reconciliation/reports?ean=${encodeURIComponent(ean)}`;
   const response = await apiFetch(url);
   const raw = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
@@ -232,7 +232,7 @@ export async function listReconciliationReportsByEan(ean: string): Promise<Recor
 }
 
 export async function getReconciliationReport(reportId: string): Promise<Record<string, unknown>> {
-  const response = await apiFetch(`/api/orchestrator/reconciliation/reports/${encodeURIComponent(reportId)}`);
+  const response = await apiFetch(`/api/v1/orchestrator/reconciliation/reports/${encodeURIComponent(reportId)}`);
   const raw = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     throw new ApiError(

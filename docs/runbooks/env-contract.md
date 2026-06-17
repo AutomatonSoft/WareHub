@@ -102,8 +102,8 @@ Run from `I:\WareHub`:
 .\scripts\environment\validate-env-contract.ps1
 .\start-dev.ps1 -NoNewWindows
 curl.exe -i http://localhost:8932/api/v1/healthz
-curl.exe -i http://localhost:8934/healthz
-curl.exe -i http://localhost:8935/healthz
+curl.exe -i http://localhost:8934/api/v1/healthz
+curl.exe -i http://localhost:8935/api/v1/healthz
 curl.exe -i http://localhost:8931/login
 ```
 
@@ -121,8 +121,8 @@ Use a JSON file or `ConvertTo-Json` for password reset verification. Do not use 
 | `BACKEND_ORIGIN` | frontend server runtime | Required | `http://localhost:8932` | `BACKEND_ORIGIN` | `http://localhost:8932` | deploy container origin | internal | `apps/frontend/next.config.mjs` |
 | `SERVICES_ORIGIN` | frontend server runtime | Required | `http://localhost:8934` | `SERVICES_ORIGIN` | `http://localhost:8934` | deploy container origin | internal | `apps/frontend/next.config.mjs`, API proxy routes |
 | `NEXT_PUBLIC_API_BASE_URL` | frontend browser runtime | Required | none | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8932/api/v1` | `STAGE_PUBLIC_API_BASE_URL` / `PROD_PUBLIC_API_BASE_URL` | public | frontend pages/components |
-| `NEXT_PUBLIC_SERVICES_API_BASE_URL` | frontend browser runtime | Required | none | `NEXT_PUBLIC_SERVICES_API_BASE_URL` | `http://localhost:8934` | `STAGE_PUBLIC_SERVICES_API_BASE_URL` / `PROD_PUBLIC_SERVICES_API_BASE_URL` | public | frontend data clients |
-| `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` | frontend browser runtime | Optional | none | `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` | `http://localhost:8935` | `STAGE_PUBLIC_ORCHESTRATOR_API_BASE_URL` / `PROD_PUBLIC_ORCHESTRATOR_API_BASE_URL` | public | frontend OpenAPI helpers |
+| `NEXT_PUBLIC_SERVICES_API_BASE_URL` | frontend browser runtime | Required | none | `NEXT_PUBLIC_SERVICES_API_BASE_URL` | `http://localhost:8934/api/v1` | `STAGE_PUBLIC_SERVICES_API_BASE_URL` / `PROD_PUBLIC_SERVICES_API_BASE_URL` | public | frontend data clients |
+| `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` | frontend browser runtime | Optional | none | `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` | `http://localhost:8935/api/v1` | `STAGE_PUBLIC_ORCHESTRATOR_API_BASE_URL` / `PROD_PUBLIC_ORCHESTRATOR_API_BASE_URL` | public | frontend OpenAPI helpers |
 | `DATABASE_URL` | backend + database-service | Required | none | `DATABASE_URL` | `postgres://...@localhost:8933/warehub` | deploy runtime DB URL | secret | `apps/backend/src/main.rs`, `database_service/settings.py` |
 | `APP_ENV` / `APP_PORT` | backend | Required/optional | `dev` / `8932` | same names | `dev` / `8932` | deploy runtime env | internal | `apps/backend/src/main.rs` |
 | `CORS_ALLOW_ORIGINS` | backend | Optional | localhost list | `CORS_ALLOW_ORIGINS` | localhost origins | deploy origin list | internal | `apps/backend/src/app_router.rs` |

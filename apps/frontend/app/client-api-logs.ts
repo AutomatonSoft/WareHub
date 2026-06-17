@@ -1,3 +1,6 @@
+import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
+import { authorizedFetch, getAccessToken } from "./client-api-shared";
+
 let disableServiceLogsForToken: string | null = null;
 
 export async function sendServiceLog(
@@ -8,25 +11,26 @@ export async function sendServiceLog(
   context?: string,
   token?: string
 ): Promise<void> {
-  const normalizedToken = token?.trim() ?? "";
+  const normalizedToken = token?.trim() || getAccessToken() || "";
   if (!normalizedToken) {
     return;
   }
   if (disableServiceLogsForToken === normalizedToken) {
     return;
   }
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
-  headers.Authorization = `Bearer ${normalizedToken}`;
-  await fetch(`${apiBase}/logs/${encodeURIComponent(channel)}`, {
+  await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.logs.channel(channel)), {
     method: "POST",
-    headers,
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
       level,
       message,
       context
     })
+  }, {
+    apiBase,
+    token: normalizedToken
   })
     .then((response) => {
       if (response.status === 401 || response.status === 403) {

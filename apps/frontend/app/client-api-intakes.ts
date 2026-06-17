@@ -1,5 +1,6 @@
 import type { CreateIntakePayload, IntakeDto, IntakesQueryParams } from "./client-api-types";
-import { parseError } from "./client-api-shared";
+import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
+import { authorizedFetch, parseError } from "./client-api-shared";
 
 export async function fetchIntakes(
   apiBase: string,
@@ -21,10 +22,7 @@ export async function fetchIntakes(
   if (params?.activity && params.activity !== "all") {
     query.set("activity", params.activity);
   }
-  const response = await fetch(`${apiBase}/intakes?${query.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.intakes.list)}?${query.toString()}`, {}, { apiBase, token });
   if (!response.ok) {
     throw new Error(`Intakes request failed: HTTP ${response.status}`);
   }
@@ -39,11 +37,10 @@ export async function uploadImage(
 ): Promise<string> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch(`${apiBase}/uploads?kind=${kind}`, {
+  const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.intakes.uploads)}?kind=${kind}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
     body: form
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Upload failed: HTTP ${response.status}`));
@@ -57,14 +54,13 @@ export async function createIntake(
   token: string,
   payload: CreateIntakePayload
 ): Promise<IntakeDto> {
-  const response = await fetch(`${apiBase}/kids/`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.intakes.list), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Create intake failed: HTTP ${response.status}`));

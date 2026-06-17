@@ -28,7 +28,7 @@ Repository for standalone microservices developed in parallel with the main Sofo
   - `Dockerfile`
   - `.env.example`
   - tests for happy path + failure path
-- Services MUST expose `/healthz` and `/readyz`.
+- Services MUST expose `/api/v1/healthz` and `/api/v1/readyz`.
 - Service logic MUST NOT duplicate core business rules from backend.
 - Integration with backend MUST be API-first and versioned.
 

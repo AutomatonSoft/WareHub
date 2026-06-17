@@ -2,13 +2,14 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sb-sofort-orchestrator-service",
+    "description": "WareHub orchestrator API for async jobs, product editor flows and reconciliation operations.",
     "version": "1.0.0"
   },
   "paths": {
-    "/healthz": {
+    "/api/v1/healthz": {
       "get": {
         "summary": "Healthz",
-        "operationId": "healthz_healthz_get",
+        "operationId": "orchestrator_get_api_v1_healthz",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -17,18 +18,22 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Healthz Healthz Get"
+                  "title": "Response Healthz Api V1 Healthz Get"
                 }
               }
             }
           }
-        }
+        },
+        "tags": [
+          "System"
+        ],
+        "description": "Lightweight liveness probe for the orchestrator process."
       }
     },
-    "/readyz": {
+    "/api/v1/readyz": {
       "get": {
         "summary": "Readyz",
-        "operationId": "readyz_readyz_get",
+        "operationId": "orchestrator_get_api_v1_readyz",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -38,13 +43,17 @@
               }
             }
           }
-        }
+        },
+        "tags": [
+          "System"
+        ],
+        "description": "Readiness probe that validates the orchestrator idempotency store connection."
       }
     },
-    "/metrics": {
+    "/api/v1/metrics": {
       "get": {
         "summary": "Metrics",
-        "operationId": "metrics_metrics_get",
+        "operationId": "orchestrator_get_api_v1_metrics",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -53,18 +62,997 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Metrics Metrics Get"
+                  "title": "Response Metrics Api V1 Metrics Get"
                 }
               }
             }
           }
-        }
+        },
+        "tags": [
+          "System"
+        ],
+        "description": "Returns in-memory request, job store, database pool and circuit-breaker metrics."
+      }
+    },
+    "/api/v1/orchestrator/jobs": {
+      "post": {
+        "summary": "Create Orchestrator Job",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Queues one asynchronous orchestrator job and returns its job identifier."
+      }
+    },
+    "/api/v1/orchestrator/jobs/batch": {
+      "post": {
+        "summary": "Create Orchestrator Jobs Batch",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs_batch",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Queues multiple orchestrator jobs in a single request."
+      }
+    },
+    "/api/v1/orchestrator/jobs/status/batch": {
+      "post": {
+        "summary": "Get Orchestrator Jobs Status Batch",
+        "operationId": "orchestrator_post_api_v1_orchestrator_jobs_status_batch",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchJobStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Loads status snapshots for multiple orchestrator job identifiers."
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Orchestrator Job",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Returns the current persisted status for one orchestrator job."
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}/attempts": {
+      "get": {
+        "summary": "Get Orchestrator Job Attempts",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id_attempts",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Returns execution attempt history for one orchestrator job."
+      }
+    },
+    "/api/v1/orchestrator/jobs/{job_id}/events": {
+      "get": {
+        "summary": "Get Orchestrator Job Events",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs_job_id_events",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Returns recorded event history for one orchestrator job."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_apply",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Applies a previously generated Product Editor plan after explicit confirmation."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/apply/": {
+      "post": {
+        "summary": "Product Editor Apply",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_apply",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Applies a previously generated Product Editor plan after explicit confirmation."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/discover": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_discover",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Discovers Product Editor groups, capabilities and initial warnings for a given EAN."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/discover/": {
+      "post": {
+        "summary": "Product Editor Discover",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_discover",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Discovers Product Editor groups, capabilities and initial warnings for a given EAN."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Returns Product Editor job status, target execution state and warnings."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}/": {
+      "get": {
+        "summary": "Product Editor Job Status",
+        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Returns Product Editor job status, target execution state and warnings."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_load",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Loads Product Editor baseline data and current target state for a selected group."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/load/": {
+      "post": {
+        "summary": "Product Editor Load",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_load",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorLoadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Loads Product Editor baseline data and current target state for a selected group."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Builds a Product Editor execution plan from draft changes and selected targets."
+      }
+    },
+    "/api/v1/orchestrator/product-editor/plan/": {
+      "post": {
+        "summary": "Product Editor Plan",
+        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductEditorPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Editor"
+        ],
+        "description": "Builds a Product Editor execution plan from draft changes and selected targets."
       }
     },
     "/api/v1/orchestrator/products/{ean}/update": {
       "post": {
         "summary": "Orchestrate Update",
-        "operationId": "orchestrate_update_api_v1_orchestrator_products__ean__update_post",
+        "operationId": "orchestrator_post_api_v1_orchestrator_products_ean_update",
         "parameters": [
           {
             "name": "ean",
@@ -137,366 +1125,17 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs": {
-      "post": {
-        "summary": "Create Orchestrator Job",
-        "operationId": "create_orchestrator_job_api_v1_orchestrator_jobs_post",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateJobRequest"
-              }
-            }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs/batch": {
-      "post": {
-        "summary": "Create Orchestrator Jobs Batch",
-        "operationId": "create_orchestrator_jobs_batch_api_v1_orchestrator_jobs_batch_post",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
+        "tags": [
+          "Products"
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchCreateJobRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs/status/batch": {
-      "post": {
-        "summary": "Get Orchestrator Jobs Status Batch",
-        "operationId": "get_orchestrator_jobs_status_batch_api_v1_orchestrator_jobs_status_batch_post",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchJobStatusRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs/{job_id}": {
-      "get": {
-        "summary": "Get Orchestrator Job",
-        "operationId": "get_orchestrator_job_api_v1_orchestrator_jobs__job_id__get",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs/{job_id}/events": {
-      "get": {
-        "summary": "Get Orchestrator Job Events",
-        "operationId": "get_orchestrator_job_events_api_v1_orchestrator_jobs__job_id__events_get",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/orchestrator/jobs/{job_id}/attempts": {
-      "get": {
-        "summary": "Get Orchestrator Job Attempts",
-        "operationId": "get_orchestrator_job_attempts_api_v1_orchestrator_jobs__job_id__attempts_get",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
+        "description": "Executes a direct orchestrator product update request for the provided EAN across selected channels."
       }
     },
     "/api/v1/orchestrator/reconciliation/diff": {
       "post": {
         "summary": "Reconcile Orchestrator State",
-        "operationId": "reconcile_orchestrator_state_api_v1_orchestrator_reconciliation_diff_post",
+        "operationId": "orchestrator_post_api_v1_orchestrator_reconciliation_diff",
         "parameters": [
           {
             "name": "X-Request-Id",
@@ -544,66 +1183,17 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/v1/orchestrator/reconciliation/reports/{report_id}": {
-      "get": {
-        "summary": "Get Reconciliation Report",
-        "operationId": "get_reconciliation_report_api_v1_orchestrator_reconciliation_reports__report_id__get",
-        "parameters": [
-          {
-            "name": "report_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Report Id"
-            }
-          },
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
+        },
+        "tags": [
+          "Reconciliation"
         ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
+        "description": "Computes desired-versus-actual channel state differences for one EAN."
       }
     },
     "/api/v1/orchestrator/reconciliation/reports": {
       "get": {
         "summary": "List Reconciliation Reports",
-        "operationId": "list_reconciliation_reports_api_v1_orchestrator_reconciliation_reports_get",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reconciliation_reports",
         "parameters": [
           {
             "name": "ean",
@@ -650,7 +1240,68 @@
               }
             }
           }
-        }
+        },
+        "tags": [
+          "Reconciliation"
+        ],
+        "description": "Lists stored reconciliation reports, optionally filtered by request parameters."
+      }
+    },
+    "/api/v1/orchestrator/reconciliation/reports/{report_id}": {
+      "get": {
+        "summary": "Get Reconciliation Report",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reconciliation_reports_report_id",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Reconciliation"
+        ],
+        "description": "Returns one persisted reconciliation report by identifier."
       }
     }
   },
@@ -1244,6 +1895,34 @@
         ],
         "title": "CreateJobRequest"
       },
+      "ErrorContract": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id"
+        ],
+        "title": "ErrorContract"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1265,6 +1944,16 @@
           "background"
         ],
         "title": "JobPriority"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "JobStatus"
       },
       "Marketplace": {
         "type": "string",
@@ -1309,6 +1998,608 @@
           "channels"
         ],
         "title": "OrchestrateRequest"
+      },
+      "ProductEditorApplyRequest": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "title": "Confirmation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id"
+        ],
+        "title": "ProductEditorApplyRequest"
+      },
+      "ProductEditorApplyResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status",
+          "active_group"
+        ],
+        "title": "ProductEditorApplyResponse"
+      },
+      "ProductEditorCapability": {
+        "properties": {
+          "discover": {
+            "type": "boolean",
+            "title": "Discover",
+            "default": false
+          },
+          "load": {
+            "type": "boolean",
+            "title": "Load",
+            "default": false
+          },
+          "plan": {
+            "type": "boolean",
+            "title": "Plan",
+            "default": false
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          },
+          "job_status": {
+            "type": "boolean",
+            "title": "Job Status",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ProductEditorCapability"
+      },
+      "ProductEditorDiscoverRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean"
+        ],
+        "title": "ProductEditorDiscoverRequest"
+      },
+      "ProductEditorDiscoverResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "recommended_baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Baseline Target Id"
+          },
+          "selected_group_id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "groups",
+          "selected_group_id"
+        ],
+        "title": "ProductEditorDiscoverResponse"
+      },
+      "ProductEditorGroup": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "description"
+        ],
+        "title": "ProductEditorGroup"
+      },
+      "ProductEditorGroupId": {
+        "type": "string",
+        "enum": [
+          "JV",
+          "XL",
+          "HOOD",
+          "OTTO",
+          "KAUFLAND",
+          "EBAY"
+        ],
+        "title": "ProductEditorGroupId"
+      },
+      "ProductEditorJobResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobStatus"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Status"
+          },
+          "active_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductEditorGroupId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "targets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorContract"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "job_id",
+          "status"
+        ],
+        "title": "ProductEditorJobResponse"
+      },
+      "ProductEditorLoadRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadRequest"
+      },
+      "ProductEditorLoadResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "baseline_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Target Id"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported",
+            "default": false
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorLoadResponse"
+      },
+      "ProductEditorPlanRequest": {
+        "properties": {
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "draft": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Draft"
+          },
+          "selected_target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Target Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanRequest"
+      },
+      "ProductEditorPlanResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "active_group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Fields"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "plan_id",
+          "ean",
+          "active_group"
+        ],
+        "title": "ProductEditorPlanResponse"
+      },
+      "ProductEditorRiskLevel": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "ProductEditorRiskLevel"
+      },
+      "ProductEditorTarget": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "group": {
+            "$ref": "#/components/schemas/ProductEditorGroupId"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/ProductEditorTargetType"
+          },
+          "account_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Family"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "baseline_eligible": {
+            "type": "boolean",
+            "title": "Baseline Eligible",
+            "default": false
+          },
+          "auto_baseline_eligible": {
+            "type": "boolean",
+            "title": "Auto Baseline Eligible",
+            "default": false
+          },
+          "selected_by_default": {
+            "type": "boolean",
+            "title": "Selected By Default",
+            "default": false
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "default": false
+          },
+          "planned": {
+            "type": "boolean",
+            "title": "Planned",
+            "default": false
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported",
+            "default": false
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductEditorTargetStatus",
+            "default": "unknown"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ProductEditorCapability"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "group",
+          "target_type"
+        ],
+        "title": "ProductEditorTarget"
+      },
+      "ProductEditorTargetStatus": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "found",
+          "missing",
+          "error",
+          "planned",
+          "unsupported",
+          "read_only"
+        ],
+        "title": "ProductEditorTargetStatus"
+      },
+      "ProductEditorTargetType": {
+        "type": "string",
+        "enum": [
+          "source_site",
+          "marketplace_account"
+        ],
+        "title": "ProductEditorTargetType"
+      },
+      "ProductEditorWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ProductEditorRiskLevel",
+            "default": "medium"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProductEditorWarning"
       },
       "ReconciliationChannelState": {
         "properties": {
@@ -1379,13 +2670,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",
@@ -1397,5 +2681,39 @@
         "title": "ValidationError"
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "System",
+      "description": "System health, readiness and OpenAPI endpoints."
+    },
+    {
+      "name": "Jobs",
+      "description": "Async orchestrator job intake and inspection endpoints."
+    },
+    {
+      "name": "Product Editor",
+      "description": "Product Editor discover, load, plan, apply and job-status endpoints."
+    },
+    {
+      "name": "Products",
+      "description": "Direct orchestrator product update endpoints."
+    },
+    {
+      "name": "Reconciliation",
+      "description": "Reconciliation planning and report retrieval endpoints."
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Orchestrator",
+      "tags": [
+        "System",
+        "Jobs",
+        "Product Editor",
+        "Products",
+        "Reconciliation"
+      ]
+    }
+  ]
 }

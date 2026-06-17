@@ -194,9 +194,9 @@ It does not:
 Primary local URLs:
 
 - frontend: `http://localhost:8931`
-- backend health: `http://localhost:8932/healthz`
-- database-service health: `http://localhost:8934/healthz`
-- orchestrator health: `http://localhost:8935/healthz`
+- backend health: `http://localhost:8932/api/v1/healthz`
+- database-service health: `http://localhost:8934/api/v1/healthz`
+- orchestrator health: `http://localhost:8935/api/v1/healthz`
 
 ## 6. Backend Local Run
 

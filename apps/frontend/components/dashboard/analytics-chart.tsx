@@ -11,9 +11,9 @@ import {
   YAxis
 } from "recharts";
 import { Activity } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "../ui/chart";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
 
 type ChartPoint = {
@@ -60,10 +60,12 @@ const INSIGHT_LABELS: Record<InsightMode, { title: string; subtitle: string }> =
 
 export function AnalyticsChart({
   data,
-  loading
+  loading,
+  error
 }: {
   data?: ChartPoint[];
   loading?: boolean;
+  error?: string | null;
 }) {
   const chartData = useMemo(() => data ?? [], [data]);
   const [mode, setMode] = useState<InsightMode>("paid_vs_unpaid_revenue");
@@ -95,31 +97,41 @@ export function AnalyticsChart({
       months: chartData.length
     };
   }, [chartData]);
+  const emptyStateItems = useMemo(
+    () => [
+      { label: "Paid revenue", value: summary.paidRevenue },
+      { label: "Unpaid revenue", value: summary.unpaidRevenue },
+      { label: "Months tracked", value: String(summary.months) }
+    ],
+    [summary]
+  );
 
   return (
     <Card className="wh-section-card wh-dashboard__revenue-card min-w-0">
       <CardHeader className="wh-section-card__header">
-        <div className="wh-section-card__title-group">
+        <div className="min-w-0">
           <CardTitle className="title-with-icon wh-section-card__title">
-            <span className="title-icon-chip"><Activity size={14} /></span>
+            <span className="title-icon-chip"><Activity aria-hidden="true" size={14} /></span>
             Revenue Across Marketplaces
           </CardTitle>
           <CardDescription className="wh-section-card__subtitle">{modeMeta.subtitle}</CardDescription>
         </div>
-        <div className="wh-section-card__actions">
+        <CardAction className="wh-section-card__actions">
           <Select value={mode} onValueChange={(value) => setMode(value as InsightMode)}>
-            <SelectTrigger aria-label="Insight mode" className="wh-select min-w-[200px]">
+            <SelectTrigger aria-label="Insight mode" className="wh-select min-w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="paid_vs_unpaid_revenue">1. Paid vs unpaid revenue</SelectItem>
-              <SelectItem value="paid_vs_unpaid_orders">2. Paid vs unpaid orders</SelectItem>
-              <SelectItem value="total_orders">3. Total orders</SelectItem>
-              <SelectItem value="avg_check">4. Average check</SelectItem>
-              <SelectItem value="paid_share">5. Paid share (%)</SelectItem>
+              <SelectGroup>
+                <SelectItem value="paid_vs_unpaid_revenue">Paid vs unpaid revenue</SelectItem>
+                <SelectItem value="paid_vs_unpaid_orders">Paid vs unpaid orders</SelectItem>
+                <SelectItem value="total_orders">Total orders</SelectItem>
+                <SelectItem value="avg_check">Average check</SelectItem>
+                <SelectItem value="paid_share">Paid share (%)</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent className="wh-section-card__body">
         {!loading && hasData && hasSignal ? (
@@ -144,10 +156,17 @@ export function AnalyticsChart({
         <div className="wh-chart-shell">
         {loading ? (
           <div className="wh-empty-state wh-empty-state--dashboard h-full">
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <Skeleton key={`chart-line-${index}`} className="h-3 w-full" />
-              ))}
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton key={`chart-summary-${index}`} className="h-14 rounded-xl" />
+                ))}
+              </div>
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={`chart-line-${index}`} className="h-3 w-full" />
+                ))}
+              </div>
               <div className="mt-3 flex items-end justify-between">
                 {Array.from({ length: 8 }).map((_, index) => (
                   <Skeleton key={`chart-tick-${index}`} className="h-2 w-8" />
@@ -155,10 +174,25 @@ export function AnalyticsChart({
               </div>
             </div>
           </div>
+        ) : error ? (
+          <div className="wh-empty-state wh-empty-state--dashboard wh-dashboard-empty-state flex h-full flex-col items-center justify-center gap-2 text-center">
+            <p className="text-sm font-medium text-foreground">Overview data unavailable</p>
+            <p className="max-w-md text-xs text-muted-foreground">{error}</p>
+          </div>
         ) : !hasData || !hasSignal ? (
-          <div className="wh-empty-state wh-empty-state--dashboard flex h-full flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm font-medium text-foreground">No revenue data yet</p>
-            <p className="max-w-md text-xs text-muted-foreground">Revenue will appear after paid marketplace orders are imported.</p>
+          <div className="wh-empty-state wh-empty-state--dashboard wh-chart-empty-state flex h-full flex-col justify-center">
+            <div className="wh-chart-summary">
+              {emptyStateItems.map((item) => (
+                <div key={item.label} className="wh-chart-summary__item">
+                  <span className="wh-chart-summary__label">{item.label}</span>
+                  <span className="wh-chart-summary__value">{item.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="wh-chart-empty-state__copy">
+              <p className="text-sm font-medium text-foreground">No revenue data yet</p>
+              <p className="max-w-md text-xs text-muted-foreground">Revenue will appear after paid marketplace orders are imported.</p>
+            </div>
           </div>
         ) : (
           <ChartContainer

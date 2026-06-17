@@ -28,17 +28,16 @@ docker compose -f deploy/prod/docker-compose.yml --env-file .env config
 Expected endpoints:
 
 - Rust backend:
-  - `GET /healthz`
-  - `GET /readyz`
   - `GET /api/v1/healthz`
   - `GET /api/v1/readyz`
 - Django services (`database_service`):
-  - base process up via compose/container status
+  - `GET /api/v1/healthz`
+  - `GET /api/v1/readyz`
   - API probe through known read endpoint (`/api/v1/openapi.json` or `/api/v1/inventory/rows/` with auth where required)
 - Orchestrator:
-  - `GET /healthz`
-  - `GET /readyz`
-  - `GET /metrics`
+  - `GET /api/v1/healthz`
+  - `GET /api/v1/readyz`
+  - `GET /api/v1/metrics`
 
 ## 3. Stage checks
 
@@ -57,26 +56,26 @@ Behavior:
 
 ```bash
 docker compose -f deploy/stage/docker-compose.yml --env-file .env ps
-curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/healthz"
-curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/readyz"
 curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/api/v1/healthz"
 curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/healthz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/readyz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/metrics" | head
+curl -fsS "http://127.0.0.1:${STAGE_SERVICES_PORT}/api/v1/healthz"
+curl -fsS "http://127.0.0.1:${STAGE_SERVICES_PORT}/api/v1/readyz"
+curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/healthz"
+curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/readyz"
+curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/metrics" | head
 ```
 
 ## 4. Prod checks
 
 ```bash
 docker compose -f deploy/prod/docker-compose.yml --env-file .env ps
-curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/healthz"
-curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/readyz"
 curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/api/v1/healthz"
 curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/healthz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/readyz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/metrics" | head
+curl -fsS "http://127.0.0.1:${PROD_SERVICES_PORT}/api/v1/healthz"
+curl -fsS "http://127.0.0.1:${PROD_SERVICES_PORT}/api/v1/readyz"
+curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/healthz"
+curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/readyz"
+curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/metrics" | head
 ```
 
 ## 5. Pass criteria

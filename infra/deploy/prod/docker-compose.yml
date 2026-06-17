@@ -134,7 +134,7 @@ services:
       ORCHESTRATOR_SERVICE_NAME: ${ORCHESTRATOR_SERVICE_NAME:-sb-sofort-orchestrator-service}
       ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-INFO}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/healthz', timeout=3).read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/api/v1/healthz', timeout=3).read()"]
       interval: 10s
       timeout: 4s
       retries: 10

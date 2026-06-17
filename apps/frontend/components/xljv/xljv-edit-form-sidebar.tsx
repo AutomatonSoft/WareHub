@@ -67,7 +67,7 @@ export function ProductGalleryCard({
   const fallbackSvg =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="#eef1fb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#7b86a8" font-family="Arial,sans-serif" font-size="24">Image unavailable</text></svg>`
+      `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="#eef1fb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#7b86a8" font-family="Montserrat, Arial, sans-serif" font-size="24">Image unavailable</text></svg>`
     );
 
   function onImageError(event: SyntheticEvent<HTMLImageElement>) {

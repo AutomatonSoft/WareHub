@@ -94,7 +94,7 @@ function ChartTooltipContent({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className={cn("grid min-w-32 gap-1.5 rounded-xl border border-border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md", className)}>
+    <div className={cn("grid min-w-32 gap-1.5 rounded-[var(--radius-control)] border border-border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-[var(--wh-shadow-popover)]", className)}>
       {label ? <div className="font-medium">{labelFormatter ? labelFormatter(label, payload) : label}</div> : null}
       <div className="grid gap-1.5">
         {payload.map((item, index) => {
@@ -104,7 +104,7 @@ function ChartTooltipContent({
           return (
             <div key={key} className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="size-2 rounded-xl" style={{ backgroundColor: indicatorColor }} />
+                <span className="size-2 rounded-[var(--radius-pill)]" style={{ backgroundColor: indicatorColor }} />
                 <span className="text-muted-foreground">{itemConfig?.label ?? item.name ?? key}</span>
               </div>
               <span className="font-mono font-medium tabular-nums">

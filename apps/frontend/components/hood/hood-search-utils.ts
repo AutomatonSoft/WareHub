@@ -120,7 +120,7 @@ export function buildIframeSrcDoc(value: string): string {
   const decoded = decodeHtmlEntities(value || "");
   if (!decoded) return "";
   if (/<html[\s>]/i.test(decoded)) return decoded;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><base target="_blank" /><style>html, body { margin: 0; padding: 0; } body { font-family: Arial, sans-serif; color: #111; background: #fff; } img { max-width: 100%; height: auto; }</style></head><body>${decoded}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><base target="_blank" /><style>html, body { margin: 0; padding: 0; } body { font-family: Montserrat, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111; background: #fff; } img { max-width: 100%; height: auto; }</style></head><body>${decoded}</body></html>`;
 }
 
 export function prettyJson(value: unknown): string {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { History } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { fetchTimelineLogs, ServiceLogEntry } from "./dashboard-api";
 
@@ -74,16 +74,23 @@ function pickEntity(message: string, context: string | null | undefined): string
 export function ActivityTimeline() {
   const [logs, setLogs] = useState<ServiceLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function loadLogs() {
       try {
+        setError(null);
         const entries = await fetchTimelineLogs(80);
 
         if (active) {
           setLogs(entries);
+        }
+      } catch (loadError) {
+        if (active) {
+          setLogs([]);
+          setError(loadError instanceof Error ? loadError.message : "Unable to load recent activity.");
         }
       } finally {
         if (active) {
@@ -124,10 +131,13 @@ export function ActivityTimeline() {
   return (
     <Card className="wh-section-card wh-dashboard__activity-card min-w-0">
       <CardHeader className="wh-section-card__header">
-      <CardTitle className="title-with-icon wh-section-card__title">
-        <span className="title-icon-chip"><History size={14} /></span>
-        Activity Timeline
-      </CardTitle>
+      <div className="min-w-0">
+        <CardTitle className="title-with-icon wh-section-card__title">
+          <span className="title-icon-chip"><History aria-hidden="true" size={14} /></span>
+          Activity Timeline
+        </CardTitle>
+        <CardDescription className="wh-section-card__subtitle">Recent orchestration, sync, and warehouse-side events.</CardDescription>
+      </div>
       </CardHeader>
       <CardContent className="wh-section-card__body">
       <ul className="wh-activity-list scrollbar-thin">
@@ -141,6 +151,12 @@ export function ActivityTimeline() {
               </div>
             </li>
           ))
+        ) : error ? (
+          <li className="wh-empty-state wh-empty-state--dashboard wh-activity-empty">
+            <History className="wh-activity-empty__icon" />
+            <p className="wh-activity-empty__title">Activity feed unavailable</p>
+            <p className="wh-activity-empty__description">{error}</p>
+          </li>
         ) : events.length === 0 ? (
           <li className="wh-empty-state wh-empty-state--dashboard wh-activity-empty">
             <History className="wh-activity-empty__icon" />
@@ -155,7 +171,7 @@ export function ActivityTimeline() {
                 <p className="truncate text-sm text-foreground" title={`${event.actor}: ${event.action}`}>
                   <span className="font-semibold">{event.actor}</span> {event.action}
                 </p>
-                <p className="ui-caption">{event.entity} В· {event.when}</p>
+                <p className="ui-caption">{event.entity} | {event.when}</p>
               </div>
             </li>
           ))

@@ -38,14 +38,14 @@ export function MarketplaceSiteSelectorPanel(props: Props) {
   } = props;
 
   return (
-    <Card className="wh-page-card xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-hidden">
+    <Card className="wh-page-card h-full xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
           <CardTitle>{t.sites}</CardTitle>
           <Badge variant="secondary">{t.selected}: {selectedSitesCount}</Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
         <Input
           value={sitesQuery}
           onChange={(event) => onSitesQueryChange(event.target.value)}
@@ -60,7 +60,7 @@ export function MarketplaceSiteSelectorPanel(props: Props) {
           {showSelectedOnly ? t.allSites : t.selectedOnly}
         </Button>
       </div>
-      <div className="wh-site-list space-y-2 overflow-y-auto rounded-xl border border-border/60 bg-muted/30 p-2 pr-1 xl:max-h-[calc(100vh-18rem)]">
+      <div className="wh-site-list min-h-0 flex-1 space-y-2 overflow-y-auto rounded-xl bg-muted/30 p-2 pr-1 xl:max-h-[calc(100vh-18rem)]">
         {visibleSites.map((site) => (
           <label
             key={site.id}

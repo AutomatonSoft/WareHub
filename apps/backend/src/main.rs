@@ -67,9 +67,20 @@ async fn main() {
     .await
     .expect("failed to connect to postgres");
 
-    if skip_db_migrations {
+    let force_auth_schema_migrations = skip_db_migrations
+        && matches!(app_env.as_str(), "dev" | "local")
+        && auth_refresh_schema_missing(&db)
+            .await
+            .expect("failed to validate auth refresh session schema");
+
+    if skip_db_migrations && !force_auth_schema_migrations {
         warn!("SKIP_DB_MIGRATIONS is enabled; runtime sqlx migrations are skipped");
     } else {
+        if force_auth_schema_migrations {
+            warn!(
+                "SKIP_DB_MIGRATIONS is enabled, but runtime auth refresh schema is missing; applying migrations to avoid broken login"
+            );
+        }
         sqlx::migrate!("./migrations")
             .run(&db)
             .await
@@ -204,6 +215,15 @@ async fn connect_postgres_with_retry(
             }
         }
     }
+}
+
+async fn auth_refresh_schema_missing(db: &PgPool) -> Result<bool, sqlx::Error> {
+    let relation = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT to_regclass('public.auth_refresh_sessions')::text",
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(relation.is_none())
 }
 
 fn setup_tracing() {

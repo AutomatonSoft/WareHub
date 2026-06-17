@@ -23,10 +23,10 @@ Status date: 2026-05-16
 
 1. Deploy release candidate to stage.
 2. Verify service health:
-- `GET /healthz` returns `ok`
-- `GET /readyz` returns `ready`
+- `GET /api/v1/healthz` returns `ok`
+- `GET /api/v1/readyz` returns `ready`
 3. Verify metrics contract:
-- `GET /metrics` includes `job_store_metrics` and `circuit_breaker_metrics`.
+- `GET /api/v1/metrics` includes `job_store_metrics` and `circuit_breaker_metrics`.
 4. Run stage smoke scenarios:
 - single job create + status polling
 - batch job create + batch status
@@ -40,9 +40,9 @@ Status date: 2026-05-16
 1. Announce maintenance/release window in team channel.
 2. Deploy orchestrator image/tag to production.
 3. Run immediate post-deploy checks:
-- `/healthz`
-- `/readyz`
-- sample `/metrics`
+- `/api/v1/healthz`
+- `/api/v1/readyz`
+- sample `/api/v1/metrics`
 4. Execute one controlled canary flow:
 - one known EAN through orchestrator update/job path.
 
@@ -65,7 +65,7 @@ Trigger if any:
 
 Action:
 1. rollback to previous known-good release.
-2. verify `/healthz` and `/readyz`.
+2. verify `/api/v1/healthz` and `/api/v1/readyz`.
 3. confirm jobs resume progression.
 4. record incident notes and root-cause task.
 

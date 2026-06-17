@@ -50,16 +50,6 @@ pub(crate) async fn readyz(
     }
 }
 
-pub(crate) async fn healthz_v1(State(state): State<AppState>) -> Json<HealthResponse> {
-    healthz(State(state)).await
-}
-
-pub(crate) async fn readyz_v1(
-    State(state): State<AppState>,
-) -> Result<(StatusCode, Json<HealthResponse>), (StatusCode, Json<ErrorResponse>)> {
-    readyz(State(state)).await
-}
-
 pub(crate) async fn api_meta() -> Json<ApiInfoResponse> {
     Json(ApiInfoResponse {
         name: "sofortbot-backend",

@@ -20,8 +20,10 @@ pub(crate) use crate::app_types::{
 pub(crate) use crate::auth::{
     admin_approve_registration, admin_delete_user, admin_list_pending_registrations,
     admin_list_users, admin_pending_registration_count, admin_reject_registration,
-    admin_update_user_role, auth_change_password, auth_me, auth_update_me, confirm_password_reset,
-    login_user, logout_user, register_user, request_password_reset,
+    admin_update_user_role, auth_change_password, auth_me, auth_update_me,
+    confirm_authenticated_password_change, confirm_password_reset, login_user, logout_user,
+    refresh_user, register_user, request_authenticated_password_change_code,
+    request_password_reset,
 };
 pub(crate) use crate::bootstrap::ensure_admin_account;
 pub(crate) use crate::intake_ws::intakes_ws_handler;
@@ -50,6 +52,6 @@ pub(crate) use crate::service_logs::{
     service_logs_page, InMemoryLogs, ServiceLogEntry,
 };
 pub(crate) use crate::system_api::{
-    afterbuy_health, api_meta, healthz, healthz_v1, mobile_app_update, openapi_json, readyz,
-    readyz_v1, scalar_ui, upload_photo, delete_uploaded_photo_by_url,
+    afterbuy_health, api_meta, healthz, mobile_app_update, openapi_json, readyz, scalar_ui,
+    upload_photo, delete_uploaded_photo_by_url,
 };

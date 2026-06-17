@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { AppFooter } from "./app-footer";
+import { readAuth } from "../../app/client-api";
+import type { AuthUser } from "../../app/client-api-types";
 import { AppSidebar } from "./app-sidebar";
+import { MobileNavigation } from "./mobile-navigation";
 
 function applySidebarPreference(collapsed: boolean) {
   if (typeof document === "undefined") return;
@@ -11,8 +13,8 @@ function applySidebarPreference(collapsed: boolean) {
 }
 
 export function AppShell({
-  title: _title,
-  subtitle: _subtitle,
+  title,
+  subtitle,
   children
 }: {
   title: string;
@@ -20,6 +22,8 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -27,6 +31,23 @@ export function AppShell({
     setSidebarCollapsed(collapsed);
     applySidebarPreference(collapsed);
     setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    const syncUser = () => {
+      const auth = readAuth();
+      setCurrentUser(auth?.user ?? null);
+    };
+
+    syncUser();
+    window.addEventListener("warehub-auth-change", syncUser);
+    window.addEventListener("focus", syncUser);
+    document.addEventListener("visibilitychange", syncUser);
+    return () => {
+      window.removeEventListener("warehub-auth-change", syncUser);
+      window.removeEventListener("focus", syncUser);
+      document.removeEventListener("visibilitychange", syncUser);
+    };
   }, []);
 
   function handleSidebarToggle() {
@@ -41,16 +62,27 @@ export function AppShell({
   return (
     <div className="wh-app-shell min-h-screen overflow-x-clip bg-[var(--wh-color-page)] text-[var(--wh-color-text)]">
       {hydrated
-        ? <AppSidebar className="hidden xl:flex" collapsed={sidebarCollapsed} onToggleCollapsed={handleSidebarToggle} />
+        ? (
+          <AppSidebar
+            className="hidden xl:flex"
+            collapsed={sidebarCollapsed}
+            currentUser={currentUser}
+            onToggleCollapsed={handleSidebarToggle}
+            onUserCleared={() => setCurrentUser(null)}
+          />
+        )
         : <aside className="wh-sidebar hidden xl:flex" aria-hidden="true" />}
       <main className="wh-main">
         <div className="wh-page-content">
-          <div className="wh-page-content__inner">
-            {children}
-            <AppFooter className="mt-auto" />
-          </div>
+          <div className="wh-page-content__inner">{children}</div>
         </div>
       </main>
+      <MobileNavigation
+        currentUser={currentUser}
+        open={mobileNavigationOpen}
+        onOpenChange={setMobileNavigationOpen}
+        onUserCleared={() => setCurrentUser(null)}
+      />
     </div>
   );
 }

@@ -699,7 +699,7 @@ function ProductEditorContent() {
 
   return (
     <AppShell title="Product Editor" subtitle="Orchestrator-only draft workspace for centralized product editing.">
-      <div className="wh-product-editor-page flex w-full flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
+      <div className="wh-product-editor-page flex w-full flex-col gap-4">
         <ProductEditorHeaderCard
           eanInput={eanInput}
           onChangeEan={setEanInput}
@@ -710,31 +710,27 @@ function ProductEditorContent() {
           foundCount={targetStats.foundCount}
           missingCount={targetStats.missingCount}
           totalCount={targetStats.totalCount}
-        />
+        >
+          <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
+            <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-1.5 overflow-x-auto rounded-[var(--radius-control)] bg-muted/30 p-1 md:min-w-0">
+              {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => (
+                <TabsTrigger
+                  key={tab.key}
+                  value={tab.key}
+                  className="relative h-10 min-w-[110px] rounded-[var(--radius-control)] border border-transparent px-3 text-xs font-semibold uppercase tracking-normal transition-colors hover:border-border/80 hover:bg-background/70 data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                >
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </ProductEditorHeaderCard>
 
         {pageError ? (
           <Card className="border-destructive/20 bg-destructive/10 text-destructive shadow-sm">
             <CardContent className="pt-0 text-sm">{pageError}</CardContent>
           </Card>
         ) : null}
-
-        <Card className="wh-product-editor-tabs-card rounded-2xl border-border bg-white shadow-[0_8px_24px_-20px_rgba(15,23,42,0.35)]">
-          <CardContent className="space-y-2 pt-3">
-            <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
-              <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-1.5 overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-1 md:min-w-0">
-                {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => (
-                  <TabsTrigger
-                    key={tab.key}
-                    value={tab.key}
-                    className="relative h-10 min-w-[110px] rounded-lg border border-transparent px-3 text-xs font-semibold uppercase tracking-[0.04em] transition hover:border-border/80 hover:bg-white/70 data-[state=active]:border-primary/35 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-1 data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-emerald-600"
-                  >
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </CardContent>
-        </Card>
 
         <ProductEditorActiveGroupPanel
           discover={discover}

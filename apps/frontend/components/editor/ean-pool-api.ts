@@ -17,10 +17,8 @@ function parseEanFromPayload(payload: Record<string, unknown> | null): string | 
 }
 
 export async function fetchEanPoolStatsCount(): Promise<number | null> {
-  const endpoints = ["/api/services/v1/ean-pool/stats/", "/api/services/ean-pool/stats/"];
-  for (const endpoint of endpoints) {
-    const response = await fetchWithTimeout(endpoint, { credentials: "include", cache: "no-store" }, 6000);
-    if (!response.ok) continue;
+  const response = await fetchWithTimeout("/api/v1/services/ean-pool/stats/", { credentials: "include", cache: "no-store" }, 6000);
+  if (response.ok) {
     const payload = (await response.json()) as Record<string, unknown>;
     const totalRaw =
       payload.total ??
@@ -42,7 +40,7 @@ export async function importEansToPool(eans: string[]): Promise<{
   errorText: string;
 }> {
   const response = await fetchWithTimeout(
-    "/api/services/ean-pool/import/",
+    "/api/v1/services/ean-pool/import/",
     {
       method: "POST",
       credentials: "include",
@@ -71,59 +69,36 @@ export async function importEansToPool(eans: string[]): Promise<{
 }
 
 export async function reserveEan(ean: string): Promise<{ response: Response; errorText: string }> {
-  const endpoints = ["/api/services/v1/ean-pool/reserve/", "/api/services/ean-pool/reserve/"];
-  let lastResponse: Response | null = null;
-  let lastErrorText = "";
-
-  for (const endpoint of endpoints) {
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ean })
-      },
-      10000
-    );
-    if (response.ok) {
-      return { response, errorText: "" };
-    }
-    lastErrorText = await response.text();
-    lastResponse = response;
+  const response = await fetchWithTimeout(
+    "/api/v1/services/ean-pool/reserve/",
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ean })
+    },
+    10000
+  );
+  if (response.ok) {
+    return { response, errorText: "" };
   }
-  if (!lastResponse) {
-    throw new Error("Reserve EAN request failed before response.");
-  }
-  return { response: lastResponse, errorText: lastErrorText };
+  return { response, errorText: await response.text() };
 }
 
 export async function takeNextFreeEan(): Promise<{ response: Response; ean: string | null; errorText: string }> {
-  const endpoints = ["/api/services/v1/ean-pool/take-next-free/", "/api/services/ean-pool/take-next-free/"];
-  let lastResponse: Response | null = null;
-  let lastErrorText = "";
-
-  for (const endpoint of endpoints) {
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})
-      },
-      10000
-    );
-    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (response.ok) {
-      return { response, ean: parseEanFromPayload(payload), errorText: "" };
-    }
-    lastErrorText = payload ? JSON.stringify(payload) : "";
-    lastResponse = response;
+  const response = await fetchWithTimeout(
+    "/api/v1/services/ean-pool/take-next-free/",
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    },
+    10000
+  );
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (response.ok) {
+    return { response, ean: parseEanFromPayload(payload), errorText: "" };
   }
-
-  if (!lastResponse) {
-    throw new Error("Take next free EAN request failed before response.");
-  }
-  return { response: lastResponse, ean: null, errorText: lastErrorText };
+  return { response, ean: null, errorText: payload ? JSON.stringify(payload) : "" };
 }

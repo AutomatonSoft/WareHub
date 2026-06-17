@@ -27,43 +27,43 @@ class ProductEditorGateway:
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
-        url = f"{self.base_url}/api/hood/items/by-ean/{ean}/"
+        url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"account": account})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def patch_hood_by_ean(self, *, ean: str, account: str, request_id: str, payload: dict) -> GatewayResult:
         headers = self._headers(request_id, content_type="application/json")
-        url = f"{self.base_url}/api/hood/items/by-ean/{ean}/"
+        url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
         response = self.http.request("PATCH", url, headers=headers, params={"account": account}, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
-        url = f"{self.base_url}/api/jv/sites/by-ean/{ean}/"
+        url = f"{self.base_url}/api/v1/jv/sites/by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"site": "JV"})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
-        url = f"{self.base_url}/api/jv/products/local-by-ean/{ean}/"
+        url = f"{self.base_url}/api/v1/jv/products/local-by-ean/{ean}/"
         response = self.http.request("GET", url, headers=headers, params={"site": "JV", "site_key": site_key})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def sync_jv_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id, content_type="application/json")
-        url = f"{self.base_url}/api/jv/products/sync-by-ean/{ean}/"
+        url = f"{self.base_url}/api/v1/jv/products/sync-by-ean/{ean}/"
         response = self.http.request("POST", url, headers=headers, params={"site": "JV", "site_key": site_key}, json={})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict) -> GatewayResult:
         headers = self._headers(request_id, content_type="application/json")
-        url = f"{self.base_url}/api/jv/batch/update-by-ean/{ean}/apply/"
+        url = f"{self.base_url}/api/v1/jv/batch/update-by-ean/{ean}/apply/"
         response = self.http.request("POST", url, headers=headers, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_batch_job_status(self, *, job_id: int, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
-        url = f"{self.base_url}/api/jv/batch/jobs/{job_id}/"
+        url = f"{self.base_url}/api/v1/jv/batch/jobs/{job_id}/"
         response = self.http.request("GET", url, headers=headers)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 

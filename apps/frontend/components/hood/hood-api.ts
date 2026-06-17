@@ -4,12 +4,12 @@ import { apiFetch } from "../../lib/api/client";
 
 type JsonBodyOf<T> = T extends { content: { "application/json": infer B } } ? B : Record<string, unknown>;
 type HoodPatchJsonBody = Record<string, unknown> &
-  JsonBodyOf<paths["/api/hood/items/by-ean/{ean}/"]["patch"]["requestBody"]>;
+  JsonBodyOf<paths["/api/v1/hood/items/by-ean/{ean}/"]["patch"]["requestBody"]>;
 type HoodDeleteBody = Record<string, unknown> &
-  JsonBodyOf<paths["/api/hood/items/by-ean/{ean}/"]["delete"]["requestBody"]>;
+  JsonBodyOf<paths["/api/v1/hood/items/by-ean/{ean}/"]["delete"]["requestBody"]>;
 
 function getHoodApiBase(): string {
-  return "/api/hood";
+  return "/api/v1/hood";
 }
 
 function buildHoodByEanUrl(ean: string, account: HoodAccount): string {
@@ -18,11 +18,7 @@ function buildHoodByEanUrl(ean: string, account: HoodAccount): string {
 
 function buildHoodByEanFallbackUrls(ean: string, account: HoodAccount): string[] {
   const encodedEan = encodeURIComponent(ean);
-  return [
-    `/api/hood/items/by-ean/${encodedEan}/?account=${account}`,
-    `/api/services/v1/hood/items/by-ean/${encodedEan}/?account=${account}`,
-    `/api/services/hood/items/by-ean/${encodedEan}/?account=${account}`
-  ];
+  return [`/api/v1/hood/items/by-ean/${encodedEan}/?account=${account}`];
 }
 
 async function parseJsonSafe(response: Response): Promise<HoodResponse> {

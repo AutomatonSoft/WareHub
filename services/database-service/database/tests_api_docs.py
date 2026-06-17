@@ -17,3 +17,19 @@ class ApiDocsTests(APITestCase):
         self.assertIn("/api/v1/afterbuy/items/search/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/items/search-web/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/orders/create/", response.data["paths"])
+        self.assertIn("tags", response.data)
+        self.assertIn("x-tagGroups", response.data)
+
+        kid_list = response.data["paths"]["/api/v1/kids/"]["get"]
+        self.assertEqual(kid_list["summary"], "List kids")
+        self.assertTrue(kid_list["description"])
+        self.assertEqual(kid_list["tags"], ["Kids"])
+        self.assertIn("401", kid_list["responses"])
+        self.assertIn("403", kid_list["responses"])
+
+        session_sync = response.data["paths"]["/api/v1/dev/session/sync/"]["get"]
+        self.assertEqual(session_sync["summary"], "Sync database-service session from backend token")
+        self.assertEqual(session_sync["tags"], ["Session"])
+        self.assertIn("security", session_sync)
+        self.assertIn("401", session_sync["responses"])
+        self.assertIn("502", session_sync["responses"])

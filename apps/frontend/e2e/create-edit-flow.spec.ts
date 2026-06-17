@@ -42,7 +42,7 @@ test("create product form can be filled and reset without backend mutations", as
 test("create product shows partial success status from orchestrator", async ({ page }) => {
   await login(page);
 
-  await page.route("**/api/orchestrator/products/*/update", async (route) => {
+  await page.route("**/api/v1/orchestrator/products/*/update", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -78,7 +78,7 @@ for (const fixture of orchestratorErrorFixtures) {
   test(`create product handles orchestrator fixture: ${fixture.name}`, async ({ page }) => {
     await login(page);
 
-    await page.route("**/api/orchestrator/products/*/update", async (route) => {
+    await page.route("**/api/v1/orchestrator/products/*/update", async (route) => {
       await route.fulfill({
         status: fixture.httpStatus,
         contentType: "application/json",

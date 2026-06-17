@@ -8,7 +8,7 @@ import {
   type SiteConnectionStatus
 } from "../../lib/marketplace-sites";
 import { Badge } from "../ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 
 type CachedSiteStatus = {
@@ -54,6 +54,12 @@ function toneClass(status: SiteConnectionStatus): string {
   if (status === "CONNECTED") return "ui-status-success";
   if (status === "NOT_FOUND") return "ui-status-warning";
   return "ui-status-danger";
+}
+
+function badgeVariant(status: SiteConnectionStatus): "success" | "warning" | "secondary" {
+  if (status === "CONNECTED") return "success";
+  if (status === "NOT_FOUND") return "warning";
+  return "secondary";
 }
 
 export function SyncStatusCard() {
@@ -105,18 +111,24 @@ export function SyncStatusCard() {
     return (
       <Card className="wh-section-card wh-dashboard__sync-card min-w-0">
         <CardHeader className="wh-section-card__header">
-          <CardTitle className="title-with-icon wh-section-card__title">
-            <span className="title-icon-chip"><RadioTower size={14} /></span>
-            Marketplace Sync Status
-          </CardTitle>
+          <div className="min-w-0">
+            <CardTitle className="title-with-icon wh-section-card__title">
+              <span className="title-icon-chip"><RadioTower aria-hidden="true" size={14} /></span>
+              Marketplace Sync Status
+            </CardTitle>
+            <CardDescription className="wh-section-card__subtitle">Latest connectivity snapshot across marketplace endpoints.</CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="wh-section-card__body wh-section-card__body--scroll">
           <div className="wh-sync-list">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={`sync-skeleton-${index}`} className="wh-sync-row">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-4 w-20" />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-40" />
+                  </div>
+                  <Skeleton className="h-6 w-20 rounded-full" />
                 </div>
               </div>
             ))}
@@ -129,27 +141,29 @@ export function SyncStatusCard() {
   return (
       <Card className="wh-section-card wh-dashboard__sync-card min-w-0">
       <CardHeader className="wh-section-card__header">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <CardTitle className="title-with-icon wh-section-card__title">
-            <span className="title-icon-chip"><RadioTower size={14} /></span>
+            <span className="title-icon-chip"><RadioTower aria-hidden="true" size={14} /></span>
             Marketplace Sync Status
           </CardTitle>
+          <CardDescription className="wh-section-card__subtitle">Latest connectivity snapshot across marketplace endpoints.</CardDescription>
+        </div>
+        <CardAction>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <Badge variant="success">Connected: {rows.connectedCount}</Badge>
             <Badge variant="warning">Not connected: {rows.notConnectedCount}</Badge>
           </div>
-        </div>
+        </CardAction>
       </CardHeader>
-      <CardContent className="wh-section-card__body">
-        <div className="wh-sync-list wh-sync-list--with-footer scrollbar-thin">
-          {rows.rows.map((sync) => (
-            <div key={sync.id} className="wh-sync-row wh-list-row">
-              <div className="flex min-h-[28px] items-center justify-between gap-3">
-                <p className="wh-sync-row__title wh-list-row__title">{sync.name}</p>
-                <div className={`inline-flex items-center gap-2 text-xs ${toneClass(sync.status)}`}>
-                  <span className="ui-status-dot" />
-                  {statusLabel(sync.status)}
-                </div>
+        <CardContent className="wh-section-card__body">
+          <div className="wh-sync-list wh-sync-list--with-footer scrollbar-thin">
+            {rows.rows.map((sync) => (
+              <div key={sync.id} className="wh-sync-row wh-list-row">
+                <div className="flex min-h-[24px] items-center justify-between gap-3">
+                  <p className="wh-sync-row__title wh-list-row__title">{sync.name}</p>
+                  <Badge variant={badgeVariant(sync.status)} className={toneClass(sync.status)}>
+                    {statusLabel(sync.status)}
+                </Badge>
               </div>
               <p className="wh-sync-row__meta wh-list-row__meta">
                 {sync.lastSync ? `Last check: ${sync.lastSync}` : statusHint(sync.status)}

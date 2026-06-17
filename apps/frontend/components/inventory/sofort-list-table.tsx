@@ -9,6 +9,7 @@ import { trackLatency, trackUiError } from "../../app/telemetry";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
+import { TableShell } from "../ui/table-shell";
 import { exportRowsToCsv, exportRowsToExcelXml } from "../shared/table/export-utils";
 import { fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList } from "./inventory-table-utils";
@@ -465,7 +466,9 @@ export function SofortListTable() {
           ) : loading ? (
             <SofortListLoadingState />
           ) : sortedRows.length === 0 ? (
-            <SofortListEmptyState clearLabel={t.clear} onReset={resetFiltersAndSearch} />
+            <TableShell bodyClassName="p-4">
+              <SofortListEmptyState clearLabel={t.clear} onReset={resetFiltersAndSearch} />
+            </TableShell>
           ) : (
             <>
               <SofortListTableShell

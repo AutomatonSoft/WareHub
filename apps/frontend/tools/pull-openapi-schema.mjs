@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const DEFAULT_SCHEMA_URL = "http://localhost:8931/api/docs/openapi";
+const DEFAULT_SCHEMA_URL = "http://localhost:8931/api/v1/docs/openapi";
 const schemaUrl = process.env.OPENAPI_SCHEMA_URL || DEFAULT_SCHEMA_URL;
 const outputPath = process.env.OPENAPI_SCHEMA_FILE || "openapi/unified-openapi.json";
 

@@ -17,7 +17,7 @@ export async function uploadProductImages(files: File[]): Promise<string[]> {
     formData.append("images", file);
   }
 
-  const response = await apiFetch("/api/services/uploads/images/", {
+  const response = await apiFetch("/api/v1/uploads/images/", {
     method: "POST",
     body: formData
   });

@@ -245,5 +245,5 @@ export function buildLocalUrl(path: string, params: Record<string, string>): str
   const query = Object.entries(params)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
-  return `/api/services${path}${query ? `?${query}` : ""}`;
+  return `/api/v1/services${path}${query ? `?${query}` : ""}`;
 }

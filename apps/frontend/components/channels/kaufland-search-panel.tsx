@@ -209,7 +209,7 @@ export function KauflandSearchPanel() {
       const debugPayload = {
         ok: response.ok,
         status: response.status,
-        endpoint: "/api/services/kaufland/products/delete/",
+        endpoint: "/api/v1/services/kaufland/products/delete/",
         request_payload: payload,
         response: parsed,
       } as KauflandResponse;
@@ -270,7 +270,7 @@ export function KauflandSearchPanel() {
       const debugPayload = {
         ok: response.ok,
         status: response.status,
-        endpoint: "/api/services/kaufland/products/create/",
+        endpoint: "/api/v1/services/kaufland/products/create/",
         request_payload: payload,
         response: parsed,
       } as KauflandResponse;
@@ -360,7 +360,7 @@ export function KauflandSearchPanel() {
       const debugPayload = {
         ok: response.ok,
         status: response.status,
-        endpoint: "/api/services/kaufland/products/ean/change/",
+        endpoint: "/api/v1/services/kaufland/products/ean/change/",
         request_payload: payload,
         response: parsed,
       } as KauflandResponse;

@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { AppShell } from "../../components/layout/app-shell";
 import { ChannelsView, type ChannelsTab } from "../../components/channels/channels-view";
-import { Card, CardContent } from "../../components/ui/card";
 import { LoadingState } from "../../components/ui/loading-state";
 
 type ChannelsPageProps = {
@@ -30,13 +29,9 @@ export default async function ChannelsPage({ searchParams }: ChannelsPageProps) 
 
   return (
     <AppShell title="Channels" subtitle="Unified search for Hood, XL/JV, Kaufland, Otto and Ebay">
-      <Card className="wh-page-card wh-channels-page shadow-sm">
-        <CardContent className="pt-0">
-          <Suspense fallback={<LoadingState title="Loading channels..." />}>
-            <ChannelsView initialTab={initialTab} />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <Suspense fallback={<LoadingState title="Loading channels..." />}>
+        <ChannelsView initialTab={initialTab} />
+      </Suspense>
     </AppShell>
   );
 }

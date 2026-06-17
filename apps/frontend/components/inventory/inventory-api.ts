@@ -2,6 +2,7 @@ import { KidDto } from "./inventory-table-utils";
 import { normalizeKidEanSummaryPayload, type KidEanSummaryModel } from "./kid-ean-summary-model";
 import type { paths } from "../../lib/api/generated/openapi-types";
 import { apiFetch } from "../../lib/api/client";
+import { resolveServicesApiBase } from "../../lib/api/services-base";
 import { readAuth } from "../../app/client-api-shared";
 import { syncDatabaseServiceSession } from "../../app/services-session";
 
@@ -19,31 +20,14 @@ type InventoryRowsFallbackResponse =
     };
 
 type PatchOrderBody =
-  paths["/api/v1/orders/{order_db_id}/"]["patch"]["requestBody"] extends {
+  paths["/api/v1/services/orders/{id}"]["patch"]["requestBody"] extends {
     content: { "application/json": infer T };
   }
     ? T
     : Record<string, unknown>;
 
 export function getServicesApiBase(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "/api/services/v1";
-  const normalized = raw.replace(/\/+$/, "");
-  if (
-    normalized === "http://localhost:8934" ||
-    normalized === "http://127.0.0.1:8934" ||
-    normalized.startsWith("http://localhost:8934/api/v1") ||
-    normalized.startsWith("http://127.0.0.1:8934/api/v1")
-  ) {
-    return "/api/services/v1";
-  }
-  if (normalized.endsWith("/services")) {
-    return `${normalized}/api/v1`;
-  }
-
-  return normalized;
+  return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 function buildServicesUrl(path: string, params: URLSearchParams): string {
   const query = params.toString();
@@ -238,25 +222,21 @@ export async function createKidItem(params: {
 }
 
 export async function fetchEanPoolCount(): Promise<number | null> {
-  const endpoints = ["/api/services/v1/ean-pool/stats/", "/api/services/ean-pool/stats/"];
+  const response = await apiFetch("/api/v1/services/ean-pool/stats/");
+  if (!response.ok) {
+    return null;
+  }
+  const payload = (await response.json()) as Record<string, unknown>;
+  const totalRaw =
+    payload.total ??
+    payload.total_count ??
+    payload.count ??
+    payload.pool_count ??
+    payload.available ??
+    payload.free;
 
-  for (const endpoint of endpoints) {
-    const response = await apiFetch(endpoint);
-    if (!response.ok) {
-      continue;
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
-    const totalRaw =
-      payload.total ??
-      payload.total_count ??
-      payload.count ??
-      payload.pool_count ??
-      payload.available ??
-      payload.free;
-
-    if (typeof totalRaw === "number" && Number.isFinite(totalRaw)) {
-      return totalRaw;
-    }
+  if (typeof totalRaw === "number" && Number.isFinite(totalRaw)) {
+    return totalRaw;
   }
 
   return null;
@@ -304,7 +284,7 @@ export async function uploadKidImages(files: File[]): Promise<string[]> {
     formData.append("images", file);
   }
 
-  const response = await apiFetch("/api/services/uploads/images/", {
+  const response = await apiFetch("/api/v1/uploads/images/", {
     method: "POST",
     body: formData
   });
@@ -346,52 +326,28 @@ function parseEanFromPayload(payload: Record<string, unknown> | null): string | 
 }
 
 export async function reservePoolEan(ean: string): Promise<{ response: Response; errorText: string }> {
-  const endpoints = ["/api/services/v1/ean-pool/reserve/", "/api/services/ean-pool/reserve/"];
-  let lastResponse: Response | null = null;
-  let lastErrorText = "";
-
-  for (const endpoint of endpoints) {
-    const response = await apiFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ean: ean.trim() })
-    });
-    if (response.ok) {
-      return { response, errorText: "" };
-    }
-    lastErrorText = await response.text();
-    lastResponse = response;
+  const response = await apiFetch("/api/v1/services/ean-pool/reserve/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ean: ean.trim() })
+  });
+  if (response.ok) {
+    return { response, errorText: "" };
   }
-
-  if (!lastResponse) {
-    throw new Error("Reserve EAN request failed before response.");
-  }
-  return { response: lastResponse, errorText: lastErrorText };
+  return { response, errorText: await response.text() };
 }
 
 export async function takeNextPoolEan(): Promise<{ response: Response; ean: string | null; errorText: string }> {
-  const endpoints = ["/api/services/v1/ean-pool/take-next-free/", "/api/services/ean-pool/take-next-free/"];
-  let lastResponse: Response | null = null;
-  let lastErrorText = "";
-
-  for (const endpoint of endpoints) {
-    const response = await apiFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
-    });
-    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (response.ok) {
-      return { response, ean: parseEanFromPayload(payload), errorText: "" };
-    }
-    lastErrorText = payload ? JSON.stringify(payload) : "";
-    lastResponse = response;
+  const response = await apiFetch("/api/v1/services/ean-pool/take-next-free/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({})
+  });
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (response.ok) {
+    return { response, ean: parseEanFromPayload(payload), errorText: "" };
   }
-
-  if (!lastResponse) {
-    throw new Error("Take next free EAN request failed before response.");
-  }
-  return { response: lastResponse, ean: null, errorText: lastErrorText };
+  return { response, ean: null, errorText: payload ? JSON.stringify(payload) : "" };
 }
 
 export type EanUsagePayload = {
@@ -405,25 +361,15 @@ export async function fetchEanUsageByEan(ean: string): Promise<EanUsagePayload> 
   if (!normalized) {
     return { pool: undefined, usages: [] };
   }
-  const endpoints = [
-    `/api/services/v1/ean-pool/${encodeURIComponent(normalized)}/usage/`,
-    `/api/services/ean-pool/${encodeURIComponent(normalized)}/usage/`
-  ];
-
-  let lastStatus = 0;
-  for (const endpoint of endpoints) {
-    const response = await apiFetch(endpoint);
-    lastStatus = response.status;
-    if (!response.ok) {
-      continue;
-    }
-    const payload = (await response.json().catch(() => ({}))) as EanUsagePayload;
-    return {
-      pool: payload.pool && typeof payload.pool === "object" ? payload.pool : undefined,
-      usages: Array.isArray(payload.usages) ? payload.usages : []
-    };
+  const response = await apiFetch(`/api/v1/services/ean-pool/${encodeURIComponent(normalized)}/usage/`);
+  if (!response.ok) {
+    throw new Error(`EAN usage request failed: HTTP ${response.status}`);
   }
-  throw new Error(`EAN usage request failed: HTTP ${lastStatus || 0}`);
+  const payload = (await response.json().catch(() => ({}))) as EanUsagePayload;
+  return {
+    pool: payload.pool && typeof payload.pool === "object" ? payload.pool : undefined,
+    usages: Array.isArray(payload.usages) ? payload.usages : []
+  };
 }
 
 export async function fetchKidEanSummary(kidId: number): Promise<KidEanSummaryModel> {

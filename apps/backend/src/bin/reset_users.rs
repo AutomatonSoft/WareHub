@@ -63,6 +63,10 @@ async fn reset_users(pool: &PgPool) {
         .execute(&mut *tx)
         .await
         .expect("failed to clear auth_tokens");
+    sqlx::query("DELETE FROM auth_refresh_sessions")
+        .execute(&mut *tx)
+        .await
+        .expect("failed to clear auth_refresh_sessions");
     sqlx::query("DELETE FROM users")
         .execute(&mut *tx)
         .await
