@@ -1,0 +1,277 @@
+server {
+  listen 8080;
+  listen [::]:8080;
+  server_name _;
+
+  # Request-level nginx errors can contain the full URI, including sensitive query values.
+  # Operational upstream status remains available in the query-free JSON access log.
+  error_log /dev/stderr crit;
+  include /etc/nginx/conf.d/trusted-proxy.conf;
+
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $remote_addr;
+  proxy_set_header X-Forwarded-Proto $proxy_forwarded_proto;
+  proxy_set_header X-Forwarded-Host $proxy_forwarded_host;
+  proxy_set_header X-Forwarded-Port $proxy_forwarded_port;
+  proxy_set_header X-Request-ID $proxy_request_id;
+  proxy_hide_header X-Request-ID;
+  proxy_hide_header Deprecation;
+  add_header X-Request-ID $proxy_request_id always;
+  add_header Deprecation $gateway_deprecation always;
+
+  error_page 502 = @api_502;
+  error_page 503 = @api_503;
+  error_page 504 = @api_504;
+
+  location @api_502 {
+    internal;
+    default_type application/json;
+    return 502 '{"code":"gateway_upstream_unavailable","message":"Upstream service is unavailable."}';
+  }
+
+  location @api_503 {
+    internal;
+    default_type application/json;
+    return 503 '{"code":"gateway_upstream_unavailable","message":"Upstream service is temporarily unavailable."}';
+  }
+
+  location @api_504 {
+    internal;
+    default_type application/json;
+    return 504 '{"code":"gateway_upstream_timeout","message":"Upstream service timed out."}';
+  }
+
+  location @frontend_502 {
+    internal;
+    default_type text/plain;
+    return 502 'Gateway request could not be completed.';
+  }
+
+  location @frontend_503 {
+    internal;
+    default_type text/plain;
+    return 503 'Gateway request could not be completed.';
+  }
+
+  location @frontend_504 {
+    internal;
+    default_type text/plain;
+    return 504 'Gateway request could not be completed.';
+  }
+
+  location = /gateway/healthz {
+    default_type application/json;
+    return 200 '{"status":"ok","service":"gateway"}';
+  }
+
+  location = /api/v1/docs/openapi {
+    proxy_pass http://frontend_upstream;
+  }
+
+  location = /api/v1/backend/intakes/ws {
+    proxy_pass http://backend_upstream/api/v1/intakes/ws;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol;
+    proxy_read_timeout 600s;
+  }
+
+  location = /api/v1/backend/uploads {
+    proxy_pass http://backend_upstream/api/v1/uploads;
+    proxy_request_buffering off;
+  }
+
+  location = /api/v1/backend/uploads/ {
+    proxy_pass http://backend_upstream/api/v1/uploads/;
+    proxy_request_buffering off;
+  }
+
+  location = /api/v1/backend {
+    proxy_pass http://backend_upstream/api/v1;
+  }
+
+  location /api/v1/backend/ {
+    proxy_pass http://backend_upstream/api/v1/;
+  }
+
+  location = /api/v1/services/uploads/images {
+    proxy_pass http://services_upstream/api/v1/uploads/images;
+    proxy_request_buffering off;
+  }
+
+  location /api/v1/services/uploads/images/ {
+    proxy_pass http://services_upstream/api/v1/uploads/images/;
+    proxy_request_buffering off;
+  }
+
+  location = /api/v1/services {
+    proxy_pass http://services_upstream/api/v1;
+  }
+
+  location /api/v1/services/ {
+    proxy_pass http://services_upstream/api/v1/;
+  }
+
+  location = /api/v1/orchestrator/healthz {
+    proxy_pass http://orchestrator_upstream/api/v1/healthz;
+  }
+
+  location = /api/v1/orchestrator/readyz {
+    proxy_pass http://orchestrator_upstream/api/v1/readyz;
+  }
+
+  location = /api/v1/orchestrator/metrics {
+    proxy_pass http://orchestrator_upstream/api/v1/metrics;
+  }
+
+  location = /api/v1/orchestrator/openapi.json {
+    proxy_pass http://orchestrator_upstream/api/v1/openapi.json;
+  }
+
+  location = /api/v1/orchestrator {
+    proxy_pass http://orchestrator_upstream;
+  }
+
+  location /api/v1/orchestrator/ {
+    proxy_pass http://orchestrator_upstream;
+  }
+
+  location = /api/v1/intakes/ws {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://backend_upstream;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol;
+    proxy_read_timeout 600s;
+  }
+
+  location = /api/v1 {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://backend_upstream;
+  }
+
+  location = /api/v1/uploads {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://backend_upstream;
+    proxy_request_buffering off;
+  }
+
+  location = /api/v1/uploads/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://backend_upstream;
+    proxy_request_buffering off;
+  }
+
+  location = /api/v1/jv {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location /api/v1/jv/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location = /api/v1/xl {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location /api/v1/xl/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location = /api/v1/hood {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location /api/v1/hood/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location = /api/v1/uploads/images {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+    proxy_request_buffering off;
+  }
+
+  location /api/v1/uploads/images/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+    proxy_request_buffering off;
+  }
+
+  location = /api/services {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream/api/v1;
+  }
+
+  location /api/services/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    rewrite ^/api/services/(.*[^/])$ /api/v1/$1/ break;
+    rewrite ^/api/services/?(.*)$ /api/v1/$1 break;
+    proxy_pass http://services_upstream;
+  }
+
+  location = /services {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream/api/v1;
+  }
+
+  location /services/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    rewrite ^/services/(.*[^/])$ /api/v1/$1/ break;
+    rewrite ^/services/?(.*)$ /api/v1/$1 break;
+    proxy_pass http://services_upstream;
+  }
+
+  location /api/v1/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://backend_upstream;
+  }
+
+  location / {
+    error_page 502 = @frontend_502;
+    error_page 503 = @frontend_503;
+    error_page 504 = @frontend_504;
+    proxy_pass http://frontend_upstream;
+  }
+}
