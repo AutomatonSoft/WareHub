@@ -88,3 +88,9 @@ services:
     image: node:24-alpine
     working_dir: /app
     command: ["sh", "-c", "sleep infinity"]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${GATEWAY_TEST_SUBNET:-172.30.250.0/24}

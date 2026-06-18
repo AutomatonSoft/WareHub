@@ -156,6 +156,14 @@ function inspectContainer(service) {
   return JSON.parse(runCommand("docker", ["inspect", composeContainerName(service)]))[0];
 }
 
+function inspectContainerByName(containerName) {
+  return JSON.parse(runCommand("docker", ["inspect", containerName]))[0];
+}
+
+function inspectNetwork(networkName) {
+  return JSON.parse(runCommand("docker", ["network", "inspect", networkName]))[0];
+}
+
 function composeNetwork(container) {
   const networks = Object.entries(container.NetworkSettings.Networks);
   const projectNetwork = networks.find(([name]) => name.startsWith(`${composeProject}_`)) ?? networks[0];
@@ -173,6 +181,31 @@ function composeNetwork(container) {
     name,
     ip: details.IPAddress
   };
+}
+
+function networkIpamSubnet(networkName) {
+  const network = inspectNetwork(networkName);
+  const ipamConfig = network.IPAM?.Config;
+  const explicitSubnet = ipamConfig?.find((config) => typeof config.Subnet === "string" && config.Subnet.length > 0);
+
+  if (!explicitSubnet) {
+    throw new Error(
+      "Gateway contract network must define an explicit IPAM subnet for deterministic DNS recreation tests."
+    );
+  }
+
+  return explicitSubnet.Subnet;
+}
+
+function containerIpInNetwork(containerName, networkName) {
+  const container = inspectContainerByName(containerName);
+  const network = container.NetworkSettings.Networks[networkName];
+
+  if (!network?.IPAddress) {
+    throw new Error(`Container ${containerName} has no IPv4 address on ${networkName}`);
+  }
+
+  return network.IPAddress;
 }
 
 function headerValues(response, headerName) {
@@ -193,6 +226,7 @@ async function recreateUpstreamWithReservedOldIp(service) {
   const upstreamBefore = inspectContainer(service);
   const upstreamIdBefore = upstreamBefore.Id;
   const oldNetwork = composeNetwork(upstreamBefore);
+  const explicitSubnet = networkIpamSubnet(oldNetwork.name);
   const reservationName = `${composeProject}-${service}-ip-reservation`;
 
   runCommandAllowFailure("docker", ["rm", "-f", reservationName]);
@@ -213,6 +247,9 @@ async function recreateUpstreamWithReservedOldIp(service) {
       "-c",
       "sleep 120"
     ]);
+    const reservationIp = containerIpInNetwork(reservationName, oldNetwork.name);
+    assert.equal(reservationIp, oldNetwork.ip);
+
     compose(["up", "-d", service]);
 
     const upstreamAfter = inspectContainer(service);
@@ -222,6 +259,8 @@ async function recreateUpstreamWithReservedOldIp(service) {
       gatewayIdBefore,
       upstreamIdBefore,
       upstreamIpBefore: oldNetwork.ip,
+      explicitSubnet,
+      reservationIp,
       upstreamIdAfter: upstreamAfter.Id,
       upstreamIpAfter: newNetwork.ip
     };
@@ -310,6 +349,10 @@ test("gateway config: static hardening requirements are present", async () => {
   assert.match(trustedProxy, /real_ip_header X-Real-IP;/);
   assert.match(testCompose, /read_only: true/);
   assert.match(testCompose, /host\.docker\.internal:host-gateway/);
+  assert.match(testCompose, /networks:/);
+  assert.match(testCompose, /ipam:/);
+  assert.match(testCompose, /subnet:/);
+  assert.match(testCompose, /\$\{GATEWAY_TEST_SUBNET:-[^}]+\}/);
 
   for (const source of [dockerfile, testCompose, stageCompose, prodCompose]) {
     assert.doesNotMatch(source, /GATEWAY_LOG_LEVEL/);
@@ -758,7 +801,7 @@ test("upstream connection failure does not write query secrets to gateway logs",
   }
 });
 
-test("gateway survives backend recreate without restart and re-resolves docker dns", async () => {
+test("gateway survives backend recreate without restart and re-resolves docker dns", async (t) => {
   const recreation = await recreateUpstreamWithReservedOldIp("backend");
 
   const response = await waitForRoute("/api/v1/backend/healthz", (candidate) => {
@@ -766,13 +809,26 @@ test("gateway survives backend recreate without restart and re-resolves docker d
   });
 
   const gatewayIdAfter = composeContainerId("gateway");
+  t.diagnostic(
+    JSON.stringify({
+      service: "backend",
+      oldContainerId: recreation.upstreamIdBefore,
+      newContainerId: recreation.upstreamIdAfter,
+      oldIp: recreation.upstreamIpBefore,
+      reservationIp: recreation.reservationIp,
+      newIp: recreation.upstreamIpAfter,
+      gatewayContainerIdBefore: recreation.gatewayIdBefore,
+      gatewayContainerIdAfter: gatewayIdAfter,
+      explicitSubnet: recreation.explicitSubnet
+    })
+  );
   assert.equal(gatewayIdAfter, recreation.gatewayIdBefore);
   assert.notEqual(recreation.upstreamIdAfter, recreation.upstreamIdBefore);
   assert.notEqual(recreation.upstreamIpAfter, recreation.upstreamIpBefore);
   assert.equal(response.body.url, "/api/v1/healthz");
 });
 
-test("gateway survives services recreate without restart and re-resolves docker dns", async () => {
+test("gateway survives services recreate without restart and re-resolves docker dns", async (t) => {
   const recreation = await recreateUpstreamWithReservedOldIp("services");
 
   const response = await waitForRoute("/api/v1/services/orders/", (candidate) => {
@@ -780,6 +836,19 @@ test("gateway survives services recreate without restart and re-resolves docker 
   });
 
   const gatewayIdAfter = composeContainerId("gateway");
+  t.diagnostic(
+    JSON.stringify({
+      service: "services",
+      oldContainerId: recreation.upstreamIdBefore,
+      newContainerId: recreation.upstreamIdAfter,
+      oldIp: recreation.upstreamIpBefore,
+      reservationIp: recreation.reservationIp,
+      newIp: recreation.upstreamIpAfter,
+      gatewayContainerIdBefore: recreation.gatewayIdBefore,
+      gatewayContainerIdAfter: gatewayIdAfter,
+      explicitSubnet: recreation.explicitSubnet
+    })
+  );
   assert.equal(gatewayIdAfter, recreation.gatewayIdBefore);
   assert.notEqual(recreation.upstreamIdAfter, recreation.upstreamIdBefore);
   assert.notEqual(recreation.upstreamIpAfter, recreation.upstreamIpBefore);
