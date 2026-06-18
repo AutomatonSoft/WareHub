@@ -12,8 +12,6 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
-    ports:
-      - "127.0.0.1:${STAGE_POSTGRES_PORT}:5432"
     volumes:
       - stage_pg_data:/var/lib/postgresql/data
 
@@ -58,8 +56,6 @@ services:
       MOBILE_STAGE_APK_URL: ${MOBILE_STAGE_APK_URL:-}
       MOBILE_PROD_APP_VERSION: ${MOBILE_PROD_APP_VERSION:-}
       MOBILE_PROD_APK_URL: ${MOBILE_PROD_APK_URL:-}
-    ports:
-      - "${STAGE_BACKEND_PORT}:8932"
 
   frontend:
     image: ${FRONTEND_IMAGE}:${FRONTEND_STAGE_TAG}
@@ -78,8 +74,6 @@ services:
       NEXT_PUBLIC_SERVICES_API_BASE_URL: ${STAGE_PUBLIC_SERVICES_API_BASE_URL}
       NEXT_PUBLIC_ANDROID_APK_URL: ${MOBILE_STAGE_APK_URL:-}
       NEXT_PUBLIC_ANDROID_APP_NAME: warehubstage
-    ports:
-      - "${STAGE_FRONTEND_PORT}:8931"
 
   gateway:
     image: ${GATEWAY_IMAGE}:${GATEWAY_STAGE_TAG}
@@ -143,8 +137,6 @@ services:
       fi;
       python manage.py runserver 0.0.0.0:8000
       "
-    ports:
-      - "${STAGE_SERVICES_PORT}:8000"
 
   orchestrator:
     image: ${ORCHESTRATOR_IMAGE}:${ORCHESTRATOR_STAGE_TAG}
@@ -166,8 +158,6 @@ services:
       timeout: 4s
       retries: 10
       start_period: 10s
-    ports:
-      - "${STAGE_ORCHESTRATOR_PORT:-8945}:8011"
     volumes:
       - stage_orchestrator_data:/app/data
 

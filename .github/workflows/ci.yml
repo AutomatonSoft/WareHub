@@ -117,6 +117,29 @@ jobs:
       - name: Show Docker Compose version
         run: docker compose version
 
+      - name: Validate deploy env template
+        shell: pwsh
+        run: ./infra/scripts/verify-required-env.ps1 -EnvFile .env.example
+
+      - name: Reject legacy deploy host-port variables
+        shell: bash
+        run: |
+          pattern='STAGE_(FRONTEND|BACKEND|POSTGRES|SERVICES|ORCHESTRATOR)_PORT|PROD_(FRONTEND|BACKEND|POSTGRES|SERVICES|ORCHESTRATOR)_PORT'
+          paths=(
+            .env.example
+            infra/.env.example
+            infra/deploy/stage
+            infra/deploy/prod
+            infra/OPS_HEALTH_VERIFICATION.md
+            infra/docs/STAGE_SMOKE_SIGNOFF_TEMPLATE.md
+            docs/runbooks/env-contract.md
+          )
+
+          if git grep -nE "$pattern" -- "${paths[@]}"; then
+            echo "Legacy deploy host-port variables remain in active files." >&2
+            exit 1
+          fi
+
       - name: Validate local dependency compose config
         run: docker compose -f infra/local/docker-compose.dev.yml config
 
@@ -128,6 +151,20 @@ jobs:
 
       - name: Validate prod compose config
         run: docker compose --env-file .env.example -f infra/deploy/prod/docker-compose.yml config
+
+      - name: Enforce gateway-only stage port publishing
+        run: >
+          python3 infra/scripts/verify-gateway-only-ports.py
+          --compose infra/deploy/stage/docker-compose.yml
+          --env-file .env.example
+          --expected-gateway-port 8940
+
+      - name: Enforce gateway-only prod port publishing
+        run: >
+          python3 infra/scripts/verify-gateway-only-ports.py
+          --compose infra/deploy/prod/docker-compose.yml
+          --env-file .env.example
+          --expected-gateway-port 8950
 
       - name: Validate gateway contract test compose config
         run: docker compose -f infra/gateway/tests/docker-compose.gateway.yml config
