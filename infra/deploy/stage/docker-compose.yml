@@ -81,6 +81,33 @@ services:
     ports:
       - "${STAGE_FRONTEND_PORT}:8931"
 
+  gateway:
+    image: ${GATEWAY_IMAGE}:${GATEWAY_STAGE_TAG}
+    restart: unless-stopped
+    read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+      services:
+        condition: service_started
+      orchestrator:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${STAGE_GATEWAY_PORT:-8940}:8080"
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=1777
+      - /var/cache/nginx:uid=101,gid=101,mode=755
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+
   mobile:
     image: ${MOBILE_IMAGE}:${MOBILE_STAGE_TAG}
     restart: unless-stopped

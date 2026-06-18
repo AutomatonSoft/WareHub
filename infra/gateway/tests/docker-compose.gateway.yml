@@ -1,0 +1,90 @@
+services:
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: infra/gateway/Dockerfile
+    read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      services:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GATEWAY_TEST_PORT:-18080}:8080"
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=1777
+      - /var/cache/nginx:uid=101,gid=101,mode=755
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/gateway/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: ["node", "/app/mock-upstream.mjs", "frontend", "8931"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8931/__health || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+    volumes:
+      - ./mock-upstream.mjs:/app/mock-upstream.mjs:ro
+
+  backend:
+    image: node:24-alpine
+    working_dir: /app
+    command: ["node", "/app/mock-upstream.mjs", "backend", "8932"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8932/__health || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+    volumes:
+      - ./mock-upstream.mjs:/app/mock-upstream.mjs:ro
+
+  services:
+    image: node:24-alpine
+    working_dir: /app
+    command: ["node", "/app/mock-upstream.mjs", "services", "8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/__health || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+    volumes:
+      - ./mock-upstream.mjs:/app/mock-upstream.mjs:ro
+
+  orchestrator:
+    image: node:24-alpine
+    working_dir: /app
+    command: ["node", "/app/mock-upstream.mjs", "orchestrator", "8011"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8011/__health || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+    volumes:
+      - ./mock-upstream.mjs:/app/mock-upstream.mjs:ro
+
+  rogue:
+    image: node:24-alpine
+    working_dir: /app
+    command: ["sh", "-c", "sleep infinity"]
