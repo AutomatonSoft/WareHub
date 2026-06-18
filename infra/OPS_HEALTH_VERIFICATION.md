@@ -56,26 +56,26 @@ Behavior:
 
 ```bash
 docker compose -f deploy/stage/docker-compose.yml --env-file .env ps
-curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${STAGE_BACKEND_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${STAGE_SERVICES_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${STAGE_SERVICES_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${STAGE_ORCHESTRATOR_PORT}/api/v1/metrics" | head
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/backend/healthz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/backend/readyz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/services/healthz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/services/readyz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/orchestrator/healthz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/orchestrator/readyz"
+curl -fsS "http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/orchestrator/metrics" | head
 ```
 
 ## 4. Prod checks
 
 ```bash
 docker compose -f deploy/prod/docker-compose.yml --env-file .env ps
-curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${PROD_BACKEND_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${PROD_SERVICES_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${PROD_SERVICES_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/healthz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/readyz"
-curl -fsS "http://127.0.0.1:${PROD_ORCHESTRATOR_PORT}/api/v1/metrics" | head
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/backend/healthz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/backend/readyz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/services/healthz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/services/readyz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/orchestrator/healthz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/orchestrator/readyz"
+curl -fsS "http://127.0.0.1:${PROD_GATEWAY_PORT:-8950}/api/v1/orchestrator/metrics" | head
 ```
 
 ## 5. Pass criteria

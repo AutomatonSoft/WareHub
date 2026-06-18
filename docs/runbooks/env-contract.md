@@ -113,8 +113,8 @@ Use a JSON file or `ConvertTo-Json` for password reset verification. Do not use 
 
 | Variable name | Owner/service | Required/optional | Default if any | Root `.env` key | Local example | Stage/prod placeholder | Secret/public/internal | Source location / usage |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `DEV_FRONTEND_PORT` | infra/local compose | Required | `8931` | `DEV_FRONTEND_PORT` | `8931` | `STAGE_FRONTEND_PORT` / `PROD_FRONTEND_PORT` | internal | `infra/local/docker-compose.dev.yml` |
-| `DEV_BACKEND_PORT` | infra/local compose | Required | `8932` | `DEV_BACKEND_PORT` | `8932` | `STAGE_BACKEND_PORT` / `PROD_BACKEND_PORT` | internal | `infra/local/docker-compose.dev.yml` |
+| `DEV_FRONTEND_PORT` | infra/local compose | Required | `8931` | `DEV_FRONTEND_PORT` | `8931` | Docker-internal `frontend:8931`; no deploy host port | internal | `infra/local/docker-compose.dev.yml` |
+| `DEV_BACKEND_PORT` | infra/local compose | Required | `8932` | `DEV_BACKEND_PORT` | `8932` | Docker-internal `backend:8932`; no deploy host port | internal | `infra/local/docker-compose.dev.yml` |
 | `DEV_POSTGRES_*` | infra/local compose | Required | local defaults | same names | `warehub` / `localhost` | `STAGE_POSTGRES_*` / `PROD_POSTGRES_*` | secret + internal | `infra/local/docker-compose.dev.yml` |
 | `DEV_RABBITMQ_*` | infra/local compose | Optional | local defaults | same names | `warehub` | no direct deploy equivalent | secret + internal | `infra/local/docker-compose.dev.yml` |
 | `MINIO_ROOT_*` | infra/local compose | Optional | `minio` / placeholder | same names | `minio` | deploy-specific secret storage | secret | `infra/local/docker-compose.dev.yml` |
