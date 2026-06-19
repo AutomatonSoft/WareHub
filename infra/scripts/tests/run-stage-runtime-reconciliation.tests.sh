@@ -12,6 +12,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 script_under_test="$repo_root/infra/scripts/run-stage-runtime-reconciliation.sh"
 workflow_under_test="$repo_root/.github/workflows/stage-runtime-reconcile.yml"
+TEST_SOURCE_COMMIT_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 failures=0
 LAST_OUTPUT=""
@@ -152,7 +153,7 @@ EOF
   live_env_sha="$(sha256sum "$live_dir/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$live_dir/docker-compose.yml" | awk '{print $1}')"
   cat > "$candidate_dir/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c
+SOURCE_COMMIT_SHA=$TEST_SOURCE_COMMIT_SHA
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
 EOF
@@ -786,7 +787,7 @@ test_metadata_duplicate_key_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$TEST_LIVE_DIR/docker-compose.yml" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c
+SOURCE_COMMIT_SHA=$TEST_SOURCE_COMMIT_SHA
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
@@ -807,7 +808,7 @@ test_metadata_unknown_key_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$TEST_LIVE_DIR/docker-compose.yml" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c
+SOURCE_COMMIT_SHA=$TEST_SOURCE_COMMIT_SHA
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
 UNEXPECTED_KEY=123
@@ -828,7 +829,7 @@ test_metadata_quoted_sha_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$TEST_LIVE_DIR/docker-compose.yml" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA="1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c"
+SOURCE_COMMIT_SHA="$TEST_SOURCE_COMMIT_SHA"
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
 EOF
@@ -848,7 +849,7 @@ test_metadata_uppercase_sha_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$TEST_LIVE_DIR/docker-compose.yml" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1D1615CA4C9BB8AE335BD2EDFF8052EF384A7D5C
+SOURCE_COMMIT_SHA=${TEST_SOURCE_COMMIT_SHA^^}
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
 EOF
@@ -868,7 +869,7 @@ test_metadata_short_sha_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   live_compose_sha="$(sha256sum "$TEST_LIVE_DIR/docker-compose.yml" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1d1615ca4c9bb8ae335bd2edff8052ef384a7d
+SOURCE_COMMIT_SHA=${TEST_SOURCE_COMMIT_SHA:0:39}
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EXPECTED_LIVE_COMPOSE_SHA256=$live_compose_sha
 EOF
@@ -887,7 +888,7 @@ test_metadata_short_sha_rejected() {
 test_metadata_missing_key_rejected_impl() {
   live_env_sha="$(sha256sum "$TEST_LIVE_DIR/.env" | awk '{print $1}')"
   cat > "$TEST_CANDIDATE_DIR/metadata.env" <<EOF
-SOURCE_COMMIT_SHA=1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c
+SOURCE_COMMIT_SHA=$TEST_SOURCE_COMMIT_SHA
 EXPECTED_LIVE_ENV_SHA256=$live_env_sha
 EOF
   (
@@ -1042,11 +1043,15 @@ test_term_during_post_validation_rolls_back_once() {
 test_backup_created_and_atomic_promotion_impl() {
   run_script_capture
   backup_dir="$(find "$TEST_BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  metadata_path="$backup_dir/metadata.txt"
   assert_rc "$EXIT_SUCCESS" &&
     [ -n "$backup_dir" ] &&
+    [[ "$(basename "$backup_dir")" == *"-${TEST_SOURCE_COMMIT_SHA:0:7}" ]] &&
     [ -f "$backup_dir/live.env" ] &&
     [ -f "$backup_dir/live.docker-compose.yml" ] &&
     [ -f "$backup_dir/volume-snapshot-before.txt" ] &&
+    [ -f "$metadata_path" ] &&
+    assert_file_contains "$metadata_path" "source_commit_sha=$TEST_SOURCE_COMMIT_SHA" &&
     [ ! -e "$TEST_LIVE_DIR/.env.reconcile-new" ] &&
     [ ! -e "$TEST_LIVE_DIR/docker-compose.yml.reconcile-new" ]
 }
@@ -1200,6 +1205,326 @@ test_secret_sentinel_not_logged() {
   with_fixture test_secret_sentinel_not_logged_impl
 }
 
+test_workflow_source_provenance_static_impl() {
+  python3 - "$workflow_under_test" <<'PY'
+import pathlib
+import re
+import sys
+
+workflow_path = pathlib.Path(sys.argv[1])
+text = workflow_path.read_text(encoding="utf-8")
+
+def require(pattern: str, haystack: str, message: str) -> None:
+    if not re.search(pattern, haystack, re.MULTILINE):
+        raise SystemExit(message)
+
+
+def find_guard_block(haystack: str, variable: str, expected_value: str) -> str:
+    pattern = re.compile(
+        rf'if\s+\[\s+"\$\{{{re.escape(variable)}:-\}}"\s+!=\s+"{re.escape(expected_value)}"\s+\];\s+then'
+        rf'(?P<body>[\s\S]*?)\n\s*fi',
+        re.MULTILINE,
+    )
+    match = pattern.search(haystack)
+    if not match:
+        raise SystemExit(f"missing {variable} guard block")
+    return match.group("body")
+
+
+def assert_guard_has_exit_one(haystack: str, variable: str, expected_value: str) -> None:
+    body = find_guard_block(haystack, variable, expected_value)
+    if not re.search(r'(^|\n)\s*exit\s+1\s*($|\n)', body, re.MULTILINE):
+        raise SystemExit(f"{variable} guard must fail closed with exit 1")
+    if re.search(r'(^|\n)\s*exit\s+0\s*($|\n)', body, re.MULTILINE):
+        raise SystemExit(f"{variable} guard must not exit 0")
+    if re.search(r'(^|\n)\s*(true|return\s+0)\s*($|\n)', body, re.MULTILINE):
+        raise SystemExit(f"{variable} guard must not continue successfully")
+
+
+def assert_manifest_contains_metadata(haystack: str) -> None:
+    pattern = re.compile(
+        r'sha256sum(?P<body>[\s\S]*?)>\s*candidate\.sha256',
+        re.MULTILINE,
+    )
+    matches = list(pattern.finditer(haystack))
+    if len(matches) != 1:
+        raise SystemExit("workflow must contain exactly one candidate.sha256 manifest generation block")
+
+    body = matches[0].group("body")
+    expected_entries = [
+        ".env",
+        "docker-compose.yml",
+        "verify-gateway-only-ports.py",
+        "run-stage-runtime-reconciliation.sh",
+        "metadata.env",
+    ]
+    for entry in expected_entries:
+        if not re.search(rf'(^|\n)\s*{re.escape(entry)}\s*(?:\\)?\s*($|\n)', body, re.MULTILINE):
+            raise SystemExit(f"candidate.sha256 input list is missing {entry}")
+
+
+def analyze(candidate_text: str) -> None:
+    required_patterns = [
+        (r'\$\{GITHUB_REF:-\}"\s*!=\s*"refs/heads/stage', "missing GITHUB_REF stage guard"),
+        (r'\$\{GITHUB_REF_NAME:-\}"\s*!=\s*"stage', "missing GITHUB_REF_NAME stage guard"),
+        (r'\$\{GITHUB_SHA:-\}"\s*=~\s*\^\[0-9a-f\]\{40\}\$', "missing lowercase GITHUB_SHA regex"),
+        (r'actual_checkout_sha="\$\(git rev-parse HEAD\)"', "missing checkout SHA capture"),
+        (r'\[ "\$actual_checkout_sha" != "\$GITHUB_SHA" \]', "missing checkout SHA equality guard"),
+        (r'SOURCE_COMMIT_SHA=\$GITHUB_SHA', "missing SOURCE_COMMIT_SHA assignment from GITHUB_SHA"),
+    ]
+
+    for pattern, message in required_patterns:
+        require(pattern, candidate_text, message)
+
+    if "STAGE_EXPECTED_SOURCE_COMMIT_SHA" in candidate_text:
+        raise SystemExit("workflow still contains STAGE_EXPECTED_SOURCE_COMMIT_SHA")
+
+    if "1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c" in candidate_text:
+        raise SystemExit("workflow still contains the historical source SHA literal")
+
+    if re.search(r"stage-runtime-reconcile:\s*\n(?:.+\n)*?\s+if:", candidate_text):
+        raise SystemExit("workflow must not use a job-level if guard for ref filtering")
+
+    assert_guard_has_exit_one(candidate_text, "GITHUB_REF", "refs/heads/stage")
+    assert_guard_has_exit_one(candidate_text, "GITHUB_REF_NAME", "stage")
+    assert_manifest_contains_metadata(candidate_text)
+
+
+def mutation_result(name: str, candidate_text: str, expected: str) -> None:
+    detected = False
+    try:
+        analyze(candidate_text)
+    except SystemExit:
+        detected = True
+
+    actual = "DETECTED" if detected else "ACCEPTED"
+    if actual != expected:
+        raise SystemExit(f"{name}: expected {expected}, got {actual}")
+
+
+analyze(text)
+
+mutation_result(
+    "WRONG_REF_WARNING_ONLY",
+    text.replace(
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "wrong ref" >&2\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "WRONG_REF_EXIT_ZERO",
+    text.replace(
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "wrong ref" >&2\n'
+        '            exit 0\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "WRONG_REF_EXIT_REMOVED",
+    text.replace(
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "WRONG_REF_NAME_EXIT_REMOVED",
+    text.replace(
+        'if [ "${GITHUB_REF_NAME:-}" != "stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF_NAME:-}" != "stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from stage" >&2\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "WRONG_REF_TRUE",
+    text.replace(
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "wrong ref" >&2\n'
+        '            true\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "WRONG_REF_RETURN_ZERO",
+    text.replace(
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2\n'
+        '            exit 1\n'
+        '          fi',
+        'if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then\n'
+        '            echo "wrong ref" >&2\n'
+        '            return 0\n'
+        '          fi',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "JOB_LEVEL_SKIP_GUARD",
+    text.replace(
+        'stage-runtime-reconcile:\n',
+        "stage-runtime-reconcile:\n  if: github.ref == 'refs/heads/stage'\n",
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_METADATA_REMOVED",
+    text.replace(
+        '              metadata.env > candidate.sha256',
+        '              > candidate.sha256',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_METADATA_AFTER_REDIRECT",
+    text.replace(
+        '              metadata.env > candidate.sha256',
+        '              > candidate.sha256\n'
+        '              metadata.env',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_METADATA_ONLY_OUTSIDE_BLOCK",
+    text.replace(
+        '              run-stage-runtime-reconciliation.sh \\\n'
+        '              metadata.env > candidate.sha256',
+        '              run-stage-runtime-reconciliation.sh > candidate.sha256',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_UNRELATED_SHA256SUM",
+    text.replace(
+        '          (\n'
+        '            cd "$candidate_dir"\n',
+        '          sha256sum metadata.env >/tmp/unrelated.sha256\n'
+        '\n'
+        '          (\n'
+        '            cd "$candidate_dir"\n',
+        1,
+    ).replace(
+        '              metadata.env > candidate.sha256',
+        '              > candidate.sha256',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_ENV_REMOVED",
+    text.replace(
+        '              .env \\\n',
+        '',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_COMPOSE_REMOVED",
+    text.replace(
+        '              docker-compose.yml \\\n',
+        '',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_VALIDATOR_REMOVED",
+    text.replace(
+        '              verify-gateway-only-ports.py \\\n',
+        '',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result(
+    "MANIFEST_HELPER_REMOVED",
+    text.replace(
+        '              run-stage-runtime-reconciliation.sh \\\n',
+        '',
+        1,
+    ),
+    "DETECTED",
+)
+
+mutation_result("CURRENT_WORKFLOW", text, "ACCEPTED")
+PY
+}
+
+test_workflow_source_provenance_static() {
+  test_workflow_source_provenance_static_impl
+}
+
+test_helper_source_provenance_static_impl() {
+  python3 - "$script_under_test" <<'PY'
+import pathlib
+import sys
+
+script_path = pathlib.Path(sys.argv[1])
+text = script_path.read_text(encoding="utf-8")
+
+if '[[ "$parsed_source_commit" =~ ^[0-9a-f]{40}$ ]]' not in text:
+    raise SystemExit("helper no longer validates SOURCE_COMMIT_SHA format")
+
+if '[ "$SOURCE_COMMIT_SHA" = "1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c" ]' in text:
+    raise SystemExit("helper still compares SOURCE_COMMIT_SHA to the historical SHA literal")
+PY
+}
+
+test_helper_source_provenance_static() {
+  test_helper_source_provenance_static_impl
+}
+
 test_workflow_exit_code_propagation_static_impl() {
   python3 - "$workflow_under_test" <<'PY'
 import pathlib
@@ -1282,6 +1607,8 @@ test_case "partial cleanup failure" test_partial_cleanup_failure
 test_case "promotion failure rollback" test_promotion_failure_rollback
 test_case "rollback failure exit code" test_rollback_failure_exit_code
 test_case "secret sentinel not logged" test_secret_sentinel_not_logged
+test_case "workflow source provenance static" test_workflow_source_provenance_static
+test_case "helper source provenance static" test_helper_source_provenance_static
 test_case "workflow exit code propagation static" test_workflow_exit_code_propagation_static
 
 if [ "$failures" -ne 0 ]; then

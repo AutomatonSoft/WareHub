@@ -28,6 +28,13 @@ confirm_stage_reconciliation=RECONCILE_STAGE_RUNTIME
 
 There are no automatic triggers.
 
+The workflow is intended to execute only from the `stage` branch ref:
+
+- `GITHUB_REF=refs/heads/stage`
+- `GITHUB_REF_NAME=stage`
+
+Any manual dispatch resolved from another ref, including a default-branch `main` copy used only for workflow registration, must fail closed before SSH key setup, candidate preparation, tar streaming, SSH, or any stage mutation.
+
 ## Safety Model
 
 The workflow reuses the same trust model as Stage Compose Preflight:
@@ -60,24 +67,33 @@ Only these keys are allowed:
 - `EXPECTED_LIVE_ENV_SHA256`
 - `EXPECTED_LIVE_COMPOSE_SHA256`
 
+`SOURCE_COMMIT_SHA` must equal the actual workflow source provenance from `github.sha`.
+The workflow validates that:
+
+- `GITHUB_SHA` matches the lowercase 40-character SHA format
+- `git rev-parse HEAD` equals `GITHUB_SHA`
+
+No hardcoded historical stage commit SHA is used.
+
 ## Workflow Summary
 
 The helper:
 
 1. Validates candidate bundle shape, checksums, metadata syntax, and live hash guards.
-2. Verifies that the candidate `.env` still matches the currently running six image refs.
-3. Verifies that the current gateway container still points at the two legacy gateway-candidate files.
-4. Creates a backup under `/opt/warehub/backups/stage/runtime-reconcile-<UTC timestamp>-<short sha>`.
-5. Prepares same-filesystem temp files in `/opt/warehub/stage` and fails closed on stale `.reconcile-new` files.
-6. Enables rollback traps before the first live rename.
-7. Atomically promotes the canonical `.env` and `docker-compose.yml`.
-8. Recreates only `gateway`.
-9. Polls localhost readiness at `http://127.0.0.1:8940/gateway/healthz`.
-10. Runs bounded public smoke checks only after localhost readiness succeeds.
-11. Verifies non-gateway container IDs stay unchanged.
-12. Verifies the pre/post volume snapshot is identical.
-13. Verifies gateway labels now point only to `/opt/warehub/stage/.env` and `/opt/warehub/stage/docker-compose.yml`.
-14. Deletes the two legacy gateway-candidate files only after validation is complete.
+2. Fails closed unless the workflow checkout is exactly the `stage` ref and `github.sha` matches the checked out commit.
+3. Verifies that the candidate `.env` still matches the currently running six image refs.
+4. Verifies that the current gateway container still points at the two legacy gateway-candidate files.
+5. Creates a backup under `/opt/warehub/backups/stage/runtime-reconcile-<UTC timestamp>-<short sha>`.
+6. Prepares same-filesystem temp files in `/opt/warehub/stage` and fails closed on stale `.reconcile-new` files.
+7. Enables rollback traps before the first live rename.
+8. Atomically promotes the canonical `.env` and `docker-compose.yml`.
+9. Recreates only `gateway`.
+10. Polls localhost readiness at `http://127.0.0.1:8940/gateway/healthz`.
+11. Runs bounded public smoke checks only after localhost readiness succeeds.
+12. Verifies non-gateway container IDs stay unchanged.
+13. Verifies the pre/post volume snapshot is identical.
+14. Verifies gateway labels now point only to `/opt/warehub/stage/.env` and `/opt/warehub/stage/docker-compose.yml`.
+15. Deletes the two legacy gateway-candidate files only after validation is complete.
 
 The only allowed Docker lifecycle command is:
 
@@ -192,6 +208,8 @@ Each backup directory stores:
 - `volume-snapshot-before.txt`
 - `checksums.sha256`
 
+`metadata.txt` preserves audit provenance, including `source_commit_sha=<github.sha>`.
+
 The backup directory uses mode `700`.
 Secret-bearing files use mode `600`.
 
@@ -228,3 +246,9 @@ This workflow is intentionally fail-closed after complete success.
 
 After successful reconciliation, the two gateway-candidate files are removed.
 A later rerun must fail because the helper requires those files and requires the live gateway container to reference them before promotion.
+
+Registration note:
+
+- a separate default-branch registration slice may be needed so GitHub can see the workflow file
+- that registration copy does not imply production execution
+- production remains out of scope for this workflow

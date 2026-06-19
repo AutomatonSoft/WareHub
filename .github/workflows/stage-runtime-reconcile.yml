@@ -32,7 +32,6 @@ jobs:
       STAGE_EXPECTED_SERVICE_COUNT: "7"
       STAGE_EXPECTED_LIVE_ENV_SHA256: 7958b74a9f1659b0521e19ca776b25489716de714e83de2448fd8aa714b55465
       STAGE_EXPECTED_LIVE_COMPOSE_SHA256: 79a279a612e858668b445158c68404aad6d9f5bb3d48fc8679a3ca7d27b3efc1
-      STAGE_EXPECTED_SOURCE_COMMIT_SHA: 1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
       EXPECTED_BACKEND_REF: ghcr.io/ravilkadev0/warehub/backend:stage-8850b9c
       EXPECTED_FRONTEND_REF: ghcr.io/ravilkadev0/warehub/frontend:stage-758bff4
@@ -83,8 +82,25 @@ jobs:
             exit 1
           fi
 
-          if [ "$(git rev-parse HEAD)" != "$STAGE_EXPECTED_SOURCE_COMMIT_SHA" ]; then
-            echo "Workflow must run from the audited source commit $STAGE_EXPECTED_SOURCE_COMMIT_SHA" >&2
+          if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then
+            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_NAME:-}" != "stage" ]; then
+            echo "Stage Runtime Reconciliation must run from stage" >&2
+            exit 1
+          fi
+
+          if ! [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA must be a lowercase 40-character SHA" >&2
+            exit 1
+          fi
+
+          actual_checkout_sha="$(git rev-parse HEAD)"
+
+          if [ "$actual_checkout_sha" != "$GITHUB_SHA" ]; then
+            echo "Checked out commit does not match GITHUB_SHA" >&2
             exit 1
           fi
 
@@ -146,7 +162,7 @@ jobs:
           cp infra/scripts/run-stage-runtime-reconciliation.sh "$candidate_dir/run-stage-runtime-reconciliation.sh"
 
           {
-            printf '%s\n' "SOURCE_COMMIT_SHA=$STAGE_EXPECTED_SOURCE_COMMIT_SHA"
+            printf '%s\n' "SOURCE_COMMIT_SHA=$GITHUB_SHA"
             printf '%s\n' "EXPECTED_LIVE_ENV_SHA256=$STAGE_EXPECTED_LIVE_ENV_SHA256"
             printf '%s\n' "EXPECTED_LIVE_COMPOSE_SHA256=$STAGE_EXPECTED_LIVE_COMPOSE_SHA256"
           } > "$candidate_dir/metadata.env"
