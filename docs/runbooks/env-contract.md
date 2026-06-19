@@ -2,13 +2,12 @@
 
 ## Purpose
 
-This runbook defines the local env contract for the WareHub monorepo.
+This runbook defines the local and deploy env contract for the WareHub monorepo.
 
-- Scope: local developer workflow only
 - Root `.env` is the only manually maintained local env file
 - Root `.env` is private and git-ignored
 - Real secret values must never be committed, printed, or copied into docs
-- Stage and prod continue to use sanitized deploy templates and runtime server env files
+- Stage and prod use sanitized deploy templates plus ignored live runtime env files
 
 ## Local Source Of Truth
 
@@ -80,19 +79,132 @@ If SMTP credentials are missing locally, local password-reset fallback logging m
 ## Local vs Deploy Mapping
 
 - Local: repo-root `.env`
-- Stage: sanitized templates in `infra/deploy/stage/` plus runtime server `.env`
+- Stage template: `infra/deploy/stage/env.stage.sanitized.template`
+- Stage live runtime: `/opt/warehub/stage/.env` on the stage host
 - Production: sanitized templates in `infra/deploy/prod/` plus runtime server `.env`
 
 Do not copy local secrets into stage/prod templates.
+Do not copy live stage/prod secrets back into the repository.
+
+## Stage Compose Preflight
+
+Stage Compose Preflight is a read-only validation workflow, not a deployment.
+
+The workflow:
+
+- reads the candidate stage env from the `STAGE_ENV_FILE` GitHub Environment secret
+- requires the `STAGE_SSH_KNOWN_HOSTS` GitHub Environment secret with trusted pinned known_hosts entries for the stage host
+- validates that env locally with `infra/scripts/verify-required-env.ps1 -InputKind Runtime`
+- sends candidate files through one tar stream into one SSH session
+- extracts candidate files only to `/tmp/warehub-stage-preflight.*` on the stage host
+- runs `docker compose config --quiet` against the candidate files
+- runs `infra/scripts/verify-gateway-only-ports.py` against the candidate files
+- verifies live `/opt/warehub/stage/.env` and `docker-compose.yml` hashes do not change
+- verifies the stage Compose project container IDs do not change
+- removes only the temporary candidate directory through a remote trap
+
+The workflow must not:
+
+- copy candidate files into `/opt/warehub/stage`
+- modify live stage files
+- restart, stop, start, pull, or recreate containers
+- print secret values
+- print candidate env hashes
+- run deployment commands
+- use dynamic `ssh-keyscan` trust bootstrap
+
+Allowed remote validation commands are limited to file checks, `tar`, `chmod`, `sha256sum --check --status`, `docker ps`, `docker compose config --quiet`, and the gateway-only port validator.
+
+Create the trusted `STAGE_SSH_KNOWN_HOSTS` value outside CI through a trusted channel. Do not promote a host key observed from an untrusted network into the trusted pin.
+
+## Stage Runtime Reconciliation
+
+Stage Runtime Reconciliation is a one-time operational repair workflow, not an application deployment.
+
+It is used only to canonicalize stage runtime files back to:
+
+- `/opt/warehub/stage/.env`
+- `/opt/warehub/stage/docker-compose.yml`
+
+while preserving the currently running application image refs.
+
+The workflow:
+
+- reads the candidate stage env from `STAGE_ENV_FILE`
+- requires the same pinned SSH trust model as Stage Compose Preflight
+- parses `metadata.env` as raw text and never executes it with `source`, `.`, or `eval`
+- validates that the candidate env still matches the currently running six image refs
+- backs up the live canonical files plus the current gateway-candidate files under `/opt/warehub/backups/stage`
+- atomically promotes the canonical live `.env` and Compose files
+- recreates only the `gateway` container
+- enables rollback traps before the first live rename and rolls back on post-mutation `INT`, `TERM`, `HUP`, or unexpected shell failure
+- polls `http://127.0.0.1:8940/gateway/healthz` before any public smoke checks with:
+  - `30` attempts
+  - `2s` interval
+  - `2s` connect timeout
+  - `5s` max time
+- verifies that non-gateway containers and persistent volumes do not change
+- captures exact pre/post volume snapshots by compose service plus mount metadata and fails on any drift
+- verifies that gateway labels point only to the canonical live files
+- deletes `/opt/warehub/stage/.env.gateway-candidate` and `/opt/warehub/stage/docker-compose.gateway-candidate.yml` only after success
+
+Stable helper exit codes:
+
+- `0` success
+- `10` failed before live mutation
+- `20` failed after live mutation and rollback succeeded
+- `30` failed after live mutation and rollback failed
+- `40` invalid input or security guard failure
+- `50` canonical runtime succeeded but legacy candidate cleanup is incomplete
+
+The workflow must not:
+
+- deploy a new application version
+- change application image refs
+- run `docker compose pull`
+- run `docker compose down`
+- recreate non-gateway services
+- touch production
+
+If post-promotion validation fails, the workflow restores the prior canonical files, restores the gateway-candidate files, recreates only `gateway` against the gateway-candidate pair, and reports rollback success or failure separately.
+
+If cleanup of the legacy gateway-candidate files becomes incomplete after the canonical runtime is already valid, the workflow keeps the canonical runtime active, preserves the backup, and exits non-zero without attempting destructive rollback.
+
+## Stage Required Env Contract
+
+Stage SMTP is required. Missing SMTP host, port, username, password, sender, or security mode is a configuration error.
+
+`PASSWORD_RESET_LOG_CODES=true` is allowed only for explicit local debugging. Stage and production must keep reset code logging disabled.
+
+`Template` validation is for committed sanitized templates. Template placeholders such as `CHANGE_ME`, `stage-CHANGE_ME`, `v0.0.0`, and `__SET_OUTSIDE_GIT__` are allowed only in this mode, but typed keys still must be valid ports, booleans, integers, or sample-rate floats.
+
+`Runtime` validation is for real candidate env content from GitHub Environment secrets. Runtime validation rejects placeholder markers and values containing `CHANGE_ME`.
+
+`BACKEND_STAGE_SENTRY_DSN` must be present in stage templates but may be empty. In runtime env it may be missing or empty; if it is non-empty it must not contain placeholder markers. Sentry sample-rate keys must be valid floats from 0 to 1 when present.
+
+When `BACKEND_UPLOAD_STORAGE_BACKEND=ftp`, the stage env must also include the FTP host, user, password, port, root directory, storage root directory, avatar directory, and public base URL.
+
+Validate the sanitized stage template from the repository root:
+
+```powershell
+./infra/scripts/tests/verify-required-env.tests.ps1
+./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/stage/env.stage.sanitized.template -Environment stage -InputKind Template
+docker compose --env-file infra/deploy/stage/env.stage.sanitized.template -f infra/deploy/stage/docker-compose.yml config --quiet
+python infra/scripts/verify-gateway-only-ports.py `
+  --compose infra/deploy/stage/docker-compose.yml `
+  --env-file infra/deploy/stage/env.stage.sanitized.template `
+  --expected-gateway-port 8940
+```
 
 ## Add A New Variable Safely
 
 1. Add the variable to the owning runtime code with a safe default or explicit required check.
 2. Add a safe placeholder to root `.env.example`.
 3. If browser-visible, prefix it with `NEXT_PUBLIC_`.
-4. Update this runbook inventory row or family pattern.
-5. Run `scripts/environment/validate-env-contract.ps1`.
-6. Validate local startup from repo root.
+4. If stage requires it, add it to `infra/deploy/stage/env.stage.sanitized.template` and the stage validator.
+5. Update this runbook inventory row or family pattern.
+6. Run `scripts/environment/validate-env-contract.ps1`.
+7. Validate local startup from repo root.
 
 ## Validation
 

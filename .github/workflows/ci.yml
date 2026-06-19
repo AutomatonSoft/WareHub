@@ -117,9 +117,13 @@ jobs:
       - name: Show Docker Compose version
         run: docker compose version
 
-      - name: Validate deploy env template
+      - name: Test required env validator
         shell: pwsh
-        run: ./infra/scripts/verify-required-env.ps1 -EnvFile .env.example
+        run: ./infra/scripts/tests/verify-required-env.tests.ps1
+
+      - name: Validate stage deploy env template
+        shell: pwsh
+        run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/stage/env.stage.sanitized.template -Environment stage -InputKind Template
 
       - name: Reject legacy deploy host-port variables
         shell: bash
@@ -147,7 +151,7 @@ jobs:
         run: docker compose -f services/database-service/docker-compose.yml config
 
       - name: Validate stage compose config
-        run: docker compose --env-file .env.example -f infra/deploy/stage/docker-compose.yml config
+        run: docker compose --env-file infra/deploy/stage/env.stage.sanitized.template -f infra/deploy/stage/docker-compose.yml config --quiet
 
       - name: Validate prod compose config
         run: docker compose --env-file .env.example -f infra/deploy/prod/docker-compose.yml config
@@ -156,7 +160,7 @@ jobs:
         run: >
           python3 infra/scripts/verify-gateway-only-ports.py
           --compose infra/deploy/stage/docker-compose.yml
-          --env-file .env.example
+          --env-file infra/deploy/stage/env.stage.sanitized.template
           --expected-gateway-port 8940
 
       - name: Enforce gateway-only prod port publishing
@@ -168,6 +172,18 @@ jobs:
 
       - name: Validate gateway contract test compose config
         run: docker compose -f infra/gateway/tests/docker-compose.gateway.yml config
+
+      - name: Bash syntax check stage runtime reconciliation helper
+        run: bash -n infra/scripts/run-stage-runtime-reconciliation.sh
+
+      - name: Run stage runtime reconciliation helper tests
+        run: bash infra/scripts/tests/run-stage-runtime-reconciliation.tests.sh
+
+      - name: Parse stage runtime reconciliation workflow YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/stage-runtime-reconcile.yml")'
 
   database-service:
     name: database-service
