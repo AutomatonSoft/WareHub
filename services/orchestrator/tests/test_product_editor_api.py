@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from src.sofort_orchestrator.api.product_editor_routes import ProductEditorDeps
 from src.sofort_orchestrator.api.routes import Deps
+from src.sofort_orchestrator.domain.models import ChannelResult, FinalStatus, JobStatus, OrchestrateResponse
 from src.sofort_orchestrator.application.orchestrator_service import OrchestratorService
 from src.sofort_orchestrator.application.product_editor_service import ProductEditorService
 from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
@@ -389,6 +390,172 @@ def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path)
     assert job_response.status_code == 200
     job_payload = job_response.json()
     assert job_payload["status"] == "queued"
+
+
+def test_product_editor_job_prefers_terminal_orchestrator_status_over_stale_live_batch(tmp_path):
+    client, gateway = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "changed_fields": ["price", "descriptions"],
+            "draft": {
+                "target_id": "JV_DE",
+                "price": "10.00",
+                "descriptions": [{"language_id": 1, "name": "Desk", "description": "<p>Desk</p>"}],
+            },
+            "selected_target_ids": ["JV_DE", "JV_AT", "JV_CO_UK"],
+        },
+    )
+    plan_id = plan_response.json()["plan_id"]
+
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_id, "confirmation": True},
+    )
+    job_id = apply_response.json()["job_id"]
+
+    command = Deps.job_store.get_job_command(job_id=job_id)
+    assert command is not None
+    assert Deps.job_store.mark_running(job_id=job_id) is True
+    Deps.job_store.mark_completed(
+        job_id=job_id,
+        result=OrchestrateResponse(
+            request_id="req-completed",
+            status=FinalStatus.SUCCESS,
+            results=[
+                ChannelResult(
+                    marketplace=command.channels[0].marketplace,
+                    target="xljv,site=JV,site_key=JV_DE",
+                    status="success",
+                    status_code=202,
+                    data=gateway.jv_batch_result,
+                )
+            ],
+        ),
+    )
+
+    def stale_pending_batch(*, job_id: int, request_id: str):
+        body = {
+            "job": {
+                "id": job_id,
+                "status": "pending",
+                "result_summary": {
+                    "total": 4,
+                    "applied": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "translation_used_sites": 0,
+                    "translation_error_sites": 0,
+                    "progress_phase": "queued",
+                    "progress_message": "Batch job queued.",
+                },
+                "items": [],
+            }
+        }
+        return type("R", (), {"status_code": 200, "body": body})()
+
+    gateway.fetch_jv_batch_job_status = stale_pending_batch
+
+    job_response = client.get(f"/api/v1/orchestrator/product-editor/jobs/{job_id}")
+    assert job_response.status_code == 200
+    job_payload = job_response.json()
+    assert job_payload["status"] == JobStatus.COMPLETED.value
+    assert job_payload["summary"]["applied"] == 3
+
+
+def test_product_editor_job_refreshes_completed_jv_job_when_stored_batch_snapshot_is_pending(tmp_path):
+    client, gateway = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "changed_fields": ["price"],
+            "draft": {
+                "target_id": "JV_DE",
+                "price": "10.00",
+            },
+            "selected_target_ids": ["JV_DE", "JV_CH", "JV_AT", "JV_CO_UK"],
+        },
+    )
+    plan_id = plan_response.json()["plan_id"]
+
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_id, "confirmation": True},
+    )
+    job_id = apply_response.json()["job_id"]
+
+    command = Deps.job_store.get_job_command(job_id=job_id)
+    assert command is not None
+    assert Deps.job_store.mark_running(job_id=job_id) is True
+    Deps.job_store.mark_completed(
+        job_id=job_id,
+        result=OrchestrateResponse(
+            request_id="req-accepted",
+            status=FinalStatus.SUCCESS,
+            results=[
+                ChannelResult(
+                    marketplace=command.channels[0].marketplace,
+                    target="xljv,site=JV,site_key=JV_DE",
+                    status="success",
+                    status_code=202,
+                    data={
+                        "status": "accepted",
+                        "job": {
+                            "id": 777,
+                            "status": "pending",
+                            "items": [
+                                {"site": "JV", "site_key": "JV_DE", "domain": "de.example", "status": "pending"},
+                                {"site": "JV", "site_key": "JV_CH", "domain": "ch.example", "status": "failed"},
+                                {"site": "JV", "site_key": "JV_AT", "domain": "at.example", "status": "pending"},
+                                {"site": "JV", "site_key": "JV_CO_UK", "domain": "uk.example", "status": "pending"},
+                            ],
+                        },
+                    },
+                )
+            ],
+        ),
+    )
+
+    def final_live_batch(*, job_id: int, request_id: str):
+        body = {
+            "job": {
+                "id": job_id,
+                "status": "failed",
+                "result_summary": {
+                    "total": 4,
+                    "applied": 0,
+                    "failed": 1,
+                    "skipped": 3,
+                    "translation_used_sites": 0,
+                    "translation_error_sites": 0,
+                    "progress_phase": "completed",
+                    "progress_message": "Batch apply completed with partial failures.",
+                },
+                "items": [
+                    {"site": "JV", "site_key": "JV_DE", "domain": "de.example", "status": "skipped"},
+                    {"site": "JV", "site_key": "JV_CH", "domain": "ch.example", "status": "failed", "error_code": "jv_batch_plan_item_failed", "error_text": "currency conversion failed"},
+                    {"site": "JV", "site_key": "JV_AT", "domain": "at.example", "status": "skipped"},
+                    {"site": "JV", "site_key": "JV_CO_UK", "domain": "uk.example", "status": "skipped"},
+                ],
+            }
+        }
+        return type("R", (), {"status_code": 200, "body": body})()
+
+    gateway.fetch_jv_batch_job_status = final_live_batch
+
+    job_response = client.get(f"/api/v1/orchestrator/product-editor/jobs/{job_id}")
+    assert job_response.status_code == 200
+    job_payload = job_response.json()
+    assert job_payload["status"] == JobStatus.FAILED.value
+    assert job_payload["summary"]["failed"] == 1
+    assert job_payload["summary"]["skipped"] == 3
+    assert [target["target_id"] for target in job_payload["targets"]] == ["JV_DE", "JV_CH", "JV_AT", "JV_CO_UK"]
+    assert job_payload["targets"][1]["status"] == "failed"
+    assert job_payload["targets"][1]["error"]["code"] == "jv_batch_plan_item_failed"
 
 
 def test_product_editor_apply_sends_updated_jv_main_category(tmp_path):

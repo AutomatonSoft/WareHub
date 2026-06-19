@@ -23,6 +23,7 @@ $processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
 $localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
 $localDependencyCacheDirectory = Join-Path $repoRoot ".venv\local-dev"
 $pythonBootstrapExecutable = $null
+$pythonBootstrapArguments = @()
 $npmExecutable = $null
 $script:StartedLogPaths = @{}
 $script:LoadedRootEnvKeys = @()
@@ -36,6 +37,7 @@ $appPlans = @(
     HealthUrl = "http://localhost:8931"
     Url = "http://localhost:8931"
     LogFileName = "frontend.log"
+    PidFileName = "frontend.pid"
   },
   @{
     Name = "backend"
@@ -45,6 +47,7 @@ $appPlans = @(
     HealthUrl = "http://localhost:8932/api/v1/healthz"
     Url = "http://localhost:8932/api/v1/healthz"
     LogFileName = "backend.log"
+    PidFileName = "backend.pid"
   },
   @{
     Name = "services"
@@ -54,6 +57,17 @@ $appPlans = @(
     HealthUrl = "http://localhost:8934/api/v1/healthz"
     Url = "http://localhost:8934/api/v1/healthz"
     LogFileName = "database-service.log"
+    PidFileName = "database-service.pid"
+  },
+  @{
+    Name = "services-jv-worker"
+    Skip = $SkipServices
+    WorkingDirectory = Join-Path $repoRoot "services\database-service"
+    Label = "Database-service JV worker"
+    HealthUrl = $null
+    Url = "background worker"
+    LogFileName = "database-service-jv-worker.log"
+    PidFileName = "database-service-jv-worker.pid"
   },
   @{
     Name = "orchestrator"
@@ -63,6 +77,7 @@ $appPlans = @(
     HealthUrl = "http://localhost:8935/api/v1/healthz"
     Url = "http://localhost:8935/api/v1/healthz"
     LogFileName = "orchestrator.log"
+    PidFileName = "orchestrator.pid"
   }
 )
 
@@ -154,12 +169,31 @@ function Assert-DockerDaemonReady {
 }
 
 function Resolve-PythonExecutable {
-  $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-  if ($pythonCommand) {
-    return $pythonCommand.Source
+  $script:pythonBootstrapArguments = @()
+
+  $python313Command = Get-Command python3.13 -ErrorAction SilentlyContinue
+  if ($python313Command) {
+    return $python313Command.Source
   }
 
-  throw "Unable to find Python on PATH."
+  $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+  if ($pyLauncher) {
+    $versionCheckOutput = @(& $pyLauncher.Source -3.13 -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and (($versionCheckOutput | Select-Object -First 1).Trim() -eq "3.13")) {
+      $script:pythonBootstrapArguments = @("-3.13")
+      return $pyLauncher.Source
+    }
+  }
+
+  $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+  if ($pythonCommand) {
+    $versionCheckOutput = @(& $pythonCommand.Source -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and (($versionCheckOutput | Select-Object -First 1).Trim() -eq "3.13")) {
+      return $pythonCommand.Source
+    }
+  }
+
+  throw "Unable to find Python 3.13 on PATH. Install Python 3.13 or make 'py -3.13' available."
 }
 
 function Resolve-NpmExecutable {
@@ -511,6 +545,15 @@ function Get-VenvPythonPath {
   return Join-Path $VenvPath "Scripts\python.exe"
 }
 
+function Test-Python313 {
+  param(
+    [Parameter(Mandatory = $true)][string]$PythonPath
+  )
+
+  $versionOutput = @(& $PythonPath -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
+  return $LASTEXITCODE -eq 0 -and (($versionOutput | Select-Object -First 1).Trim() -eq "3.13")
+}
+
 function Ensure-PythonServiceDependencies {
   param(
     [Parameter(Mandatory = $true)][hashtable]$ServicePlan
@@ -539,7 +582,9 @@ function Ensure-PythonServiceDependencies {
   if (-not (Test-Path -LiteralPath $venvPythonPath)) {
     Write-Host "$serviceName virtual environment missing; creating $venvPath"
     Ensure-Directory -Path $venvPath
-    Invoke-ExternalCommand -FilePath $pythonBootstrapExecutable -ArgumentList @("-m", "venv", $venvPath)
+    Invoke-ExternalCommand -FilePath $pythonBootstrapExecutable -ArgumentList ($pythonBootstrapArguments + @("-m", "venv", $venvPath))
+  } elseif (-not (Test-Python313 -PythonPath $venvPythonPath)) {
+    throw "$serviceName virtual environment is not using Python 3.13: $venvPythonPath. Recreate the venv with Python 3.13."
   }
 
   $currentHash = Get-CombinedFileHash -Paths $manifestPaths
@@ -864,6 +909,10 @@ function Start-LocalApps {
       $defaultLogPath = Join-Path $localDevLogDirectory $app.LogFileName
       $logPath = Reset-LocalDevLogFile -Path $defaultLogPath
       $script:StartedLogPaths[$app.Name] = $logPath
+      $pidPath = Join-Path $localDevLogDirectory $app.PidFileName
+      if (Test-Path -LiteralPath $pidPath) {
+        Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+      }
 
       $arguments = @(
         "-NoLogo"
@@ -884,7 +933,8 @@ function Start-LocalApps {
         $arguments += "-WithMigrations"
       }
 
-      Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -WindowStyle Hidden
+      $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -WindowStyle Hidden -PassThru
+      Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
       Write-Host "Started $($app.Label) in background. Log: $logPath"
     }
     return
@@ -893,6 +943,10 @@ function Start-LocalApps {
   Write-Host "Starting local apps..."
   foreach ($app in $enabledApps) {
     $script:StartedLogPaths[$app.Name] = $null
+    $pidPath = Join-Path $localDevLogDirectory $app.PidFileName
+    if (Test-Path -LiteralPath $pidPath) {
+      Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+    }
     $arguments = @(
       "-NoExit"
       "-ExecutionPolicy"
@@ -909,7 +963,8 @@ function Start-LocalApps {
       $arguments += "-WithMigrations"
     }
 
-    Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory
+    $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -PassThru
+    Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
     Write-Host "Started $($app.Label) in a new PowerShell window."
   }
 }

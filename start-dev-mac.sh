@@ -15,11 +15,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose_file="$repo_root/infra/local/docker-compose.dev.yml"
 local_dev_log_directory="$repo_root/logs/local-dev"
 
-app_names=("frontend" "backend" "services" "orchestrator")
-app_labels=("Frontend" "Backend" "Database-service" "Orchestrator")
+app_names=("frontend" "backend" "services" "services-jv-worker" "orchestrator")
+app_labels=("Frontend" "Backend" "Database-service" "Database-service JV worker" "Orchestrator")
 app_workdirs=(
   "$repo_root/apps/frontend"
   "$repo_root/apps/backend"
+  "$repo_root/services/database-service"
   "$repo_root/services/database-service"
   "$repo_root/services/orchestrator"
 )
@@ -27,15 +28,25 @@ app_urls=(
   "http://localhost:8931"
   "http://localhost:8932/api/v1/healthz"
   "http://localhost:8934/api/v1/healthz"
+  "background worker"
   "http://localhost:8935/api/v1/healthz"
 )
 app_log_filenames=(
   "frontend.log"
   "backend.log"
   "database-service.log"
+  "database-service-jv-worker.log"
   "orchestrator.log"
 )
-started_log_paths=("" "" "" "")
+app_pid_filenames=(
+  "frontend.pid"
+  "backend.pid"
+  "database-service.pid"
+  "database-service-jv-worker.pid"
+  "orchestrator.pid"
+)
+started_log_paths=("" "" "" "" "")
+started_pid_paths=("" "" "" "" "")
 
 usage() {
   cat <<'EOF'
@@ -72,17 +83,26 @@ command_exists() {
 }
 
 resolve_python() {
-  if command_exists python3; then
-    printf '%s\n' "python3"
+  if command_exists python3.13; then
+    printf '%s\n' "python3.13"
     return
+  fi
+
+  if command_exists python3; then
+    if python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1; then
+      printf '%s\n' "python3"
+      return
+    fi
   fi
 
   if command_exists python; then
-    printf '%s\n' "python"
-    return
+    if python -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1; then
+      printf '%s\n' "python"
+      return
+    fi
   fi
 
-  die "Unable to find Python. Install python3 or add python to PATH."
+  die "Unable to find Python 3.13. Install python3.13 or add a Python 3.13 executable to PATH."
 }
 
 resolve_python_for_directory() {
@@ -90,6 +110,8 @@ resolve_python_for_directory() {
   local venv_python="$working_directory/.venv/bin/python"
 
   if [[ -x "$venv_python" ]]; then
+    "$venv_python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1 \
+      || die "Existing virtualenv uses a Python version other than 3.13: $working_directory/.venv. Recreate that virtualenv with Python 3.13."
     printf '%s\n' "$venv_python"
     return
   fi
@@ -147,6 +169,8 @@ ensure_python_virtualenv() {
   local python_cmd="$2"
 
   if [[ -x "$working_directory/.venv/bin/python" ]]; then
+    "$working_directory/.venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1 \
+      || die "Existing virtualenv uses a Python version other than 3.13: $working_directory/.venv. Recreate that virtualenv with Python 3.13."
     return
   fi
 
@@ -154,7 +178,7 @@ ensure_python_virtualenv() {
     info "Creating Python virtualenv with uv in $working_directory"
     (
       cd "$working_directory"
-      uv venv
+      uv venv --python 3.13
     )
     return
   fi
@@ -409,6 +433,11 @@ ensure_local_dev_log_directory() {
   mkdir -p "$local_dev_log_directory"
 }
 
+ensure_local_sqlite_dirs() {
+  mkdir -p "$repo_root/data"
+  mkdir -p "$repo_root/services/orchestrator/data"
+}
+
 warn_if_root_env_has_nonlocal_postgres_host() {
   local root_env_path="$repo_root/.env"
   local root_host
@@ -546,9 +575,13 @@ get_command_for_app() {
         printf '%s\n' "$python_cmd manage.py runserver 0.0.0.0:8934"
       fi
       ;;
+    services-jv-worker)
+      python_cmd="$(resolve_python_for_directory "$repo_root/services/database-service")"
+      printf '%s\n' "$python_cmd manage.py run_jv_batch_worker"
+      ;;
     orchestrator)
       python_cmd="$(resolve_python_for_directory "$repo_root/services/orchestrator")"
-      printf '%s\n' "$python_cmd -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload"
+      printf '%s\n' "$python_cmd -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload --reload-dir src --reload-exclude 'data/*'"
       ;;
     *) die "Unsupported app: $app_name" ;;
   esac
@@ -564,16 +597,19 @@ start_app_in_background() {
   local app_label="$3"
   local working_directory="$4"
   local log_path="$5"
+  local pid_path="$6"
   local command_text
   local launcher_python
   local runtime_env_lines
   command_text="$(get_command_for_app "$app_name")"
   started_log_paths[$app_index]="$log_path"
+  started_pid_paths[$app_index]="$pid_path"
   launcher_python="$(resolve_python)"
   runtime_env_lines="$(build_local_runtime_env_lines)"
 
   APP_WORKING_DIRECTORY="$working_directory" \
   APP_LOG_PATH="$log_path" \
+  APP_PID_PATH="$pid_path" \
   APP_COMMAND_TEXT="$command_text" \
   APP_NAME="$app_name" \
   APP_RUNTIME_ENV_LINES="$runtime_env_lines" \
@@ -583,6 +619,7 @@ import subprocess
 
 working_directory = os.environ["APP_WORKING_DIRECTORY"]
 log_path = os.environ["APP_LOG_PATH"]
+pid_path = os.environ["APP_PID_PATH"]
 command_text = os.environ["APP_COMMAND_TEXT"]
 app_name = os.environ["APP_NAME"]
 runtime_env_lines = os.environ.get("APP_RUNTIME_ENV_LINES", "")
@@ -603,7 +640,7 @@ for raw_line in runtime_env_lines.splitlines():
     child_env[key] = value
 
 with open(os.devnull, "rb") as stdin_stream:
-    subprocess.Popen(
+    process = subprocess.Popen(
         ["bash", "-lc", shell_command],
         env=child_env,
         stdin=stdin_stream,
@@ -611,6 +648,8 @@ with open(os.devnull, "rb") as stdin_stream:
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+with open(pid_path, "w", encoding="utf-8") as pid_file:
+    pid_file.write(f"{process.pid}\n")
 PY
   info "Started $app_label in background. Log: $log_path"
 }
@@ -621,13 +660,14 @@ should_skip_app() {
     frontend) [[ "$skip_frontend" == true ]] ;;
     backend) [[ "$skip_backend" == true ]] ;;
     services) [[ "$skip_services" == true ]] ;;
+    services-jv-worker) [[ "$skip_services" == true ]] ;;
     orchestrator) [[ "$skip_orchestrator" == true ]] ;;
     *) return 1 ;;
   esac
 }
 
 start_local_apps() {
-  local enabled_count=0 index default_log_path log_path
+  local enabled_count=0 index default_log_path log_path pid_path
 
   for index in "${!app_names[@]}"; do
     if should_skip_app "${app_names[$index]}"; then
@@ -649,8 +689,22 @@ start_local_apps() {
     fi
     default_log_path="$local_dev_log_directory/${app_log_filenames[$index]}"
     log_path="$(reset_local_dev_log_file "$default_log_path")"
-    start_app_in_background "$index" "${app_names[$index]}" "${app_labels[$index]}" "${app_workdirs[$index]}" "$log_path"
+    pid_path="$local_dev_log_directory/${app_pid_filenames[$index]}"
+    rm -f "$pid_path"
+    start_app_in_background "$index" "${app_names[$index]}" "${app_labels[$index]}" "${app_workdirs[$index]}" "$log_path" "$pid_path"
   done
+}
+
+stop_pid_file_process() {
+  local pid_path="$1"
+  [[ -f "$pid_path" ]] || return 0
+  local process_id
+  process_id="$(tr -d '[:space:]' <"$pid_path")"
+  if [[ -n "$process_id" ]] && kill -0 "$process_id" 2>/dev/null; then
+    info "Stopping process PID $process_id from PID file $(basename "$pid_path")."
+    kill -TERM "$process_id" 2>/dev/null || true
+  fi
+  rm -f "$pid_path"
 }
 
 get_listening_process_ids_for_port() {
@@ -661,7 +715,7 @@ get_listening_process_ids_for_port() {
 stop_warehub_local_app_processes() {
   local ports=(8931 8932 8934 8935)
   local stopped_any=false
-  local port attempt process_ids
+  local port attempt process_ids index pid_path
 
   for port in "${ports[@]}"; do
     local port_stopped=false
@@ -691,6 +745,14 @@ stop_warehub_local_app_processes() {
       if [[ -n "$process_ids" ]]; then
         warn "Port $port still has listeners after stop attempts: $(echo "$process_ids" | paste -sd ', ' -)"
       fi
+    fi
+  done
+
+  for index in "${!app_pid_filenames[@]}"; do
+    pid_path="$local_dev_log_directory/${app_pid_filenames[$index]}"
+    if [[ -f "$pid_path" ]]; then
+      stop_pid_file_process "$pid_path"
+      stopped_any=true
     fi
   done
 
@@ -734,6 +796,12 @@ print_startup_summary() {
       fi
       info "  ${app_labels[$index]}: $log_path"
     done
+  fi
+
+  if [[ "$skip_orchestrator" == false && "$skip_services" == true ]]; then
+    info ""
+    warn "Database-service is skipped while orchestrator is running."
+    warn "Product Editor and other orchestrator flows that call database-service will fail until services are started."
   fi
 
   info ""
@@ -795,6 +863,10 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
+if [[ "$deps_only" == false && "$no_apps" == false && "$skip_orchestrator" == false && "$skip_services" == true ]]; then
+  die "Cannot run orchestrator without database-service. Remove --skip-services or add --skip-orchestrator."
+fi
+
 assert_repo_root
 assert_docker
 assert_compose_config
@@ -806,6 +878,7 @@ info "Cleaning previous WareHub local app processes..."
 stop_warehub_local_app_processes
 start_local_dependencies
 warn_if_root_env_has_nonlocal_postgres_host
+ensure_local_sqlite_dirs
 
 if [[ "$deps_only" == false && "$no_apps" == false ]]; then
   if [[ "$skip_frontend" == false ]]; then

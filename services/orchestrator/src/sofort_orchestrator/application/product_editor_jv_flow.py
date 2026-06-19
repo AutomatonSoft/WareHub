@@ -272,7 +272,7 @@ class ProductEditorJvFlow:
             raise ProductEditorJvFlowError("product_editor_job_not_found", "Product Editor job was not found.", 404, details={"job_id": job_id})
 
         batch_job_id = _extract_jv_batch_job_id(details)
-        if batch_job_id is not None:
+        if batch_job_id is not None and _should_refresh_live_jv_batch(details):
             live_batch = self.gateway.fetch_jv_batch_job_status(job_id=batch_job_id, request_id=request_id)
             if 200 <= live_batch.status_code < 300:
                 return _map_live_jv_batch_job_response(
@@ -615,6 +615,33 @@ def _extract_jv_batch_job_id(details) -> int | None:
     except (TypeError, ValueError):
         return None
     return batch_job_id if batch_job_id > 0 else None
+
+
+def _should_refresh_live_jv_batch(details) -> bool:
+    if details.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+        return True
+    if details.status is not JobStatus.COMPLETED:
+        return False
+    result = details.result
+    if result is None or not result.results:
+        return False
+    channel_data = result.results[0].data
+    return _jv_batch_payload_is_nonterminal(channel_data)
+
+
+def _jv_batch_payload_is_nonterminal(batch_body: dict) -> bool:
+    if not isinstance(batch_body, dict):
+        return False
+    batch_summary = batch_body.get("summary") if isinstance(batch_body.get("summary"), dict) else {}
+    job = batch_body.get("job") if isinstance(batch_body.get("job"), dict) else {}
+    job_status = str(job.get("status") or "").strip().lower()
+    if batch_summary:
+        return False
+    if job_status in {"pending", "queued", "running", "processing", "created"}:
+        return True
+    items = job.get("items") if isinstance(job.get("items"), list) else []
+    terminal_item_statuses = {"applied", "failed", "skipped"}
+    return any(str(item.get("status") or "").strip().lower() not in terminal_item_statuses for item in items if isinstance(item, dict))
 
 
 def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict) -> ProductEditorJobResponse:

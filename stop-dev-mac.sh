@@ -4,6 +4,14 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose_file="$repo_root/infra/local/docker-compose.dev.yml"
+local_dev_log_directory="$repo_root/logs/local-dev"
+app_pid_filenames=(
+  "frontend.pid"
+  "backend.pid"
+  "database-service.pid"
+  "database-service-jv-worker.pid"
+  "orchestrator.pid"
+)
 
 info() {
   printf '%s\n' "$*"
@@ -46,10 +54,22 @@ get_listening_process_ids_for_port() {
   lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u || true
 }
 
+stop_pid_file_process() {
+  local pid_path="$1"
+  [[ -f "$pid_path" ]] || return 0
+  local process_id
+  process_id="$(tr -d '[:space:]' <"$pid_path")"
+  if [[ -n "$process_id" ]] && kill -0 "$process_id" 2>/dev/null; then
+    info "Stopping process PID $process_id from PID file $(basename "$pid_path")."
+    kill -TERM "$process_id" 2>/dev/null || true
+  fi
+  rm -f "$pid_path"
+}
+
 stop_warehub_local_app_processes() {
   local ports=(8931 8932 8934 8935)
   local stopped_any=false
-  local port attempt process_ids
+  local port attempt process_ids pid_filename
 
   for port in "${ports[@]}"; do
     local port_stopped=false
@@ -79,6 +99,13 @@ stop_warehub_local_app_processes() {
       if [[ -n "$process_ids" ]]; then
         warn "Port $port still has listeners after stop attempts: $(echo "$process_ids" | paste -sd ', ' -)"
       fi
+    fi
+  done
+
+  for pid_filename in "${app_pid_filenames[@]}"; do
+    if [[ -f "$local_dev_log_directory/$pid_filename" ]]; then
+      stop_pid_file_process "$local_dev_log_directory/$pid_filename"
+      stopped_any=true
     fi
   done
 

@@ -57,7 +57,6 @@ def _error_response(
 
 
 @router.post("/api/v1/orchestrator/product-editor/discover")
-@router.post("/api/v1/orchestrator/product-editor/discover/")
 def product_editor_discover(
     body: ProductEditorDiscoverRequest,
     request: Request,
@@ -80,7 +79,6 @@ def product_editor_discover(
 
 
 @router.post("/api/v1/orchestrator/product-editor/load")
-@router.post("/api/v1/orchestrator/product-editor/load/")
 def product_editor_load(
     body: ProductEditorLoadRequest,
     request: Request,
@@ -117,7 +115,6 @@ def product_editor_load(
 
 
 @router.post("/api/v1/orchestrator/product-editor/plan")
-@router.post("/api/v1/orchestrator/product-editor/plan/")
 def product_editor_plan(
     body: ProductEditorPlanRequest,
     request: Request,
@@ -156,7 +153,6 @@ def product_editor_plan(
 
 
 @router.post("/api/v1/orchestrator/product-editor/apply")
-@router.post("/api/v1/orchestrator/product-editor/apply/")
 def product_editor_apply(
     body: ProductEditorApplyRequest,
     request: Request,
@@ -187,7 +183,6 @@ def product_editor_apply(
 
 
 @router.get("/api/v1/orchestrator/product-editor/jobs/{job_id}")
-@router.get("/api/v1/orchestrator/product-editor/jobs/{job_id}/")
 def product_editor_job_status(
     job_id: str,
     request: Request,
