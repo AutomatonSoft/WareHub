@@ -6,6 +6,14 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $composeFile = Join-Path $repoRoot "infra\local\docker-compose.dev.yml"
 $processHelperScript = Join-Path $repoRoot "tools\local\local-dev-processes.ps1"
+$localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
+$appPidFiles = @(
+  "frontend.pid",
+  "backend.pid",
+  "database-service.pid",
+  "database-service-jv-worker.pid",
+  "orchestrator.pid"
+)
 
 function Assert-RepoRoot {
   $current = (Resolve-Path ".").Path.TrimEnd("\")
@@ -30,6 +38,29 @@ function Assert-ProcessHelperScript {
   }
 }
 
+function Stop-BackgroundPidProcesses {
+  foreach ($pidFileName in $appPidFiles) {
+    $pidPath = Join-Path $localDevLogDirectory $pidFileName
+    if (-not (Test-Path -LiteralPath $pidPath)) {
+      continue
+    }
+
+    try {
+      $rawPid = (Get-Content -LiteralPath $pidPath -ErrorAction Stop | Select-Object -First 1).ToString().Trim()
+      $pid = 0
+      if ([int]::TryParse($rawPid, [ref]$pid) -and $pid -gt 0) {
+        $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        if ($process) {
+          Write-Host "Stopping process $($process.ProcessName) (PID $pid) from PID file $pidFileName."
+          Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+        }
+      }
+    } finally {
+      Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 Assert-RepoRoot
 Assert-Docker
 Assert-ComposeConfig
@@ -37,6 +68,7 @@ Assert-ProcessHelperScript
 . $processHelperScript
 
 Stop-WareHubLocalAppProcesses
+Stop-BackgroundPidProcesses
 
 Write-Host "Stopping WareHub local dependencies from $composeFile"
 docker compose -f $composeFile down

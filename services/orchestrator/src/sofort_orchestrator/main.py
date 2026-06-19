@@ -33,17 +33,24 @@ from .infra.settings import settings
 
 logger = logging.getLogger("sofort_orchestrator")
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO), format="%(message)s")
+_shared_http_client: HttpClient | None = None
+_ORCHESTRATOR_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ensure_sqlite_parent_dir(db_path: str) -> str:
     path = Path(db_path)
+    if not path.is_absolute():
+        path = _ORCHESTRATOR_SERVICE_ROOT / path
     if path.parent != Path():
         path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
 
 
 def _build_http_client() -> HttpClient:
-    return HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
+    global _shared_http_client
+    if _shared_http_client is None:
+        _shared_http_client = HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
+    return _shared_http_client
 
 
 def _build_service() -> OrchestratorService:
@@ -109,6 +116,17 @@ def configure_runtime_dependencies() -> None:
         ProductEditorDeps.service = _build_product_editor_service(job_store=Deps.job_store)
 
 
+def close_runtime_dependencies() -> None:
+    global _shared_http_client
+
+    if _shared_http_client is not None:
+        _shared_http_client.close()
+        _shared_http_client = None
+
+    Deps.service = None
+    ProductEditorDeps.service = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
@@ -153,6 +171,7 @@ async def lifespan(_app: FastAPI):
                 await reconciliation_scheduler_task
             except asyncio.CancelledError:
                 pass
+        close_runtime_dependencies()
 
 
 app = FastAPI(
