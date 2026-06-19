@@ -117,6 +117,59 @@ Allowed remote validation commands are limited to file checks, `tar`, `chmod`, `
 
 Create the trusted `STAGE_SSH_KNOWN_HOSTS` value outside CI through a trusted channel. Do not promote a host key observed from an untrusted network into the trusted pin.
 
+## Stage Runtime Reconciliation
+
+Stage Runtime Reconciliation is a one-time operational repair workflow, not an application deployment.
+
+It is used only to canonicalize stage runtime files back to:
+
+- `/opt/warehub/stage/.env`
+- `/opt/warehub/stage/docker-compose.yml`
+
+while preserving the currently running application image refs.
+
+The workflow:
+
+- reads the candidate stage env from `STAGE_ENV_FILE`
+- requires the same pinned SSH trust model as Stage Compose Preflight
+- parses `metadata.env` as raw text and never executes it with `source`, `.`, or `eval`
+- validates that the candidate env still matches the currently running six image refs
+- backs up the live canonical files plus the current gateway-candidate files under `/opt/warehub/backups/stage`
+- atomically promotes the canonical live `.env` and Compose files
+- recreates only the `gateway` container
+- enables rollback traps before the first live rename and rolls back on post-mutation `INT`, `TERM`, `HUP`, or unexpected shell failure
+- polls `http://127.0.0.1:8940/gateway/healthz` before any public smoke checks with:
+  - `30` attempts
+  - `2s` interval
+  - `2s` connect timeout
+  - `5s` max time
+- verifies that non-gateway containers and persistent volumes do not change
+- captures exact pre/post volume snapshots by compose service plus mount metadata and fails on any drift
+- verifies that gateway labels point only to the canonical live files
+- deletes `/opt/warehub/stage/.env.gateway-candidate` and `/opt/warehub/stage/docker-compose.gateway-candidate.yml` only after success
+
+Stable helper exit codes:
+
+- `0` success
+- `10` failed before live mutation
+- `20` failed after live mutation and rollback succeeded
+- `30` failed after live mutation and rollback failed
+- `40` invalid input or security guard failure
+- `50` canonical runtime succeeded but legacy candidate cleanup is incomplete
+
+The workflow must not:
+
+- deploy a new application version
+- change application image refs
+- run `docker compose pull`
+- run `docker compose down`
+- recreate non-gateway services
+- touch production
+
+If post-promotion validation fails, the workflow restores the prior canonical files, restores the gateway-candidate files, recreates only `gateway` against the gateway-candidate pair, and reports rollback success or failure separately.
+
+If cleanup of the legacy gateway-candidate files becomes incomplete after the canonical runtime is already valid, the workflow keeps the canonical runtime active, preserves the backup, and exits non-zero without attempting destructive rollback.
+
 ## Stage Required Env Contract
 
 Stage SMTP is required. Missing SMTP host, port, username, password, sender, or security mode is a configuration error.
