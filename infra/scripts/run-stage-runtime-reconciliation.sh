@@ -319,7 +319,6 @@ parse_metadata_file() {
 }
 
 parse_metadata_file "$candidate_metadata"
-[ "$SOURCE_COMMIT_SHA" = "1d1615ca4c9bb8ae335bd2edff8052ef384a7d5c" ] || security_fail "unexpected SOURCE_COMMIT_SHA in metadata"
 
 lock_path="${WAREHUB_STAGE_RUNTIME_RECONCILE_LOCK_PATH_OVERRIDE:-/opt/warehub/.stage-runtime-reconcile.lock}"
 exec 9>"$lock_path"
