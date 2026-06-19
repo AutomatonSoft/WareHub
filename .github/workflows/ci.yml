@@ -117,9 +117,13 @@ jobs:
       - name: Show Docker Compose version
         run: docker compose version
 
-      - name: Validate deploy env template
+      - name: Test required env validator
         shell: pwsh
-        run: ./infra/scripts/verify-required-env.ps1 -EnvFile .env.example
+        run: ./infra/scripts/tests/verify-required-env.tests.ps1
+
+      - name: Validate stage deploy env template
+        shell: pwsh
+        run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/stage/env.stage.sanitized.template -Environment stage -InputKind Template
 
       - name: Reject legacy deploy host-port variables
         shell: bash
@@ -147,7 +151,7 @@ jobs:
         run: docker compose -f services/database-service/docker-compose.yml config
 
       - name: Validate stage compose config
-        run: docker compose --env-file .env.example -f infra/deploy/stage/docker-compose.yml config
+        run: docker compose --env-file infra/deploy/stage/env.stage.sanitized.template -f infra/deploy/stage/docker-compose.yml config --quiet
 
       - name: Validate prod compose config
         run: docker compose --env-file .env.example -f infra/deploy/prod/docker-compose.yml config
@@ -156,7 +160,7 @@ jobs:
         run: >
           python3 infra/scripts/verify-gateway-only-ports.py
           --compose infra/deploy/stage/docker-compose.yml
-          --env-file .env.example
+          --env-file infra/deploy/stage/env.stage.sanitized.template
           --expected-gateway-port 8940
 
       - name: Enforce gateway-only prod port publishing

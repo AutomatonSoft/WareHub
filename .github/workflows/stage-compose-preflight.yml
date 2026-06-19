@@ -21,10 +21,73 @@ jobs:
       STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
       STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
       STAGE_DEPLOY_PATH: ${{ vars.STAGE_DEPLOY_PATH }}
-      SSH_OPTIONS: -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+      STAGE_SSH_KNOWN_HOSTS: ${{ secrets.STAGE_SSH_KNOWN_HOSTS }}
+      STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
+      STAGE_PROJECT_NAME: warehub-stage
+      STAGE_EXPECTED_GATEWAY_PORT: "8940"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate stage workflow inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            STAGE_SSH_HOST
+            STAGE_SSH_USER
+            STAGE_SSH_PORT
+            STAGE_DEPLOY_PATH
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required stage environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$STAGE_DEPLOY_PATH" != "$STAGE_EXPECTED_DEPLOY_PATH" ]; then
+            echo "STAGE_DEPLOY_PATH must be exactly $STAGE_EXPECTED_DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          if ! [[ "$STAGE_SSH_PORT" =~ ^[0-9]+$ ]]; then
+            echo "STAGE_SSH_PORT must be numeric" >&2
+            exit 1
+          fi
+
+          if [ -z "${STAGE_SSH_KNOWN_HOSTS:-}" ]; then
+            echo "Missing required stage secret: STAGE_SSH_KNOWN_HOSTS" >&2
+            exit 1
+          fi
+
+      - name: Configure pinned SSH known_hosts
+        shell: bash
+        env:
+          STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$STAGE_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          if ! ssh-keygen -F "$STAGE_SSH_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null; then
+            echo "Pinned known_hosts entry for STAGE_SSH_HOST was not found." >&2
+            exit 1
+          fi
+
+          if [ -z "${STAGE_SSH_KEY_SECRET:-}" ]; then
+            echo "Missing required stage secret: STAGE_SSH_KEY" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$HOME/.ssh/stage_ssh_key"
+          chmod 600 "$HOME/.ssh/stage_ssh_key"
 
       - name: Create temporary working directory
         id: tempdir
@@ -32,102 +95,91 @@ jobs:
         run: |
           set -euo pipefail
           temp_dir="$(mktemp -d)"
+          candidate_dir="$temp_dir/candidate"
+          mkdir -p "$candidate_dir"
           echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
+          echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare local secret and compose files
+      - name: Prepare local candidate files
         shell: bash
         env:
           STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
-          STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
         run: |
           set -euo pipefail
           umask 077
-          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
 
-          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$temp_dir/stage.env"
-          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$temp_dir/stage_ssh_key"
-          chmod 600 "$temp_dir/stage_ssh_key"
-          cp infra/deploy/stage/docker-compose.yml "$temp_dir/docker-compose.yml"
+          candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
 
-      - name: Validate required env keys
+          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
+            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
+            exit 1
+          fi
+
+          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
+          cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
+          cp infra/scripts/verify-gateway-only-ports.py "$candidate_dir/verify-gateway-only-ports.py"
+          cp infra/scripts/run-isolated-compose-preflight.sh "$candidate_dir/run-isolated-compose-preflight.sh"
+
+          chmod 600 "$candidate_dir/.env"
+          chmod 600 "$candidate_dir/docker-compose.yml"
+          chmod 600 "$candidate_dir/verify-gateway-only-ports.py"
+          chmod 700 "$candidate_dir/run-isolated-compose-preflight.sh"
+
+          (
+            cd "$candidate_dir"
+            sha256sum .env docker-compose.yml verify-gateway-only-ports.py run-isolated-compose-preflight.sh > candidate.sha256
+            chmod 600 candidate.sha256
+          )
+
+      - name: Validate candidate env contract locally
         shell: pwsh
         run: |
-          $envFile = "${{ steps.tempdir.outputs.temp_dir }}/stage.env"
-          ./infra/scripts/verify-required-env.ps1 -EnvFile $envFile
+          $envFile = "${{ steps.tempdir.outputs.candidate_dir }}/.env"
+          ./infra/scripts/verify-required-env.ps1 -EnvFile $envFile -Environment stage -InputKind Runtime
 
-      - name: Configure SSH known_hosts
+      - name: Run isolated remote compose preflight
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -p "$STAGE_SSH_PORT" "$STAGE_SSH_HOST" >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
 
-      - name: Prepare remote stage directory
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
-          ssh $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
-            "mkdir -p '$STAGE_DEPLOY_PATH' && chmod 700 '$STAGE_DEPLOY_PATH'"
+          tar -C "$candidate_dir" -cf - . | ssh \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/stage_ssh_key" \
+            -p "$STAGE_SSH_PORT" \
+            "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            'set -Eeuo pipefail
+          umask 077
+          candidate_dir="$(mktemp -d /tmp/warehub-stage-preflight.XXXXXXXX)"
+          cleanup() {
+            if [[ "${candidate_dir:-}" == /tmp/warehub-stage-preflight.* ]] && [ -d "$candidate_dir" ]; then
+              rm -rf -- "$candidate_dir"
+            fi
+          }
+          trap cleanup EXIT INT TERM HUP
 
-      - name: Copy stage env and compose file to remote host
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
-          scp $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -P "$STAGE_SSH_PORT" "$temp_dir/stage.env" \
-            "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_DEPLOY_PATH/.env"
-          scp $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -P "$STAGE_SSH_PORT" "$temp_dir/docker-compose.yml" \
-            "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_DEPLOY_PATH/docker-compose.yml"
+          tar -xf - -C "$candidate_dir"
+          cd "$candidate_dir"
 
-      - name: Run remote compose config preflight
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
-          ssh $SSH_OPTIONS -i "$temp_dir/stage_ssh_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
-            "STAGE_DEPLOY_PATH='$STAGE_DEPLOY_PATH' bash -s" <<'EOF'
-          set -euo pipefail
+          for path in .env docker-compose.yml verify-gateway-only-ports.py run-isolated-compose-preflight.sh candidate.sha256; do
+            if [ -L "$path" ]; then
+              echo "Candidate archive contains a symlink where a regular file is required." >&2
+              exit 1
+            fi
+          done
 
-          compose_file="$STAGE_DEPLOY_PATH/docker-compose.yml"
-          env_file="$STAGE_DEPLOY_PATH/.env"
-          project_name="warehub-stage"
+          chmod 600 .env docker-compose.yml verify-gateway-only-ports.py candidate.sha256
+          chmod 700 run-isolated-compose-preflight.sh
 
-          chmod 700 "$STAGE_DEPLOY_PATH"
-          chmod 600 "$env_file"
-
-          echo "Remote stage path prepared"
-          test -f "$env_file"
-          test -f "$compose_file"
-          stat -c '%a %n' "$env_file" "$compose_file"
-
-          docker --version
-          docker compose version
-
-          if ! docker compose config --help | grep -q -- '--quiet'; then
-            echo "docker compose config --quiet is not supported on the remote host; failing safely."
+          if ! sha256sum --check --status candidate.sha256; then
+            echo "Candidate transfer integrity validation failed" >&2
             exit 1
           fi
 
-          before_running_count="$(docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}' | wc -l | tr -d ' ')"
-
-          docker compose \
-            --project-name "$project_name" \
-            --env-file "$env_file" \
-            -f "$compose_file" \
-            config --quiet
-
-          docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.Names}}' || true
-
-          after_running_count="$(docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}' | wc -l | tr -d ' ')"
-
-          if [ "$before_running_count" != "$after_running_count" ]; then
-            echo "Unexpected running container count change detected for project $project_name."
-            exit 1
-          fi
-          EOF
+          ./run-isolated-compose-preflight.sh "$candidate_dir" /opt/warehub/stage warehub-stage 8940
+          '
 
       - name: Clean up local temporary files
         if: always()
@@ -135,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
-          if [ -n "$temp_dir" ] && [ -d "$temp_dir" ]; then
-            rm -rf "$temp_dir"
-          fi
 
+          if [ -n "${temp_dir:-}" ] && [[ "$temp_dir" == /tmp/* ]] && [ -d "$temp_dir" ]; then
+            rm -rf -- "$temp_dir"
+          fi
