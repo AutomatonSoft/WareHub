@@ -43,15 +43,53 @@ function New-ValidStageEnvLines {
     'STAGE_PASSWORD_RESET_LOG_CODES=false',
     'SERVICES_SECRET_KEY=placeholder-secret',
     'STAGE_RUN_MIGRATIONS_ON_STARTUP=false',
-    'STAGE_SERVICES_ALLOWED_HOSTS=stage.example.test,localhost,127.0.0.1',
+    'STAGE_SERVICES_ALLOWED_HOSTS=stage.example.test,services,localhost,127.0.0.1',
     'STAGE_BACKEND_AUTH_BASE_URL=http://backend:8932/api/v1',
     'STAGE_BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS=stage.example.test,localhost,127.0.0.1',
+    'STAGE_ORCHESTRATOR_SERVICE_AUTH_TOKEN=placeholder-secret',
+    'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=services,localhost,127.0.0.1',
     'STAGE_ORCHESTRATOR_DATABASE_SERVICE_BASE_URL=http://services:8000',
     'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS=8',
     'ORCHESTRATOR_HTTP_RETRIES=2',
     'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS=86400',
     'ORCHESTRATOR_SERVICE_NAME=sb-sofort-orchestrator-service',
     'ORCHESTRATOR_LOG_LEVEL=INFO',
+    'JV_SOURCE_DB_HOST=source.example.test',
+    'JV_SOURCE_DB_USER=source-user',
+    'JV_SOURCE_DB_PASSWORD=placeholder-secret',
+    'JV_SOURCE_DB_NAME=source_database',
+    'JV_SOURCE_DB_PORT=3306',
+    'JV_SOURCE_DB_CONNECT_RETRIES=3',
+    'JV_SOURCE_DB_PUSH_RETRIES=3',
+    'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC=8',
+    'JV_SOURCE_DB_READ_TIMEOUT_SEC=25',
+    'JV_SOURCE_DB_WRITE_TIMEOUT_SEC=25',
+    'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC=1',
+    'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC=2',
+    'JV_SOURCE_JV_DE_DB_HOST=jv-de.example.test',
+    'JV_SOURCE_JV_DE_DB_USER=jv-de-user',
+    'JV_SOURCE_JV_DE_DB_PASSWORD=placeholder-secret',
+    'JV_SOURCE_JV_DE_DB_NAME=jv_de_database',
+    'JV_SOURCE_JV_DE_DB_PORT=3306',
+    'JV_SOURCE_JV_DE_DB_PREFIX=',
+    'JV_SOURCE_JV_AT_DB_HOST=jv-at.example.test',
+    'JV_SOURCE_JV_AT_DB_USER=jv-at-user',
+    'JV_SOURCE_JV_AT_DB_PASSWORD=placeholder-secret',
+    'JV_SOURCE_JV_AT_DB_NAME=jv_at_database',
+    'JV_SOURCE_JV_AT_DB_PORT=3306',
+    'JV_SOURCE_JV_AT_DB_PREFIX=',
+    'JV_SOURCE_JV_CH_DB_HOST=jv-ch.example.test',
+    'JV_SOURCE_JV_CH_DB_USER=jv-ch-user',
+    'JV_SOURCE_JV_CH_DB_PASSWORD=placeholder-secret',
+    'JV_SOURCE_JV_CH_DB_NAME=jv_ch_database',
+    'JV_SOURCE_JV_CH_DB_PORT=3306',
+    'JV_SOURCE_JV_CH_DB_PREFIX=',
+    'JV_SOURCE_JV_CO_UK_DB_HOST=jv-co-uk.example.test',
+    'JV_SOURCE_JV_CO_UK_DB_USER=jv-co-uk-user',
+    'JV_SOURCE_JV_CO_UK_DB_PASSWORD=placeholder-secret',
+    'JV_SOURCE_JV_CO_UK_DB_NAME=jv_co_uk_database',
+    'JV_SOURCE_JV_CO_UK_DB_PORT=3306',
+    'JV_SOURCE_JV_CO_UK_DB_PREFIX=',
     'AFTERBUY_JV_LOGIN=placeholder-user',
     'AFTERBUY_JV_PASS=placeholder-secret',
     'AFTERBUY_XL_LOGIN=placeholder-user',
@@ -71,6 +109,8 @@ function New-ValidStageEnvLines {
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'MOBILE_STAGE_APP_VERSION=',
+    'MOBILE_STAGE_APK_URL=',
     'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0',
     'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0'
@@ -99,38 +139,76 @@ function New-TemplateStageEnvLines {
     'STAGE_PUBLIC_ORCHESTRATOR_API_BASE_URL=https://stage.example.test/api/v1/orchestrator',
     'STAGE_POSTGRES_DB=warehub_stage',
     'STAGE_POSTGRES_USER=warehub_stage',
-    'STAGE_POSTGRES_PASSWORD=__SET_OUTSIDE_GIT__',
-    'STAGE_SMTP_HOST=__SET_OUTSIDE_GIT__',
+    'STAGE_POSTGRES_PASSWORD=**SET_OUTSIDE_GIT**',
+    'STAGE_SMTP_HOST=**SET_OUTSIDE_GIT**',
     'STAGE_SMTP_PORT=587',
-    'STAGE_SMTP_USERNAME=__SET_OUTSIDE_GIT__',
-    'STAGE_SMTP_PASSWORD=__SET_OUTSIDE_GIT__',
+    'STAGE_SMTP_USERNAME=**SET_OUTSIDE_GIT**',
+    'STAGE_SMTP_PASSWORD=**SET_OUTSIDE_GIT**',
     'STAGE_SMTP_FROM=no-reply@example.test',
     'STAGE_SMTP_INSECURE=false',
     'STAGE_PASSWORD_RESET_CODE_TTL_MINUTES=10',
     'STAGE_PASSWORD_RESET_LOG_CODES=false',
-    'SERVICES_SECRET_KEY=__SET_OUTSIDE_GIT__',
+    'SERVICES_SECRET_KEY=**SET_OUTSIDE_GIT**',
     'STAGE_RUN_MIGRATIONS_ON_STARTUP=false',
-    'STAGE_SERVICES_ALLOWED_HOSTS=stage.example.test,localhost,127.0.0.1',
+    'STAGE_SERVICES_ALLOWED_HOSTS=stage.example.test,services,localhost,127.0.0.1',
     'STAGE_BACKEND_AUTH_BASE_URL=http://backend:8932/api/v1',
     'STAGE_BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS=stage.example.test,localhost,127.0.0.1',
+    'STAGE_ORCHESTRATOR_SERVICE_AUTH_TOKEN=**SET_OUTSIDE_GIT**',
+    'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=services,localhost,127.0.0.1',
     'STAGE_ORCHESTRATOR_DATABASE_SERVICE_BASE_URL=http://services:8000',
     'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS=8',
     'ORCHESTRATOR_HTTP_RETRIES=2',
     'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS=86400',
     'ORCHESTRATOR_SERVICE_NAME=sb-sofort-orchestrator-service',
     'ORCHESTRATOR_LOG_LEVEL=INFO',
-    'AFTERBUY_JV_LOGIN=__SET_OUTSIDE_GIT__',
-    'AFTERBUY_JV_PASS=__SET_OUTSIDE_GIT__',
-    'AFTERBUY_XL_LOGIN=__SET_OUTSIDE_GIT__',
-    'AFTERBUY_XL_PASS=__SET_OUTSIDE_GIT__',
+    'JV_SOURCE_DB_HOST=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_DB_USER=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_DB_PASSWORD=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_DB_NAME=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_DB_PORT=3306',
+    'JV_SOURCE_DB_CONNECT_RETRIES=3',
+    'JV_SOURCE_DB_PUSH_RETRIES=3',
+    'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC=8',
+    'JV_SOURCE_DB_READ_TIMEOUT_SEC=25',
+    'JV_SOURCE_DB_WRITE_TIMEOUT_SEC=25',
+    'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC=1',
+    'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC=2',
+    'JV_SOURCE_JV_DE_DB_HOST=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_DE_DB_USER=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_DE_DB_PASSWORD=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_DE_DB_NAME=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_DE_DB_PORT=3306',
+    'JV_SOURCE_JV_DE_DB_PREFIX=',
+    'JV_SOURCE_JV_AT_DB_HOST=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_AT_DB_USER=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_AT_DB_PASSWORD=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_AT_DB_NAME=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_AT_DB_PORT=3306',
+    'JV_SOURCE_JV_AT_DB_PREFIX=',
+    'JV_SOURCE_JV_CH_DB_HOST=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CH_DB_USER=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CH_DB_PASSWORD=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CH_DB_NAME=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CH_DB_PORT=3306',
+    'JV_SOURCE_JV_CH_DB_PREFIX=',
+    'JV_SOURCE_JV_CO_UK_DB_HOST=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CO_UK_DB_USER=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CO_UK_DB_PASSWORD=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CO_UK_DB_NAME=**SET_OUTSIDE_GIT**',
+    'JV_SOURCE_JV_CO_UK_DB_PORT=3306',
+    'JV_SOURCE_JV_CO_UK_DB_PREFIX=',
+    'AFTERBUY_JV_LOGIN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_JV_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_XL_LOGIN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_XL_PASS=**SET_OUTSIDE_GIT**',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
     'AFTERBUY_JV_COOKIE_CACHE_FILE=/tmp/afterbuy-jv-cookie-cache.json',
     'AFTERBUY_XL_COOKIE_CACHE_FILE=/tmp/afterbuy-xl-cookie-cache.json',
     'BACKEND_UPLOAD_STORAGE_BACKEND=ftp',
-    'BACKEND_UPLOAD_FTP_HOST=__SET_OUTSIDE_GIT__',
-    'BACKEND_UPLOAD_FTP_USER=__SET_OUTSIDE_GIT__',
-    'BACKEND_UPLOAD_FTP_PASS=__SET_OUTSIDE_GIT__',
+    'BACKEND_UPLOAD_FTP_HOST=**SET_OUTSIDE_GIT**',
+    'BACKEND_UPLOAD_FTP_USER=**SET_OUTSIDE_GIT**',
+    'BACKEND_UPLOAD_FTP_PASS=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_PORT=21',
     'BACKEND_UPLOAD_FTP_ROOT_DIR=warehub',
     'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR=storage',
@@ -138,6 +216,8 @@ function New-TemplateStageEnvLines {
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'MOBILE_STAGE_APP_VERSION=',
+    'MOBILE_STAGE_APK_URL=',
     'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0',
     'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0'
@@ -166,21 +246,33 @@ function Invoke-Validator {
     [string]$InputKind = 'Runtime'
   )
 
-  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-  $startInfo.FileName = $pwsh
-  $startInfo.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$validator`" -EnvFile `"$Path`" -Environment stage -InputKind $InputKind"
-  $startInfo.UseShellExecute = $false
-  $startInfo.RedirectStandardOutput = $true
-  $startInfo.RedirectStandardError = $true
-  $process = [System.Diagnostics.Process]::Start($startInfo)
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
+  $stdoutPath = Join-Path $tempRoot ("stdout-" + [guid]::NewGuid().ToString('N') + ".log")
+  $stderrPath = Join-Path $tempRoot ("stderr-" + [guid]::NewGuid().ToString('N') + ".log")
 
-  return [pscustomobject]@{
-    ExitCode = $process.ExitCode
-    Stdout = $stdout
-    Stderr = $stderr
+  try {
+    $process = Start-Process `
+      -FilePath $pwsh `
+      -ArgumentList @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $validator,
+        '-EnvFile', $Path,
+        '-Environment', 'stage',
+        '-InputKind', $InputKind
+      ) `
+      -NoNewWindow `
+      -Wait `
+      -PassThru `
+      -RedirectStandardOutput $stdoutPath `
+      -RedirectStandardError $stderrPath
+
+    return [pscustomobject]@{
+      ExitCode = $process.ExitCode
+      Stdout = if (Test-Path -LiteralPath $stdoutPath) { [System.IO.File]::ReadAllText($stdoutPath) } else { '' }
+      Stderr = if (Test-Path -LiteralPath $stderrPath) { [System.IO.File]::ReadAllText($stderrPath) } else { '' }
+    }
+  } finally {
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }
 }
 
@@ -319,6 +411,13 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-set-outside-git.env' $lines)) 1
   }
 
+  Test-Case 'Runtime star SET_OUTSIDE_GIT placeholder fails' {
+    $lines = New-ValidStageEnvLines | ForEach-Object {
+      if ($_ -match '^AFTERBUY_JV_LOGIN=') { 'AFTERBUY_JV_LOGIN=**SET_OUTSIDE_GIT**' } else { $_ }
+    }
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-star-set-outside-git.env' $lines)) 1
+  }
+
   Test-Case 'Runtime stage CHANGE_ME placeholder fails' {
     $lines = New-ValidStageEnvLines | ForEach-Object {
       if ($_ -match '^BACKEND_STAGE_TAG=') { 'BACKEND_STAGE_TAG=stage-CHANGE_ME' } else { $_ }
@@ -338,9 +437,34 @@ try {
 
   Test-Case 'Template type-invalid port fails' {
     $lines = New-TemplateStageEnvLines | ForEach-Object {
-      if ($_ -match '^STAGE_GATEWAY_PORT=') { 'STAGE_GATEWAY_PORT=not-a-port' } else { $_ }
+      if ($_ -match '^JV_SOURCE_JV_DE_DB_PORT=') { 'JV_SOURCE_JV_DE_DB_PORT=not-a-port' } else { $_ }
     }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'template-invalid-port.env' $lines) -InputKind Template) 1
+  }
+
+  Test-Case 'contains validation requires services host in services allowed hosts' {
+    $lines = New-ValidStageEnvLines | ForEach-Object {
+      if ($_ -match '^STAGE_SERVICES_ALLOWED_HOSTS=') { 'STAGE_SERVICES_ALLOWED_HOSTS=stage.example.test,localhost,127.0.0.1' } else { $_ }
+    }
+    $result = Invoke-Validator (Write-Fixture 'missing-services-host.env' $lines)
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'STAGE_SERVICES_ALLOWED_HOSTS') 'Missing services host was not reported.'
+  }
+
+  Test-Case 'contains validation requires services host in orchestrator allowed hosts' {
+    $lines = New-ValidStageEnvLines | ForEach-Object {
+      if ($_ -match '^STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=') { 'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=localhost,127.0.0.1' } else { $_ }
+    }
+    $result = Invoke-Validator (Write-Fixture 'missing-orchestrator-services-host.env' $lines)
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS') 'Missing orchestrator services host was not reported.'
+  }
+
+  Test-Case 'Template non-negative integer validation covers JV source retries' {
+    $lines = New-TemplateStageEnvLines | ForEach-Object {
+      if ($_ -match '^JV_SOURCE_DB_CONNECT_RETRIES=') { 'JV_SOURCE_DB_CONNECT_RETRIES=-1' } else { $_ }
+    }
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'template-invalid-jv-integer.env' $lines) -InputKind Template) 1
   }
 
   Test-Case 'Template type-invalid boolean fails' {
@@ -362,6 +486,13 @@ try {
       if ($_ -match '^BACKEND_STAGE_SENTRY_DSN=') { 'BACKEND_STAGE_SENTRY_DSN=' } else { $_ }
     }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'template-sentry-empty.env' $lines) -InputKind Template) 0
+  }
+
+  Test-Case 'Template missing compose-referenced optional-empty key fails' {
+    $lines = New-TemplateStageEnvLines | Where-Object { $_ -notmatch '^MOBILE_STAGE_APK_URL=' }
+    $result = Invoke-Validator (Write-Fixture 'template-missing-optional-empty.env' $lines) -InputKind Template
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'MOBILE_STAGE_APK_URL') 'Missing compose-referenced optional-empty key was not reported.'
   }
 
   Test-Case 'optional Sentry DSN Runtime missing passes' {
