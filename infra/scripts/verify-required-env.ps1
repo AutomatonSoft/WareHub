@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
 }
 
 if ($Environment -ne 'stage') {
-  Write-Error "Required env validation is currently defined for stage only."
+  Write-Error 'Required env validation is currently defined for stage only.'
   exit 1
 }
 
@@ -55,12 +55,46 @@ $stageRequiredKeys = @(
   'STAGE_SERVICES_ALLOWED_HOSTS',
   'STAGE_BACKEND_AUTH_BASE_URL',
   'STAGE_BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS',
+  'STAGE_ORCHESTRATOR_SERVICE_AUTH_TOKEN',
+  'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS',
   'STAGE_ORCHESTRATOR_DATABASE_SERVICE_BASE_URL',
   'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS',
   'ORCHESTRATOR_HTTP_RETRIES',
   'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS',
   'ORCHESTRATOR_SERVICE_NAME',
   'ORCHESTRATOR_LOG_LEVEL',
+  'JV_SOURCE_DB_HOST',
+  'JV_SOURCE_DB_USER',
+  'JV_SOURCE_DB_PASSWORD',
+  'JV_SOURCE_DB_NAME',
+  'JV_SOURCE_DB_PORT',
+  'JV_SOURCE_DB_CONNECT_RETRIES',
+  'JV_SOURCE_DB_PUSH_RETRIES',
+  'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC',
+  'JV_SOURCE_DB_READ_TIMEOUT_SEC',
+  'JV_SOURCE_DB_WRITE_TIMEOUT_SEC',
+  'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC',
+  'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC',
+  'JV_SOURCE_JV_DE_DB_HOST',
+  'JV_SOURCE_JV_DE_DB_USER',
+  'JV_SOURCE_JV_DE_DB_PASSWORD',
+  'JV_SOURCE_JV_DE_DB_NAME',
+  'JV_SOURCE_JV_DE_DB_PORT',
+  'JV_SOURCE_JV_AT_DB_HOST',
+  'JV_SOURCE_JV_AT_DB_USER',
+  'JV_SOURCE_JV_AT_DB_PASSWORD',
+  'JV_SOURCE_JV_AT_DB_NAME',
+  'JV_SOURCE_JV_AT_DB_PORT',
+  'JV_SOURCE_JV_CH_DB_HOST',
+  'JV_SOURCE_JV_CH_DB_USER',
+  'JV_SOURCE_JV_CH_DB_PASSWORD',
+  'JV_SOURCE_JV_CH_DB_NAME',
+  'JV_SOURCE_JV_CH_DB_PORT',
+  'JV_SOURCE_JV_CO_UK_DB_HOST',
+  'JV_SOURCE_JV_CO_UK_DB_USER',
+  'JV_SOURCE_JV_CO_UK_DB_PASSWORD',
+  'JV_SOURCE_JV_CO_UK_DB_NAME',
+  'JV_SOURCE_JV_CO_UK_DB_PORT',
   'AFTERBUY_JV_LOGIN',
   'AFTERBUY_JV_PASS',
   'AFTERBUY_XL_LOGIN',
@@ -72,19 +106,38 @@ $stageRequiredKeys = @(
   'BACKEND_UPLOAD_STORAGE_BACKEND'
 )
 
-$ftpRequiredKeys = @(
-  'BACKEND_UPLOAD_FTP_HOST',
-  'BACKEND_UPLOAD_FTP_USER',
-  'BACKEND_UPLOAD_FTP_PASS',
-  'BACKEND_UPLOAD_FTP_PORT',
-  'BACKEND_UPLOAD_FTP_ROOT_DIR',
-  'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR',
-  'BACKEND_UPLOAD_FTP_AVATAR_DIR',
-  'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL'
+$optionalPresentKeys = @(
+  'BACKEND_STAGE_SENTRY_DSN',
+  'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE'
 )
 
-$optionalPresentKeys = @(
-  'BACKEND_STAGE_SENTRY_DSN'
+$optionalEmptyKeys = @(
+  'MOBILE_STAGE_APP_VERSION',
+  'MOBILE_STAGE_APK_URL',
+  'JV_SOURCE_JV_DE_DB_PREFIX',
+  'JV_SOURCE_JV_AT_DB_PREFIX',
+  'JV_SOURCE_JV_CH_DB_PREFIX',
+  'JV_SOURCE_JV_CO_UK_DB_PREFIX'
+)
+
+$conditionallyRequiredKeySets = @(
+  @{
+    TriggerKey = 'BACKEND_UPLOAD_STORAGE_BACKEND'
+    TriggerValues = @('ftp')
+    RequiredKeys = @(
+      'BACKEND_UPLOAD_FTP_HOST',
+      'BACKEND_UPLOAD_FTP_USER',
+      'BACKEND_UPLOAD_FTP_PASS',
+      'BACKEND_UPLOAD_FTP_PORT',
+      'BACKEND_UPLOAD_FTP_ROOT_DIR',
+      'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR',
+      'BACKEND_UPLOAD_FTP_AVATAR_DIR',
+      'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL'
+    )
+  }
 )
 
 $sampleRateKeys = @(
@@ -97,7 +150,12 @@ $sampleRateKeys = @(
 $portKeys = @(
   'STAGE_GATEWAY_PORT',
   'STAGE_SMTP_PORT',
-  'BACKEND_UPLOAD_FTP_PORT'
+  'BACKEND_UPLOAD_FTP_PORT',
+  'JV_SOURCE_DB_PORT',
+  'JV_SOURCE_JV_DE_DB_PORT',
+  'JV_SOURCE_JV_AT_DB_PORT',
+  'JV_SOURCE_JV_CH_DB_PORT',
+  'JV_SOURCE_JV_CO_UK_DB_PORT'
 )
 
 $booleanKeys = @(
@@ -110,12 +168,28 @@ $integerKeys = @(
   'STAGE_PASSWORD_RESET_CODE_TTL_MINUTES',
   'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS',
   'ORCHESTRATOR_HTTP_RETRIES',
-  'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS'
+  'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS',
+  'JV_SOURCE_DB_CONNECT_RETRIES',
+  'JV_SOURCE_DB_PUSH_RETRIES',
+  'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC',
+  'JV_SOURCE_DB_READ_TIMEOUT_SEC',
+  'JV_SOURCE_DB_WRITE_TIMEOUT_SEC',
+  'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC',
+  'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC'
+)
+
+$containsRequirements = @(
+  @{ Key = 'STAGE_SERVICES_ALLOWED_HOSTS'; RequiredValue = 'services' },
+  @{ Key = 'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS'; RequiredValue = 'services' }
+)
+
+$stageComposeExternalKeys = @(
 )
 
 $runtimePlaceholderMarkers = @(
   'CHANGE_ME',
   '__SET_OUTSIDE_GIT__',
+  '**SET_OUTSIDE_GIT**',
   'TODO',
   'TODO_UNKNOWN',
   'TODO_SECRET'
@@ -156,42 +230,117 @@ function Add-Finding {
   [void]$Findings.Add($Message)
 }
 
-$findings = [System.Collections.Generic.List[string]]::new()
-$values = @{}
-$lineNumbers = @{}
-$firstLineNumbers = @{}
+function Get-EnvEntries {
+  param(
+    [string[]]$Lines,
+    [System.Collections.Generic.List[string]]$Findings
+  )
 
+  $values = @{}
+  $lineNumbers = @{}
+  $firstLineNumbers = @{}
+
+  for ($index = 0; $index -lt $Lines.Count; $index++) {
+    $lineNumber = $index + 1
+    $line = $Lines[$index]
+
+    if ($lineNumber -eq 1) {
+      $line = $line.TrimStart([char]0xFEFF)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') {
+      continue
+    }
+
+    if ($line -notmatch '^\s*(?:export\s+)?(?<key>[A-Za-z_][A-Za-z0-9_]*)=(?<value>.*)$') {
+      if ($null -ne $Findings) {
+        Add-Finding $Findings "Malformed env line at line $lineNumber."
+      }
+      continue
+    }
+
+    $key = $matches.key
+    $value = $matches.value
+
+    if ($values.ContainsKey($key)) {
+      if ($null -ne $Findings) {
+        Add-Finding $Findings "Duplicate key $key on line $lineNumber; first defined on line $($firstLineNumbers[$key])."
+      }
+      continue
+    }
+
+    $values[$key] = $value
+    $lineNumbers[$key] = $lineNumber
+    $firstLineNumbers[$key] = $lineNumber
+  }
+
+  return @{
+    Values = $values
+    LineNumbers = $lineNumbers
+  }
+}
+
+function Get-StageComposeReferencedKeys {
+  param([string]$ComposePath)
+
+  $content = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $ComposePath))
+  $matches = [System.Text.RegularExpressions.Regex]::Matches(
+    $content,
+    '(?<!\$)\$\{(?<key>[A-Z0-9_]+)(?::[-?][^}]*)?\}'
+  )
+
+  $keys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+  foreach ($match in $matches) {
+    $key = $match.Groups['key'].Value
+    if ($key) {
+      [void]$keys.Add($key)
+    }
+  }
+
+  return $keys
+}
+
+$findings = [System.Collections.Generic.List[string]]::new()
 $content = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $EnvFile))
 $lines = [System.Text.RegularExpressions.Regex]::Split($content, "`r`n|`n|`r")
+$parsedEnv = Get-EnvEntries -Lines $lines -Findings $findings
+$values = $parsedEnv.Values
+$lineNumbers = $parsedEnv.LineNumbers
 
-for ($index = 0; $index -lt $lines.Count; $index++) {
-  $lineNumber = $index + 1
-  $line = $lines[$index]
+$scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$stageComposePath = Join-Path $scriptDirectory '..\deploy\stage\docker-compose.yml'
+$composeReferencedKeys = Get-StageComposeReferencedKeys -ComposePath $stageComposePath
 
-  if ($lineNumber -eq 1) {
-    $line = $line.TrimStart([char]0xFEFF)
+$validatorCoveredKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($key in $stageRequiredKeys + $optionalPresentKeys + $optionalEmptyKeys) {
+  [void]$validatorCoveredKeys.Add($key)
+}
+foreach ($conditionalSet in $conditionallyRequiredKeySets) {
+  foreach ($key in $conditionalSet.RequiredKeys) {
+    [void]$validatorCoveredKeys.Add($key)
   }
+}
 
-  if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') {
+foreach ($key in $composeReferencedKeys) {
+  if ($stageComposeExternalKeys -contains $key) {
     continue
   }
 
-  if ($line -notmatch '^\s*(?:export\s+)?(?<key>[A-Za-z_][A-Za-z0-9_]*)=(?<value>.*)$') {
-    Add-Finding $findings "Malformed env line at line $lineNumber."
-    continue
+  if (-not $validatorCoveredKeys.Contains($key)) {
+    Add-Finding $findings "Stage compose references env key $key, but verify-required-env.ps1 does not classify it."
   }
+}
 
-  $key = $matches.key
-  $value = $matches.value
+if ($InputKind -eq 'Template') {
+  foreach ($key in $composeReferencedKeys) {
+    if ($stageComposeExternalKeys -contains $key) {
+      continue
+    }
 
-  if ($values.ContainsKey($key)) {
-    Add-Finding $findings "Duplicate key $key on line $lineNumber; first defined on line $($firstLineNumbers[$key])."
-    continue
+    if (-not $values.ContainsKey($key)) {
+      Add-Finding $findings "Stage compose references env key $key, but the template does not define it."
+    }
   }
-
-  $values[$key] = $value
-  $lineNumbers[$key] = $lineNumber
-  $firstLineNumbers[$key] = $lineNumber
 }
 
 $requiredKeys = [System.Collections.Generic.List[string]]::new()
@@ -199,16 +348,26 @@ foreach ($key in $stageRequiredKeys) {
   [void]$requiredKeys.Add($key)
 }
 
-if ($values.ContainsKey('BACKEND_UPLOAD_STORAGE_BACKEND')) {
-  $storageBackend = ConvertTo-ComparableValue $values['BACKEND_UPLOAD_STORAGE_BACKEND']
-  if ($storageBackend -eq 'ftp') {
-    foreach ($key in $ftpRequiredKeys) {
+foreach ($conditionalSet in $conditionallyRequiredKeySets) {
+  if (-not $values.ContainsKey($conditionalSet.TriggerKey)) {
+    continue
+  }
+
+  $triggerValue = ConvertTo-ComparableValue $values[$conditionalSet.TriggerKey]
+  if ($conditionalSet.TriggerValues -contains $triggerValue) {
+    foreach ($key in $conditionalSet.RequiredKeys) {
       [void]$requiredKeys.Add($key)
     }
   }
 }
 
 foreach ($key in $optionalPresentKeys) {
+  if ($InputKind -eq 'Template' -and -not $values.ContainsKey($key)) {
+    Add-Finding $findings "Missing required env key $key."
+  }
+}
+
+foreach ($key in $optionalEmptyKeys) {
   if ($InputKind -eq 'Template' -and -not $values.ContainsKey($key)) {
     Add-Finding $findings "Missing required env key $key."
   }
@@ -231,7 +390,7 @@ foreach ($key in $requiredKeys) {
   }
 }
 
-foreach ($key in $optionalPresentKeys) {
+foreach ($key in $optionalPresentKeys + $optionalEmptyKeys) {
   if ($InputKind -ne 'Runtime' -or -not $values.ContainsKey($key)) {
     continue
   }
@@ -296,6 +455,23 @@ foreach ($key in $integerKeys) {
   $parsed = 0
   if (-not [int]::TryParse($integer, [ref]$parsed) -or $parsed -lt 0) {
     Add-Finding $findings "Env key $key must be a non-negative integer on line $($lineNumbers[$key])."
+  }
+}
+
+foreach ($requirement in $containsRequirements) {
+  $key = $requirement.Key
+  if (-not $values.ContainsKey($key)) {
+    continue
+  }
+
+  $actualValues = @(
+    (ConvertTo-ComparableValue $values[$key]).Split(',') |
+      ForEach-Object { $_.Trim().ToLowerInvariant() } |
+      Where-Object { $_ }
+  )
+
+  if ($actualValues -notcontains $requirement.RequiredValue.ToLowerInvariant()) {
+    Add-Finding $findings "Env key $key must contain '$($requirement.RequiredValue)' on line $($lineNumbers[$key])."
   }
 }
 
