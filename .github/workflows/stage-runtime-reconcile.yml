@@ -30,15 +30,15 @@ jobs:
       STAGE_PROJECT_NAME: warehub-stage
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
       STAGE_EXPECTED_SERVICE_COUNT: "7"
-      STAGE_EXPECTED_LIVE_ENV_SHA256: 7958b74a9f1659b0521e19ca776b25489716de714e83de2448fd8aa714b55465
-      STAGE_EXPECTED_LIVE_COMPOSE_SHA256: 79a279a612e858668b445158c68404aad6d9f5bb3d48fc8679a3ca7d27b3efc1
+      STAGE_EXPECTED_LIVE_ENV_SHA256: d7659eacde47c66e3f97bb37ec3ab0968a1d3393420b3958b062e4c0e708e895
+      STAGE_EXPECTED_LIVE_COMPOSE_SHA256: 4bf826a83cde3a3e8db606340a89ab4c8b8210a83ba9fb0738086f61669e7fb6
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
       EXPECTED_BACKEND_REF: ghcr.io/ravilkadev0/warehub/backend:stage-8850b9c
       EXPECTED_FRONTEND_REF: ghcr.io/ravilkadev0/warehub/frontend:stage-758bff4
       EXPECTED_GATEWAY_REF: ghcr.io/ravilkadev0/warehub/gateway:stage-758bff4
       EXPECTED_MOBILE_REF: ghcr.io/ravilkadev0/warehub/mobile:stage-8850b9c
-      EXPECTED_SERVICES_REF: ghcr.io/ravilkadev0/warehub/services:stage-8850b9c
-      EXPECTED_ORCHESTRATOR_REF: ghcr.io/ravilkadev0/warehub/orchestrator:stage-8850b9c
+      EXPECTED_SERVICES_REF: ghcr.io/ravilkadev0/warehub/services:stage-0501327
+      EXPECTED_ORCHESTRATOR_REF: ghcr.io/ravilkadev0/warehub/orchestrator:stage-0501327
     steps:
       - name: Checkout
         uses: actions/checkout@v4
