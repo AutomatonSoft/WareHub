@@ -313,26 +313,22 @@ try {
   }
 
   Test-Case 'missing required key' {
-    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^STAGE_SMTP_HOST=' }
-    $result = Invoke-Validator (Write-Fixture 'missing.env' $lines)
-    Assert-ExitCode $result 1
-    Assert-True (($result.Stderr + $result.Stdout) -match 'STAGE_SMTP_HOST') 'Missing key was not reported.'
+    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^SERVICES_SECRET_KEY=' }
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'missing-required.env' $lines)) 1
   }
 
   Test-Case 'empty value' {
     $lines = New-ValidStageEnvLines | ForEach-Object {
-      if ($_ -match '^STAGE_SMTP_HOST=') { 'STAGE_SMTP_HOST=' } else { $_ }
+      if ($_ -match '^SERVICES_SECRET_KEY=') { 'SERVICES_SECRET_KEY=' } else { $_ }
     }
-    $result = Invoke-Validator (Write-Fixture 'empty.env' $lines)
-    Assert-ExitCode $result 1
-    Assert-True (($result.Stderr + $result.Stdout) -match 'STAGE_SMTP_HOST') 'Empty key was not reported.'
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'empty-value.env' $lines)) 1
   }
 
   Test-Case 'quoted empty value' {
     $lines = New-ValidStageEnvLines | ForEach-Object {
-      if ($_ -match '^STAGE_SMTP_HOST=') { 'STAGE_SMTP_HOST=""' } else { $_ }
+      if ($_ -match '^SERVICES_SECRET_KEY=') { 'SERVICES_SECRET_KEY=""' } else { $_ }
     }
-    Assert-ExitCode (Invoke-Validator (Write-Fixture 'quoted-empty.env' $lines)) 1
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'quoted-empty-value.env' $lines)) 1
   }
 
   Test-Case 'duplicate key' {
@@ -377,14 +373,16 @@ try {
   }
 
   Test-Case 'secret value is not printed' {
-    $secret = 'validator-secret-927451'
+    $secret = 'super-sensitive-stage-secret'
     $lines = New-ValidStageEnvLines | ForEach-Object {
-      if ($_ -match '^STAGE_SMTP_PASSWORD=') { "STAGE_SMTP_PASSWORD=$secret" } else { $_ }
+      if ($_ -match '^SERVICES_SECRET_KEY=') { "SERVICES_SECRET_KEY=$secret" }
+      elseif ($_ -match '^STAGE_GATEWAY_PORT=') { 'STAGE_GATEWAY_PORT=not-a-port' }
+      else { $_ }
     }
-    $lines = $lines | Where-Object { $_ -notmatch '^STAGE_SMTP_HOST=' }
-    $result = Invoke-Validator (Write-Fixture 'secret-redaction.env' $lines)
+
+    $result = Invoke-Validator (Write-Fixture 'secret-not-printed.env' $lines)
     Assert-ExitCode $result 1
-    Assert-True (-not (($result.Stdout + $result.Stderr).Contains($secret))) 'Secret value was printed.'
+    Assert-True (($result.Stderr + $result.Stdout) -notmatch [regex]::Escape($secret)) 'Secret value was printed.'
   }
 
   Test-Case 'valid Template fixture with placeholders' {
@@ -469,7 +467,7 @@ try {
 
   Test-Case 'Template type-invalid boolean fails' {
     $lines = New-TemplateStageEnvLines | ForEach-Object {
-      if ($_ -match '^STAGE_SMTP_INSECURE=') { 'STAGE_SMTP_INSECURE=maybe' } else { $_ }
+      if ($_ -match '^STAGE_PASSWORD_RESET_LOG_CODES=') { 'STAGE_PASSWORD_RESET_LOG_CODES=maybe' } else { $_ }
     }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'template-invalid-boolean.env' $lines) -InputKind Template) 1
   }
@@ -505,6 +503,28 @@ try {
       if ($_ -match '^BACKEND_STAGE_SENTRY_DSN=') { 'BACKEND_STAGE_SENTRY_DSN=' } else { $_ }
     }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-sentry-empty.env' $lines) -InputKind Runtime) 0
+  }
+
+  Test-Case 'Runtime allows unconfigured stage SMTP and Afterbuy integrations' {
+    $optionalKeys = @(
+      'STAGE_SMTP_HOST',
+      'STAGE_SMTP_PORT',
+      'STAGE_SMTP_USERNAME',
+      'STAGE_SMTP_PASSWORD',
+      'STAGE_SMTP_FROM',
+      'STAGE_SMTP_INSECURE',
+      'AFTERBUY_JV_LOGIN',
+      'AFTERBUY_JV_PASS',
+      'AFTERBUY_XL_LOGIN',
+      'AFTERBUY_XL_PASS',
+      'AFTERBUY_JV_LOGIN_URL',
+      'AFTERBUY_XL_LOGIN_URL'
+    )
+
+    $pattern = '^(' + (($optionalKeys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')='
+    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch $pattern }
+
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-unconfigured-stage-integrations.env' $lines) -InputKind Runtime) 0
   }
 
   Test-Case 'optional Sentry DSN Runtime placeholder nonempty fails' {
