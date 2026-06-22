@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   pull_request:
@@ -99,7 +99,7 @@ jobs:
             fi
           }
 
-          set_changed database_service '^(services/database-service/)$'
+          set_changed database_service '^services/database-service/'
           set_changed frontend '^apps/frontend/'
           set_changed mobile '^apps/mobile/'
           set_changed orchestrator '^services/orchestrator/'
