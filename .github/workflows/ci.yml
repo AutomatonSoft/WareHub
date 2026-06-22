@@ -276,6 +276,12 @@ jobs:
           set -euo pipefail
           ruby -e 'require "yaml"; YAML.load_file(".github/workflows/stage-runtime-reconcile.yml")'
 
+      - name: Parse prod deploy workflow YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/prod-deploy.yml")'
+
   database-service:
     name: database-service
     runs-on: ubuntu-latest

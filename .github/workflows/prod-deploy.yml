@@ -1,0 +1,636 @@
+name: Prod Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Immutable prod image tag, for example prod-75ad624"
+        required: true
+      confirm_prod_deploy:
+        description: "Type DEPLOY_PROD_RUNTIME to deploy production"
+        required: true
+      run_django_migrations:
+        description: "Run Django migrations after app update"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  prod-deploy:
+    name: prod-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: prod
+    env:
+      PROD_SSH_HOST: ${{ vars.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ vars.PROD_SSH_USER }}
+      PROD_SSH_PORT: ${{ vars.PROD_SSH_PORT }}
+      PROD_DEPLOY_PATH: ${{ vars.PROD_DEPLOY_PATH }}
+      PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+      PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
+      PROD_PROJECT_NAME: warehub-prod
+      PROD_EXPECTED_GATEWAY_PORT: "8950"
+      PROD_EXPECTED_POSTGRES_HOST_PORT: "8953"
+      PROD_EXPECTED_SERVICE_COUNT: "7"
+      PROD_DOMAIN: warehub.automatonsoft.de
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deploy input and prod settings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm_prod_deploy }}" != "DEPLOY_PROD_RUNTIME" ]; then
+            echo "confirm_prod_deploy must equal DEPLOY_PROD_RUNTIME" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "Prod Deploy must run from refs/heads/main" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_NAME:-}" != "main" ]; then
+            echo "Prod Deploy must run from main" >&2
+            exit 1
+          fi
+
+          image_tag="${{ inputs.image_tag }}"
+          if ! [[ "$image_tag" =~ ^prod-[0-9a-f]{7}$ ]]; then
+            echo "image_tag must match ^prod-[0-9a-f]{7}$, got: $image_tag" >&2
+            exit 1
+          fi
+
+          required_vars=(
+            PROD_SSH_HOST
+            PROD_SSH_USER
+            PROD_SSH_PORT
+            PROD_DEPLOY_PATH
+            PROD_SSH_KNOWN_HOSTS
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required prod setting: $name" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$PROD_DEPLOY_PATH" != "$PROD_EXPECTED_DEPLOY_PATH" ]; then
+            echo "PROD_DEPLOY_PATH must be exactly $PROD_EXPECTED_DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          if ! [[ "$PROD_SSH_PORT" =~ ^[0-9]+$ ]]; then
+            echo "PROD_SSH_PORT must be numeric" >&2
+            exit 1
+          fi
+
+      - name: Compute image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          owner_lower="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          repo_name="$(printf '%s' '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')"
+          image_tag="${{ inputs.image_tag }}"
+
+          {
+            echo "IMAGE_OWNER=$owner_lower"
+            echo "IMAGE_REPO=$repo_name"
+            echo "IMAGE_TAG=$image_tag"
+            echo "BACKEND_IMAGE=ghcr.io/$owner_lower/$repo_name/backend"
+            echo "FRONTEND_IMAGE=ghcr.io/$owner_lower/$repo_name/frontend"
+            echo "MOBILE_IMAGE=ghcr.io/$owner_lower/$repo_name/mobile"
+            echo "SERVICES_IMAGE=ghcr.io/$owner_lower/$repo_name/services"
+            echo "ORCHESTRATOR_IMAGE=ghcr.io/$owner_lower/$repo_name/orchestrator"
+            echo "GATEWAY_IMAGE=ghcr.io/$owner_lower/$repo_name/gateway"
+          } >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GHCR image manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for ref in \
+            "$BACKEND_IMAGE:$IMAGE_TAG" \
+            "$FRONTEND_IMAGE:$IMAGE_TAG" \
+            "$MOBILE_IMAGE:$IMAGE_TAG" \
+            "$SERVICES_IMAGE:$IMAGE_TAG" \
+            "$ORCHESTRATOR_IMAGE:$IMAGE_TAG" \
+            "$GATEWAY_IMAGE:$IMAGE_TAG"
+          do
+            echo "Checking $ref"
+            docker manifest inspect "$ref" >/dev/null
+          done
+
+      - name: Configure pinned SSH known_hosts
+        shell: bash
+        env:
+          PROD_SSH_KEY_SECRET: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          if ! ssh-keygen -F "$PROD_SSH_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null; then
+            echo "Pinned known_hosts entry for PROD_SSH_HOST was not found." >&2
+            exit 1
+          fi
+
+          if [ -z "${PROD_SSH_KEY_SECRET:-}" ]; then
+            echo "Missing required prod secret: PROD_SSH_KEY" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$PROD_SSH_KEY_SECRET" > "$HOME/.ssh/prod_ssh_key"
+          chmod 600 "$HOME/.ssh/prod_ssh_key"
+
+      - name: Create candidate bundle
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          temp_dir="$(mktemp -d)"
+          candidate_dir="$temp_dir/candidate"
+          mkdir -p "$candidate_dir"
+
+          echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
+          echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
+
+          cp infra/deploy/prod/docker-compose.yml "$candidate_dir/docker-compose.yml"
+
+          {
+            printf 'WORKFLOW_COMMIT_SHA=%s\n' "$GITHUB_SHA"
+            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+            printf 'RUN_DJANGO_MIGRATIONS=%s\n' '${{ inputs.run_django_migrations }}'
+            printf 'BACKEND_REF=%s:%s\n' "$BACKEND_IMAGE" "$IMAGE_TAG"
+            printf 'FRONTEND_REF=%s:%s\n' "$FRONTEND_IMAGE" "$IMAGE_TAG"
+            printf 'MOBILE_REF=%s:%s\n' "$MOBILE_IMAGE" "$IMAGE_TAG"
+            printf 'SERVICES_REF=%s:%s\n' "$SERVICES_IMAGE" "$IMAGE_TAG"
+            printf 'ORCHESTRATOR_REF=%s:%s\n' "$ORCHESTRATOR_IMAGE" "$IMAGE_TAG"
+            printf 'GATEWAY_REF=%s:%s\n' "$GATEWAY_IMAGE" "$IMAGE_TAG"
+            printf 'BACKEND_IMAGE=%s\n' "$BACKEND_IMAGE"
+            printf 'FRONTEND_IMAGE=%s\n' "$FRONTEND_IMAGE"
+            printf 'MOBILE_IMAGE=%s\n' "$MOBILE_IMAGE"
+            printf 'SERVICES_IMAGE=%s\n' "$SERVICES_IMAGE"
+            printf 'ORCHESTRATOR_IMAGE=%s\n' "$ORCHESTRATOR_IMAGE"
+            printf 'GATEWAY_IMAGE=%s\n' "$GATEWAY_IMAGE"
+          } > "$candidate_dir/metadata.env"
+
+          chmod 600 "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
+
+          (
+            cd "$candidate_dir"
+            sha256sum docker-compose.yml metadata.env > candidate.sha256
+            chmod 600 candidate.sha256
+          )
+
+      - name: Deploy prod remotely
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_dir="${{ steps.candidate.outputs.candidate_dir }}"
+
+          tar -C "$candidate_dir" -cf - . | ssh \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/prod_ssh_key" \
+            -p "$PROD_SSH_PORT" \
+            "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            'set -Eeuo pipefail
+          umask 077
+
+          PROJECT="warehub-prod"
+          DEPLOY_PATH="/opt/warehub/prod"
+          BACKUP_ROOT="/opt/warehub/prod/backups"
+          EXPECTED_GATEWAY_PORT="8950"
+          EXPECTED_POSTGRES_HOST_PORT="8953"
+          EXPECTED_SERVICE_COUNT="7"
+          PROD_DOMAIN="warehub.automatonsoft.de"
+
+          candidate_dir="$(mktemp -d /tmp/warehub-prod-deploy.XXXXXXXX)"
+          cleanup() {
+            if [[ "${candidate_dir:-}" == /tmp/warehub-prod-deploy.* ]] && [ -d "$candidate_dir" ]; then
+              rm -rf -- "$candidate_dir"
+            fi
+          }
+          trap cleanup EXIT INT TERM HUP
+
+          tar -xf - -C "$candidate_dir"
+
+          if find "$candidate_dir" -type l | grep -q .; then
+            echo "Candidate archive contains a symlink." >&2
+            exit 1
+          fi
+
+          for name in docker-compose.yml metadata.env candidate.sha256; do
+            [ -f "$candidate_dir/$name" ] || {
+              echo "Missing candidate file: $name" >&2
+              exit 1
+            }
+            [ ! -L "$candidate_dir/$name" ] || {
+              echo "Candidate file must not be symlink: $name" >&2
+              exit 1
+            }
+          done
+
+          chmod 600 "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env" "$candidate_dir/candidate.sha256"
+
+          if ! (
+            cd "$candidate_dir"
+            sha256sum --check --status candidate.sha256
+          ); then
+            echo "Candidate transfer integrity validation failed." >&2
+            exit 1
+          fi
+
+          # metadata.env is generated by the workflow and protected by candidate.sha256.
+          # shellcheck disable=SC1091
+          . "$candidate_dir/metadata.env"
+
+          [ "${IMAGE_TAG:-}" != "" ] || { echo "IMAGE_TAG missing from metadata" >&2; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^prod-[0-9a-f]{7}$ ]] || { echo "Invalid IMAGE_TAG: $IMAGE_TAG" >&2; exit 1; }
+          [[ "${WORKFLOW_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid WORKFLOW_COMMIT_SHA" >&2; exit 1; }
+          [ "${RUN_DJANGO_MIGRATIONS:-}" = "true" ] || [ "${RUN_DJANGO_MIGRATIONS:-}" = "false" ] || {
+            echo "RUN_DJANGO_MIGRATIONS must be true or false" >&2
+            exit 1
+          }
+
+          cd "$DEPLOY_PATH"
+
+          lock_path="/opt/warehub/.prod-deploy.lock"
+          exec 9>"$lock_path"
+          if ! flock -n 9; then
+            echo "Prod deploy lock is already held." >&2
+            exit 1
+          fi
+
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP_DIR="$BACKUP_ROOT/prod-deploy-${STAMP}-${IMAGE_TAG}"
+
+          migrations_ran="false"
+
+          rollback() {
+            rc="$?"
+            trap - ERR
+
+            if [ "$rc" -eq 0 ]; then
+              return 0
+            fi
+
+            echo "=== ERROR rc=$rc; ROLLBACK APP RUNTIME ===" >&2
+
+            set +e
+
+            if [ -f "$BACKUP_DIR/live.env" ]; then
+              cp -a "$BACKUP_DIR/live.env" .env
+            fi
+
+            if [ -f "$BACKUP_DIR/live.docker-compose.yml" ]; then
+              cp -a "$BACKUP_DIR/live.docker-compose.yml" docker-compose.yml
+            fi
+
+            if [ -f "$BACKUP_DIR/live.deploy-state.env" ]; then
+              cp -a "$BACKUP_DIR/live.deploy-state.env" .deploy-state.env
+            fi
+
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator gateway
+
+            if [ "$migrations_ran" = "true" ]; then
+              echo "WARNING: DB migrations already ran. Database was not automatically restored." >&2
+              echo "DB backup is inside: $BACKUP_DIR" >&2
+            fi
+
+            echo "Rollback attempted. Backup: $BACKUP_DIR" >&2
+            exit "$rc"
+          }
+
+          trap rollback ERR
+
+          echo "=== BACKUP CURRENT PROD ==="
+          mkdir -p "$BACKUP_DIR"
+          chmod 700 "$BACKUP_DIR"
+
+          cp -a .env "$BACKUP_DIR/live.env"
+          cp -a docker-compose.yml "$BACKUP_DIR/live.docker-compose.yml"
+
+          if [ -f .deploy-state.env ]; then
+            cp -a .deploy-state.env "$BACKUP_DIR/live.deploy-state.env"
+          fi
+
+          docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}" > "$BACKUP_DIR/container-snapshot-before.txt"
+
+          get_env_value() {
+            key="$1"
+            line="$(grep -E "^${key}=" .env || true)"
+            [ -n "$line" ] || {
+              echo "Missing env key: $key" >&2
+              exit 1
+            }
+            printf "%s" "${line#*=}"
+          }
+
+          set_env_required() {
+            key="$1"
+            value="$2"
+
+            grep -Eq "^${key}=" .env || {
+              echo "Missing env key: $key" >&2
+              exit 1
+            }
+
+            tmp="$(mktemp)"
+            awk -v key="$key" -v value="$value" '"'"'
+              BEGIN { done = 0 }
+              $0 ~ "^" key "=" {
+                print key "=" value
+                done = 1
+                next
+              }
+              { print }
+              END {
+                if (done != 1) {
+                  exit 2
+                }
+              }
+            '"'"' .env > "$tmp"
+
+            install -m 600 "$tmp" .env
+            rm -f "$tmp"
+          }
+
+          echo "=== VERIFY IMAGE ENV KEYS ==="
+          [ "$(get_env_value BACKEND_IMAGE)" = "$BACKEND_IMAGE" ] || { echo "BACKEND_IMAGE mismatch" >&2; exit 1; }
+          [ "$(get_env_value FRONTEND_IMAGE)" = "$FRONTEND_IMAGE" ] || { echo "FRONTEND_IMAGE mismatch" >&2; exit 1; }
+          [ "$(get_env_value MOBILE_IMAGE)" = "$MOBILE_IMAGE" ] || { echo "MOBILE_IMAGE mismatch" >&2; exit 1; }
+          [ "$(get_env_value SERVICES_IMAGE)" = "$SERVICES_IMAGE" ] || { echo "SERVICES_IMAGE mismatch" >&2; exit 1; }
+          [ "$(get_env_value ORCHESTRATOR_IMAGE)" = "$ORCHESTRATOR_IMAGE" ] || { echo "ORCHESTRATOR_IMAGE mismatch" >&2; exit 1; }
+          [ "$(get_env_value GATEWAY_IMAGE)" = "$GATEWAY_IMAGE" ] || { echo "GATEWAY_IMAGE mismatch" >&2; exit 1; }
+
+          echo "=== PROMOTE CANDIDATE COMPOSE AND TAGS ==="
+          install -m 644 "$candidate_dir/docker-compose.yml" docker-compose.yml
+
+          set_env_required BACKEND_APP_VERSION "$IMAGE_TAG"
+          set_env_required FRONTEND_APP_VERSION "$IMAGE_TAG"
+          set_env_required MOBILE_APP_VERSION "$IMAGE_TAG"
+          set_env_required SERVICES_APP_VERSION "$IMAGE_TAG"
+          set_env_required ORCHESTRATOR_APP_VERSION "$IMAGE_TAG"
+          set_env_required GATEWAY_PROD_TAG "$IMAGE_TAG"
+          set_env_required PROD_GATEWAY_PORT "$EXPECTED_GATEWAY_PORT"
+
+          echo "=== VERIFY GENERATED TAGS ==="
+          grep -E "^(BACKEND_APP_VERSION|FRONTEND_APP_VERSION|MOBILE_APP_VERSION|SERVICES_APP_VERSION|ORCHESTRATOR_APP_VERSION|GATEWAY_PROD_TAG|PROD_GATEWAY_PORT)=" .env
+
+          echo "=== COMPOSE CONFIG ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --quiet
+
+          echo "=== PULL IMAGES ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
+
+          echo "=== UP SERVICES ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator gateway
+
+          count_lines() {
+            text="$1"
+            if [ -z "$text" ]; then
+              printf "0"
+            else
+              printf "%s\n" "$text" | sed "/^$/d" | wc -l | tr -d " "
+            fi
+          }
+
+          wait_health() {
+            service="$1"
+            expected="$2"
+
+            container="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$service" --format "{{.ID}}")"
+            [ "$(count_lines "$container")" = "1" ] || {
+              echo "Expected exactly one container for $service" >&2
+              exit 1
+            }
+
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" "$container")"
+              if [ "$status" = "$expected" ]; then
+                echo "$service health/status -> $status"
+                return 0
+              fi
+              sleep 2
+            done
+
+            echo "$service did not reach $expected, last status=$status" >&2
+            exit 1
+          }
+
+          check_url() {
+            name="$1"
+            url="$2"
+            expected="$3"
+
+            for attempt in $(seq 1 60); do
+              code="$(curl -k -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+              if [ "$code" = "$expected" ]; then
+                echo "$name -> $code"
+                return 0
+              fi
+              sleep 2
+            done
+
+            echo "$name failed, last code=$code, expected=$expected, url=$url" >&2
+            exit 1
+          }
+
+          echo "=== WAIT CONTAINER HEALTH ==="
+          wait_health gateway healthy
+          wait_health orchestrator healthy
+
+          running_ids="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}")"
+          [ "$(count_lines "$running_ids")" = "$EXPECTED_SERVICE_COUNT" ] || {
+            echo "Unexpected running project container count" >&2
+            exit 1
+          }
+
+          echo "=== VERIFY PORT BINDINGS ==="
+          ss -ltnp 2>/dev/null | grep -E ":895[0-9]" || true
+
+          ss -ltnp 2>/dev/null | grep -q "127.0.0.1:${EXPECTED_GATEWAY_PORT}" || {
+            echo "Expected gateway to listen on 127.0.0.1:${EXPECTED_GATEWAY_PORT}" >&2
+            exit 1
+          }
+
+          ss -ltnp 2>/dev/null | grep -q "127.0.0.1:${EXPECTED_POSTGRES_HOST_PORT}" || {
+            echo "Expected postgres to listen on 127.0.0.1:${EXPECTED_POSTGRES_HOST_PORT}" >&2
+            exit 1
+          }
+
+          if ss -ltnp 2>/dev/null | grep -Eq ":(8951|8952|8954|8955)"; then
+            echo "Unexpected old direct app port is listening." >&2
+            exit 1
+          fi
+
+          echo "=== LOCAL GATEWAY HEALTH ==="
+          check_url gateway-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/gateway/healthz" 200
+          check_url backend-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/api/v1/healthz" 200
+          check_url services-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/api/v1/services/healthz" 200
+          check_url orchestrator-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/api/v1/orchestrator/healthz" 200
+          check_url product-editor-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/product-editor" 307
+          check_url login-local "http://127.0.0.1:${EXPECTED_GATEWAY_PORT}/login" 200
+
+          services_pending_migrations() {
+            docker exec warehub-prod-services-1 sh -lc '"'"'
+              cd /app 2>/dev/null || cd /srv/app 2>/dev/null || exit 1
+              python manage.py showmigrations --plan | grep "^\[ \]" || true
+            '"'"'
+          }
+
+          if [ "$RUN_DJANGO_MIGRATIONS" = "true" ]; then
+            echo "=== DB BACKUP BEFORE MIGRATIONS ==="
+            docker exec warehub-prod-postgres-1 sh -lc '"'"'
+              pg_dumpall -U "$POSTGRES_USER"
+            '"'"' | gzip -c > "$BACKUP_DIR/pg_dumpall-before-migrations.sql.gz"
+
+            sha256sum "$BACKUP_DIR/pg_dumpall-before-migrations.sql.gz"
+            migrations_ran="true"
+
+            echo "=== RUN DJANGO MIGRATIONS ==="
+            docker exec warehub-prod-services-1 sh -lc '"'"'
+              cd /app 2>/dev/null || cd /srv/app 2>/dev/null || exit 1
+              python manage.py migrate --noinput
+            '"'"'
+
+            echo "=== MIGRATION PENDING CHECK AFTER ==="
+            pending="$(services_pending_migrations)"
+            if [ -n "$pending" ]; then
+              echo "$pending" >&2
+              exit 1
+            fi
+          else
+            echo "=== MIGRATION PENDING CHECK ==="
+            pending="$(services_pending_migrations)"
+            if [ -n "$pending" ]; then
+              echo "$pending" >&2
+              echo "Pending migrations exist. Re-run with run_django_migrations=true after reviewing." >&2
+              exit 1
+            fi
+          fi
+
+          echo "=== WAIT PUBLIC HEALTH ==="
+          check_url gateway-public "https://${PROD_DOMAIN}/gateway/healthz" 200
+          check_url backend-public "https://${PROD_DOMAIN}/api/v1/healthz" 200
+          check_url services-public "https://${PROD_DOMAIN}/api/v1/services/healthz" 200
+          check_url orchestrator-public "https://${PROD_DOMAIN}/api/v1/orchestrator/healthz" 200
+          check_url product-editor-public "https://${PROD_DOMAIN}/product-editor" 307
+          check_url login-public "https://${PROD_DOMAIN}/login" 200
+
+          echo "=== VERIFY RUNNING IMAGE REFS ==="
+          for service in backend frontend gateway mobile services orchestrator; do
+            container="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$service" --format "{{.ID}}")"
+            [ -n "$container" ] || {
+              echo "Missing container for $service" >&2
+              exit 1
+            }
+
+            image="$(docker inspect --format "{{.Config.Image}}" "$container")"
+            echo "$service -> $image"
+
+            case "$image" in
+              *":$IMAGE_TAG") ;;
+              *)
+                echo "Unexpected image for $service: $image, expected tag $IMAGE_TAG" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "=== WRITE DEPLOY STATE ==="
+          env_sha="$(sha256sum .env | awk "{print \$1}")"
+          compose_sha="$(sha256sum docker-compose.yml | awk "{print \$1}")"
+          nginx_sha="$(sha256sum /etc/nginx/conf.d/warehub.conf | awk "{print \$1}")"
+          deployed_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          {
+            printf "WAREHUB_PROD_DEPLOY_TAG=%s\n" "$IMAGE_TAG"
+            printf "WAREHUB_PROD_DEPLOYED_AT_UTC=%s\n" "$deployed_at_utc"
+            printf "WAREHUB_PROD_WORKFLOW_COMMIT_SHA=%s\n" "$WORKFLOW_COMMIT_SHA"
+            printf "WAREHUB_PROD_ENV_SHA256=%s\n" "$env_sha"
+            printf "WAREHUB_PROD_COMPOSE_SHA256=%s\n" "$compose_sha"
+            printf "WAREHUB_PROD_NGINX_SHA256=%s\n" "$nginx_sha"
+            printf "WAREHUB_PROD_GATEWAY_PORT=%s\n" "$EXPECTED_GATEWAY_PORT"
+            printf "WAREHUB_PROD_POSTGRES_HOST_PORT=%s\n" "$EXPECTED_POSTGRES_HOST_PORT"
+            printf "BACKEND_REF=%s\n" "$BACKEND_REF"
+            printf "FRONTEND_REF=%s\n" "$FRONTEND_REF"
+            printf "MOBILE_REF=%s\n" "$MOBILE_REF"
+            printf "SERVICES_REF=%s\n" "$SERVICES_REF"
+            printf "ORCHESTRATOR_REF=%s\n" "$ORCHESTRATOR_REF"
+            printf "GATEWAY_REF=%s\n" "$GATEWAY_REF"
+          } > .deploy-state.env
+
+          chmod 644 .deploy-state.env
+
+          echo "=== SHA ==="
+          sha256sum .env docker-compose.yml .deploy-state.env
+
+          echo "=== PS ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml ps
+
+          trap - ERR
+          echo "=== PROD DEPLOY SUCCESS ==="
+          echo "Backup: $BACKUP_DIR"
+          '
+
+      - name: Clean up local temporary files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.candidate.outputs.temp_dir }}"
+
+          if [ -n "${temp_dir:-}" ] && [[ "$temp_dir" == /tmp/* ]] && [ -d "$temp_dir" ]; then
+            rm -rf -- "$temp_dir"
+          fi
+
+      - name: Write deploy summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## Prod Deploy"
+            echo
+            echo "- Image tag: \`$IMAGE_TAG\`"
+            echo "- Django migrations: \`${{ inputs.run_django_migrations }}\`"
+            echo
+            echo "### Image refs"
+            echo "- \`$BACKEND_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$FRONTEND_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$MOBILE_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$SERVICES_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$ORCHESTRATOR_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$GATEWAY_IMAGE:$IMAGE_TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"
