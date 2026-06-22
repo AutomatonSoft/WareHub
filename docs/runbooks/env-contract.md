@@ -26,14 +26,22 @@ Set-Location I:\WareHub
 - database-service runtime environment
 - orchestrator runtime environment
 
-Per-service real env files are no longer the intended manually maintained source files:
+Per-service real env files are no longer part of the intended contract.
 
-- `apps/backend/.env`
-- `apps/frontend/.env.local`
-- `services/database-service/.env`
-- `services/orchestrator/.env`
+## Authoritative vs Generated vs Legacy
 
-Legacy per-service files may still exist as fallback artifacts for direct manual service runs, but root `.env` must win when both exist.
+- Authoritative private env:
+  - repo-root `.env`
+- Authoritative committed schemas/templates:
+  - repo-root `.env.example`
+  - `infra/deploy/stage/env.stage.sanitized.template`
+  - `infra/deploy/prod/env.prod.sanitized.template`
+- Generated runtime artifacts:
+  - stage runtime `/opt/warehub/stage/.env`
+  - GitHub Environment secret `STAGE_ENV_FILE`
+  - optional operator-side generated stage env files from `scripts/environment/build-stage-env.ps1`
+Humans edit only repo-root `.env`.
+Do not keep parallel per-service env files.
 
 ## Precedence Rules
 
@@ -42,10 +50,6 @@ Local precedence order is:
 1. process environment injected by `start-dev.ps1`
 2. derived safe local DB runtime from `DEV_POSTGRES_*`
 3. repo-root `.env`
-4. repo-root `infra/.env` if present as a legacy fallback
-5. per-service local env file only as a last fallback
-
-This preserves legacy direct-run support without letting service-local files silently override the root contract.
 
 For local startup, `start-dev.ps1` marks child processes with `WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE=true` and derives a safe local DB runtime from `DEV_POSTGRES_*`.
 That local runtime overrides any generic nonlocal `DATABASE_URL` for backend and database-service process startup without editing the real root `.env`.
@@ -173,6 +177,7 @@ If cleanup of the legacy gateway-candidate files becomes incomplete after the ca
 ## Stage Required Env Contract
 
 Stage SMTP is required. Missing SMTP host, port, username, password, sender, or security mode is a configuration error.
+Afterbuy stage credentials and login URLs are required because stage compose marks them required.
 
 `PASSWORD_RESET_LOG_CODES=true` is allowed only for explicit local debugging. Stage and production must keep reset code logging disabled.
 
@@ -194,6 +199,27 @@ python infra/scripts/verify-gateway-only-ports.py `
   --compose infra/deploy/stage/docker-compose.yml `
   --env-file infra/deploy/stage/env.stage.sanitized.template `
   --expected-gateway-port 8940
+```
+
+Validate repo-root `.env` as the private source of truth:
+
+```powershell
+./scripts/environment/validate-root-env.ps1
+```
+
+Generate a stage runtime env from repo-root `.env` without mutating anything:
+
+```powershell
+./scripts/environment/build-stage-env.ps1
+./scripts/environment/sync-stage-env.ps1
+```
+
+Upload the generated stage env only after explicit approval:
+
+```powershell
+./scripts/environment/sync-stage-env.ps1 -Apply
+./scripts/environment/sync-stage-env.ps1 -UpdateGitHubSecret
+./scripts/environment/sync-stage-env.ps1 -Apply -UpdateGitHubSecret
 ```
 
 ## Add A New Variable Safely

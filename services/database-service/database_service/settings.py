@@ -18,15 +18,10 @@ from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-WORKSPACE_ROOT = BASE_DIR.parent.parent.parent
-REPO_ROOT = WORKSPACE_ROOT
-for env_path in (
-    REPO_ROOT / ".env",
-    REPO_ROOT / "infra" / ".env",
-    BASE_DIR / ".env",
-):
-    if env_path.is_file():
-        load_dotenv(env_path)
+REPO_ROOT = BASE_DIR.parent.parent
+root_env_path = REPO_ROOT / ".env"
+if root_env_path.is_file():
+    load_dotenv(root_env_path, override=False)
 
 
 # Quick-start development settings - unsuitable for production

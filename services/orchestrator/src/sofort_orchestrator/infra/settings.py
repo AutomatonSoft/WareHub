@@ -8,11 +8,18 @@ from dotenv import load_dotenv
 
 def _load_local_env() -> None:
     current_file = Path(__file__).resolve()
+    repo_root = None
     for directory in current_file.parents:
-        env_path = directory / ".env"
-        if env_path.is_file():
-            load_dotenv(env_path, override=False)
-            return
+        if directory.name == "services" and directory.parent.name:
+            repo_root = directory.parent
+            break
+
+    if repo_root is None:
+        return
+
+    env_path = repo_root / ".env"
+    if env_path.is_file():
+        load_dotenv(env_path, override=False)
 
 
 _load_local_env()
