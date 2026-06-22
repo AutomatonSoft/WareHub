@@ -731,7 +731,20 @@ run_post_recreation_validation() {
   [ "$gateway_container_id_after" != "$gateway_container_id" ] || return 1
 
   [ "$(docker inspect --format '{{.State.Status}}' "$gateway_container_id_after")" = "running" ] || return 1
-  [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$gateway_container_id_after")" = "healthy" ] || return 1
+
+  gateway_health_status=""
+  for attempt in $(seq 1 30); do
+    gateway_health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$gateway_container_id_after")"
+    if [ "$gateway_health_status" = "healthy" ]; then
+      break
+    fi
+    sleep 2
+  done
+
+  [ "$gateway_health_status" = "healthy" ] || {
+    log_status "POST_VALIDATION_STATUS=gateway-health-not-ready"
+    return 1
+  }
   [ "$(docker inspect --format '{{.Config.Image}}' "$gateway_container_id_after")" = "$gateway_image_ref_before" ] || return 1
   [ "$(docker inspect --format '{{.Image}}' "$gateway_container_id_after")" = "$gateway_image_id_before" ] || return 1
 
