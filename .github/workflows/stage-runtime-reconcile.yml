@@ -1,4 +1,4 @@
-name: Stage Runtime Reconciliation
+﻿name: Stage Runtime Reconciliation
 
 on:
   workflow_dispatch:
@@ -30,8 +30,8 @@ jobs:
       STAGE_PROJECT_NAME: warehub-stage
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
       STAGE_EXPECTED_SERVICE_COUNT: "7"
-      STAGE_EXPECTED_LIVE_ENV_SHA256: c265bcfb44e785c6c69f1c57ecc6483cffa082142bcf93197a4a5c68291bbd82
-      STAGE_EXPECTED_LIVE_COMPOSE_SHA256: 4bf826a83cde3a3e8db606340a89ab4c8b8210a83ba9fb0738086f61669e7fb6
+      STAGE_EXPECTED_LIVE_ENV_SHA256: 41ca4db1efb91b39d1f9d2f875e541e69bf83f3dd1d381c4d5e6475774df26b9
+      STAGE_EXPECTED_LIVE_COMPOSE_SHA256: a23fd06b3fc2b6a274f74bcd057f3bbd6039adfed7aa4040d30f9dadd2ac8e21
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
       EXPECTED_BACKEND_REF: ghcr.io/ravilkadev0/warehub/backend:stage-8850b9c
       EXPECTED_FRONTEND_REF: ghcr.io/ravilkadev0/warehub/frontend:stage-758bff4
