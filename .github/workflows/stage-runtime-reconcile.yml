@@ -274,7 +274,10 @@ jobs:
             "$candidate_dir/candidate.sha256"
           chmod 700 "$candidate_dir/run-stage-runtime-reconciliation.sh"
 
-          if ! sha256sum --check --status "$candidate_dir/candidate.sha256"; then
+          if ! (
+            cd "$candidate_dir"
+            sha256sum --check --status candidate.sha256
+            ); then
             echo "Candidate transfer integrity validation failed." >&2
             exit 1
           fi
