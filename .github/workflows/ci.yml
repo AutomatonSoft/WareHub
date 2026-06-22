@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   pull_request:
@@ -267,13 +267,10 @@ jobs:
       - name: Validate gateway contract test compose config
         run: docker compose -f infra/gateway/tests/docker-compose.gateway.yml config
 
-      - name: Bash syntax check stage runtime reconciliation helper
+      - name: Bash syntax check legacy stage runtime reconciliation helper
         run: bash -n infra/scripts/run-stage-runtime-reconciliation.sh
 
-      - name: Run stage runtime reconciliation helper tests
-        run: bash infra/scripts/tests/run-stage-runtime-reconciliation.tests.sh
-
-      - name: Parse stage runtime reconciliation workflow YAML
+      - name: Parse disabled legacy stage runtime reconciliation workflow YAML
         shell: bash
         run: |
           set -euo pipefail

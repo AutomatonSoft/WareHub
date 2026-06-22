@@ -1,333 +1,36 @@
-﻿name: Stage Runtime Reconciliation
+﻿name: Legacy Stage Runtime Reconciliation Disabled
 
 on:
   workflow_dispatch:
     inputs:
-      confirm_stage_reconciliation:
-        description: "Type RECONCILE_STAGE_RUNTIME to continue"
+      confirm_disabled_workflow:
+        description: "This workflow is disabled. Use Stage Deploy instead."
         required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: stage-runtime-reconciliation
+  group: legacy-stage-runtime-reconciliation-disabled
   cancel-in-progress: false
 
 jobs:
-  stage-runtime-reconcile:
-    name: stage-runtime-reconcile
+  disabled:
+    name: disabled
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: stage
-    env:
-      STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
-      STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
-      STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
-      STAGE_DEPLOY_PATH: ${{ vars.STAGE_DEPLOY_PATH }}
-      STAGE_SSH_KNOWN_HOSTS: ${{ secrets.STAGE_SSH_KNOWN_HOSTS }}
-      STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
-      STAGE_PROJECT_NAME: warehub-stage
-      STAGE_EXPECTED_GATEWAY_PORT: "8940"
-      STAGE_EXPECTED_SERVICE_COUNT: "7"
-      STAGE_EXPECTED_LIVE_ENV_SHA256: 29bd1f0a605e7eba3323a921254f81a49ae96e66092f73201366784eb412de80
-      STAGE_EXPECTED_LIVE_COMPOSE_SHA256: 354dffe97d4f0c181da6ef78de2a28dc1990167a78a29c84f87f66e7a8f0b993
-      STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
-      EXPECTED_BACKEND_REF: ghcr.io/ravilkadev0/warehub/backend:stage-e806c2a
-      EXPECTED_FRONTEND_REF: ghcr.io/ravilkadev0/warehub/frontend:stage-e806c2a
-      EXPECTED_GATEWAY_REF: ghcr.io/ravilkadev0/warehub/gateway:stage-e806c2a
-      EXPECTED_MOBILE_REF: ghcr.io/ravilkadev0/warehub/mobile:stage-e806c2a
-      EXPECTED_SERVICES_REF: ghcr.io/ravilkadev0/warehub/services:stage-e806c2a
-      EXPECTED_ORCHESTRATOR_REF: ghcr.io/ravilkadev0/warehub/orchestrator:stage-e806c2a
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Validate workflow input and stage settings
+      - name: Explain replacement workflow
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm_stage_reconciliation }}" != "RECONCILE_STAGE_RUNTIME" ]; then
-            echo "confirm_stage_reconciliation must equal RECONCILE_STAGE_RUNTIME" >&2
-            exit 1
-          fi
-
-          required_vars=(
-            STAGE_SSH_HOST
-            STAGE_SSH_USER
-            STAGE_SSH_PORT
-            STAGE_DEPLOY_PATH
-          )
-
-          for name in "${required_vars[@]}"; do
-            if [ -z "${!name:-}" ]; then
-              echo "Missing required stage environment variable: $name" >&2
-              exit 1
-            fi
-          done
-
-          if [ "$STAGE_DEPLOY_PATH" != "$STAGE_EXPECTED_DEPLOY_PATH" ]; then
-            echo "STAGE_DEPLOY_PATH must be exactly $STAGE_EXPECTED_DEPLOY_PATH" >&2
-            exit 1
-          fi
-
-          if [ -z "${STAGE_SSH_KNOWN_HOSTS:-}" ]; then
-            echo "Missing required stage secret: STAGE_SSH_KNOWN_HOSTS" >&2
-            exit 1
-          fi
-
-          if ! [[ "$STAGE_SSH_PORT" =~ ^[0-9]+$ ]]; then
-            echo "STAGE_SSH_PORT must be numeric" >&2
-            exit 1
-          fi
-
-          if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then
-            echo "Stage Runtime Reconciliation must run from refs/heads/stage" >&2
-            exit 1
-          fi
-
-          if [ "${GITHUB_REF_NAME:-}" != "stage" ]; then
-            echo "Stage Runtime Reconciliation must run from stage" >&2
-            exit 1
-          fi
-
-          if ! [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "GITHUB_SHA must be a lowercase 40-character SHA" >&2
-            exit 1
-          fi
-
-          actual_checkout_sha="$(git rev-parse HEAD)"
-
-          if [ "$actual_checkout_sha" != "$GITHUB_SHA" ]; then
-            echo "Checked out commit does not match GITHUB_SHA" >&2
-            exit 1
-          fi
-
-      - name: Configure pinned SSH known_hosts
-        shell: bash
-        env:
-          STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          umask 077
-
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s\n' "$STAGE_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
-
-          if ! ssh-keygen -F "$STAGE_SSH_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null; then
-            echo "Pinned known_hosts entry for STAGE_SSH_HOST was not found." >&2
-            exit 1
-          fi
-
-          if [ -z "${STAGE_SSH_KEY_SECRET:-}" ]; then
-            echo "Missing required stage secret: STAGE_SSH_KEY" >&2
-            exit 1
-          fi
-
-          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$HOME/.ssh/stage_ssh_key"
-          chmod 600 "$HOME/.ssh/stage_ssh_key"
-
-      - name: Create temporary working directory
-        id: tempdir
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="$(mktemp -d)"
-          candidate_dir="$temp_dir/candidate"
-          mkdir -p "$candidate_dir"
-          echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
-          echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare candidate bundle
-        shell: bash
-        env:
-          STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
-        run: |
-          set -euo pipefail
-          umask 077
-
-          candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
-
-          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
-            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
-            exit 1
-          fi
-
-          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
-          cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
-          cp infra/scripts/verify-gateway-only-ports.py "$candidate_dir/verify-gateway-only-ports.py"
-          cp infra/scripts/run-stage-runtime-reconciliation.sh "$candidate_dir/run-stage-runtime-reconciliation.sh"
-
-          {
-            printf '%s\n' "SOURCE_COMMIT_SHA=$GITHUB_SHA"
-            printf '%s\n' "EXPECTED_LIVE_ENV_SHA256=$STAGE_EXPECTED_LIVE_ENV_SHA256"
-            printf '%s\n' "EXPECTED_LIVE_COMPOSE_SHA256=$STAGE_EXPECTED_LIVE_COMPOSE_SHA256"
-          } > "$candidate_dir/metadata.env"
-
-          chmod 600 \
-            "$candidate_dir/.env" \
-            "$candidate_dir/docker-compose.yml" \
-            "$candidate_dir/verify-gateway-only-ports.py" \
-            "$candidate_dir/metadata.env"
-          chmod 700 "$candidate_dir/run-stage-runtime-reconciliation.sh"
-
-          (
-            cd "$candidate_dir"
-            sha256sum \
-              .env \
-              docker-compose.yml \
-              verify-gateway-only-ports.py \
-              run-stage-runtime-reconciliation.sh \
-              metadata.env > candidate.sha256
-            chmod 600 candidate.sha256
-          )
-
-      - name: Validate candidate locally
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
-
-          extract_env_value() {
-            local key="$1"
-            local env_file="$2"
-            local line
-            line="$(grep -E "^${key}=" "$env_file" || true)"
-            if [ -z "$line" ]; then
-              echo "Missing env key $key in $env_file" >&2
-              exit 1
-            fi
-            printf '%s' "${line#*=}"
-          }
-
-          compose_ref() {
-            local image_key="$1"
-            local tag_key="$2"
-            printf '%s:%s' \
-              "$(extract_env_value "$image_key" "$candidate_dir/.env")" \
-              "$(extract_env_value "$tag_key" "$candidate_dir/.env")"
-          }
-
-          pwsh ./infra/scripts/verify-required-env.ps1 \
-            -EnvFile "$candidate_dir/.env" \
-            -Environment stage \
-            -InputKind Runtime
-
-          docker compose \
-            --env-file "$candidate_dir/.env" \
-            -f "$candidate_dir/docker-compose.yml" \
-            config --quiet
-
-          python3 "$candidate_dir/verify-gateway-only-ports.py" \
-            --compose "$candidate_dir/docker-compose.yml" \
-            --env-file "$candidate_dir/.env" \
-            --expected-gateway-port "$STAGE_EXPECTED_GATEWAY_PORT"
-
-          [ "$(compose_ref BACKEND_IMAGE BACKEND_STAGE_TAG)" = "$EXPECTED_BACKEND_REF" ] || { echo "Backend image ref drift detected" >&2; exit 1; }
-          [ "$(compose_ref FRONTEND_IMAGE FRONTEND_STAGE_TAG)" = "$EXPECTED_FRONTEND_REF" ] || { echo "Frontend image ref drift detected" >&2; exit 1; }
-          [ "$(compose_ref GATEWAY_IMAGE GATEWAY_STAGE_TAG)" = "$EXPECTED_GATEWAY_REF" ] || { echo "Gateway image ref drift detected" >&2; exit 1; }
-          [ "$(compose_ref MOBILE_IMAGE MOBILE_STAGE_TAG)" = "$EXPECTED_MOBILE_REF" ] || { echo "Mobile image ref drift detected" >&2; exit 1; }
-          [ "$(compose_ref SERVICES_IMAGE SERVICES_STAGE_TAG)" = "$EXPECTED_SERVICES_REF" ] || { echo "Services image ref drift detected" >&2; exit 1; }
-          [ "$(compose_ref ORCHESTRATOR_IMAGE ORCHESTRATOR_STAGE_TAG)" = "$EXPECTED_ORCHESTRATOR_REF" ] || { echo "Orchestrator image ref drift detected" >&2; exit 1; }
-
-          cmp -s infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
-
-      - name: Reconcile stage runtime remotely
-        shell: bash
-        run: |
-          set -euo pipefail
-          candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
-
-          tar -C "$candidate_dir" -cf - . | ssh \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -i "$HOME/.ssh/stage_ssh_key" \
-            -p "$STAGE_SSH_PORT" \
-            "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
-            'set -Eeuo pipefail
-          umask 077
-          candidate_dir="$(mktemp -d /tmp/warehub-stage-reconcile.XXXXXXXX)"
-          cleanup() {
-            if [[ "${candidate_dir:-}" == /tmp/warehub-stage-reconcile.* ]] && [ -d "$candidate_dir" ]; then
-              rm -rf -- "$candidate_dir"
-            fi
-          }
-          trap cleanup EXIT INT TERM HUP
-
-          tar -xf - -C "$candidate_dir"
-
-          if find "$candidate_dir" -type l | grep -q .; then
-            echo "Candidate archive contains a symlink." >&2
-            exit 1
-          fi
-
-          chmod 600 \
-            "$candidate_dir/.env" \
-            "$candidate_dir/docker-compose.yml" \
-            "$candidate_dir/verify-gateway-only-ports.py" \
-            "$candidate_dir/metadata.env" \
-            "$candidate_dir/candidate.sha256"
-          chmod 700 "$candidate_dir/run-stage-runtime-reconciliation.sh"
-
-          if ! (
-            cd "$candidate_dir"
-            sha256sum --check --status candidate.sha256
-            ); then
-            echo "Candidate transfer integrity validation failed." >&2
-            exit 1
-          fi
-
-          if "$candidate_dir/run-stage-runtime-reconciliation.sh" \
-            "$candidate_dir" \
-            "/opt/warehub/stage" \
-            "warehub-stage" \
-            "8940" \
-            "7" \
-            "/opt/warehub/backups/stage"; then
-            helper_rc=0
-          else
-            helper_rc=$?
-          fi
-
-          case "$helper_rc" in
-            0)
-              echo "Stage runtime reconciliation helper completed successfully."
-              ;;
-            10)
-              echo "Stage runtime reconciliation helper failed before any live mutation." >&2
-              ;;
-            20)
-              echo "Stage runtime reconciliation helper failed after live mutation, but rollback succeeded." >&2
-              ;;
-            30)
-              echo "Stage runtime reconciliation helper failed after live mutation, and rollback also failed." >&2
-              ;;
-            40)
-              echo "Stage runtime reconciliation helper rejected invalid or unsafe input." >&2
-              ;;
-            50)
-              echo "Stage runtime reconciliation helper succeeded, but legacy candidate cleanup is incomplete." >&2
-              ;;
-            *)
-              echo "Stage runtime reconciliation helper returned unexpected exit code: $helper_rc" >&2
-              ;;
-          esac
-
-          exit "$helper_rc"
-          '
-
-      - name: Clean up local temporary files
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          temp_dir="${{ steps.tempdir.outputs.temp_dir }}"
-
-          if [ -n "${temp_dir:-}" ] && [[ "$temp_dir" == /tmp/* ]] && [ -d "$temp_dir" ]; then
-            rm -rf -- "$temp_dir"
-          fi
+          echo "This legacy workflow is intentionally disabled."
+          echo
+          echo "Use the Stage Deploy workflow instead:"
+          echo "  gh workflow run stage-deploy.yml --ref stage -f confirm_stage_deploy=DEPLOY_STAGE_RUNTIME"
+          echo
+          echo "Reason:"
+          echo "- the old reconciliation workflow used hardcoded expected image refs and live SHA values"
+          echo "- stage is now deployed by Stage Deploy using /opt/warehub/stage/.deploy-state.env"
+          exit 1
