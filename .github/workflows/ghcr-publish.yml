@@ -1,4 +1,4 @@
-﻿name: GHCR Publish
+name: GHCR Publish
 
 on:
   workflow_dispatch:
@@ -205,4 +205,3 @@ jobs:
               echo "- \`$INFRA_IMAGE:$OPTIONAL_LATEST_TAG\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
