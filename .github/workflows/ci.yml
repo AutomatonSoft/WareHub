@@ -15,6 +15,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      database_service: ${{ steps.detect.outputs.database_service }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      mobile: ${{ steps.detect.outputs.mobile }}
+      orchestrator: ${{ steps.detect.outputs.orchestrator }}
+      rust_backend: ${{ steps.detect.outputs.rust_backend }}
+      python_services_docker_build: ${{ steps.detect.outputs.python_services_docker_build }}
+      frontend_docker_build: ${{ steps.detect.outputs.frontend_docker_build }}
+      gateway_routing_contract: ${{ steps.detect.outputs.gateway_routing_contract }}
+      remaining_docker_builds: ${{ steps.detect.outputs.remaining_docker_builds }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          outputs=(
+            database_service
+            frontend
+            mobile
+            orchestrator
+            rust_backend
+            python_services_docker_build
+            frontend_docker_build
+            gateway_routing_contract
+            remaining_docker_builds
+          )
+
+          set_out() {
+            printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
+          }
+
+          set_all() {
+            local value="$1"
+            for output in "${outputs[@]}"; do
+              set_out "$output" "$value"
+            done
+          }
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "workflow_dispatch detected; running full CI."
+            set_all true
+            exit 0
+          fi
+
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          git diff --name-only "$base_sha" "$head_sha" | sort > changed-files.txt
+
+          echo "Changed files:"
+          cat changed-files.txt
+
+          if grep -Eq '^\.github/workflows/ci\.yml$' changed-files.txt; then
+            echo "CI workflow changed; running full CI."
+            set_all true
+            exit 0
+          fi
+
+          changed() {
+            grep -Eq "$1" changed-files.txt
+          }
+
+          set_changed() {
+            local output="$1"
+            local pattern="$2"
+
+            if changed "$pattern"; then
+              set_out "$output" true
+            else
+              set_out "$output" false
+            fi
+          }
+
+          set_changed database_service '^(services/database-service/)$'
+          set_changed frontend '^apps/frontend/'
+          set_changed mobile '^apps/mobile/'
+          set_changed orchestrator '^services/orchestrator/'
+          set_changed rust_backend '^apps/backend/'
+          set_changed python_services_docker_build '^services/'
+          set_changed frontend_docker_build '^apps/frontend/'
+          set_changed gateway_routing_contract '^infra/gateway/'
+          set_changed remaining_docker_builds '^(apps/backend/|apps/mobile/|infra/)'
+
   repo-safety:
     name: repo-safety
     runs-on: ubuntu-latest
@@ -189,6 +283,8 @@ jobs:
     name: database-service
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.database_service == 'true'
     defaults:
       run:
         working-directory: services/database-service
@@ -239,6 +335,8 @@ jobs:
     name: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     defaults:
       run:
         working-directory: apps/frontend
@@ -269,6 +367,8 @@ jobs:
     name: mobile
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
     defaults:
       run:
         working-directory: apps/mobile
@@ -316,6 +416,8 @@ jobs:
     name: orchestrator
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.orchestrator == 'true'
     defaults:
       run:
         working-directory: services/orchestrator
@@ -372,6 +474,8 @@ jobs:
     name: rust-backend
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.rust_backend == 'true'
     defaults:
       run:
         working-directory: apps/backend
@@ -409,6 +513,8 @@ jobs:
     name: python-services-docker-build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.python_services_docker_build == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -449,6 +555,8 @@ jobs:
     name: frontend-docker-build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.frontend_docker_build == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -477,6 +585,8 @@ jobs:
     name: gateway-routing-contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: changes
+    if: needs.changes.outputs.gateway_routing_contract == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -522,6 +632,8 @@ jobs:
     name: remaining-docker-builds
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.remaining_docker_builds == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
