@@ -3,11 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Blocks, Database, Search, ShoppingBag, Store } from "lucide-react";
-import { SectionTitle } from "../shared/section-title";
-import { cn } from "../../lib/cn";
 import { Card, CardContent } from "../ui/card";
 import { SegmentedTabs } from "../ui/segmented-tabs";
+import { SectionHeader } from "../ui/section-header";
 
 const HoodSearchPanel = dynamic(() => import("../hood/hood-search-panel").then((mod) => mod.HoodSearchPanel), {
   loading: () => null
@@ -31,14 +29,13 @@ const TAB_STORAGE_KEY = "channels_active_tab";
 const CHANNEL_TABS: Array<{
   value: ChannelsTab;
   label: string;
-  icon: typeof Search;
 }> = [
-  { value: "hood", label: "Hood", icon: Search },
-  { value: "xl", label: "XL", icon: Database },
-  { value: "jv", label: "JV", icon: Database },
-  { value: "kaufland", label: "Kaufland", icon: Store },
-  { value: "otto", label: "Otto", icon: ShoppingBag },
-  { value: "ebay", label: "Ebay", icon: Blocks }
+  { value: "hood", label: "Hood" },
+  { value: "xl", label: "XL" },
+  { value: "jv", label: "JV" },
+  { value: "kaufland", label: "Kaufland" },
+  { value: "otto", label: "Otto" },
+  { value: "ebay", label: "Ebay" }
 ];
 
 export function normalizeChannelsTab(value: string | null): ChannelsTab | null {
@@ -90,10 +87,10 @@ export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab
 
   return (
     <>
-      <SectionTitle
-        title="Channels"
-        subtitle="Unified workspace for Hood, XL, JV, Kaufland, Otto and Ebay"
-        action={
+      <SectionHeader
+        title="Channel workspace"
+        description="Switch live channel panels without changing backend workflows."
+        actions={
           <SegmentedTabs
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as ChannelsTab)}
@@ -103,27 +100,8 @@ export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab
         }
       />
 
-      <Card className="wh-command-panel border-border shadow-sm">
+      <Card className="wh-command-panel border-border shadow-[var(--wh-shadow-card)]">
         <CardContent className="p-5 sm:p-6">
-          <div className="wh-channels-chip-row mb-5 flex flex-wrap gap-2">
-            {CHANNEL_TABS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <div
-                  key={`channel-chip-${tab.value}`}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium",
-                    activeTab === tab.value
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : "border-border bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  <Icon size={13} />
-                  <span>{tab.label}</span>
-                </div>
-              );
-            })}
-          </div>
           {activeTab === "hood" ? <HoodSearchPanel /> : null}
           {activeTab === "xl" ? <XLJVSearchPanel initialSite="XL" /> : null}
           {activeTab === "jv" ? <XLJVSearchPanel initialSite="JV" /> : null}
@@ -140,12 +118,12 @@ export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab
               hint="Endpoint integration is prepared. Product search block will be connected in the next step."
             />
           ) : null}
-          <div className="wh-channels-helper-panel mt-5 rounded-xl border border-border/70 bg-muted/20 p-4">
+          <div className="wh-channels-helper-panel mt-5 bg-muted/20 px-1 py-3">
             <p className="text-sm font-semibold text-foreground">Result panel</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Use tabs to switch live channel panels. Search/patch behavior and backend workflows are unchanged.
             </p>
-            <div className="mt-3 grid gap-2 rounded-lg border border-border/70 bg-background/75 p-3 text-xs sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
               <div>
                 <p className="font-medium text-foreground">Active channel</p>
                 <p className="mt-0.5 text-muted-foreground">{CHANNEL_TABS.find((tab) => tab.value === activeTab)?.label ?? "Hood"}</p>

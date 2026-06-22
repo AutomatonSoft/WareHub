@@ -8,11 +8,18 @@ from dotenv import load_dotenv
 
 def _load_local_env() -> None:
     current_file = Path(__file__).resolve()
+    repo_root = None
     for directory in current_file.parents:
-        env_path = directory / ".env"
-        if env_path.is_file():
-            load_dotenv(env_path, override=False)
-            return
+        if directory.name == "services" and directory.parent.name:
+            repo_root = directory.parent
+            break
+
+    if repo_root is None:
+        return
+
+    env_path = repo_root / ".env"
+    if env_path.is_file():
+        load_dotenv(env_path, override=False)
 
 
 _load_local_env()
@@ -21,6 +28,7 @@ _load_local_env()
 class Settings:
     def __init__(self) -> None:
         self.base_url = os.getenv("DATABASE_SERVICE_BASE_URL", "http://localhost:8000").rstrip("/")
+        self.service_auth_token = (os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN") or "").strip()
         self.timeout_seconds = float(os.getenv("ORCHESTRATOR_HTTP_TIMEOUT_SECONDS", "8"))
         self.retries = int(os.getenv("ORCHESTRATOR_HTTP_RETRIES", "2"))
         self.idempotency_ttl_seconds = int(os.getenv("ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS", "86400"))

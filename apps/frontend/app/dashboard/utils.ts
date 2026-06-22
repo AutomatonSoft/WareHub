@@ -57,7 +57,7 @@ export function buildAfterbuyPreviewDoc(data: AfterbuyOrderData): string {
   <meta charset="utf-8" />
   <title>${title}</title>
   <style>
-    body { font-family: Segoe UI, Arial, sans-serif; padding: 12px; margin: 0; color: #111827; background: #ffffff; }
+    body { font-family: Montserrat, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 12px; margin: 0; color: #111827; background: #ffffff; }
     .meta { margin-bottom: 10px; font-size: 13px; color: #374151; }
     pre { white-space: pre-wrap; word-break: break-word; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; }
   </style>

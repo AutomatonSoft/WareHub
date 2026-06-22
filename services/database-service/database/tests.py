@@ -26,13 +26,13 @@ class DatabaseApiTests(APITestCase):
 
     def test_create_kid(self):
         payload = {"kid_number": "900900"}
-        response = self.client.post("/api/kids/", payload, format="json")
+        response = self.client.post("/api/v1/kids/", payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Kid.objects.filter(kid_number="900900").count(), 1)
 
     def test_create_kid_is_idempotent_by_kid_number(self):
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}
-        response = self.client.post("/api/kids/", payload, format="json")
+        response = self.client.post("/api/v1/kids/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Kid.objects.filter(kid_number=self.kid.kid_number).count(), 1)
@@ -40,8 +40,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(self.kid.place, "A1")
 
     def test_list_and_retrieve_kid(self):
-        list_response = self.client.get("/api/kids/")
-        detail_response = self.client.get(f"/api/kids/{self.kid.id}/")
+        list_response = self.client.get("/api/v1/kids/")
+        detail_response = self.client.get(f"/api/v1/kids/{self.kid.id}/")
 
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
@@ -49,7 +49,7 @@ class DatabaseApiTests(APITestCase):
 
     def test_update_kid(self):
         response = self.client.patch(
-            f"/api/kids/{self.kid.id}/", {"place": "stoyanka-3000"}, format="json"
+            f"/api/v1/kids/{self.kid.id}/", {"place": "stoyanka-3000"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.kid.refresh_from_db()
@@ -65,26 +65,29 @@ class DatabaseApiTests(APITestCase):
             "status": "paid",
             "date": "2026-04-07T11:00:00Z",
         }
-        create_response = self.client.post("/api/orders/", payload, format="json")
+        create_response = self.client.post("/api/v1/orders/", payload, format="json")
         order_id = create_response.data["id"]
-        detail_response = self.client.get(f"/api/orders/{order_id}/")
+        detail_response = self.client.get(f"/api/v1/orders/{order_id}/")
 
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.data["order_id"], "ORDER-002")
 
     def test_get_order_ids_by_kid_id(self):
-        response = self.client.get(f"/api/kids/{self.kid.id}/order-ids/")
+        response = self.client.get(f"/api/v1/kids/{self.kid.id}/order-ids/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data, {"kid_id": self.kid.id, "order_ids": ["ORDER-001"]})
 
     def test_get_kid_ean_summary(self):
         self.kid.place = "A-01"
         self.kid.room = "ROOM-1"
-        self.kid.furniture_type = "chair"
         self.kid.listing_status = "listed"
         self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
-        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "photo"])
+        self.kid.save(update_fields=["place", "room", "listing_status", "photo"])
+        ProductAttributes.objects.update_or_create(
+            kid=self.kid,
+            defaults={"furniture_type": "chair"},
+        )
 
         self.order.additional_items = [
             {"sku": "extra sku 4006381333931"},
@@ -147,7 +150,7 @@ class DatabaseApiTests(APITestCase):
             "status": "unknown",
             "date": "2026-04-07T11:00:00Z",
         }
-        response = self.client.post("/api/orders/", payload, format="json")
+        response = self.client.post("/api/v1/orders/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("status", response.data)
@@ -158,7 +161,7 @@ class DatabaseApiTests(APITestCase):
             "title": "No kid order",
             "status": "paid",
         }
-        response = self.client.post("/api/orders/", payload, format="json")
+        response = self.client.post("/api/v1/orders/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("kid_number", response.data)
@@ -170,7 +173,7 @@ class DatabaseApiTests(APITestCase):
             "title": "Updated title",
             "status": "paid",
         }
-        response = self.client.post("/api/orders/", payload, format="json")
+        response = self.client.post("/api/v1/orders/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(Orders.objects.filter(kid=self.kid, order_id="ORDER-001").count(), 1)
@@ -185,7 +188,7 @@ class DatabaseApiTests(APITestCase):
             "status": "paid",
         }
         response = self.client.patch(
-            f"/api/orders/{self.order.id}/", payload, format="json"
+            f"/api/v1/orders/{self.order.id}/", payload, format="json"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -196,7 +199,7 @@ class DatabaseApiTests(APITestCase):
     def test_cannot_change_order_kid(self):
         second_kid = Kid.objects.create(kid_number="777777")
         response = self.client.patch(
-            f"/api/orders/{self.order.id}/",
+            f"/api/v1/orders/{self.order.id}/",
             {"kid_number": second_kid.kid_number},
             format="json",
         )
@@ -209,8 +212,8 @@ class DatabaseApiTests(APITestCase):
     def test_user_can_only_read_kid_numbers_and_orders(self):
         self.set_session_role("user")
 
-        kids_response = self.client.get("/api/kids/")
-        orders_response = self.client.get("/api/orders/")
+        kids_response = self.client.get("/api/v1/kids/")
+        orders_response = self.client.get("/api/v1/orders/")
 
         self.assertEqual(kids_response.status_code, status.HTTP_200_OK)
         self.assertEqual(orders_response.status_code, status.HTTP_200_OK)
@@ -221,7 +224,7 @@ class DatabaseApiTests(APITestCase):
         self.set_session_role("user")
 
         create_response = self.client.post(
-            "/api/orders/",
+            "/api/v1/orders/",
             {
                 "kid_number": self.kid.kid_number,
                 "order_id": "ORDER-999",
@@ -231,7 +234,7 @@ class DatabaseApiTests(APITestCase):
             format="json",
         )
         update_response = self.client.patch(
-            f"/api/orders/{self.order.id}/",
+            f"/api/v1/orders/{self.order.id}/",
             {"title": "No access"},
             format="json",
         )
@@ -240,20 +243,20 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_delete_order(self):
-        response = self.client.delete(f"/api/orders/{self.order.id}/")
+        response = self.client.delete(f"/api/v1/orders/{self.order.id}/")
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Orders.objects.filter(id=self.order.id).exists())
 
     def test_user_cannot_delete_order(self):
         self.set_session_role("user")
-        response = self.client.delete(f"/api/orders/{self.order.id}/")
+        response = self.client.delete(f"/api/v1/orders/{self.order.id}/")
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(Orders.objects.filter(id=self.order.id).exists())
 
     def test_inventory_rows_default_pagination(self):
-        response = self.client.get("/api/inventory/rows/")
+        response = self.client.get("/api/v1/inventory/rows/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("results", response.data)
@@ -275,7 +278,7 @@ class DatabaseApiTests(APITestCase):
             date="2026-04-06T12:00:00Z",
         )
 
-        response = self.client.get(f"/api/inventory/rows/?kid_id={self.kid.id}&page_size=100")
+        response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data["results"]
@@ -380,5 +383,4 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["code"], "INVENTORY_ROWS_SCHEMA_ERROR")
         self.assertEqual(response.data["request_id"], "req-test-500")
         self.assertIn("hint", response.data["details"])
-
 

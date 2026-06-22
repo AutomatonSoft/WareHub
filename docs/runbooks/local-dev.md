@@ -47,20 +47,16 @@ Recommended host-run application topology:
 
 ## 4. Environment Files
 
-Use only example files as templates:
+Use only the repo-root env contract:
 
-- root: `.env.example`
-- infra: `infra/.env.example`
-- backend: `apps/backend/.env.example`
-- frontend: `apps/frontend/.env.example`
-- database-service: `services/database-service/.env.example`
-- orchestrator: `services/orchestrator/.env.example`
-- mobile: `apps/mobile/.env.example`
+- root runtime: `.env`
+- root schema: `.env.example`
 
 Important:
 
 - repo-root `.env` is the only manually maintained local env file
 - do not commit any real `.env`
+- do not manually maintain per-service `.env` files as parallel truth
 - do not use production credentials
 - keep local defaults on `localhost` or `127.0.0.1`
 - see [env-contract.md](/I:/WareHub/docs/runbooks/env-contract.md) for the unified env contract
@@ -194,9 +190,9 @@ It does not:
 Primary local URLs:
 
 - frontend: `http://localhost:8931`
-- backend health: `http://localhost:8932/healthz`
-- database-service health: `http://localhost:8934/healthz`
-- orchestrator health: `http://localhost:8935/healthz`
+- backend health: `http://localhost:8932/api/v1/healthz`
+- database-service health: `http://localhost:8934/api/v1/healthz`
+- orchestrator health: `http://localhost:8935/api/v1/healthz`
 
 ## 6. Backend Local Run
 
@@ -326,7 +322,7 @@ Dependency cache notes:
 
 ## 10. Mobile Local Run
 
-1. Copy `apps/mobile/.env.example` to your local mobile env workflow if needed.
+1. Copy the required mobile keys from repo-root `.env.example` into your local mobile env workflow if needed.
 2. If you run on a physical device, replace `127.0.0.1` with your LAN-accessible backend host.
 3. Use the app's existing local Flutter workflow from `apps/mobile`.
 
@@ -364,10 +360,10 @@ Get-ChildItem -Recurse -Force -File | Where-Object { $_.Name -match '(\.pem$|\.k
 
 ## 13. Troubleshooting
 
-- If backend fails to start, verify `apps/backend/.env` exists and `DATABASE_URL` points to local Postgres.
-- If frontend proxy requests fail, verify `apps/frontend/.env.local` and local backend/services ports.
-- If database-service fails to connect, verify `services/database-service/.env` and local Postgres port `8933`.
-- If orchestrator fails, verify `services/orchestrator/.env` and that database-service is already running on `8934`.
+- If backend fails to start, verify repo-root `.env` and the derived local Postgres settings.
+- If frontend proxy requests fail, verify repo-root `.env` and local backend/services ports.
+- If database-service fails to connect, verify repo-root `.env` and local Postgres port `8933`.
+- If orchestrator fails, verify repo-root `.env` and that database-service is already running on `8934`.
 - If `-SkipDependencyInstall` is used and a venv or `node_modules` is missing, rerun without that flag.
 - If mobile on device cannot reach backend, replace `127.0.0.1` with a LAN-reachable host IP in your local mobile config.
 

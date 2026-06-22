@@ -61,6 +61,27 @@ class ServiceHealthAPIView(APIView):
         return Response({"status": "ok", "service": "database_service"}, status=status.HTTP_200_OK)
 
 
+class ServiceReadyAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            with connections["default"].cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+        except (OperationalError, ProgrammingError) as exc:
+            return Response(
+                {
+                    "status": "not_ready",
+                    "service": "database_service",
+                    "reason": str(exc),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"status": "ready", "service": "database_service"}, status=status.HTTP_200_OK)
+
+
 def _request_id_from_request(request) -> str:
     return (
         request.headers.get("x-request-id")
@@ -68,6 +89,14 @@ def _request_id_from_request(request) -> str:
         or request.META.get("REQUEST_ID")
         or ""
     )
+
+
+def _session_role_from_view(view) -> str:
+    request = getattr(view, "request", None)
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    return str(session.get("role") or "").lower()
 
 
 def _extract_bearer_header(request) -> str | None:
@@ -259,7 +288,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
     permission_classes = [SessionRolePermission]
 
     def get_serializer_class(self):
-        role = (self.request.session.get("role") or "").lower()
+        role = _session_role_from_view(self)
         if role == "user" and self.request.method in SAFE_METHODS:
             return KidUserReadSerializer
         return KidModelSerializer
@@ -506,7 +535,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [SessionRolePermission]
 
     def get_serializer_class(self):
-        role = (self.request.session.get("role") or "").lower()
+        role = _session_role_from_view(self)
         if role == "user" and self.request.method in SAFE_METHODS:
             return KidUserReadSerializer
         return KidModelSerializer
@@ -518,7 +547,7 @@ class OrderListCreateAPIView(generics.ListCreateAPIView):
     permission_classes = [SessionRolePermission]
 
     def get_serializer_class(self):
-        role = (self.request.session.get("role") or "").lower()
+        role = _session_role_from_view(self)
         if role == "user" and self.request.method in SAFE_METHODS:
             return OrderUserReadSerializer
         return OrderModelSerializer
@@ -554,7 +583,7 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [SessionRolePermission]
 
     def get_serializer_class(self):
-        role = (self.request.session.get("role") or "").lower()
+        role = _session_role_from_view(self)
         if role == "user" and self.request.method in SAFE_METHODS:
             return OrderUserReadSerializer
         return OrderModelSerializer

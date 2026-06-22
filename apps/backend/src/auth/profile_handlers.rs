@@ -11,6 +11,7 @@ use super::{
     dto::{AuthUserResponse, ChangePasswordRequest, UpdateProfileRequest},
     guards::require_auth_user,
     password::{hash_password, verify_password},
+    service::derive_username_from_profile,
     validation::{normalize_email, validate_password},
 };
 
@@ -68,6 +69,11 @@ pub(crate) async fn auth_update_me(
     } else {
         current.avatar_url
     };
+    let next_username = resolve_profile_username(
+        next_first_name.as_deref(),
+        next_last_name.as_deref(),
+        &current.login,
+    );
 
     let updated = sqlx::query_as::<_, AuthUserResponse>(
         r#"
@@ -76,8 +82,9 @@ pub(crate) async fn auth_update_me(
             first_name = $2,
             last_name = $3,
             phone_number = $4,
-            avatar_url = $5
-        WHERE id = $6
+            avatar_url = $5,
+            username = $6
+        WHERE id = $7
         RETURNING id, username, login, email, first_name, last_name, phone_number, avatar_url, role, status
         "#,
     )
@@ -86,6 +93,7 @@ pub(crate) async fn auth_update_me(
     .bind(next_last_name)
     .bind(next_phone_number)
     .bind(next_avatar_url)
+    .bind(next_username)
     .bind(auth_user.id)
     .fetch_one(&state.db)
     .await
@@ -150,6 +158,18 @@ pub(crate) async fn auth_change_password(
     .await
     .map_err(|error| internal_error(format!("failed to revoke sessions: {error}")))?;
 
+    sqlx::query(
+        r#"
+        UPDATE auth_refresh_sessions
+        SET revoked_at = NOW()
+        WHERE user_id = $1 AND revoked_at IS NULL
+        "#,
+    )
+    .bind(auth_user.id)
+    .execute(&state.db)
+    .await
+    .map_err(|error| internal_error(format!("failed to revoke refresh sessions: {error}")))?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -169,6 +189,15 @@ async fn load_auth_user_response(
     .await
     .map_err(|error| internal_error(format!("failed to load user profile: {error}")))?
     .ok_or_else(|| validation_error("user_not_found", "user not found"))
+}
+
+fn resolve_profile_username(
+    first_name: Option<&str>,
+    last_name: Option<&str>,
+    login: &str,
+) -> String {
+    derive_username_from_profile(first_name.unwrap_or_default(), last_name.unwrap_or_default(), login)
+        .unwrap_or_else(|| login.to_string())
 }
 
 fn normalize_avatar_url(value: &str) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
@@ -246,7 +275,7 @@ fn map_update_profile_error(error: sqlx::Error) -> (StatusCode, Json<ErrorRespon
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_avatar_url, normalize_phone_number};
+    use super::{normalize_avatar_url, normalize_phone_number, resolve_profile_username};
 
     #[test]
     fn avatar_url_accepts_uploads_path() {
@@ -276,5 +305,17 @@ mod tests {
     fn phone_number_rejects_symbols() {
         let result = normalize_phone_number("777-123-45-67#");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn profile_username_prefers_full_name_after_profile_update() {
+        let result = resolve_profile_username(Some("Ravil"), Some("Raykhanov"), "ravilkadev0");
+        assert_eq!(result, "Ravil Raykhanov");
+    }
+
+    #[test]
+    fn profile_username_falls_back_to_login_when_name_is_invalid() {
+        let result = resolve_profile_username(Some(""), Some(""), "ravilkadev0");
+        assert_eq!(result, "ravilkadev0");
     }
 }

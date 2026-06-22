@@ -1,4 +1,8 @@
+import { API_V1_ROUTES, buildApiV1Url } from "../../app/api-v1-routes";
+import { DEFAULT_API_BASE } from "../../app/client-api";
+import { authorizedFetch } from "../../app/client-api-shared";
 import { apiFetch } from "../../lib/api/client";
+import { resolveServicesApiBase } from "../../lib/api/services-base";
 
 export type DashboardKidDto = {
   id: number;
@@ -23,20 +27,7 @@ export type ServiceLogEntry = {
 };
 
 function getServicesApiBase(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "/api/services/v1";
-  const normalized = raw.replace(/\/+$/, "");
-  if (
-    normalized === "http://localhost:8934" ||
-    normalized === "http://127.0.0.1:8934" ||
-    normalized.startsWith("http://localhost:8934/api/v1") ||
-    normalized.startsWith("http://127.0.0.1:8934/api/v1")
-  ) {
-    return "/api/services/v1";
-  }
-  return normalized;
+  return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 export async function fetchDashboardOverviewData(): Promise<{
@@ -45,8 +36,8 @@ export async function fetchDashboardOverviewData(): Promise<{
 }> {
   const base = getServicesApiBase();
   const [kidsResponse, ordersResponse] = await Promise.all([
-    fetch(`${base}/kids`, { credentials: "include", cache: "no-store" }),
-    fetch(`${base}/orders`, { credentials: "include", cache: "no-store" })
+    fetch(`${base}/kids/`, { credentials: "include", cache: "no-store" }),
+    fetch(`${base}/orders/`, { credentials: "include", cache: "no-store" })
   ]);
 
   if (!kidsResponse.ok || !ordersResponse.ok) {
@@ -63,8 +54,8 @@ export async function fetchDashboardOverviewData(): Promise<{
 
 export async function fetchTimelineLogs(limit = 80): Promise<ServiceLogEntry[]> {
   const [backendResp, frontendResp] = await Promise.all([
-    apiFetch(`/api/backend/logs/backend?limit=${limit}`),
-    apiFetch(`/api/backend/logs/frontend?limit=${limit}`)
+    authorizedFetch(`${buildApiV1Url(DEFAULT_API_BASE, API_V1_ROUTES.logs.channel("backend"))}?limit=${limit}`, {}, { apiBase: DEFAULT_API_BASE }),
+    authorizedFetch(`${buildApiV1Url(DEFAULT_API_BASE, API_V1_ROUTES.logs.channel("frontend"))}?limit=${limit}`, {}, { apiBase: DEFAULT_API_BASE })
   ]);
 
   const entries: ServiceLogEntry[] = [];

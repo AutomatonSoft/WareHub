@@ -1,4 +1,13 @@
-﻿import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+
+const COPYRIGHT_START_YEAR = 2026;
+
+function getCopyrightYears() {
+  const currentYear = new Date().getFullYear();
+  return currentYear <= COPYRIGHT_START_YEAR
+    ? String(COPYRIGHT_START_YEAR)
+    : `${COPYRIGHT_START_YEAR} - ${currentYear}`;
+}
 
 export function AppFooter({ className }: { className?: string }) {
   return (
@@ -8,7 +17,7 @@ export function AppFooter({ className }: { className?: string }) {
         className
       )}
     >
-      All rights reserved automatons soft © 2026
+      {`All rights reserved automatons soft © ${getCopyrightYears()}`}
     </footer>
   );
 }

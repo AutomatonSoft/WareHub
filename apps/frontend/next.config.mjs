@@ -45,15 +45,10 @@ const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
     const backendOrigin = process.env.BACKEND_ORIGIN ?? "http://localhost:8932";
-    const servicesOrigin = process.env.SERVICES_ORIGIN ?? "http://localhost:8934";
     return [
       {
-        source: "/api/v1/:path*",
-        destination: `${backendOrigin}/api/v1/:path*`
-      },
-      {
-        source: "/api/uploads/images/",
-        destination: `${servicesOrigin}/api/uploads/images/`
+        source: "/api/v1/:path((?!services(?:/|$)|orchestrator(?:/|$)|jv(?:/|$)|xl(?:/|$)|hood(?:/|$)|uploads(?:/|$)|docs(?:/|$)|backend(?:/|$)).*)",
+        destination: `${backendOrigin}/api/v1/:path`
       }
     ];
   },

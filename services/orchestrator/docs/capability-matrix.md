@@ -16,7 +16,7 @@ Status date: 2026-05-14
 | hood | planned | active | planned | planned | Runtime path currently executes update flow. |
 | kaufland | planned | active | planned | planned | Runtime path currently executes update flow. |
 | otto | planned | active | planned | planned | Runtime path currently executes update flow. |
-| jv/xl (xljv target) | planned | active | planned | planned | Runtime path currently executes update flow with split `/api/jv/*` and `/api/xl/*` endpoints. |
+| jv/xl (xljv target) | planned | active | planned | planned | Runtime path currently executes update flow with split `/api/v1/jv/*` and `/api/v1/xl/*` endpoints. |
 
 ## Contract policy
 

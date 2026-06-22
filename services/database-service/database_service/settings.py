@@ -18,15 +18,10 @@ from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-WORKSPACE_ROOT = BASE_DIR.parent.parent.parent
-REPO_ROOT = WORKSPACE_ROOT
-for env_path in (
-    REPO_ROOT / ".env",
-    REPO_ROOT / "infra" / ".env",
-    BASE_DIR / ".env",
-):
-    if env_path.is_file():
-        load_dotenv(env_path)
+REPO_ROOT = BASE_DIR.parent.parent
+root_env_path = REPO_ROOT / ".env"
+if root_env_path.is_file():
+    load_dotenv(root_env_path, override=False)
 
 
 # Quick-start development settings - unsuitable for production
@@ -241,5 +236,11 @@ BACKEND_AUTH_BASE_URL = (os.getenv("BACKEND_AUTH_BASE_URL") or "http://127.0.0.1
 BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS = [
     h.strip().lower()
     for h in os.getenv("BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if h.strip()
+]
+ORCHESTRATOR_SERVICE_AUTH_TOKEN = (os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN") or "").strip()
+ORCHESTRATOR_SERVICE_ALLOWED_HOSTS = [
+    h.strip().lower()
+    for h in os.getenv("ORCHESTRATOR_SERVICE_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if h.strip()
 ]

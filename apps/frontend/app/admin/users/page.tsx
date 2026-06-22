@@ -8,7 +8,7 @@ import { DEFAULT_API_BASE, readAuth } from "../../client-api";
 import type { AuthUser } from "../../client-api-types";
 import { useLabels, useLanguage } from "../../use-labels";
 import { AppShell } from "../../../components/layout/app-shell";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import { SectionCard } from "../../../components/ui/section-card";
 
 type AuthState = {
   token: string;
@@ -47,47 +47,25 @@ export default function AdminUsersPage() {
 
   return (
     <AppShell title="Admin users" subtitle="Manage user approvals and roles.">
-      <div className="space-y-6">
-        <header className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Administration
-          </p>
-          <div className="space-y-1">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Admin users</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Manage user approvals and roles.
-            </p>
-          </div>
-        </header>
-
+      <div className="space-y-4">
         {auth === undefined ? (
-        <Card className="wh-section-card border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Admin users</CardTitle>
-            <CardDescription>{t.loading}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SectionCard title="Admin users" subtitle={t.loading}>
+          <div />
+        </SectionCard>
       ) : null}
 
       {auth === null ? (
-        <Card className="wh-section-card border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Admin users</CardTitle>
-            <CardDescription>{t.redirecting}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SectionCard title="Admin users" subtitle={t.redirecting}>
+          <div />
+        </SectionCard>
       ) : null}
 
       {auth && !isAllowed ? (
-        <Card className="wh-section-card border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Access denied</CardTitle>
-            <CardDescription>Access denied</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
+        <SectionCard title="Access denied" subtitle="Access denied">
+          <p className="text-sm text-muted-foreground">
             This page is available only to approved admin accounts.
-          </CardContent>
-        </Card>
+          </p>
+        </SectionCard>
       ) : null}
 
       {auth && isAllowed ? (

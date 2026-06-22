@@ -33,25 +33,32 @@ def test_settings_import_does_not_fail_for_short_docker_like_path(tmp_path, monk
     assert module.settings.base_url == "http://localhost:8000"
 
 
-def test_load_local_env_uses_nearest_dotenv_without_overriding_existing_values(tmp_path, monkeypatch):
+def test_load_local_env_reads_only_repo_root_dotenv_without_overriding_existing_values(tmp_path, monkeypatch):
     module_path = tmp_path / "repo" / "services" / "orchestrator" / "src" / "sofort_orchestrator" / "infra" / "settings.py"
     module_path.parent.mkdir(parents=True)
     source = Path(__file__).resolve().parents[1] / "src" / "sofort_orchestrator" / "infra" / "settings.py"
     module_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
-    nearest_env = module_path.parents[3] / ".env"
-    nearest_env.write_text(
-        "DATABASE_SERVICE_BASE_URL=http://from-dotenv:8000\nORCHESTRATOR_HTTP_RETRIES=7\n",
+    repo_root_env = module_path.parents[5] / ".env"
+    repo_root_env.write_text(
+        "DATABASE_SERVICE_BASE_URL=http://from-root:8000\nORCHESTRATOR_HTTP_RETRIES=7\nORCHESTRATOR_SERVICE_AUTH_TOKEN=root-token\n",
+        encoding="utf-8",
+    )
+
+    ignored_service_env = module_path.parents[3] / ".env"
+    ignored_service_env.write_text(
+        "DATABASE_SERVICE_BASE_URL=http://from-service-local:8000\nORCHESTRATOR_HTTP_RETRIES=99\nORCHESTRATOR_SERVICE_AUTH_TOKEN=service-local-token\n",
         encoding="utf-8",
     )
 
     monkeypatch.setenv("DATABASE_SERVICE_BASE_URL", "http://already-set:9000")
     monkeypatch.delenv("ORCHESTRATOR_HTTP_RETRIES", raising=False)
 
-    module = _load_settings_module(module_path, "test_settings_nearest_dotenv")
+    module = _load_settings_module(module_path, "test_settings_root_dotenv")
 
     assert module.settings.base_url == "http://already-set:9000"
     assert module.settings.retries == 7
+    assert module.settings.service_auth_token == "root-token"
 
 
 def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):

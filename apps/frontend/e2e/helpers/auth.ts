@@ -20,11 +20,11 @@ export async function login(page: Page) {
   if (bypassAuth) {
     await page.context().addCookies([
       {
-        name: "sofortbot_token",
+        name: "sofortbot_refresh_token",
         value: "e2e-bypass-token",
         domain: "localhost",
         path: "/",
-        httpOnly: false,
+        httpOnly: true,
         secure: false,
         sameSite: "Lax"
       }

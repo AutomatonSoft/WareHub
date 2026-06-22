@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 
 from ..domain.models import (
     ErrorContract,
@@ -24,10 +25,14 @@ class SqliteJobStore:
         self.db_path = db_path
         self._ensure_schema()
 
+    @contextmanager
     def _connect(self):
         conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:

@@ -1,5 +1,11 @@
-import type { AuthUser, ChangePasswordPayload, UpdateProfilePayload } from "./client-api-types";
-import { parseError } from "./client-api-shared";
+import type {
+  AuthUser,
+  ChangePasswordCodeConfirmPayload,
+  ChangePasswordPayload,
+  UpdateProfilePayload
+} from "./client-api-types";
+import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
+import { authorizedFetch, parseError } from "./client-api-shared";
 
 type PasswordResetConfirmPayload = {
   email: string;
@@ -33,17 +39,17 @@ function parseAuthApiError(payload: unknown, fallback: string, status: number): 
 }
 
 export async function logout(apiBase: string, token: string): Promise<void> {
-  await fetch(`${apiBase}/auth/logout`, {
+  await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.logout), {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
+  }, {
+    apiBase,
+    token,
+    retryOnUnauthorized: false
   }).catch(() => null);
 }
 
 export async function fetchCurrentUser(apiBase: string, token: string): Promise<AuthUser> {
-  const response = await fetch(`${apiBase}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.me), {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Profile request failed: HTTP ${response.status}`));
@@ -56,14 +62,13 @@ export async function updateCurrentUser(
   token: string,
   payload: UpdateProfilePayload
 ): Promise<AuthUser> {
-  const response = await fetch(`${apiBase}/auth/me`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.me), {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Profile update failed: HTTP ${response.status}`));
@@ -76,24 +81,59 @@ export async function changeCurrentUserPassword(
   token: string,
   payload: ChangePasswordPayload
 ): Promise<void> {
-  const response = await fetch(`${apiBase}/auth/me/password`, {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.changePassword), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
-  });
+  }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(parseError(body, `Password change failed: HTTP ${response.status}`));
   }
 }
 
+export async function requestCurrentUserPasswordChangeCode(
+  apiBase: string,
+  token: string,
+  payload: ChangePasswordPayload
+): Promise<void> {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.requestPasswordChangeCode), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }, { apiBase, token });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(parseError(body, `Password code request failed: HTTP ${response.status}`));
+  }
+}
+
+export async function confirmCurrentUserPasswordChange(
+  apiBase: string,
+  token: string,
+  payload: ChangePasswordCodeConfirmPayload
+): Promise<void> {
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.confirmPasswordChange), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }, { apiBase, token });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(parseError(body, `Password confirmation failed: HTTP ${response.status}`));
+  }
+}
+
 export async function requestPasswordReset(apiBase: string, email: string): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBase}/auth/password/reset/request`, {
+    response = await fetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.requestPasswordReset), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -116,7 +156,7 @@ export async function confirmPasswordReset(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBase}/auth/password/reset/confirm`, {
+    response = await fetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.confirmPasswordReset), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

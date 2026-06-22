@@ -28,26 +28,38 @@ from .infra.marketplace_adapters import MarketplaceAdapters
 from .infra.metrics import InMemoryMetrics
 from .infra.product_editor_gateway import ProductEditorGateway
 from .infra.product_editor_store import SqliteProductEditorStore
+from .openapi_schema import install_custom_openapi
 from .infra.settings import settings
 
 logger = logging.getLogger("sofort_orchestrator")
 logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO), format="%(message)s")
+_shared_http_client: HttpClient | None = None
+_ORCHESTRATOR_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ensure_sqlite_parent_dir(db_path: str) -> str:
     path = Path(db_path)
+    if not path.is_absolute():
+        path = _ORCHESTRATOR_SERVICE_ROOT / path
     if path.parent != Path():
         path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
 
 
 def _build_http_client() -> HttpClient:
-    return HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
+    global _shared_http_client
+    if _shared_http_client is None:
+        _shared_http_client = HttpClient(timeout_seconds=settings.timeout_seconds, retries=settings.retries)
+    return _shared_http_client
 
 
 def _build_service() -> OrchestratorService:
     http_client = _build_http_client()
-    adapters = MarketplaceAdapters(base_url=settings.base_url, http_client=http_client)
+    adapters = MarketplaceAdapters(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     circuit_breaker = InMemoryCircuitBreaker(
         failure_threshold=settings.circuit_breaker_failure_threshold,
         open_seconds=settings.circuit_breaker_open_seconds,
@@ -77,7 +89,11 @@ def _build_metrics() -> InMemoryMetrics:
 
 def _build_product_editor_service(*, job_store: SqliteJobStore) -> ProductEditorService:
     http_client = _build_http_client()
-    gateway = ProductEditorGateway(base_url=settings.base_url, http_client=http_client)
+    gateway = ProductEditorGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3")
     store = SqliteProductEditorStore(db_path=_ensure_sqlite_parent_dir(store_path))
     return ProductEditorService(
@@ -98,6 +114,17 @@ def configure_runtime_dependencies() -> None:
         Deps.metrics = _build_metrics()
     if ProductEditorDeps.service is None:
         ProductEditorDeps.service = _build_product_editor_service(job_store=Deps.job_store)
+
+
+def close_runtime_dependencies() -> None:
+    global _shared_http_client
+
+    if _shared_http_client is not None:
+        _shared_http_client.close()
+        _shared_http_client = None
+
+    Deps.service = None
+    ProductEditorDeps.service = None
 
 
 @asynccontextmanager
@@ -144,9 +171,18 @@ async def lifespan(_app: FastAPI):
                 await reconciliation_scheduler_task
             except asyncio.CancelledError:
                 pass
+        close_runtime_dependencies()
 
 
-app = FastAPI(title="sb-sofort-orchestrator-service", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="sb-sofort-orchestrator-service",
+    version="1.0.0",
+    lifespan=lifespan,
+    openapi_url="/api/v1/openapi.json",
+    docs_url=None,
+    redoc_url=None,
+)
+install_custom_openapi(app)
 
 
 @app.middleware("http")

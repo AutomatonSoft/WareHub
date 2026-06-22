@@ -1,5 +1,4 @@
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 
@@ -49,11 +48,8 @@ export function CreateProductJobPanel(props: Props) {
   } = props;
 
   return (
-    <Card className="wh-command-panel mt-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{t.jobStatusAndReconciliation}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <section className="mt-4 space-y-3 border-t border-border/70 pt-4">
+      <p className="text-base font-semibold text-foreground">{t.jobStatusAndReconciliation}</p>
       <div className="wh-secondary-toolbar flex flex-wrap gap-2">
         <Input
           value={latestJobId}
@@ -87,7 +83,6 @@ export function CreateProductJobPanel(props: Props) {
       {jobEventsJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{jobEventsJson}</pre></ScrollArea> : null}
       {reconciliationReportsJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{reconciliationReportsJson}</pre></ScrollArea> : null}
       {reconciliationReportJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{reconciliationReportJson}</pre></ScrollArea> : null}
-      </CardContent>
-    </Card>
+    </section>
   );
 }

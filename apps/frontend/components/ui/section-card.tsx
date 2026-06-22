@@ -12,13 +12,13 @@ export function SectionCard(props: {
   children: ReactNode;
 }) {
   return (
-    <Card className={cn("wh-section-card rounded-2xl border border-[#E2E8F0] bg-white shadow-sm", props.className)}>
+    <Card className={cn("wh-section-card border-border bg-card shadow-[var(--wh-shadow-card)]", props.className)}>
       {props.title || props.subtitle || props.actions ? (
         <CardHeader className="wh-section-card__header pb-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              {props.title ? <CardTitle className="wh-section-card__title text-base font-semibold text-[#0F172A]">{props.title}</CardTitle> : null}
-              {props.subtitle ? <CardDescription className="wh-section-card__subtitle text-sm text-[#64748B]">{props.subtitle}</CardDescription> : null}
+              {props.title ? <CardTitle className="wh-section-card__title text-base font-semibold text-foreground">{props.title}</CardTitle> : null}
+              {props.subtitle ? <CardDescription className="wh-section-card__subtitle text-sm text-muted-foreground">{props.subtitle}</CardDescription> : null}
             </div>
             {props.actions ? <div className="flex items-center gap-2">{props.actions}</div> : null}
           </div>

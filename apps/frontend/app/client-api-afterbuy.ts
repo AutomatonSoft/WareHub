@@ -1,5 +1,6 @@
 import type { AfterbuyKidOrderMatch, AfterbuyKidOrdersData, AfterbuyOrderData } from "./client-api-types";
-import { parseError } from "./client-api-shared";
+import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
+import { authorizedFetch, parseError } from "./client-api-shared";
 
 export function parseOrderIdFromQr(qrCode: string): string | null {
   const source = qrCode.trim();
@@ -18,10 +19,7 @@ export async function fetchAfterbuyOrder(
   token: string,
   orderId: string
 ): Promise<AfterbuyOrderData> {
-  const response = await fetch(`${apiBase}/afterbuy/orders/${encodeURIComponent(orderId)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.afterbuy.order(orderId)), {}, { apiBase, token });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw new Error(parseError(payload, `Afterbuy request failed: HTTP ${response.status}`));
@@ -34,12 +32,10 @@ export async function fetchAfterbuyOrdersByKid(
   token: string,
   kidNumber: string
 ): Promise<AfterbuyKidOrdersData> {
-  const response = await fetch(
-    `${apiBase}/afterbuy/kids/${encodeURIComponent(kidNumber)}/orders`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store"
-    }
+  const response = await authorizedFetch(
+    buildApiV1Url(apiBase, API_V1_ROUTES.afterbuy.kidOrders(kidNumber)),
+    {},
+    { apiBase, token }
   );
   if (!response.ok) {
     const payload = await response.json().catch(() => null);

@@ -29,7 +29,7 @@ class KidAccount:
     ]
 
 class Kid(Model):
-    kid_number = CharField(max_length=255, null=True, blank=True)
+    kid_number = CharField(max_length=255)
     account = CharField(
         max_length=8,
         choices=KidAccount.ACCOUNT_CHOICES,
@@ -136,7 +136,7 @@ class EANUsage(Model):
 
 
 class ProductAttributes(Model):
-    kid = ForeignKey(Kid, on_delete=CASCADE, related_name="product_attributes")
+    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="product_attributes")
     room = CharField(max_length=128, null=True, blank=True)
     furniture_type = CharField(max_length=128, null=True, blank=True)
     color = CharField(max_length=128, null=True, blank=True)

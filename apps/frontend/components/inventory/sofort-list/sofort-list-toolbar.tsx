@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Toolbar, ToolbarGroup } from "@/components/ui/toolbar";
 
 export function SofortListToolbar(props: {
   query: string;
@@ -37,8 +38,8 @@ export function SofortListToolbar(props: {
   const clearLabel = props.hasActiveFilters ? `${labels.clear} (active)` : labels.clear;
 
   return (
-    <div className="wh-sofort-toolbar">
-      <div className="wh-sofort-toolbar__search">
+    <Toolbar className="wh-sofort-toolbar">
+      <ToolbarGroup className="wh-sofort-toolbar__search flex-1">
         <Input
           value={props.query}
           onChange={(event) => props.onQueryChange(event.target.value)}
@@ -46,8 +47,8 @@ export function SofortListToolbar(props: {
           className="wh-input w-full"
           aria-label="Search products"
         />
-      </div>
-      <div className="wh-sofort-toolbar__actions" role="group" aria-label="Sofort list actions">
+      </ToolbarGroup>
+      <ToolbarGroup className="wh-sofort-toolbar__actions" role="group" aria-label="Sofort list actions">
         <Button type="button" variant="outline" onClick={props.onToggleFilters} className="wh-sofort-toolbar__button">
           <Filter />
           {props.showFilters ? "Hide filters" : "Filters"}
@@ -65,11 +66,11 @@ export function SofortListToolbar(props: {
           {clearLabel}
         </Button>
         <Badge variant="outline" className="wh-sofort-toolbar__status">{props.statusText}</Badge>
-      </div>
+      </ToolbarGroup>
       {props.showFilters ? (
-        <div className="wh-sofort-toolbar__filters" role="group" aria-label="Sofort list filters">
+        <ToolbarGroup className="wh-sofort-toolbar__filters basis-full" role="group" aria-label="Sofort list filters">
           <Select value={props.roomFilter} onValueChange={(value) => props.onRoomFilterChange(value ?? "all")}>
-            <SelectTrigger className="wh-select min-w-[160px]">
+            <SelectTrigger className="wh-select h-10 min-w-[160px]">
               <SelectValue placeholder={labels.allRooms} />
             </SelectTrigger>
             <SelectContent>
@@ -82,7 +83,7 @@ export function SofortListToolbar(props: {
             </SelectContent>
           </Select>
           <Select value={props.typeFilter} onValueChange={(value) => props.onTypeFilterChange(value ?? "all")}>
-            <SelectTrigger className="wh-select min-w-[160px]">
+            <SelectTrigger className="wh-select h-10 min-w-[160px]">
               <SelectValue placeholder={labels.allTypes} />
             </SelectTrigger>
             <SelectContent>
@@ -95,7 +96,7 @@ export function SofortListToolbar(props: {
             </SelectContent>
           </Select>
           <Select value={props.listingFilter} onValueChange={(value) => props.onListingFilterChange(value ?? "all")}>
-            <SelectTrigger className="wh-select min-w-[160px]">
+            <SelectTrigger className="wh-select h-10 min-w-[160px]">
               <SelectValue placeholder={labels.allListingStatuses} />
             </SelectTrigger>
             <SelectContent>
@@ -104,9 +105,9 @@ export function SofortListToolbar(props: {
               <SelectItem value="unlisted">{labels.unlisted}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </ToolbarGroup>
       ) : null}
-    </div>
+    </Toolbar>
   );
 }
 

@@ -38,7 +38,8 @@ impl<R: AuthRepository> RegistrationService<R> {
         let normalized_phone_number = normalize_phone_number(&payload.phone_number);
         let username = resolve_username(
             payload.username.as_deref(),
-            &normalized_email,
+            &normalized_first_name,
+            &normalized_last_name,
             &normalized_login,
         )?;
 
@@ -106,7 +107,8 @@ fn normalize_phone_number(value: &str) -> String {
 
 fn resolve_username(
     provided: Option<&str>,
-    email: &str,
+    first_name: &str,
+    last_name: &str,
     login: &str,
 ) -> Result<String, RegistrationError> {
     if let Some(username) = provided {
@@ -117,19 +119,39 @@ fn resolve_username(
         return Err(RegistrationError::InvalidUsername);
     }
 
-    let candidate = email.split('@').next().unwrap_or("");
-    if is_valid_username(candidate) {
-        return Ok(candidate.to_string());
+    if let Some(username) = derive_username_from_profile(first_name, last_name, login) {
+        return Ok(username);
     }
-    if is_valid_username(login) {
-        return Ok(login.to_string());
-    }
+
     Err(RegistrationError::InvalidUsername)
 }
 
-fn is_valid_username(value: &str) -> bool {
-    let length_ok = value.len() >= 3 && value.len() <= 32;
-    length_ok && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+pub(super) fn derive_username_from_profile(
+    first_name: &str,
+    last_name: &str,
+    login: &str,
+) -> Option<String> {
+    let candidate = format!("{} {}", first_name.trim(), last_name.trim())
+        .trim()
+        .to_string();
+    if is_valid_username(&candidate) {
+        return Some(candidate);
+    }
+    if is_valid_username(login) {
+        return Some(login.to_string());
+    }
+    None
+}
+
+fn is_valid_username(value: impl AsRef<str>) -> bool {
+    let value = value.as_ref().trim();
+    let length_ok = value.len() >= 3 && value.len() <= 64;
+    let has_visible_content = value.chars().any(|c| !c.is_whitespace());
+    let allowed_chars = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ');
+
+    length_ok && has_visible_content && allowed_chars
 }
 
 #[cfg(test)]

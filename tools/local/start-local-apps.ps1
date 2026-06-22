@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("frontend", "backend", "services", "orchestrator")]
+  [ValidateSet("frontend", "backend", "services", "services-jv-worker", "orchestrator")]
   [string]$App,
 
   [Parameter(Mandatory = $true)]
@@ -297,6 +297,18 @@ switch ($App) {
         & $databaseServicePythonExe manage.py runserver 0.0.0.0:8934
       } `
       -LoggedCommandLine $loggedCommandLine
+  }
+
+  "services-jv-worker" {
+    $workingDirectory = Join-Path $resolvedRepoRoot "services\database-service"
+    $quotedPython = '"' + $databaseServicePythonExe + '"'
+    $startupMessage = "Starting database-service JV worker in $workingDirectory`nVenv: $databaseServiceVenvPath`nEnv: $(Get-SafeEnvSummary -Keys @('DATABASE_URL','POSTGRES_DB','POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_HOST','POSTGRES_PORT','ALLOWED_HOSTS','BACKEND_AUTH_BASE_URL')); $(Get-DatabaseUrlSummary)"
+
+    Invoke-LoggedCommand `
+      -WorkingDirectory $workingDirectory `
+      -StartupMessage $startupMessage `
+      -ForegroundCommand { & $databaseServicePythonExe manage.py run_jv_batch_worker } `
+      -LoggedCommandLine "$quotedPython manage.py run_jv_batch_worker"
   }
 
   "orchestrator" {

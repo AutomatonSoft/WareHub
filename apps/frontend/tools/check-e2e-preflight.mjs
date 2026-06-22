@@ -1,5 +1,5 @@
 const frontendUrl = process.env.E2E_BASE_URL || "http://localhost:8931";
-const backendHealthUrl = process.env.E2E_BACKEND_HEALTH_URL || "http://localhost:8932/healthz";
+const backendHealthUrl = process.env.E2E_BACKEND_HEALTH_URL || "http://localhost:8932/api/v1/healthz";
 const runtimeLocale = Intl.DateTimeFormat().resolvedOptions().locale || "unknown";
 const runtimeTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown";
 

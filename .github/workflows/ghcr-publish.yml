@@ -173,6 +173,18 @@ jobs:
           cache-from: type=gha,scope=ghcr-infra
           cache-to: type=gha,mode=max,scope=ghcr-infra
 
+      - name: Build and push gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ env.GATEWAY_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.GATEWAY_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-gateway
+          cache-to: type=gha,mode=max,scope=ghcr-gateway
+
       - name: Write publish summary
         shell: bash
         run: |
@@ -194,6 +206,7 @@ jobs:
             echo "- \`$SERVICES_IMAGE:$IMAGE_TAG\`"
             echo "- \`$ORCHESTRATOR_IMAGE:$IMAGE_TAG\`"
             echo "- \`$INFRA_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$GATEWAY_IMAGE:$IMAGE_TAG\`"
             if [[ -n "${OPTIONAL_LATEST_TAG:-}" ]]; then
               echo
               echo "### Convenience tags"
@@ -203,5 +216,6 @@ jobs:
               echo "- \`$SERVICES_IMAGE:$OPTIONAL_LATEST_TAG\`"
               echo "- \`$ORCHESTRATOR_IMAGE:$OPTIONAL_LATEST_TAG\`"
               echo "- \`$INFRA_IMAGE:$OPTIONAL_LATEST_TAG\`"
+              echo "- \`$GATEWAY_IMAGE:$OPTIONAL_LATEST_TAG\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

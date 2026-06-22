@@ -21,7 +21,7 @@ Reviewer:
 
 - Attach links/paths to logs, screenshots, and preflight artifacts.
 - Services health endpoint check (expected HTTP 200):
-  - `curl -fsS http://127.0.0.1:${STAGE_SERVICES_PORT:-8944}/api/v1/healthz`
+  - `curl -fsS http://127.0.0.1:${STAGE_GATEWAY_PORT:-8940}/api/v1/services/healthz`
 
 ## Known Issues
 

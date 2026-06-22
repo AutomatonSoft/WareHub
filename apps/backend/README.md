@@ -63,12 +63,12 @@ flowchart LR
 ## 3. API Contract
 
 - Base path: `/api/v1`
-- OpenAPI: `/openapi.json`
-- Scalar UI: `/scalar`
+- OpenAPI: `/api/v1/openapi.json`
+- Scalar UI: `/api/v1/scalar`
 - Meta: `/api/v1/meta`
 - Mobile update: `/api/v1/mobile/app-update`
-- Health: `/healthz`
-- Ready: `/readyz`
+- Health: `/api/v1/healthz`
+- Ready: `/api/v1/readyz`
 
 ### Error envelope
 

@@ -13,28 +13,31 @@ class AdapterResult:
 
 
 class MarketplaceAdapters:
-    def __init__(self, base_url: str, http_client: HttpClient) -> None:
+    def __init__(self, base_url: str, http_client: HttpClient, service_auth_token: str = "") -> None:
         self.base_url = base_url
         self.http = http_client
+        self.service_auth_token = service_auth_token
 
     def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict) -> AdapterResult:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
+        if self.service_auth_token:
+            headers["X-WareHub-Service-Token"] = self.service_auth_token
 
         if channel.marketplace is Marketplace.HOOD:
             account = (channel.account or "jv").strip().lower()
-            url = f"{self.base_url}/api/hood/items/by-ean/{ean}/"
+            url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
             response = self.http.request("PATCH", url, headers=headers, params={"account": account}, json=payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
         if channel.marketplace is Marketplace.KAUFLAND:
-            url = f"{self.base_url}/api/kaufland/products/ean/change/"
+            url = f"{self.base_url}/api/v1/kaufland/products/ean/change/"
             body = {"ean": ean, "controller": (channel.account or "jv").strip().lower(), **payload}
             response = self.http.request("POST", url, headers=headers, json=body)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
         if channel.marketplace is Marketplace.OTTO:
             profile = (channel.profile or channel.account or "jv").strip().lower()
-            url = f"{self.base_url}/api/otto/{profile}/products/upsert/"
+            url = f"{self.base_url}/api/v1/otto/{profile}/products/upsert/"
             response = self.http.request("POST", url, headers=headers, json=payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
@@ -47,11 +50,11 @@ class MarketplaceAdapters:
             route_site = "jv" if site == "JV" else "xl"
             product_editor_mode = str(payload.get("__product_editor_mode") or "").strip().lower()
             if product_editor_mode == "jv_batch_apply":
-                url = f"{self.base_url}/api/jv/batch/update-by-ean/{ean}/apply/"
+                url = f"{self.base_url}/api/v1/jv/batch/update-by-ean/{ean}/apply/"
                 batch_payload = {key: value for key, value in payload.items() if not str(key).startswith("__product_editor_")}
                 response = self.http.request("POST", url, headers=headers, json=batch_payload)
                 return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
-            url = f"{self.base_url}/api/{route_site}/products/update-by-ean/{ean}/"
+            url = f"{self.base_url}/api/v1/{route_site}/products/update-by-ean/{ean}/"
             response = self.http.request("PATCH", url, headers=headers, params=params, json=payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 

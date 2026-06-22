@@ -9,25 +9,25 @@ Mapping of existing service metrics to dashboard panels, alert rules, and runboo
 ## Mapping Table
 
 1. Availability
-- Metric source: readiness probe (`/readyz`) + HTTP status stream.
+- Metric source: readiness probe (`/api/v1/readyz`) + HTTP status stream.
 - Dashboard panel: `Ready State` + `API Availability % (30d)`.
 - Alert link: `P1 Readiness failure`, `P1 API error-rate spike`.
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Fast Triage, Scenario A).
 
 2. Request Error Rate
-- Metric source: `/metrics -> error_rate`.
+- Metric source: `/api/v1/metrics -> error_rate`.
 - Dashboard panel: `HTTP Error Rate (5m/1h)`.
 - Alert link: `P1 API error-rate spike`.
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Fast Triage, Scenario C).
 
 3. Request Latency
-- Metric source: `/metrics -> latency_histogram_ms`.
+- Metric source: `/api/v1/metrics -> latency_histogram_ms`.
 - Dashboard panel: `Latency p50/p95/p99`.
 - Alert link: optional latency threshold (team-defined in monitoring stack).
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario A/C).
 
 4. Queue Backlog
-- Metric source: `/metrics -> job_store_metrics.jobs_by_status`.
+- Metric source: `/api/v1/metrics -> job_store_metrics.jobs_by_status`.
 - Dashboard panel: `Jobs by Status` (queued/running/completed/failed).
 - Alert link: `P2 Job backlog growth`.
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario A).
@@ -39,13 +39,13 @@ Mapping of existing service metrics to dashboard panels, alert rules, and runboo
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario A).
 
 6. Priority Mix
-- Metric source: `/metrics -> job_store_metrics.jobs_by_priority`.
+- Metric source: `/api/v1/metrics -> job_store_metrics.jobs_by_priority`.
 - Dashboard panel: `Queue Priority Mix` (urgent/normal/background).
 - Alert link: optional urgent backlog saturation (team-defined threshold).
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario A).
 
 7. Circuit Breaker State
-- Metric source: `/metrics -> circuit_breaker_metrics`.
+- Metric source: `/api/v1/metrics -> circuit_breaker_metrics`.
 - Dashboard panel: `Open Breaker Channels`.
 - Alert link: `P2 Circuit breaker saturation`.
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario C).
@@ -57,7 +57,7 @@ Mapping of existing service metrics to dashboard panels, alert rules, and runboo
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario B).
 
 9. Reconciliation Volume
-- Metric source: `/metrics -> job_store_metrics.reconciliation_reports_total`.
+- Metric source: `/api/v1/metrics -> job_store_metrics.reconciliation_reports_total`.
 - Dashboard panel: `Reconciliation Reports Total`.
 - Alert link: `P3 Reconciliation drift persistence`.
 - Runbook link: `docs/runbooks/orchestrator-incidents.md` (Scenario D).

@@ -42,7 +42,7 @@ def test_hood_contract_path_and_params():
     )
     call = fake_http.calls[0]
     assert call["method"] == "PATCH"
-    assert call["url"] == "http://database-service:8000/api/hood/items/by-ean/4012345678901/"
+    assert call["url"] == "http://database-service:8000/api/v1/hood/items/by-ean/4012345678901/"
     assert call["params"] == {"account": "jv"}
 
 
@@ -57,7 +57,7 @@ def test_kaufland_contract_path_and_body():
     )
     call = fake_http.calls[0]
     assert call["method"] == "POST"
-    assert call["url"] == "http://database-service:8000/api/kaufland/products/ean/change/"
+    assert call["url"] == "http://database-service:8000/api/v1/kaufland/products/ean/change/"
     assert call["json"]["ean"] == "4012345678901"
     assert call["json"]["controller"] == "xl"
 
@@ -73,7 +73,7 @@ def test_otto_contract_path_with_profile():
     )
     call = fake_http.calls[0]
     assert call["method"] == "POST"
-    assert call["url"] == "http://database-service:8000/api/otto/jv/products/upsert/"
+    assert call["url"] == "http://database-service:8000/api/v1/otto/jv/products/upsert/"
 
 
 def test_xl_contract_path_and_query_params():
@@ -87,5 +87,5 @@ def test_xl_contract_path_and_query_params():
     )
     call = fake_http.calls[0]
     assert call["method"] == "PATCH"
-    assert call["url"] == "http://database-service:8000/api/xl/products/update-by-ean/4012345678901/"
+    assert call["url"] == "http://database-service:8000/api/v1/xl/products/update-by-ean/4012345678901/"
     assert call["params"] == {"site": "XL", "site_key": "DE"}

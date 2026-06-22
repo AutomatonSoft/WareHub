@@ -14,11 +14,11 @@ from .views_write import _localized_xl_create_payload
 
 class XLRoutesSmokeTest(SimpleTestCase):
     def test_xl_sync_route_resolves(self):
-        match = resolve('/api/xl/products/sync-by-ean/4071489201321/')
+        match = resolve('/api/v1/xl/products/sync-by-ean/4071489201321/')
         self.assertIsNotNone(match.func)
 
     def test_xl_batch_plan_route_resolves(self):
-        match = resolve('/api/xl/batch/update-by-ean/4071489201321/plan/')
+        match = resolve('/api/v1/xl/batch/update-by-ean/4071489201321/plan/')
         self.assertIsNotNone(match.func)
 
     def test_legacy_xljv_v1_route_does_not_resolve(self):
@@ -76,7 +76,7 @@ class XLRoutesSmokeTest(SimpleTestCase):
 
         mock_connect.return_value = FakeConnection()
 
-        response = APIClient().get("/api/xl/rubrics/tree/?site=XL&site_key=XLMOEBEL_DE&language=de")
+        response = APIClient().get("/api/v1/xl/rubrics/tree/?site=XL&site_key=XLMOEBEL_DE&language=de")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 2)

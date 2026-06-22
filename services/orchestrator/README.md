@@ -21,9 +21,9 @@ Dedicated orchestration service for product updates from Sofort list.
 - `POST /api/v1/orchestrator/reconciliation/diff`
 - `GET /api/v1/orchestrator/reconciliation/reports/{report_id}`
 - `GET /api/v1/orchestrator/reconciliation/reports?ean={ean}`
-- `GET /healthz`
-- `GET /readyz`
-- `GET /metrics`
+- `GET /api/v1/healthz`
+- `GET /api/v1/readyz`
+- `GET /api/v1/metrics`
 
 ## Request example
 
@@ -103,9 +103,9 @@ All orchestrator errors follow:
 
 ## Observability
 
-- `GET /healthz`: process liveness.
-- `GET /readyz`: readiness with dependency check for idempotency SQLite.
-- `GET /metrics`: request/error/latency counters + SQLite store metrics.
+- `GET /api/v1/healthz`: process liveness.
+- `GET /api/v1/readyz`: readiness with dependency check for idempotency SQLite.
+- `GET /api/v1/metrics`: request/error/latency counters + SQLite store metrics.
 - State-changing update requests emit `audit_event=orchestrator_update` log entries.
 
 ## OpenAPI

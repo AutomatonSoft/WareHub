@@ -6,11 +6,11 @@ from django.urls import resolve, Resolver404
 
 class JVRoutesSmokeTest(SimpleTestCase):
     def test_jv_sync_route_resolves(self):
-        match = resolve('/api/jv/products/sync-by-ean/4071489201321/')
+        match = resolve('/api/v1/jv/products/sync-by-ean/4071489201321/')
         self.assertIsNotNone(match.func)
 
     def test_jv_batch_plan_route_resolves(self):
-        match = resolve('/api/jv/batch/update-by-ean/4071489201321/plan/')
+        match = resolve('/api/v1/jv/batch/update-by-ean/4071489201321/plan/')
         self.assertIsNotNone(match.func)
 
     def test_legacy_xljv_v1_route_does_not_resolve(self):
