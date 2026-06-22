@@ -1,0 +1,658 @@
+﻿name: Stage Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_stage_deploy:
+        description: "Type DEPLOY_STAGE_RUNTIME to build images and deploy stage"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: stage-deploy
+  cancel-in-progress: false
+
+jobs:
+  stage-deploy:
+    name: stage-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: stage
+    env:
+      STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
+      STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
+      STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
+      STAGE_DEPLOY_PATH: ${{ vars.STAGE_DEPLOY_PATH }}
+      STAGE_SSH_KNOWN_HOSTS: ${{ secrets.STAGE_SSH_KNOWN_HOSTS }}
+      STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
+      STAGE_PROJECT_NAME: warehub-stage
+      STAGE_EXPECTED_GATEWAY_PORT: "8940"
+      STAGE_EXPECTED_SERVICE_COUNT: "7"
+      STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deploy input and stage settings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm_stage_deploy }}" != "DEPLOY_STAGE_RUNTIME" ]; then
+            echo "confirm_stage_deploy must equal DEPLOY_STAGE_RUNTIME" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF:-}" != "refs/heads/stage" ]; then
+            echo "Stage Deploy must run from refs/heads/stage" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF_NAME:-}" != "stage" ]; then
+            echo "Stage Deploy must run from stage" >&2
+            exit 1
+          fi
+
+          if ! [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA must be a lowercase 40-character SHA" >&2
+            exit 1
+          fi
+
+          actual_checkout_sha="$(git rev-parse HEAD)"
+          if [ "$actual_checkout_sha" != "$GITHUB_SHA" ]; then
+            echo "Checked out commit does not match GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          required_vars=(
+            STAGE_SSH_HOST
+            STAGE_SSH_USER
+            STAGE_SSH_PORT
+            STAGE_DEPLOY_PATH
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required stage environment variable: $name" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$STAGE_DEPLOY_PATH" != "$STAGE_EXPECTED_DEPLOY_PATH" ]; then
+            echo "STAGE_DEPLOY_PATH must be exactly $STAGE_EXPECTED_DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          if [ -z "${STAGE_SSH_KNOWN_HOSTS:-}" ]; then
+            echo "Missing required stage secret: STAGE_SSH_KNOWN_HOSTS" >&2
+            exit 1
+          fi
+
+          if ! [[ "$STAGE_SSH_PORT" =~ ^[0-9]+$ ]]; then
+            echo "STAGE_SSH_PORT must be numeric" >&2
+            exit 1
+          fi
+
+      - name: Compute image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          owner_lower="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          repo_name="$(printf '%s' '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')"
+          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          image_tag="stage-${short_sha}"
+
+          {
+            echo "IMAGE_OWNER=$owner_lower"
+            echo "IMAGE_REPO=$repo_name"
+            echo "SHORT_SHA=$short_sha"
+            echo "IMAGE_TAG=$image_tag"
+            echo "BACKEND_IMAGE=ghcr.io/$owner_lower/$repo_name/backend"
+            echo "FRONTEND_IMAGE=ghcr.io/$owner_lower/$repo_name/frontend"
+            echo "MOBILE_IMAGE=ghcr.io/$owner_lower/$repo_name/mobile"
+            echo "SERVICES_IMAGE=ghcr.io/$owner_lower/$repo_name/services"
+            echo "ORCHESTRATOR_IMAGE=ghcr.io/$owner_lower/$repo_name/orchestrator"
+            echo "INFRA_IMAGE=ghcr.io/$owner_lower/$repo_name/infra"
+            echo "GATEWAY_IMAGE=ghcr.io/$owner_lower/$repo_name/gateway"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-backend
+          cache-to: type=gha,mode=max,scope=ghcr-backend
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          file: apps/frontend/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-frontend
+          cache-to: type=gha,mode=max,scope=ghcr-frontend
+
+      - name: Build and push mobile image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/mobile
+          file: apps/mobile/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.MOBILE_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-mobile
+          cache-to: type=gha,mode=max,scope=ghcr-mobile
+
+      - name: Build and push services image
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/database-service/Dockerfile
+          push: true
+          tags: ${{ env.SERVICES_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-services
+          cache-to: type=gha,mode=max,scope=ghcr-services
+
+      - name: Build and push orchestrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/orchestrator
+          file: services/orchestrator/Dockerfile
+          push: true
+          tags: ${{ env.ORCHESTRATOR_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-orchestrator
+          cache-to: type=gha,mode=max,scope=ghcr-orchestrator
+
+      - name: Build and push infra image
+        uses: docker/build-push-action@v6
+        with:
+          context: infra
+          file: infra/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.INFRA_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-infra
+          cache-to: type=gha,mode=max,scope=ghcr-infra
+
+      - name: Build and push gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/gateway/Dockerfile
+          push: true
+          tags: ${{ env.GATEWAY_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-gateway
+          cache-to: type=gha,mode=max,scope=ghcr-gateway
+
+      - name: Configure pinned SSH known_hosts
+        shell: bash
+        env:
+          STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$STAGE_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          if ! ssh-keygen -F "$STAGE_SSH_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null; then
+            echo "Pinned known_hosts entry for STAGE_SSH_HOST was not found." >&2
+            exit 1
+          fi
+
+          if [ -z "${STAGE_SSH_KEY_SECRET:-}" ]; then
+            echo "Missing required stage secret: STAGE_SSH_KEY" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$HOME/.ssh/stage_ssh_key"
+          chmod 600 "$HOME/.ssh/stage_ssh_key"
+
+      - name: Create candidate bundle
+        id: candidate
+        shell: bash
+        env:
+          STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          temp_dir="$(mktemp -d)"
+          candidate_dir="$temp_dir/candidate"
+          mkdir -p "$candidate_dir"
+
+          echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
+          echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
+
+          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
+            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
+            exit 1
+          fi
+
+          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
+          cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
+
+          tag_keys=(
+            BACKEND_STAGE_TAG
+            FRONTEND_STAGE_TAG
+            GATEWAY_STAGE_TAG
+            MOBILE_STAGE_TAG
+            SERVICES_STAGE_TAG
+            ORCHESTRATOR_STAGE_TAG
+          )
+
+          for key in "${tag_keys[@]}"; do
+            if ! grep -Eq "^${key}=" "$candidate_dir/.env"; then
+              echo "Missing tag key in STAGE_ENV_FILE: $key" >&2
+              exit 1
+            fi
+            sed -i -E "s|^${key}=.*$|${key}=${IMAGE_TAG}|" "$candidate_dir/.env"
+          done
+
+          {
+            printf 'SOURCE_COMMIT_SHA=%s\n' "$GITHUB_SHA"
+            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+            printf 'BACKEND_REF=%s:%s\n' "$BACKEND_IMAGE" "$IMAGE_TAG"
+            printf 'FRONTEND_REF=%s:%s\n' "$FRONTEND_IMAGE" "$IMAGE_TAG"
+            printf 'GATEWAY_REF=%s:%s\n' "$GATEWAY_IMAGE" "$IMAGE_TAG"
+            printf 'MOBILE_REF=%s:%s\n' "$MOBILE_IMAGE" "$IMAGE_TAG"
+            printf 'SERVICES_REF=%s:%s\n' "$SERVICES_IMAGE" "$IMAGE_TAG"
+            printf 'ORCHESTRATOR_REF=%s:%s\n' "$ORCHESTRATOR_IMAGE" "$IMAGE_TAG"
+          } > "$candidate_dir/metadata.env"
+
+          chmod 600 "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
+
+          (
+            cd "$candidate_dir"
+            sha256sum .env docker-compose.yml metadata.env > candidate.sha256
+            chmod 600 candidate.sha256
+          )
+
+      - name: Validate candidate locally
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          candidate_dir="${{ steps.candidate.outputs.candidate_dir }}"
+
+          extract_env_value() {
+            local key="$1"
+            local env_file="$2"
+            local line=""
+            line="$(grep -E "^${key}=" "$env_file" || true)"
+            if [ -z "$line" ]; then
+              echo "Missing env key $key in $env_file" >&2
+              exit 1
+            fi
+            printf '%s' "${line#*=}"
+          }
+
+          compose_ref() {
+            local image_key="$1"
+            local tag_key="$2"
+            printf '%s:%s' \
+              "$(extract_env_value "$image_key" "$candidate_dir/.env")" \
+              "$(extract_env_value "$tag_key" "$candidate_dir/.env")"
+          }
+
+          pwsh ./infra/scripts/verify-required-env.ps1 \
+            -EnvFile "$candidate_dir/.env" \
+            -Environment stage \
+            -InputKind Runtime
+
+          docker compose \
+            --project-name "$STAGE_PROJECT_NAME" \
+            --env-file "$candidate_dir/.env" \
+            -f "$candidate_dir/docker-compose.yml" \
+            config --quiet
+
+          python3 infra/scripts/verify-gateway-only-ports.py \
+            --compose "$candidate_dir/docker-compose.yml" \
+            --env-file "$candidate_dir/.env" \
+            --expected-gateway-port "$STAGE_EXPECTED_GATEWAY_PORT"
+
+          [ "$(compose_ref BACKEND_IMAGE BACKEND_STAGE_TAG)" = "$BACKEND_IMAGE:$IMAGE_TAG" ] || { echo "Backend image ref mismatch" >&2; exit 1; }
+          [ "$(compose_ref FRONTEND_IMAGE FRONTEND_STAGE_TAG)" = "$FRONTEND_IMAGE:$IMAGE_TAG" ] || { echo "Frontend image ref mismatch" >&2; exit 1; }
+          [ "$(compose_ref GATEWAY_IMAGE GATEWAY_STAGE_TAG)" = "$GATEWAY_IMAGE:$IMAGE_TAG" ] || { echo "Gateway image ref mismatch" >&2; exit 1; }
+          [ "$(compose_ref MOBILE_IMAGE MOBILE_STAGE_TAG)" = "$MOBILE_IMAGE:$IMAGE_TAG" ] || { echo "Mobile image ref mismatch" >&2; exit 1; }
+          [ "$(compose_ref SERVICES_IMAGE SERVICES_STAGE_TAG)" = "$SERVICES_IMAGE:$IMAGE_TAG" ] || { echo "Services image ref mismatch" >&2; exit 1; }
+          [ "$(compose_ref ORCHESTRATOR_IMAGE ORCHESTRATOR_STAGE_TAG)" = "$ORCHESTRATOR_IMAGE:$IMAGE_TAG" ] || { echo "Orchestrator image ref mismatch" >&2; exit 1; }
+
+      - name: Deploy stage remotely
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_dir="${{ steps.candidate.outputs.candidate_dir }}"
+
+          tar -C "$candidate_dir" -cf - . | ssh \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/stage_ssh_key" \
+            -p "$STAGE_SSH_PORT" \
+            "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            'set -Eeuo pipefail
+          umask 077
+
+          PROJECT="warehub-stage"
+          DEPLOY_PATH="/opt/warehub/stage"
+          BACKUP_ROOT="/opt/warehub/backups/stage"
+          EXPECTED_GATEWAY_PORT="8940"
+          EXPECTED_SERVICE_COUNT="7"
+
+          candidate_dir="$(mktemp -d /tmp/warehub-stage-deploy.XXXXXXXX)"
+          cleanup() {
+            if [[ "${candidate_dir:-}" == /tmp/warehub-stage-deploy.* ]] && [ -d "$candidate_dir" ]; then
+              rm -rf -- "$candidate_dir"
+            fi
+          }
+          trap cleanup EXIT INT TERM HUP
+
+          tar -xf - -C "$candidate_dir"
+
+          if find "$candidate_dir" -type l | grep -q .; then
+            echo "Candidate archive contains a symlink." >&2
+            exit 1
+          fi
+
+          for name in .env docker-compose.yml metadata.env candidate.sha256; do
+            [ -f "$candidate_dir/$name" ] || {
+              echo "Missing candidate file: $name" >&2
+              exit 1
+            }
+            [ ! -L "$candidate_dir/$name" ] || {
+              echo "Candidate file must not be symlink: $name" >&2
+              exit 1
+            }
+          done
+
+          chmod 600 "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env" "$candidate_dir/candidate.sha256"
+
+          if ! (
+            cd "$candidate_dir"
+            sha256sum --check --status candidate.sha256
+          ); then
+            echo "Candidate transfer integrity validation failed." >&2
+            exit 1
+          fi
+
+          # metadata.env is generated by the workflow and protected by candidate.sha256.
+          # shellcheck disable=SC1091
+          . "$candidate_dir/metadata.env"
+
+          [ "${IMAGE_TAG:-}" != "" ] || { echo "IMAGE_TAG missing from metadata" >&2; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^stage-[0-9a-f]{7}$ ]] || { echo "Invalid IMAGE_TAG: $IMAGE_TAG" >&2; exit 1; }
+          [[ "${SOURCE_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid SOURCE_COMMIT_SHA" >&2; exit 1; }
+
+          cd "$DEPLOY_PATH"
+
+          lock_path="/opt/warehub/.stage-deploy.lock"
+          exec 9>"$lock_path"
+          if ! flock -n 9; then
+            echo "Stage deploy lock is already held." >&2
+            exit 1
+          fi
+
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP_DIR="$BACKUP_ROOT/stage-deploy-${STAMP}-${IMAGE_TAG}"
+
+          rollback() {
+            rc="$?"
+            trap - ERR
+
+            if [ "$rc" -eq 0 ]; then
+              return 0
+            fi
+
+            echo "=== ERROR rc=$rc; ROLLBACK ===" >&2
+
+            set +e
+
+            if [ -f "$BACKUP_DIR/live.env" ]; then
+              cp -a "$BACKUP_DIR/live.env" .env
+            fi
+
+            if [ -f "$BACKUP_DIR/live.docker-compose.yml" ]; then
+              cp -a "$BACKUP_DIR/live.docker-compose.yml" docker-compose.yml
+            fi
+
+            if [ -f "$BACKUP_DIR/gateway-candidate.env" ]; then
+              cp -a "$BACKUP_DIR/gateway-candidate.env" .env.gateway-candidate
+            elif [ -f .env ]; then
+              cp -a .env .env.gateway-candidate
+            fi
+
+            if [ -f "$BACKUP_DIR/gateway-candidate.docker-compose.yml" ]; then
+              cp -a "$BACKUP_DIR/gateway-candidate.docker-compose.yml" docker-compose.gateway-candidate.yml
+            elif [ -f docker-compose.yml ]; then
+              cp -a docker-compose.yml docker-compose.gateway-candidate.yml
+            fi
+
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
+            docker compose --project-name "$PROJECT" --env-file .env.gateway-candidate -f docker-compose.gateway-candidate.yml up -d --no-build --force-recreate --no-deps gateway
+
+            echo "Rollback attempted. Backup: $BACKUP_DIR" >&2
+            exit "$rc"
+          }
+
+          trap rollback ERR
+
+          echo "=== BACKUP ==="
+          mkdir -p "$BACKUP_DIR"
+          chmod 700 "$BACKUP_DIR"
+
+          cp -a .env "$BACKUP_DIR/live.env"
+          cp -a docker-compose.yml "$BACKUP_DIR/live.docker-compose.yml"
+
+          if [ -f .env.gateway-candidate ]; then
+            cp -a .env.gateway-candidate "$BACKUP_DIR/gateway-candidate.env"
+          fi
+
+          if [ -f docker-compose.gateway-candidate.yml ]; then
+            cp -a docker-compose.gateway-candidate.yml "$BACKUP_DIR/gateway-candidate.docker-compose.yml"
+          fi
+
+          docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}" > "$BACKUP_DIR/container-snapshot-before.txt"
+
+          echo "=== PROMOTE CANDIDATE FILES ==="
+          install -m 600 "$candidate_dir/.env" .env
+          install -m 600 "$candidate_dir/docker-compose.yml" docker-compose.yml
+
+          # Compatibility files for the existing reconciliation/drift tooling.
+          install -m 600 .env .env.gateway-candidate
+          install -m 600 docker-compose.yml docker-compose.gateway-candidate.yml
+
+          echo "=== VERIFY GENERATED TAGS ==="
+          grep -E "^(BACKEND_STAGE_TAG|FRONTEND_STAGE_TAG|GATEWAY_STAGE_TAG|MOBILE_STAGE_TAG|SERVICES_STAGE_TAG|ORCHESTRATOR_STAGE_TAG)=" .env
+
+          for key in BACKEND_STAGE_TAG FRONTEND_STAGE_TAG GATEWAY_STAGE_TAG MOBILE_STAGE_TAG SERVICES_STAGE_TAG ORCHESTRATOR_STAGE_TAG; do
+            value="$(grep "^${key}=" .env | cut -d= -f2-)"
+            [ "$value" = "$IMAGE_TAG" ] || {
+              echo "Unexpected $key=$value, expected $IMAGE_TAG" >&2
+              exit 1
+            }
+          done
+
+          echo "=== COMPOSE CONFIG ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --quiet
+
+          echo "=== PULL IMAGES ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
+
+          echo "=== UP APP SERVICES ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
+
+          echo "=== UP GATEWAY ==="
+          docker compose --project-name "$PROJECT" --env-file .env.gateway-candidate -f docker-compose.gateway-candidate.yml up -d --no-build --force-recreate --no-deps gateway
+
+          count_lines() {
+            local text="$1"
+            if [ -z "$text" ]; then
+              printf "0"
+            else
+              printf "%s\n" "$text" | sed "/^$/d" | wc -l | tr -d " "
+            fi
+          }
+
+          wait_health() {
+            service="$1"
+            expected="$2"
+
+            container="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$service" --format "{{.ID}}")"
+            [ "$(count_lines "$container")" = "1" ] || {
+              echo "Expected exactly one container for $service" >&2
+              exit 1
+            }
+
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" "$container")"
+              if [ "$status" = "$expected" ]; then
+                echo "$service health/status -> $status"
+                return 0
+              fi
+              sleep 2
+            done
+
+            echo "$service did not reach $expected, last status=$status" >&2
+            exit 1
+          }
+
+          check_url() {
+            name="$1"
+            url="$2"
+            expected="$3"
+
+            for attempt in $(seq 1 60); do
+              code="$(curl -k -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+              if [ "$code" = "$expected" ]; then
+                echo "$name -> $code"
+                return 0
+              fi
+              sleep 2
+            done
+
+            echo "$name failed, last code=$code, expected=$expected, url=$url" >&2
+            exit 1
+          }
+
+          echo "=== WAIT CONTAINER HEALTH ==="
+          wait_health gateway healthy
+          wait_health orchestrator healthy
+
+          running_ids="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}")"
+          [ "$(count_lines "$running_ids")" = "$EXPECTED_SERVICE_COUNT" ] || {
+            echo "Unexpected running project container count" >&2
+            exit 1
+          }
+
+          echo "=== WAIT PUBLIC HEALTH ==="
+          check_url gateway "https://stagewarehub.automatonsoft.de/gateway/healthz" 200
+          check_url backend "https://stagewarehub.automatonsoft.de/api/v1/healthz" 200
+          check_url services "https://stagewarehub.automatonsoft.de/api/v1/services/healthz" 200
+          check_url orchestrator "https://stagewarehub.automatonsoft.de/api/v1/orchestrator/healthz" 200
+          check_url product-editor "https://stagewarehub.automatonsoft.de/product-editor" 307
+
+          echo "=== VERIFY RUNNING IMAGE REFS ==="
+          for service in backend frontend gateway mobile services orchestrator; do
+            container="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$service" --format "{{.ID}}")"
+            [ -n "$container" ] || {
+              echo "Missing container for $service" >&2
+              exit 1
+            }
+
+            image="$(docker inspect --format "{{.Config.Image}}" "$container")"
+            echo "$service -> $image"
+
+            case "$image" in
+              *":$IMAGE_TAG") ;;
+              *)
+                echo "Unexpected image for $service: $image, expected tag $IMAGE_TAG" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "=== WRITE DEPLOY STATE ==="
+          env_sha="$(sha256sum .env | awk "{print \$1}")"
+          compose_sha="$(sha256sum docker-compose.yml | awk "{print \$1}")"
+          deployed_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          {
+            printf "SOURCE_COMMIT_SHA=%s\n" "$SOURCE_COMMIT_SHA"
+            printf "IMAGE_TAG=%s\n" "$IMAGE_TAG"
+            printf "DEPLOYED_AT_UTC=%s\n" "$deployed_at_utc"
+            printf "ENV_SHA256=%s\n" "$env_sha"
+            printf "COMPOSE_SHA256=%s\n" "$compose_sha"
+            printf "BACKEND_REF=%s\n" "$BACKEND_REF"
+            printf "FRONTEND_REF=%s\n" "$FRONTEND_REF"
+            printf "GATEWAY_REF=%s\n" "$GATEWAY_REF"
+            printf "MOBILE_REF=%s\n" "$MOBILE_REF"
+            printf "SERVICES_REF=%s\n" "$SERVICES_REF"
+            printf "ORCHESTRATOR_REF=%s\n" "$ORCHESTRATOR_REF"
+          } > .deploy-state.env
+
+          chmod 600 .deploy-state.env
+
+          echo "=== SHA ==="
+          sha256sum .env docker-compose.yml .deploy-state.env
+
+          echo "=== PS ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml ps
+
+          trap - ERR
+          echo "=== DEPLOY SUCCESS ==="
+          echo "Backup: $BACKUP_DIR"
+          '
+
+      - name: Clean up local temporary files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="${{ steps.candidate.outputs.temp_dir }}"
+
+          if [ -n "${temp_dir:-}" ] && [[ "$temp_dir" == /tmp/* ]] && [ -d "$temp_dir" ]; then
+            rm -rf -- "$temp_dir"
+          fi
+
+      - name: Write deploy summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## Stage Deploy"
+            echo
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Image tag: \`$IMAGE_TAG\`"
+            echo
+            echo "### Image refs"
+            echo "- \`$BACKEND_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$FRONTEND_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$MOBILE_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$SERVICES_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$ORCHESTRATOR_IMAGE:$IMAGE_TAG\`"
+            echo "- \`$GATEWAY_IMAGE:$IMAGE_TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"
