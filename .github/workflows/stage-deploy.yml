@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - stage
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       confirm_stage_deploy:
