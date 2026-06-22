@@ -505,26 +505,18 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-sentry-empty.env' $lines) -InputKind Runtime) 0
   }
 
-  Test-Case 'Runtime allows unconfigured stage SMTP and Afterbuy integrations' {
-    $optionalKeys = @(
-      'STAGE_SMTP_HOST',
-      'STAGE_SMTP_PORT',
-      'STAGE_SMTP_USERNAME',
-      'STAGE_SMTP_PASSWORD',
-      'STAGE_SMTP_FROM',
-      'STAGE_SMTP_INSECURE',
-      'AFTERBUY_JV_LOGIN',
-      'AFTERBUY_JV_PASS',
-      'AFTERBUY_XL_LOGIN',
-      'AFTERBUY_XL_PASS',
-      'AFTERBUY_JV_LOGIN_URL',
-      'AFTERBUY_XL_LOGIN_URL'
-    )
+  Test-Case 'Runtime requires stage SMTP configuration' {
+    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^STAGE_SMTP_HOST=' }
+    $result = Invoke-Validator (Write-Fixture 'runtime-missing-stage-smtp.env' $lines) -InputKind Runtime
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'STAGE_SMTP_HOST') 'Missing stage SMTP key was not reported.'
+  }
 
-    $pattern = '^(' + (($optionalKeys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')='
-    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch $pattern }
-
-    Assert-ExitCode (Invoke-Validator (Write-Fixture 'runtime-unconfigured-stage-integrations.env' $lines) -InputKind Runtime) 0
+  Test-Case 'Runtime requires Afterbuy credentials' {
+    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^AFTERBUY_JV_LOGIN=' }
+    $result = Invoke-Validator (Write-Fixture 'runtime-missing-afterbuy-login.env' $lines) -InputKind Runtime
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'AFTERBUY_JV_LOGIN') 'Missing Afterbuy key was not reported.'
   }
 
   Test-Case 'optional Sentry DSN Runtime placeholder nonempty fails' {

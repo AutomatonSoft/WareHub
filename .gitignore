@@ -2,8 +2,13 @@
 .env.*
 !.env.example
 !.env.*.example
+.env.local
 *.local
+*.bak
+*.bak-*
 .env.bak*
+*.env.bak
+*.env.bak-*
 apps/backend/.env
 apps/backend/.env.bak*
 apps/frontend/.env.local
@@ -46,6 +51,10 @@ temp/
 logs/local-dev/
 .tmp-auth-build/
 .tmp-dashboard-*.png
+.generated-env/
+*.generated.env
+*.stage.env
+warehub-env-review.txt
 
 # Local orchestrator runtime data
 services/orchestrator/data/

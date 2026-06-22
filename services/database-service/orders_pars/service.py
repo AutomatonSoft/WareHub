@@ -27,13 +27,9 @@ except Exception:  # noqa: BLE001
 BASE_DIR = Path(__file__).resolve().parent
 SERVICE_ROOT = BASE_DIR.parent
 REPO_ROOT = SERVICE_ROOT.parent.parent
-for env_path in (
-    SERVICE_ROOT / ".env",
-    REPO_ROOT / ".env",
-    REPO_ROOT / "infra" / ".env",
-):
-    if env_path.is_file():
-        load_dotenv(dotenv_path=env_path)
+root_env_path = REPO_ROOT / ".env"
+if root_env_path.is_file():
+    load_dotenv(dotenv_path=root_env_path, override=False)
 
 API_URL = os.getenv("AFTERBUY_API_URL", "https://api.afterbuy.de/afterbuy/ABInterface.aspx")
 XL_LOGIN_URL = os.getenv("AFTERBUY_XL_LOGIN_URL", "https://login.afterbuy.de/")
