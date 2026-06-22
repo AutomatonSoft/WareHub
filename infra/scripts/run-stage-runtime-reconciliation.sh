@@ -437,12 +437,12 @@ assert_ref_unchanged services SERVICES_IMAGE SERVICES_STAGE_TAG
 assert_ref_unchanged orchestrator ORCHESTRATOR_IMAGE ORCHESTRATOR_STAGE_TAG
 
 stage_domain="$(env_value STAGE_DOMAIN "$live_env")"
-backend_public_base_url="$(env_value STAGE_PUBLIC_API_BASE_URL "$live_env")"
-services_public_base_url="$(env_value STAGE_PUBLIC_SERVICES_API_BASE_URL "$live_env")"
-orchestrator_public_base_url="$(env_value STAGE_PUBLIC_ORCHESTRATOR_API_BASE_URL "$live_env")"
 localhost_gateway_url="http://127.0.0.1:${expected_gateway_port}/gateway/healthz"
 gateway_public_url="https://$stage_domain/gateway/healthz"
 frontend_public_url="https://$stage_domain/login"
+backend_public_health_url="https://$stage_domain/api/v1/healthz"
+services_public_health_url="https://$stage_domain/api/v1/services/healthz"
+orchestrator_public_health_url="https://$stage_domain/api/v1/orchestrator/healthz"
 
 http_status() {
   local url="$1"
@@ -691,15 +691,15 @@ rollback_runtime() {
     log_status 'ROLLBACK_STATUS=frontend-public-smoke-failed'
     return 1
   }
-  poll_http_endpoint "rollback backend health" "$backend_public_base_url/healthz" "200" 5 2 2 5 || {
+  poll_http_endpoint "rollback backend health" "$backend_public_health_url" "200" 5 2 2 5 || {
     log_status 'ROLLBACK_STATUS=backend-public-smoke-failed'
     return 1
   }
-  poll_http_endpoint "rollback services health" "$services_public_base_url/healthz" "200" 5 2 2 5 || {
+  poll_http_endpoint "rollback services health" "$services_public_health_url" "200" 5 2 2 5 || {
     log_status 'ROLLBACK_STATUS=services-public-smoke-failed'
     return 1
   }
-  poll_http_endpoint "rollback orchestrator health" "$orchestrator_public_base_url/healthz" "200" 5 2 2 5 || {
+  poll_http_endpoint "rollback orchestrator health" "$orchestrator_public_health_url" "200" 5 2 2 5 || {
     log_status 'ROLLBACK_STATUS=orchestrator-public-smoke-failed'
     return 1
   }
@@ -752,13 +752,13 @@ run_post_recreation_validation() {
   if ! poll_http_endpoint "frontend public health" "$frontend_public_url" "200" 5 2 2 5; then
     return 1
   fi
-  if ! poll_http_endpoint "backend public health" "$backend_public_base_url/healthz" "200" 5 2 2 5; then
+  if ! poll_http_endpoint "backend public health" "$backend_public_health_url" "200" 5 2 2 5; then
     return 1
   fi
-  if ! poll_http_endpoint "services public health" "$services_public_base_url/healthz" "200" 5 2 2 5; then
+  if ! poll_http_endpoint "services public health" "$services_public_health_url" "200" 5 2 2 5; then
     return 1
   fi
-  if ! poll_http_endpoint "orchestrator public health" "$orchestrator_public_base_url/healthz" "200" 5 2 2 5; then
+  if ! poll_http_endpoint "orchestrator public health" "$orchestrator_public_health_url" "200" 5 2 2 5; then
     return 1
   fi
 
