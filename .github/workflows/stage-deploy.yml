@@ -1,6 +1,12 @@
-﻿name: Stage Deploy
+name: Stage Deploy
 
 on:
+  push:
+    branches:
+      - stage
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       confirm_stage_deploy:
@@ -32,6 +38,7 @@ jobs:
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
       STAGE_EXPECTED_SERVICE_COUNT: "7"
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
+      DEPLOY_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_stage_deploy || '' }}
 
     steps:
       - name: Checkout
@@ -42,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm_stage_deploy }}" != "DEPLOY_STAGE_RUNTIME" ]; then
+          if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ] && [ "${DEPLOY_CONFIRMATION:-}" != "DEPLOY_STAGE_RUNTIME" ]; then
             echo "confirm_stage_deploy must equal DEPLOY_STAGE_RUNTIME" >&2
             exit 1
           fi
