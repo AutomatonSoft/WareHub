@@ -148,6 +148,18 @@ jobs:
           cache-from: type=gha,scope=ghcr-orchestrator
           cache-to: type=gha,mode=max,scope=ghcr-orchestrator
 
+      - name: Build and push gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ env.GATEWAY_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.OPTIONAL_LATEST_TAG != '' && format('{0}:{1}', env.GATEWAY_IMAGE, env.OPTIONAL_LATEST_TAG) || '' }}
+          cache-from: type=gha,scope=ghcr-gateway
+          cache-to: type=gha,mode=max,scope=ghcr-gateway
+
       - name: Build and push infra image
         uses: docker/build-push-action@v6
         with:
