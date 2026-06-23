@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bulkUpdateKids, patchKidPhotoUrls, uploadKidImages } from "../inventory-api";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
@@ -204,60 +202,83 @@ export function SofortListTableShell(props: {
 
   return (
     <div className="wh-sofort-table-shell">
-      <ScrollArea className="w-full wh-sofort-table-scroll">
-        <Table className="wh-sofort-data-table min-w-[1514px] bg-card">
-            <TableHeader>
-              <TableRow className="wh-sofort-table-head-row">
-                <TableHead className="w-[44px] text-center">
+      <div className="wh-sofort-table-frame">
+        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table ui-listing-scroll hidden max-w-full overflow-x-auto overflow-y-visible px-0 pb-0 pt-0 md:block">
+          <table className="ui-listing-table wh-sofort-data-table w-full min-w-[1514px] border-separate border-spacing-y-0 text-left text-sm">
+            <thead>
+              <tr className="ui-table-head-row sticky top-0 z-10">
+                <th scope="col" className="ui-listing-head-cell w-[44px] px-2 py-3 text-center">
                   <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label="Select visible rows" />
-                </TableHead>
-                <TableHead className="w-[130px] text-center">IMAGE</TableHead>
-                <TableHead className="w-[210px] text-left">
-                  <div className="inline-flex items-center gap-2">
-                    <span>PRODUCT</span>
-                    <button type="button" className="inline-flex items-center gap-1 text-[10px]" onClick={() => props.onToggleSort("place")}>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[170px] px-3 py-3 text-center">
+                  <span className="ui-table-head-label">IMAGE</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[230px] px-3 py-3 text-left">
+                  <div className="inline-flex items-center gap-3">
+                    <span className="ui-table-head-label">PRODUCT</span>
+                    <button
+                      type="button"
+                      className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 text-[10px] transition hover:bg-[color:rgba(129,135,255,0.14)]"
+                      onClick={() => props.onToggleSort("place")}
+                    >
                       PLACE {sortIcon(props.sortField === "place", props.sortDirection)}
                     </button>
-                    <button type="button" className="inline-flex items-center gap-1 text-[10px]" onClick={() => props.onToggleSort("quantity")}>
+                    <button
+                      type="button"
+                      className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 text-[10px] transition hover:bg-[color:rgba(129,135,255,0.14)]"
+                      onClick={() => props.onToggleSort("quantity")}
+                    >
                       QTY {sortIcon(props.sortField === "quantity", props.sortDirection)}
                     </button>
                   </div>
-                </TableHead>
-                <TableHead className="w-[230px] text-left">ATTRIBUTES</TableHead>
-                <TableHead className="w-[120px] text-left">
-                  <button type="button" className="inline-flex items-center gap-1" onClick={() => props.onToggleSort("price")}>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[260px] px-3 py-3 text-left">
+                  <span className="ui-table-head-label">ATTRIBUTES</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[140px] px-3 py-3 text-left">
+                  <button
+                    type="button"
+                    className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 transition hover:bg-[color:rgba(129,135,255,0.14)]"
+                    onClick={() => props.onToggleSort("price")}
+                  >
                     PRICE
                     {sortIcon(props.sortField === "price", props.sortDirection)}
                   </button>
-                </TableHead>
-                <TableHead className="w-[180px] text-center">EAN</TableHead>
-                <TableHead className="w-[420px] text-center">MARKETPLACE EAN</TableHead>
-                <TableHead className="w-[180px] text-center">ACTIONS</TableHead>
-                <TableHead className="hidden w-20">
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[180px] px-3 py-3 text-center">
+                  <span className="ui-table-head-label">EAN</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[420px] px-3 py-3 text-center">
+                  <span className="ui-table-head-label">MARKETPLACE EAN</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[180px] px-3 py-3 text-center">
+                  <span className="ui-table-head-label">ACTIONS</span>
+                </th>
+                <th scope="col" className="hidden w-20">
                   <button type="button" className="inline-flex items-center gap-1" onClick={() => props.onToggleSort("place")}>
                     {labels.place.toUpperCase()}
                     {sortIcon(props.sortField === "place", props.sortDirection)}
                   </button>
-                </TableHead>
-                <TableHead className="hidden w-24">
+                </th>
+                <th scope="col" className="hidden w-24">
                   <button type="button" className="inline-flex items-center gap-1" onClick={() => props.onToggleSort("quantity")}>
                     {labels.quantity.toUpperCase()}
                     {sortIcon(props.sortField === "quantity", props.sortDirection)}
                   </button>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {props.rows.map((row) => (
-                <TableRow key={row.id} className="wh-sofort-table-row">
-                  <TableCell className="text-center">
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.rows.map((row, index) => (
+                <tr key={row.id} className={`ui-table-row wh-sofort-table-row ${index % 2 === 0 ? "ui-table-row-even" : "ui-table-row-odd"}`}>
+                  <td className="px-2 py-3 text-center align-middle">
                     <Checkbox
                       checked={props.selectedRowIds.has(row.id)}
                       onCheckedChange={() => props.onToggleRowSelection(row.id)}
                       aria-label={`Select row ${row.kidNumber}`}
                     />
-                  </TableCell>
-                  <TableCell className="align-middle text-center">
+                  </td>
+                  <td className="px-3 py-3 text-center align-middle">
                     {row.photo !== "-" ? (
                       <button type="button" className="wh-sofort-product-cell__image" onClick={() => setFullscreenPhoto(row.photo)}>
                         <Image src={row.photo} alt={`Kid ${row.kidNumber}`} width={144} height={144} unoptimized className="wh-sofort-photo" />
@@ -267,62 +288,63 @@ export function SofortListTableShell(props: {
                         <div className="wh-sofort-photo-placeholder" />
                       </div>
                     )}
-                  </TableCell>
-                  <TableCell className="align-middle">
+                  </td>
+                  <td className="px-3 py-3 align-middle">
                     <div className="wh-sofort-product-cell">
                       <div className="wh-sofort-product-cell__content">
-                        <p className="wh-sofort-product-cell__title">
-                          <span className="wh-sofort-product-cell__title-label">KID</span>
+                        <p className="wh-sofort-product-cell__title wh-inventory-title-text">
+                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID</span>
                           <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
                         </p>
-                        <p className="wh-sofort-product-cell__meta">Place {props.highlightText(row.place, props.query)}</p>
-                        <p className="wh-sofort-product-cell__meta">Quantity {props.highlightText(String(row.quantity), props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary">Place {props.highlightText(row.place, props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary">Quantity {props.highlightText(String(row.quantity), props.query)}</p>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell className="align-middle">
+                  </td>
+                  <td className="px-3 py-3 align-middle">
                     <div className="wh-sofort-warehouse-cell">
-                      <p className="wh-sofort-warehouse-cell__line"><span>Room</span> {props.highlightText(displayNullable(row.room), props.query)}</p>
-                      <p className="wh-sofort-warehouse-cell__line"><span>Type</span> {props.highlightText(displayNullable(row.furnitureType), props.query)}</p>
-                      <p className="wh-sofort-warehouse-cell__line"><span>Color</span> {props.highlightText(displayNullable(row.color), props.query)}</p>
-                      <p className="wh-sofort-warehouse-cell__line"><span>Size</span> {props.highlightText(displayNullable(row.size), props.query)}</p>
-                      <p className="wh-sofort-warehouse-cell__line"><span>Material</span> {props.highlightText(displayNullable(row.material), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Room</span> {props.highlightText(displayNullable(row.room), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Type</span> {props.highlightText(displayNullable(row.furnitureType), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Color</span> {props.highlightText(displayNullable(row.color), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Size</span> {props.highlightText(displayNullable(row.size), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Material</span> {props.highlightText(displayNullable(row.material), props.query)}</p>
                     </div>
-                  </TableCell>
-                  <TableCell className="align-middle wh-sofort-price-cell">
+                  </td>
+                  <td className="wh-inventory-price-cell wh-sofort-price-cell px-3 py-3 align-middle">
                     {props.highlightText(
                       row.price !== null
                         ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
                         : displayNullable(row.price),
                       props.query
                     )}
-                  </TableCell>
-                  <TableCell className="align-middle text-center">
+                  </td>
+                  <td className="px-3 py-3 text-center align-middle">
                     <Link href={`/inventory/kid/${row.kidId}`} className="wh-sofort-kid-link inline-flex flex-col items-start text-primary hover:underline">
                       <span>{props.highlightText(row.ean.trim() && row.ean !== props.placeholderEan ? row.ean : "—", props.query) || "—"}</span>
                     </Link>
-                  </TableCell>
-                  <TableCell className="align-middle">
+                  </td>
+                  <td className="px-3 py-3 align-middle">
                     <SofortListMarketplaceMatrix
                       siteEans={row.siteEans}
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
                     />
-                  </TableCell>
-                  <TableCell className="align-middle">
+                  </td>
+                  <td className="px-3 py-3 align-middle">
                     <div className="wh-sofort-row-actions">
                       <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>Edit</Button>
                       <Button type="button" variant="outline" size="sm">Delete</Button>
                     </div>
-                  </TableCell>
-                  <TableCell className="hidden">{row.place}</TableCell>
-                  <TableCell className="hidden">{row.quantity}</TableCell>
-                </TableRow>
+                  </td>
+                  <td className="hidden">{row.place}</td>
+                  <td className="hidden">{row.quantity}</td>
+                </tr>
               ))}
-            </TableBody>
-        </Table>
-      </ScrollArea>
+            </tbody>
+          </table>
+        </div>
+      </div>
       {fullscreenPhoto ? (
         <div className="wh-sofort-photo-viewer" role="dialog" aria-modal="true" onClick={closeFullscreenPhoto}>
           <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label="Close image viewer">

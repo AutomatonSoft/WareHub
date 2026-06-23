@@ -22,6 +22,10 @@ import type { ProductEditorJobResponse, ProductEditorJvDraft, ProductEditorWarni
 const JV_SITE_KEYS = ["JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"] as const;
 const UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
 const UPLOAD_RETRY_DELAY_MS = 1500;
+let cachedDeliveryOptions: ProductEditorJvDeliveryOption[] | null = null;
+let deliveryOptionsPromise: Promise<ProductEditorJvDeliveryOption[]> | null = null;
+let cachedRubricTree: ProductEditorJvRubricNode[] | null = null;
+let rubricTreePromise: Promise<ProductEditorJvRubricNode[]> | null = null;
 
 type ProductEditorJvPanelProps = {
   draft: ProductEditorJvDraft;
@@ -96,7 +100,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       try {
-        const options = await getJvDeliveryOptions();
+        const options = await loadCachedJvDeliveryOptions();
         if (mounted) setDeliveryOptions(options);
       } catch {
         if (mounted) setDeliveryOptions([]);
@@ -120,7 +124,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       try {
-        const tree = await getJvRubricTree();
+        const tree = await loadCachedJvRubricTree();
         if (mounted) {
           setCategoryTree(tree);
           setExpandedCategoryIds(collectAllCategoryIds(tree));
@@ -886,6 +890,40 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       bottom={<></>}
     />
   );
+}
+
+async function loadCachedJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOption[]> {
+  if (cachedDeliveryOptions) {
+    return cachedDeliveryOptions;
+  }
+  if (!deliveryOptionsPromise) {
+    deliveryOptionsPromise = getJvDeliveryOptions()
+      .then((options) => {
+        cachedDeliveryOptions = options;
+        return options;
+      })
+      .finally(() => {
+        deliveryOptionsPromise = null;
+      });
+  }
+  return deliveryOptionsPromise;
+}
+
+async function loadCachedJvRubricTree(): Promise<ProductEditorJvRubricNode[]> {
+  if (cachedRubricTree) {
+    return cachedRubricTree;
+  }
+  if (!rubricTreePromise) {
+    rubricTreePromise = getJvRubricTree()
+      .then((tree) => {
+        cachedRubricTree = tree;
+        return tree;
+      })
+      .finally(() => {
+        rubricTreePromise = null;
+      });
+  }
+  return rubricTreePromise;
 }
 
 type CategoryTreeRowProps = {

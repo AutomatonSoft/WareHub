@@ -11,9 +11,9 @@ export function SegmentedTabs(props: {
 }) {
   return (
     <Tabs value={props.value} onValueChange={props.onValueChange} className={cn("w-full", props.className)}>
-      <TabsList className="h-auto w-full flex-wrap justify-center rounded-xl border border-border/70 bg-muted/30 p-1 md:w-auto">
+      <TabsList className="h-auto w-full flex-wrap justify-center rounded-[var(--radius-card)] border border-border bg-muted/25 p-1 md:w-auto">
         {props.items.map((item) => (
-          <TabsTrigger key={item.id} value={item.id} className="h-9 rounded-lg px-3 text-[11px] uppercase tracking-wide">
+          <TabsTrigger key={item.id} value={item.id} className="h-9 rounded-[var(--radius-control)] px-3 text-[11px] uppercase tracking-[0.08em]">
             {item.label}
           </TabsTrigger>
         ))}

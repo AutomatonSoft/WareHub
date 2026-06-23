@@ -24,6 +24,10 @@ $localDevLogDirectory = Join-Path $repoRoot "logs\local-dev"
 $localDependencyCacheDirectory = Join-Path $repoRoot ".venv\local-dev"
 $pythonBootstrapExecutable = $null
 $pythonBootstrapArguments = @()
+$script:RequiredPythonVersion = "3.13.2"
+$script:RequiredPythonVersionComponents = @{ Major = 3; Minor = 13; Micro = 2 }
+$script:PythonSearchTargets = @()
+$script:PythonSearchFindings = @()
 $npmExecutable = $null
 $script:StartedLogPaths = @{}
 $script:LoadedRootEnvKeys = @()
@@ -168,18 +172,68 @@ function Assert-DockerDaemonReady {
   }
 }
 
+function Get-PythonVersionString {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @()
+  )
+
+  $versionOutput = @(& $FilePath @ArgumentList -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}')" 2>$null)
+  if ($LASTEXITCODE -ne 0 -or -not $versionOutput) {
+    return $null
+  }
+
+  $versionText = ($versionOutput | Select-Object -First 1).Trim()
+  if ([string]::IsNullOrWhiteSpace($versionText)) {
+    return $null
+  }
+
+  return $versionText
+}
+
+function Test-RequiredPythonVersion {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @()
+  )
+
+  $versionText = Get-PythonVersionString -FilePath $FilePath -ArgumentList $ArgumentList
+  return $versionText -eq $script:RequiredPythonVersion
+}
+
+function Add-PythonSearchFinding {
+  param(
+    [Parameter(Mandatory = $true)][string]$Candidate,
+    [AllowEmptyString()][string]$Version
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Version)) {
+    $script:PythonSearchFindings += "$Candidate=<unresolved>"
+    return
+  }
+
+  $script:PythonSearchFindings += "$Candidate=$Version"
+}
+
 function Resolve-PythonExecutable {
   $script:pythonBootstrapArguments = @()
+  $script:PythonSearchTargets = @("python3.13", "py -3.13", "python")
+  $script:PythonSearchFindings = @()
 
   $python313Command = Get-Command python3.13 -ErrorAction SilentlyContinue
   if ($python313Command) {
-    return $python313Command.Source
+    $versionText = Get-PythonVersionString -FilePath $python313Command.Source
+    Add-PythonSearchFinding -Candidate "python3.13" -Version $versionText
+    if ($versionText -eq $script:RequiredPythonVersion) {
+      return $python313Command.Source
+    }
   }
 
   $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
   if ($pyLauncher) {
-    $versionCheckOutput = @(& $pyLauncher.Source -3.13 -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
-    if ($LASTEXITCODE -eq 0 -and (($versionCheckOutput | Select-Object -First 1).Trim() -eq "3.13")) {
+    $versionText = Get-PythonVersionString -FilePath $pyLauncher.Source -ArgumentList @("-3.13")
+    Add-PythonSearchFinding -Candidate "py -3.13" -Version $versionText
+    if ($versionText -eq $script:RequiredPythonVersion) {
       $script:pythonBootstrapArguments = @("-3.13")
       return $pyLauncher.Source
     }
@@ -187,13 +241,16 @@ function Resolve-PythonExecutable {
 
   $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
   if ($pythonCommand) {
-    $versionCheckOutput = @(& $pythonCommand.Source -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
-    if ($LASTEXITCODE -eq 0 -and (($versionCheckOutput | Select-Object -First 1).Trim() -eq "3.13")) {
+    $versionText = Get-PythonVersionString -FilePath $pythonCommand.Source
+    Add-PythonSearchFinding -Candidate "python" -Version $versionText
+    if ($versionText -eq $script:RequiredPythonVersion) {
       return $pythonCommand.Source
     }
   }
 
-  throw "Unable to find Python 3.13 on PATH. Install Python 3.13 or make 'py -3.13' available."
+  $checkedText = $script:PythonSearchTargets -join ', '
+  $foundText = if ($script:PythonSearchFindings.Count -gt 0) { $script:PythonSearchFindings -join '; ' } else { "none" }
+  throw "Unable to find Python $($script:RequiredPythonVersion) on PATH. Checked: $checkedText. Found versions: $foundText. Install Python $($script:RequiredPythonVersion) and make either 'python3.13', 'py -3.13', or 'python' point to that exact version."
 }
 
 function Resolve-NpmExecutable {
@@ -545,13 +602,37 @@ function Get-VenvPythonPath {
   return Join-Path $VenvPath "Scripts\python.exe"
 }
 
-function Test-Python313 {
+function Test-Python313_2 {
   param(
     [Parameter(Mandatory = $true)][string]$PythonPath
   )
 
-  $versionOutput = @(& $PythonPath -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null)
-  return $LASTEXITCODE -eq 0 -and (($versionOutput | Select-Object -First 1).Trim() -eq "3.13")
+  return Test-RequiredPythonVersion -FilePath $PythonPath
+}
+
+function Assert-ManagedVenvPath {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path
+  )
+
+  $managedVenvRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot ".venv"))
+  $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+  $pathComparer = [System.StringComparison]::OrdinalIgnoreCase
+
+  if (-not ($resolvedPath.Equals($managedVenvRoot, $pathComparer) -or $resolvedPath.StartsWith($managedVenvRoot + [System.IO.Path]::DirectorySeparatorChar, $pathComparer))) {
+    throw "Refusing to modify unmanaged virtual environment path: $resolvedPath"
+  }
+}
+
+function Remove-ManagedVenv {
+  param(
+    [Parameter(Mandatory = $true)][string]$VenvPath
+  )
+
+  Assert-ManagedVenvPath -Path $VenvPath
+  if (Test-Path -LiteralPath $VenvPath) {
+    Remove-Item -LiteralPath $VenvPath -Recurse -Force
+  }
 }
 
 function Ensure-PythonServiceDependencies {
@@ -565,6 +646,7 @@ function Ensure-PythonServiceDependencies {
   $venvPythonPath = Get-VenvPythonPath -VenvPath $venvPath
   $hashFilePath = Join-Path $localDependencyCacheDirectory "$serviceName.requirements.sha256"
   $manifestPaths = Get-ServiceDependencyInputPaths -WorkingDirectory $workingDirectory -CandidateFiles $ServicePlan.RequirementFiles
+  $venvRecreated = $false
 
   Write-Host "$serviceName venv path: $venvPath"
 
@@ -581,10 +663,15 @@ function Ensure-PythonServiceDependencies {
 
   if (-not (Test-Path -LiteralPath $venvPythonPath)) {
     Write-Host "$serviceName virtual environment missing; creating $venvPath"
-    Ensure-Directory -Path $venvPath
+    Ensure-Directory -Path (Split-Path -Parent $venvPath)
     Invoke-ExternalCommand -FilePath $pythonBootstrapExecutable -ArgumentList ($pythonBootstrapArguments + @("-m", "venv", $venvPath))
-  } elseif (-not (Test-Python313 -PythonPath $venvPythonPath)) {
-    throw "$serviceName virtual environment is not using Python 3.13: $venvPythonPath. Recreate the venv with Python 3.13."
+    $venvRecreated = $true
+  } elseif (-not (Test-Python313_2 -PythonPath $venvPythonPath)) {
+    Write-Host "$serviceName virtual environment is not using Python $($script:RequiredPythonVersion); recreating $venvPath"
+    Remove-ManagedVenv -VenvPath $venvPath
+    Ensure-Directory -Path (Split-Path -Parent $venvPath)
+    Invoke-ExternalCommand -FilePath $pythonBootstrapExecutable -ArgumentList ($pythonBootstrapArguments + @("-m", "venv", $venvPath))
+    $venvRecreated = $true
   }
 
   $currentHash = Get-CombinedFileHash -Paths $manifestPaths
@@ -594,8 +681,10 @@ function Ensure-PythonServiceDependencies {
     ""
   }
 
-  $shouldInstall = $ReinstallDeps -or [string]::IsNullOrWhiteSpace($previousHash) -or $currentHash -ne $previousHash
-  if ($ReinstallDeps) {
+  $shouldInstall = $venvRecreated -or $ReinstallDeps -or [string]::IsNullOrWhiteSpace($previousHash) -or $currentHash -ne $previousHash
+  if ($venvRecreated) {
+    Write-Host "$serviceName virtual environment recreated; installing dependencies."
+  } elseif ($ReinstallDeps) {
     Write-Host "ReinstallDeps requested; reinstalling $serviceName dependencies."
   } elseif (-not $shouldInstall) {
     Write-Host "$serviceName dependencies unchanged; skipping install."

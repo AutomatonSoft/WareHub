@@ -22,6 +22,7 @@ class FakeProductEditorGateway:
     def __init__(self):
         self.patch_calls: list[dict] = []
         self.jv_batch_calls: list[dict] = []
+        self.jv_sites_calls = 0
         self.fetch_by_account = {
             "jv": {
                 "account": "jv",
@@ -102,6 +103,7 @@ class FakeProductEditorGateway:
         return type("R", (), {"status_code": result["status_code"], "body": result["body"]})()
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str):
+        self.jv_sites_calls += 1
         return type("R", (), {"status_code": 200, "body": self.jv_sites})()
 
     def fetch_jv_local_by_ean(self, *, ean: str, site_key: str, request_id: str):
@@ -174,7 +176,7 @@ def test_product_editor_discover_returns_hood_found_and_excludes_jv_main(tmp_pat
 
 
 def test_product_editor_discover_respects_active_group_jv(tmp_path):
-    client, _ = _client(tmp_path)
+    client, gateway = _client(tmp_path)
     response = client.post("/api/v1/orchestrator/product-editor/discover", json={"ean": "4012345678901", "active_group": "JV"})
     assert response.status_code == 200
     payload = response.json()
@@ -182,6 +184,7 @@ def test_product_editor_discover_respects_active_group_jv(tmp_path):
     assert payload["selected_target_ids"] == ["JV_DE", "JV_AT", "JV_CO_UK"]
     hood_group = next(group for group in payload["groups"] if group["id"] == "HOOD")
     assert all(target["status"] == "unknown" for target in hood_group["targets"])
+    assert gateway.jv_sites_calls == 1
 
 
 def test_product_editor_load_returns_normalized_hood_draft(tmp_path):
@@ -224,6 +227,7 @@ def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local
     assert payload["draft"]["source_model"] == "JV-DE-BASE"
     assert payload["draft"]["price"] == "29.99"
     assert "JV_DE" in gateway.synced_site_keys
+    assert gateway.jv_sites_calls == 0
 
 
 def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):
@@ -248,7 +252,7 @@ def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):
 
 
 def test_product_editor_plan_returns_all_found_jv_targets_and_translation_warning(tmp_path):
-    client, _ = _client(tmp_path)
+    client, gateway = _client(tmp_path)
     response = client.post(
         "/api/v1/orchestrator/product-editor/plan",
         json={
@@ -270,6 +274,7 @@ def test_product_editor_plan_returns_all_found_jv_targets_and_translation_warnin
     assert "product_editor_live_source_batch_apply" in warning_codes
     assert "product_editor_translation_required" in warning_codes
     assert payload["summary"]["baseline_site_key"] == "JV_DE"
+    assert gateway.jv_sites_calls == 0
 
 
 def test_product_editor_apply_requires_existing_plan(tmp_path):
