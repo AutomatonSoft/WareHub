@@ -12,8 +12,10 @@ with_migrations=false
 with_backend_migrations=false
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root_env_path="$repo_root/.env"
 compose_file="$repo_root/infra/local/docker-compose.dev.yml"
 local_dev_log_directory="$repo_root/logs/local-dev"
+local_dependency_cache_directory="$repo_root/.venv/local-dev"
 
 app_names=("frontend" "backend" "services" "services-jv-worker" "orchestrator")
 app_labels=("Frontend" "Backend" "Database-service" "Database-service JV worker" "Orchestrator")
@@ -46,7 +48,11 @@ app_pid_filenames=(
   "orchestrator.pid"
 )
 started_log_paths=("" "" "" "" "")
-started_pid_paths=("" "" "" "" "")
+
+required_python_version="3.13.2"
+python_search_targets=()
+python_search_findings=()
+loaded_root_env_keys=()
 
 usage() {
   cat <<'EOF'
@@ -82,43 +88,6 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-resolve_python() {
-  if command_exists python3.13; then
-    printf '%s\n' "python3.13"
-    return
-  fi
-
-  if command_exists python3; then
-    if python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1; then
-      printf '%s\n' "python3"
-      return
-    fi
-  fi
-
-  if command_exists python; then
-    if python -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1; then
-      printf '%s\n' "python"
-      return
-    fi
-  fi
-
-  die "Unable to find Python 3.13. Install python3.13 or add a Python 3.13 executable to PATH."
-}
-
-resolve_python_for_directory() {
-  local working_directory="$1"
-  local venv_python="$working_directory/.venv/bin/python"
-
-  if [[ -x "$venv_python" ]]; then
-    "$venv_python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1 \
-      || die "Existing virtualenv uses a Python version other than 3.13: $working_directory/.venv. Recreate that virtualenv with Python 3.13."
-    printf '%s\n' "$venv_python"
-    return
-  fi
-
-  resolve_python
-}
-
 assert_repo_root() {
   local current expected
   current="$(pwd -P)"
@@ -134,400 +103,540 @@ assert_docker() {
   docker compose version >/dev/null
 }
 
+assert_docker_daemon_ready() {
+  docker info --format '{{.ServerVersion}}' >/dev/null 2>&1 || die "Docker daemon is unavailable. Start Docker Desktop and wait until 'docker info' succeeds."
+}
+
+assert_root_env_file() {
+  [[ -f "$root_env_path" ]] || die "Missing root .env file: $root_env_path"
+}
+
 assert_compose_config() {
   docker compose -f "$compose_file" config >/dev/null
 }
 
-assert_local_requirements() {
-  [[ -f "$repo_root/apps/backend/.env.example" ]] || die "Missing env example: $repo_root/apps/backend/.env.example"
-  [[ -f "$repo_root/apps/frontend/.env.example" ]] || die "Missing env example: $repo_root/apps/frontend/.env.example"
-  [[ -f "$repo_root/services/database-service/.env.example" ]] || die "Missing env example: $repo_root/services/database-service/.env.example"
-  [[ -f "$repo_root/services/orchestrator/.env.example" ]] || die "Missing env example: $repo_root/services/orchestrator/.env.example"
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
 }
 
-ensure_frontend_dependencies() {
-  local working_directory="$repo_root/apps/frontend"
-  command_exists npm || die "Frontend requires npm on PATH."
+import_root_env() {
+  local raw_line line key value
+  loaded_root_env_keys=()
 
-  if [[ -x "$working_directory/node_modules/.bin/next" ]]; then
-    return
-  fi
+  while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+    line="${raw_line%$'\r'}"
+    [[ -z "$(trim_whitespace "$line")" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
-  info "Frontend dependencies are missing. Running npm ci in $working_directory"
-  (
-    cd "$working_directory"
-    npm ci
-  )
-}
-
-ensure_backend_dependencies() {
-  command_exists cargo || die "Backend requires cargo on PATH."
-}
-
-ensure_python_virtualenv() {
-  local working_directory="$1"
-  local python_cmd="$2"
-
-  if [[ -x "$working_directory/.venv/bin/python" ]]; then
-    "$working_directory/.venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)' >/dev/null 2>&1 \
-      || die "Existing virtualenv uses a Python version other than 3.13: $working_directory/.venv. Recreate that virtualenv with Python 3.13."
-    return
-  fi
-
-  if command_exists uv; then
-    info "Creating Python virtualenv with uv in $working_directory"
-    (
-      cd "$working_directory"
-      uv venv --python 3.13
-    )
-    return
-  fi
-
-  info "Creating Python virtualenv with $python_cmd in $working_directory"
-  "$python_cmd" -m venv "$working_directory/.venv"
-}
-
-install_python_requirements() {
-  local working_directory="$1"
-  local requirements_file="$2"
-  local base_python_cmd="$3"
-  local venv_python="$working_directory/.venv/bin/python"
-
-  ensure_python_virtualenv "$working_directory" "$base_python_cmd"
-
-  if command_exists uv; then
-    info "Installing Python requirements with uv in $working_directory"
-    (
-      cd "$working_directory"
-      uv pip install --python "$venv_python" -r "$requirements_file"
-    )
-    return
-  fi
-
-  info "Installing Python requirements with pip in $working_directory"
-  if "$venv_python" -m pip install -r "$requirements_file"; then
-    return
-  fi
-
-  if grep -q '^httpx' "$requirements_file" && ! "$venv_python" -c "import httpcore" >/dev/null 2>&1; then
-    info "pip install failed and httpcore is still missing. Trying direct httpcore wheel bootstrap from PyPI JSON."
-    install_httpcore_direct "$venv_python"
-    "$venv_python" -m pip install -r "$requirements_file"
-    return
-  fi
-
-  die "Python requirements install failed: $requirements_file"
-}
-
-install_httpcore_direct() {
-  local venv_python="$1"
-  local wheel_url
-
-  wheel_url="$("$venv_python" - <<'PY'
-import json
-import sys
-import urllib.request
-
-with urllib.request.urlopen("https://pypi.org/pypi/httpcore/json", timeout=20) as response:
-    data = json.load(response)
-
-release = data["info"]["version"]
-for file_info in data["releases"][release]:
-    filename = file_info.get("filename", "")
-    if filename.endswith(".whl"):
-        print(file_info["url"])
-        sys.exit(0)
-
-sys.exit("No httpcore wheel URL found in PyPI JSON")
-PY
-)" || die "Unable to resolve httpcore wheel URL from PyPI JSON."
-
-  info "Installing direct httpcore wheel: $wheel_url"
-  "$venv_python" -m pip install "$wheel_url"
-}
-
-ensure_database_service_dependencies() {
-  local working_directory="$repo_root/services/database-service"
-  local python_cmd requirements_file
-  requirements_file="$working_directory/requirements.txt"
-  python_cmd="$(resolve_python)"
-
-  if [[ -x "$working_directory/.venv/bin/python" ]] && "$working_directory/.venv/bin/python" -c "import django" >/dev/null 2>&1; then
-    return
-  fi
-
-  if "$python_cmd" -c "import django" >/dev/null 2>&1; then
-    return
-  fi
-
-  install_python_requirements "$working_directory" "$requirements_file" "$python_cmd"
-  "$working_directory/.venv/bin/python" -c "import django" >/dev/null 2>&1 || die "Database-service Python dependencies are still unavailable after install. Source of truth: $requirements_file"
-}
-
-ensure_orchestrator_dependencies() {
-  local working_directory="$repo_root/services/orchestrator"
-  local python_cmd requirements_file
-  requirements_file="$working_directory/requirements.txt"
-  python_cmd="$(resolve_python)"
-
-  if [[ -x "$working_directory/.venv/bin/python" ]] && "$working_directory/.venv/bin/python" -c "import uvicorn" >/dev/null 2>&1; then
-    return
-  fi
-
-  if "$python_cmd" -c "import uvicorn" >/dev/null 2>&1; then
-    return
-  fi
-
-  install_python_requirements "$working_directory" "$requirements_file" "$python_cmd"
-  "$working_directory/.venv/bin/python" -c "import uvicorn" >/dev/null 2>&1 || die "Orchestrator Python dependencies are still unavailable after install. Source of truth: $requirements_file"
-}
-
-ensure_selected_app_dependencies() {
-  if [[ "$deps_only" == true || "$no_apps" == true ]]; then
-    return
-  fi
-
-  if [[ "$skip_frontend" == false ]]; then
-    ensure_frontend_dependencies
-  fi
-
-  if [[ "$skip_backend" == false ]]; then
-    ensure_backend_dependencies
-  fi
-
-  if [[ "$skip_services" == false ]]; then
-    ensure_database_service_dependencies
-  fi
-
-  if [[ "$skip_orchestrator" == false ]]; then
-    ensure_orchestrator_dependencies
-  fi
-}
-
-escape_sed_replacement() {
-  printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
-}
-
-set_dotenv_value() {
-  local path="$1"
-  local key="$2"
-  local value="$3"
-  local tmp_file escaped_value
-  tmp_file="$(mktemp)"
-  escaped_value="$(escape_sed_replacement "$value")"
-
-  if grep -q "^${key}=" "$path"; then
-    sed "s/^${key}=.*/${key}=${escaped_value}/" "$path" >"$tmp_file"
-  else
-    cat "$path" >"$tmp_file"
-    printf '%s=%s\n' "$key" "$value" >>"$tmp_file"
-  fi
-
-  mv "$tmp_file" "$path"
-}
-
-ensure_local_env_file() {
-  local target_path="$1"
-  local example_path="$2"
-  shift 2
-
-  if [[ -f "$target_path" ]]; then
-    info "Keeping existing local env file: $target_path"
-    return
-  fi
-
-  cp "$example_path" "$target_path"
-
-  while [[ "$#" -gt 0 ]]; do
-    local key="$1"
-    local value="$2"
-    set_dotenv_value "$target_path" "$key" "$value"
-    shift 2
-  done
-
-  info "Created local env file from example: $target_path"
-}
-
-ensure_local_env_files() {
-  ensure_local_env_file \
-    "$repo_root/apps/backend/.env" \
-    "$repo_root/apps/backend/.env.example" \
-    "DATABASE_URL" "postgres://warehub:warehub@localhost:8933/warehub" \
-    "APP_ENV" "dev" \
-    "APP_PORT" "8932" \
-    "SKIP_DB_MIGRATIONS" "true" \
-    "CORS_ALLOW_ORIGINS" "http://localhost:8931"
-
-  ensure_local_env_file \
-    "$repo_root/apps/frontend/.env.local" \
-    "$repo_root/apps/frontend/.env.example" \
-    "NEXT_PUBLIC_API_BASE_URL" "http://localhost:8932/api/v1" \
-    "BACKEND_INTERNAL_API_BASE_URL" "http://127.0.0.1:8932/api/v1" \
-    "NEXT_PUBLIC_SERVICES_API_BASE_URL" "http://localhost:8934/api/v1" \
-    "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" "http://localhost:8935/api/v1" \
-    "BACKEND_ORIGIN" "http://localhost:8932" \
-    "SERVICES_ORIGIN" "http://localhost:8934" \
-    "PORT" "8931" \
-    "NODE_ENV" "development"
-
-  ensure_local_env_file \
-    "$repo_root/services/database-service/.env" \
-    "$repo_root/services/database-service/.env.example" \
-    "POSTGRES_DB" "warehub" \
-    "POSTGRES_USER" "warehub" \
-    "POSTGRES_PASSWORD" "warehub" \
-    "POSTGRES_HOST" "localhost" \
-    "POSTGRES_PORT" "8933" \
-    "DATABASE_URL" "postgresql://warehub:warehub@localhost:8933/warehub" \
-    "DEBUG" "true" \
-    "ALLOWED_HOSTS" "127.0.0.1,localhost"
-
-  ensure_local_env_file \
-    "$repo_root/services/orchestrator/.env" \
-    "$repo_root/services/orchestrator/.env.example" \
-    "DATABASE_SERVICE_BASE_URL" "http://127.0.0.1:8934" \
-    "ORCHESTRATOR_PORT" "8935" \
-    "ORCHESTRATOR_HOST" "0.0.0.0"
-}
-
-wait_for_postgres_healthy() {
-  local timeout_seconds="${1:-90}"
-  local deadline container_id health
-  deadline=$((SECONDS + timeout_seconds))
-  container_id=""
-
-  while (( SECONDS < deadline )); do
-    container_id="$(docker compose -f "$compose_file" ps -q warehub-postgres | tr -d '[:space:]')"
-    if [[ -n "$container_id" ]]; then
-      break
+    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="$(trim_whitespace "${BASH_REMATCH[2]}")"
+      if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+      export "$key=$value"
+      loaded_root_env_keys+=("$key")
     fi
-    sleep 2
-  done
+  done <"$root_env_path"
 
-  [[ -n "$container_id" ]] || die "Postgres container was not created by local compose."
+  if [[ "${#loaded_root_env_keys[@]}" -eq 0 ]]; then
+    die "Root .env does not contain any KEY=value entries: $root_env_path"
+  fi
 
-  while (( SECONDS < deadline )); do
-    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" | tr -d '[:space:]')"
-    if [[ "$health" == "healthy" ]]; then
-      info "Postgres is healthy."
+  info "Loaded root .env into startup environment (${#loaded_root_env_keys[@]} keys)."
+}
+
+get_env_or_default() {
+  local name="$1"
+  local fallback="$2"
+  local current="${!name-}"
+  if [[ -n "$current" ]]; then
+    printf '%s\n' "$current"
+    return
+  fi
+  printf '%s\n' "$fallback"
+}
+
+set_env_if_missing() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${!name-}" ]]; then
+    export "$name=$value"
+  fi
+}
+
+initialize_local_runtime_env() {
+  local frontend_port backend_port services_port orchestrator_port
+  local postgres_db postgres_user postgres_password postgres_host postgres_port
+  local root_dev_postgres_host backend_origin services_origin orchestrator_origin frontend_origin database_url
+
+  frontend_port="$(get_env_or_default "DEV_FRONTEND_PORT" "8931")"
+  backend_port="$(get_env_or_default "DEV_BACKEND_PORT" "8932")"
+  services_port="$(get_env_or_default "DEV_SERVICES_PORT" "8934")"
+  orchestrator_port="$(get_env_or_default "DEV_ORCHESTRATOR_PORT" "8935")"
+  postgres_db="warehub"
+  postgres_user="warehub"
+  postgres_password="warehub"
+  postgres_host="localhost"
+  postgres_port="$(get_env_or_default "DEV_POSTGRES_PORT" "8933")"
+  root_dev_postgres_host="${DEV_POSTGRES_HOST-}"
+  backend_origin="http://localhost:$backend_port"
+  services_origin="http://localhost:$services_port"
+  orchestrator_origin="http://localhost:$orchestrator_port"
+  frontend_origin="http://localhost:$frontend_port"
+  database_url="postgres://warehub:warehub@localhost:$postgres_port/warehub"
+
+  export DEV_FRONTEND_PORT="$frontend_port"
+  export DEV_BACKEND_PORT="$backend_port"
+  export DEV_SERVICES_PORT="$services_port"
+  export DEV_ORCHESTRATOR_PORT="$orchestrator_port"
+  export DEV_POSTGRES_DB="$postgres_db"
+  export DEV_POSTGRES_USER="$postgres_user"
+  export DEV_POSTGRES_PASSWORD="$postgres_password"
+  export DEV_POSTGRES_HOST="$postgres_host"
+  export DEV_POSTGRES_HOST_PORT="$postgres_port"
+  export WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE="true"
+  export APP_ENV="dev"
+  export APP_PORT="$backend_port"
+  export PORT="$frontend_port"
+  export POSTGRES_DB="$postgres_db"
+  export POSTGRES_USER="$postgres_user"
+  export POSTGRES_PASSWORD="$postgres_password"
+  export POSTGRES_HOST="$postgres_host"
+  export POSTGRES_PORT="$postgres_port"
+  export DATABASE_URL="$database_url"
+  export BACKEND_ORIGIN="$backend_origin"
+  export SERVICES_ORIGIN="$services_origin"
+  export ORCHESTRATOR_ORIGIN="$orchestrator_origin"
+  export NEXT_PUBLIC_API_BASE_URL="$backend_origin/api/v1"
+  export BACKEND_INTERNAL_API_BASE_URL="http://127.0.0.1:$backend_port/api/v1"
+  export BACKEND_API_BASE_URL="$backend_origin/api/v1"
+  export NEXT_PUBLIC_SERVICES_API_BASE_URL="$services_origin/api/v1"
+  export SERVICES_API_BASE_URL="$services_origin"
+  export NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL="$orchestrator_origin/api/v1"
+  export ORCHESTRATOR_API_BASE_URL="$orchestrator_origin"
+  export MOBILE_DEV_API_BASE_URL="http://127.0.0.1:$backend_port/api/v1"
+  export DATABASE_SERVICE_BASE_URL="$services_origin"
+  export ORCHESTRATOR_SERVICE_AUTH_TOKEN="warehub-local-orchestrator"
+  export ORCHESTRATOR_SERVICE_ALLOWED_HOSTS="localhost,127.0.0.1"
+  export ORCHESTRATOR_HOST="0.0.0.0"
+  export ORCHESTRATOR_PORT="$orchestrator_port"
+
+  set_env_if_missing "SKIP_DB_MIGRATIONS" "true"
+  set_env_if_missing "CORS_ALLOW_ORIGINS" "$frontend_origin,http://127.0.0.1:$frontend_port"
+  set_env_if_missing "ALLOWED_HOSTS" "127.0.0.1,localhost"
+  set_env_if_missing "CORS_ALLOWED_ORIGINS" "$frontend_origin,http://127.0.0.1:$frontend_port"
+  set_env_if_missing "CSRF_TRUSTED_ORIGINS" "$frontend_origin,http://127.0.0.1:$frontend_port"
+  set_env_if_missing "BACKEND_AUTH_BASE_URL" "http://127.0.0.1:$backend_port/api/v1"
+  set_env_if_missing "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS" "localhost,127.0.0.1"
+  set_env_if_missing "NEXT_PUBLIC_APP_ENV" "dev"
+
+  if [[ -n "$root_dev_postgres_host" && "$root_dev_postgres_host" != "localhost" && "$root_dev_postgres_host" != "127.0.0.1" ]]; then
+    info "Overriding nonlocal DEV_POSTGRES_HOST for local runtime with localhost."
+  fi
+
+  info "Derived local runtime env from root .env for frontend, backend, services, and orchestrator."
+}
+
+get_python_version_string() {
+  local python_path="$1"
+  shift || true
+  "$python_path" "$@" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}")' 2>/dev/null | head -n 1 | tr -d '\r'
+}
+
+test_required_python_version() {
+  local python_path="$1"
+  shift || true
+  local version_text
+  version_text="$(get_python_version_string "$python_path" "$@")"
+  [[ "$version_text" == "$required_python_version" ]]
+}
+
+add_python_search_finding() {
+  local candidate="$1"
+  local version="${2-}"
+  if [[ -z "$version" ]]; then
+    python_search_findings+=("$candidate=<unresolved>")
+    return
+  fi
+  python_search_findings+=("$candidate=$version")
+}
+
+resolve_python() {
+  python_search_targets=("python3.13" "python3" "python")
+  python_search_findings=()
+  local version_text
+
+  if command_exists python3.13; then
+    version_text="$(get_python_version_string "$(command -v python3.13)")"
+    add_python_search_finding "python3.13" "$version_text"
+    if [[ "$version_text" == "$required_python_version" ]]; then
+      printf '%s\n' "$(command -v python3.13)"
       return
     fi
-    if [[ "$health" == "unhealthy" || "$health" == "exited" || "$health" == "dead" ]]; then
-      die "Postgres container is not healthy: $health"
-    fi
-    sleep 2
-  done
+  fi
 
-  die "Timed out waiting for Postgres to become healthy."
+  if command_exists python3; then
+    version_text="$(get_python_version_string "$(command -v python3)")"
+    add_python_search_finding "python3" "$version_text"
+    if [[ "$version_text" == "$required_python_version" ]]; then
+      printf '%s\n' "$(command -v python3)"
+      return
+    fi
+  fi
+
+  if command_exists python; then
+    version_text="$(get_python_version_string "$(command -v python)")"
+    add_python_search_finding "python" "$version_text"
+    if [[ "$version_text" == "$required_python_version" ]]; then
+      printf '%s\n' "$(command -v python)"
+      return
+    fi
+  fi
+
+  die "Unable to find Python $required_python_version on PATH. Checked: ${python_search_targets[*]}. Found versions: ${python_search_findings[*]:-none}. Install Python $required_python_version and make either 'python3.13', 'python3', or 'python' point to that exact version."
 }
 
-start_local_dependencies() {
-  info "Restarting local Docker dependencies..."
-  docker compose -f "$compose_file" down
-  info "Starting WareHub local dependencies from $compose_file"
-  docker compose -f "$compose_file" up -d
-  wait_for_postgres_healthy
+ensure_local_dependency_cache_directory() {
+  mkdir -p "$local_dependency_cache_directory"
 }
 
 ensure_local_dev_log_directory() {
   mkdir -p "$local_dev_log_directory"
 }
 
-ensure_local_sqlite_dirs() {
-  mkdir -p "$repo_root/data"
-  mkdir -p "$repo_root/services/orchestrator/data"
+sha256_file() {
+  shasum -a 256 "$1" | awk '{print $1}'
 }
 
-warn_if_root_env_has_nonlocal_postgres_host() {
-  local root_env_path="$repo_root/.env"
-  local root_host
+get_combined_file_hash() {
+  local path hash
+  for path in "$@"; do
+    hash="$(sha256_file "$path")"
+    printf '%s|%s\n' "$path" "$hash"
+  done | LC_ALL=C sort | shasum -a 256 | awk '{print $1}'
+}
 
-  [[ -f "$root_env_path" ]] || return
+test_app_selected_for_startup() {
+  local app_name="$1"
 
-  root_host="$(
-    awk -F= '
-      $1 == "DEV_POSTGRES_HOST" {
-        sub(/\r$/, "", $2)
-        print $2
-        exit
-      }
-    ' "$root_env_path"
-  )"
-
-  if [[ -n "$root_host" && "$root_host" != "localhost" && "$root_host" != "127.0.0.1" ]]; then
-    info "Overriding nonlocal DEV_POSTGRES_HOST for local runtime with localhost."
+  if [[ "$deps_only" == true || "$no_apps" == true ]]; then
+    return 1
   fi
+
+  case "$app_name" in
+    frontend) [[ "$skip_frontend" == false ]] ;;
+    backend) [[ "$skip_backend" == false ]] ;;
+    services) [[ "$skip_services" == false ]] ;;
+    orchestrator) [[ "$skip_orchestrator" == false ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+ensure_frontend_dependencies() {
+  local frontend_directory="$repo_root/apps/frontend"
+  local package_json_path="$frontend_directory/package.json"
+  local package_lock_path="$frontend_directory/package-lock.json"
+  local pnpm_lock_path="$frontend_directory/pnpm-lock.yaml"
+  local yarn_lock_path="$frontend_directory/yarn.lock"
+  local hash_file_path="$local_dependency_cache_directory/frontend.dependencies.sha256"
+  local node_modules_path="$frontend_directory/node_modules"
+  local dependency_inputs=("$package_json_path")
+  local install_command=("install")
+  local current_hash previous_hash should_install=false
+
+  command_exists npm || die "Unable to find npm on PATH."
+
+  if [[ -f "$package_lock_path" ]]; then
+    dependency_inputs+=("$package_lock_path")
+    install_command=("ci")
+  elif [[ -f "$pnpm_lock_path" ]]; then
+    dependency_inputs+=("$pnpm_lock_path")
+  elif [[ -f "$yarn_lock_path" ]]; then
+    dependency_inputs+=("$yarn_lock_path")
+  fi
+
+  info "frontend dependency cache path: $hash_file_path"
+
+  current_hash="$(get_combined_file_hash "${dependency_inputs[@]}")"
+  if [[ -f "$hash_file_path" ]]; then
+    previous_hash="$(tr -d '[:space:]' <"$hash_file_path")"
+  else
+    previous_hash=""
+  fi
+
+  if [[ ! -d "$node_modules_path" || -z "$previous_hash" || "$current_hash" != "$previous_hash" ]]; then
+    should_install=true
+  fi
+
+  if [[ "$should_install" == false ]]; then
+    info "frontend dependencies unchanged; skipping install."
+    return
+  fi
+
+  info "frontend dependency hash changed or node_modules missing; installing dependencies."
+  (
+    cd "$frontend_directory"
+    npm "${install_command[@]}"
+  )
+  printf '%s\n' "$current_hash" >"$hash_file_path"
+}
+
+test_python313_2() {
+  local python_path="$1"
+  test_required_python_version "$python_path"
+}
+
+assert_managed_venv_path() {
+  local venv_path="$1"
+  local managed_venv_root="$repo_root/.venv"
+
+  case "$venv_path" in
+    "$managed_venv_root"|"$managed_venv_root"/*) ;;
+    *) die "Refusing to modify unmanaged virtual environment path: $venv_path" ;;
+  esac
+}
+
+recreate_managed_venv() {
+  local service_name="$1"
+  local venv_path="$2"
+  local python_bootstrap="$3"
+
+  assert_managed_venv_path "$venv_path"
+  rm -rf "$venv_path"
+  mkdir -p "$(dirname "$venv_path")"
+  info "$service_name virtual environment missing or invalid; creating $venv_path"
+  "$python_bootstrap" -m venv "$venv_path"
+}
+
+ensure_python_service_dependencies() {
+  local service_name="$1"
+  local working_directory="$2"
+  local venv_path="$3"
+  local python_env_name="$4"
+  local venv_env_name="$5"
+  local requirements_path="$working_directory/requirements.txt"
+  local venv_python_path="$venv_path/bin/python"
+  local hash_file_path="$local_dependency_cache_directory/$service_name.requirements.sha256"
+  local python_bootstrap current_hash previous_hash should_install=false recreated=false pip_args
+
+  [[ -f "$requirements_path" ]] || die "Missing dependency manifest: $requirements_path"
+  python_bootstrap="$(resolve_python)"
+
+  info "$service_name venv path: $venv_path"
+
+  if [[ ! -x "$venv_python_path" ]]; then
+    recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
+    recreated=true
+  elif ! test_python313_2 "$venv_python_path"; then
+    info "$service_name virtual environment is not using Python $required_python_version; recreating $venv_path"
+    recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
+    recreated=true
+  fi
+
+  current_hash="$(get_combined_file_hash "$requirements_path")"
+  if [[ -f "$hash_file_path" ]]; then
+    previous_hash="$(tr -d '[:space:]' <"$hash_file_path")"
+  else
+    previous_hash=""
+  fi
+
+  if [[ "$recreated" == true || -z "$previous_hash" || "$current_hash" != "$previous_hash" ]]; then
+    should_install=true
+  fi
+
+  if [[ "$should_install" == true ]]; then
+    if [[ "$recreated" == true ]]; then
+      info "$service_name virtual environment recreated; installing dependencies."
+    else
+      info "$service_name dependency hash changed; installing dependencies."
+    fi
+
+    pip_args=(-m pip install --disable-pip-version-check -r "$requirements_path")
+    (
+      cd "$working_directory"
+      "$venv_python_path" "${pip_args[@]}"
+    )
+    printf '%s\n' "$current_hash" >"$hash_file_path"
+  else
+    info "$service_name dependencies unchanged; skipping install."
+  fi
+
+  export "$python_env_name=$venv_python_path"
+  export "$venv_env_name=$venv_path"
+}
+
+ensure_backend_dependencies() {
+  command_exists cargo || die "Backend requires cargo on PATH."
+}
+
+get_docker_compose_container_id() {
+  local service_name="$1"
+  docker compose -f "$compose_file" ps -q "$service_name" | tr -d '[:space:]'
+}
+
+get_dependency_container_state() {
+  local service_name="$1"
+  local container_id state
+  container_id="$(get_docker_compose_container_id "$service_name")"
+
+  if [[ -z "$container_id" ]]; then
+    printf '%s\n' "missing"
+    return
+  fi
+
+  state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" | tr -d '[:space:]')"
+  if [[ -z "$state" ]]; then
+    printf '%s\n' "unknown"
+    return
+  fi
+
+  printf '%s\n' "$state"
+}
+
+test_local_dependencies_healthy() {
+  local service_name required_state state
+  local services=("warehub-postgres:healthy" "warehub-redis:running_or_healthy" "warehub-minio:running_or_healthy" "warehub-rabbitmq:running_or_healthy")
+
+  for service_name in "${services[@]}"; do
+    required_state="${service_name##*:}"
+    service_name="${service_name%%:*}"
+    state="$(get_dependency_container_state "$service_name")"
+
+    if [[ "$required_state" == "healthy" ]]; then
+      [[ "$state" == "healthy" ]] || return 1
+    else
+      [[ "$state" == "running" || "$state" == "healthy" ]] || return 1
+    fi
+  done
+
+  return 0
+}
+
+wait_for_dependency_state() {
+  local service_name="$1"
+  local label="$2"
+  local require_healthy="$3"
+  local timeout_seconds="${4:-90}"
+  local deadline state
+
+  deadline=$((SECONDS + timeout_seconds))
+  while (( SECONDS < deadline )); do
+    state="$(get_dependency_container_state "$service_name")"
+    if [[ "$require_healthy" == "true" ]]; then
+      if [[ "$state" == "healthy" ]]; then
+        return
+      fi
+      if [[ "$state" == "unhealthy" || "$state" == "exited" || "$state" == "dead" ]]; then
+        die "$label container is not healthy: $state"
+      fi
+    else
+      if [[ "$state" == "running" || "$state" == "healthy" ]]; then
+        return
+      fi
+      if [[ "$state" == "exited" || "$state" == "dead" ]]; then
+        die "$label container is not running: $state"
+      fi
+    fi
+    sleep 2
+  done
+
+  die "Timed out waiting for $label local dependency readiness."
+}
+
+wait_for_local_dependencies_ready() {
+  wait_for_dependency_state "warehub-postgres" "Postgres" "true"
+  wait_for_dependency_state "warehub-redis" "Redis" "false"
+  wait_for_dependency_state "warehub-minio" "MinIO" "false"
+  wait_for_dependency_state "warehub-rabbitmq" "RabbitMQ" "false"
+  info "Local Docker dependencies are ready."
+}
+
+start_local_dependencies() {
+  if test_local_dependencies_healthy; then
+    info "Docker dependencies already running; reusing existing containers."
+    return
+  fi
+
+  info "Starting missing or unhealthy Docker dependencies..."
+  docker compose -f "$compose_file" up -d
+  wait_for_local_dependencies_ready
+}
+
+should_skip_app() {
+  local app_name="$1"
+  case "$app_name" in
+    frontend) [[ "$skip_frontend" == true ]] ;;
+    backend) [[ "$skip_backend" == true ]] ;;
+    services) [[ "$skip_services" == true ]] ;;
+    services-jv-worker) [[ "$skip_services" == true ]] ;;
+    orchestrator) [[ "$skip_orchestrator" == true ]] ;;
+    *) return 1 ;;
+  esac
 }
 
 build_local_runtime_env_lines() {
-  local frontend_port="8931"
-  local backend_port="8932"
-  local services_port="8934"
-  local orchestrator_port="8935"
-  local postgres_db="warehub"
-  local postgres_user="warehub"
-  local postgres_password="warehub"
-  local postgres_host="localhost"
-  local postgres_port="8933"
-  local backend_origin="http://localhost:$backend_port"
-  local services_origin="http://localhost:$services_port"
-  local orchestrator_origin="http://localhost:$orchestrator_port"
-  local frontend_origin="http://localhost:$frontend_port"
-  local database_url="postgres://warehub:warehub@localhost:8933/warehub"
+  local keys=(
+    DEV_FRONTEND_PORT
+    DEV_BACKEND_PORT
+    DEV_SERVICES_PORT
+    DEV_ORCHESTRATOR_PORT
+    DEV_POSTGRES_DB
+    DEV_POSTGRES_USER
+    DEV_POSTGRES_PASSWORD
+    DEV_POSTGRES_HOST
+    DEV_POSTGRES_HOST_PORT
+    WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE
+    APP_ENV
+    APP_PORT
+    PORT
+    POSTGRES_DB
+    POSTGRES_USER
+    POSTGRES_PASSWORD
+    POSTGRES_HOST
+    POSTGRES_PORT
+    DATABASE_URL
+    BACKEND_ORIGIN
+    SERVICES_ORIGIN
+    ORCHESTRATOR_ORIGIN
+    NEXT_PUBLIC_API_BASE_URL
+    BACKEND_INTERNAL_API_BASE_URL
+    BACKEND_API_BASE_URL
+    NEXT_PUBLIC_SERVICES_API_BASE_URL
+    SERVICES_API_BASE_URL
+    NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL
+    ORCHESTRATOR_API_BASE_URL
+    MOBILE_DEV_API_BASE_URL
+    DATABASE_SERVICE_BASE_URL
+    ORCHESTRATOR_SERVICE_AUTH_TOKEN
+    ORCHESTRATOR_SERVICE_ALLOWED_HOSTS
+    ORCHESTRATOR_HOST
+    ORCHESTRATOR_PORT
+    SKIP_DB_MIGRATIONS
+    CORS_ALLOW_ORIGINS
+    ALLOWED_HOSTS
+    CORS_ALLOWED_ORIGINS
+    CSRF_TRUSTED_ORIGINS
+    BACKEND_AUTH_BASE_URL
+    BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS
+    NEXT_PUBLIC_APP_ENV
+    DATABASE_SERVICE_PYTHON_EXE
+    DATABASE_SERVICE_VENV_PATH
+    ORCHESTRATOR_PYTHON_EXE
+    ORCHESTRATOR_VENV_PATH
+  )
+  local key value
 
-  cat <<EOF
-DEV_FRONTEND_PORT=$frontend_port
-DEV_BACKEND_PORT=$backend_port
-DEV_SERVICES_PORT=$services_port
-DEV_ORCHESTRATOR_PORT=$orchestrator_port
-DEV_POSTGRES_DB=$postgres_db
-DEV_POSTGRES_USER=$postgres_user
-DEV_POSTGRES_PASSWORD=$postgres_password
-DEV_POSTGRES_HOST=$postgres_host
-DEV_POSTGRES_HOST_PORT=$postgres_port
-WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE=true
-APP_ENV=dev
-APP_PORT=$backend_port
-PORT=$frontend_port
-POSTGRES_DB=$postgres_db
-POSTGRES_USER=$postgres_user
-POSTGRES_PASSWORD=$postgres_password
-POSTGRES_HOST=$postgres_host
-POSTGRES_PORT=$postgres_port
-DATABASE_URL=$database_url
-BACKEND_ORIGIN=$backend_origin
-SERVICES_ORIGIN=$services_origin
-ORCHESTRATOR_ORIGIN=$orchestrator_origin
-NEXT_PUBLIC_API_BASE_URL=$backend_origin/api/v1
-BACKEND_INTERNAL_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
-BACKEND_API_BASE_URL=$backend_origin/api/v1
-NEXT_PUBLIC_SERVICES_API_BASE_URL=$services_origin/api/v1
-SERVICES_API_BASE_URL=$services_origin
-NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=$orchestrator_origin/api/v1
-ORCHESTRATOR_API_BASE_URL=$orchestrator_origin
-MOBILE_DEV_API_BASE_URL=http://127.0.0.1:$backend_port/api/v1
-DATABASE_SERVICE_BASE_URL=$services_origin
-ORCHESTRATOR_SERVICE_AUTH_TOKEN=warehub-local-orchestrator
-ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=localhost,127.0.0.1
-ORCHESTRATOR_HOST=0.0.0.0
-ORCHESTRATOR_PORT=$orchestrator_port
-SKIP_DB_MIGRATIONS=true
-CORS_ALLOW_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
-ALLOWED_HOSTS=127.0.0.1,localhost
-CORS_ALLOWED_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
-CSRF_TRUSTED_ORIGINS=$frontend_origin,http://127.0.0.1:$frontend_port
-BACKEND_AUTH_BASE_URL=http://127.0.0.1:$backend_port/api/v1
-BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS=localhost,127.0.0.1
-NEXT_PUBLIC_APP_ENV=dev
-EOF
-}
-
-clear_frontend_dev_cache() {
-  local frontend_cache_dir="$repo_root/apps/frontend/.next"
-  if [[ -d "$frontend_cache_dir" ]]; then
-    rm -rf "$frontend_cache_dir"
-    info "Cleared frontend Next.js dev cache: $frontend_cache_dir"
-  fi
+  for key in "${keys[@]}"; do
+    value="${!key-}"
+    [[ -n "$value" ]] || continue
+    printf '%s=%s\n' "$key" "$value"
+  done
 }
 
 reset_local_dev_log_file() {
@@ -556,7 +665,6 @@ reset_local_dev_log_file() {
 
 get_command_for_app() {
   local app_name="$1"
-  local python_cmd
 
   case "$app_name" in
     frontend) printf '%s\n' "npm run dev" ;;
@@ -568,27 +676,20 @@ get_command_for_app() {
       fi
       ;;
     services)
-      python_cmd="$(resolve_python_for_directory "$repo_root/services/database-service")"
       if [[ "$with_migrations" == true ]]; then
-        printf '%s\n' "$python_cmd manage.py migrate --fake-initial --noinput && $python_cmd manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py migrate --fake-initial --noinput && \"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
       else
-        printf '%s\n' "$python_cmd manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
       fi
       ;;
     services-jv-worker)
-      python_cmd="$(resolve_python_for_directory "$repo_root/services/database-service")"
-      printf '%s\n' "$python_cmd manage.py run_jv_batch_worker"
+      printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py run_jv_batch_worker"
       ;;
     orchestrator)
-      python_cmd="$(resolve_python_for_directory "$repo_root/services/orchestrator")"
-      printf '%s\n' "$python_cmd -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload --reload-dir src --reload-exclude 'data/*'"
+      printf '%s\n' "\"$ORCHESTRATOR_PYTHON_EXE\" -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload --reload-dir src --reload-exclude 'data/*'"
       ;;
     *) die "Unsupported app: $app_name" ;;
   esac
-}
-
-shell_quote() {
-  printf '%q' "$1"
 }
 
 start_app_in_background() {
@@ -598,12 +699,10 @@ start_app_in_background() {
   local working_directory="$4"
   local log_path="$5"
   local pid_path="$6"
-  local command_text
-  local launcher_python
-  local runtime_env_lines
+  local command_text launcher_python runtime_env_lines
+
   command_text="$(get_command_for_app "$app_name")"
   started_log_paths[$app_index]="$log_path"
-  started_pid_paths[$app_index]="$pid_path"
   launcher_python="$(resolve_python)"
   runtime_env_lines="$(build_local_runtime_env_lines)"
 
@@ -652,18 +751,6 @@ with open(pid_path, "w", encoding="utf-8") as pid_file:
     pid_file.write(f"{process.pid}\n")
 PY
   info "Started $app_label in background. Log: $log_path"
-}
-
-should_skip_app() {
-  local app_name="$1"
-  case "$app_name" in
-    frontend) [[ "$skip_frontend" == true ]] ;;
-    backend) [[ "$skip_backend" == true ]] ;;
-    services) [[ "$skip_services" == true ]] ;;
-    services-jv-worker) [[ "$skip_services" == true ]] ;;
-    orchestrator) [[ "$skip_orchestrator" == true ]] ;;
-    *) return 1 ;;
-  esac
 }
 
 start_local_apps() {
@@ -773,6 +860,7 @@ print_startup_summary() {
   info ""
   info "WareHub local dev startup complete."
   info "Mode: $app_mode"
+  info "Local env source of truth: $root_env_path"
 
   if [[ "$deps_only" == false && "$no_apps" == false ]]; then
     info ""
@@ -863,27 +951,33 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
-if [[ "$deps_only" == false && "$no_apps" == false && "$skip_orchestrator" == false && "$skip_services" == true ]]; then
-  die "Cannot run orchestrator without database-service. Remove --skip-services or add --skip-orchestrator."
-fi
-
 assert_repo_root
 assert_docker
+assert_docker_daemon_ready
+assert_root_env_file
+import_root_env
+initialize_local_runtime_env
 assert_compose_config
-assert_local_requirements
-ensure_selected_app_dependencies
-ensure_local_env_files
 ensure_local_dev_log_directory
+ensure_local_dependency_cache_directory
 info "Cleaning previous WareHub local app processes..."
 stop_warehub_local_app_processes
 start_local_dependencies
-warn_if_root_env_has_nonlocal_postgres_host
-ensure_local_sqlite_dirs
+
+if test_app_selected_for_startup "frontend"; then
+  ensure_frontend_dependencies
+fi
+if test_app_selected_for_startup "backend"; then
+  ensure_backend_dependencies
+fi
+if test_app_selected_for_startup "services"; then
+  ensure_python_service_dependencies "database-service" "$repo_root/services/database-service" "$repo_root/.venv/database-service" "DATABASE_SERVICE_PYTHON_EXE" "DATABASE_SERVICE_VENV_PATH"
+fi
+if test_app_selected_for_startup "orchestrator"; then
+  ensure_python_service_dependencies "orchestrator" "$repo_root/services/orchestrator" "$repo_root/.venv/orchestrator" "ORCHESTRATOR_PYTHON_EXE" "ORCHESTRATOR_VENV_PATH"
+fi
 
 if [[ "$deps_only" == false && "$no_apps" == false ]]; then
-  if [[ "$skip_frontend" == false ]]; then
-    clear_frontend_dev_cache
-  fi
   start_local_apps
 fi
 

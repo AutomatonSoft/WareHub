@@ -1,4 +1,5 @@
 import logging
+import re
 
 import mysql.connector
 from rest_framework import status
@@ -10,6 +11,7 @@ from database.permissions import SessionRolePermission
 from .models import ImportedProduct
 from .serializers import ImportedProductDetailSerializer
 from .source_client import (
+    JV_LANGUAGE_ID_BY_CODE,
     fetch_source_product_brief_by_ean,
     fetch_source_product_snapshot_by_ean,
     jv_site_catalog,
@@ -22,13 +24,14 @@ from .sync_utils import (
     resolve_local_product_for_source,
 )
 from .source_connection import mysql_connect
-from .source_values import fetch_jv_lieferzeit_options
+from .source_values import fetch_jv_lieferzeit_options, jv_urlkey, process_uvp
 from .view_helpers import (
     normalize_site as _normalize_site,
     normalize_site_key as _normalize_site_key,
 )
 
 logger = logging.getLogger(__name__)
+JV_LANGUAGE_CODE_BY_ID = {int(value): str(key).lower() for key, value in JV_LANGUAGE_ID_BY_CODE.items()}
 
 class JVProductByEANAPIView(APIView):
     permission_classes = [SessionRolePermission]
@@ -168,6 +171,14 @@ class JVLocalProductByEANAPIView(APIView):
             )
 
         normalized_ean = ean.strip()
+        product = ImportedProduct.objects.filter(
+            site=site,
+            site_key=site_key or "",
+            ean=normalized_ean,
+        ).first()
+        if product is not None:
+            return Response(_serialize_local_jv_product(product, site_key=site_key or ""), status=status.HTTP_200_OK)
+
         product = None
         conflict_product = None
         normalized_site_key = site_key or ""
@@ -237,6 +248,110 @@ class JVLocalProductByEANAPIView(APIView):
                 result["images"] = source_images
             result = add_jv_public_image_urls(result, site_key=normalized_site_key)
         return Response(result, status=status.HTTP_200_OK)
+
+
+def _serialize_local_jv_product(product: ImportedProduct, *, site_key: str) -> dict:
+    result = ImportedProductDetailSerializer(product).data
+    result["jv_fields"] = _build_local_jv_fields(product, serialized=result, site_key=site_key)
+    return add_jv_public_image_urls(result, site_key=site_key)
+
+
+def _build_local_jv_fields(product: ImportedProduct, *, serialized: dict, site_key: str) -> dict:
+    descriptions = serialized.get("descriptions") if isinstance(serialized.get("descriptions"), list) else []
+    content_by_language: list[dict] = []
+    default_name = ""
+    default_description = ""
+
+    for row in descriptions:
+        if not isinstance(row, dict):
+            continue
+        try:
+            language_id = int(row.get("language_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if language_id <= 0:
+            continue
+
+        language_code = JV_LANGUAGE_CODE_BY_ID.get(language_id)
+        if not language_code:
+            continue
+
+        name = str(row.get("name") or "").strip()
+        description_html = str(row.get("description") or "")
+        meta_title = str(row.get("meta_title") or "").strip() or name
+        meta_description = str(row.get("meta_description") or "").strip()
+        meta_keyword = str(row.get("meta_keyword") or "").strip()
+        plain_description = _plain_text(description_html)
+        short_description = plain_description[:255]
+
+        if language_code == "de":
+            default_name = name or default_name
+            default_description = description_html or default_description
+        elif not default_name and name:
+            default_name = name
+            default_description = description_html
+
+        content_by_language.append(
+            {
+                "language_id": language_id,
+                "language_code": language_code,
+                "name": name,
+                "description": description_html,
+                "bezeichnung": name or short_description,
+                "meta_title": meta_title,
+                "meta_description": meta_description or short_description,
+                "meta_keyword": meta_keyword,
+                "short_description_real": short_description,
+                "kurzbeschreibung": short_description,
+            }
+        )
+
+    fallback_name = default_name or str(product.source_model or "").strip() or str(product.ean or "").strip()
+    fallback_description = default_description or ""
+    try:
+        uvp_value = str(process_uvp(float(product.price))) if product.price is not None else ""
+    except Exception:
+        uvp_value = ""
+
+    return {
+        "artikelnr": str(product.source_model or "").strip() or str(product.ean or "").strip(),
+        "jfsku": str(product.source_sku or "").strip(),
+        "ean": str(product.source_ean_field or "").strip() or str(product.ean or "").strip(),
+        "inaktiv": 0 if bool(product.status) else 1,
+        "is_sofort": 1,
+        "lieferzeitid": 11,
+        "uvp": uvp_value,
+        "urlkey": _build_local_jv_urlkey(product=product, fallback_name=fallback_name),
+        "site": product.site,
+        "site_key": site_key,
+        "content_by_language": content_by_language
+        or [
+            {
+                "language_id": int(JV_LANGUAGE_ID_BY_CODE.get("de") or 1),
+                "language_code": "de",
+                "name": fallback_name,
+                "description": fallback_description,
+                "bezeichnung": fallback_name,
+                "meta_title": fallback_name,
+                "meta_description": _plain_text(fallback_description)[:255],
+                "meta_keyword": "",
+                "short_description_real": _plain_text(fallback_description)[:255],
+                "kurzbeschreibung": _plain_text(fallback_description)[:255],
+            }
+        ],
+    }
+
+
+def _build_local_jv_urlkey(*, product: ImportedProduct, fallback_name: str) -> str:
+    seo_url = str(product.seo_url or "").strip()
+    if seo_url:
+        return seo_url
+    return jv_urlkey(fallback_name)
+
+
+def _plain_text(value: str) -> str:
+    text = re.sub(r"<[^>]*>", " ", str(value or ""))
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class JVRubricsTreeAPIView(APIView):

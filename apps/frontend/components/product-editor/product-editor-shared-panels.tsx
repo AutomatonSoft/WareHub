@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
@@ -28,13 +29,13 @@ export function ProductEditorPlaceholderPanel({
   const foundCount = group?.targets.filter((target) => target.status === "found").length ?? 0;
   const totalCount = group?.targets.length ?? 0;
   return (
-    <Card className="rounded-2xl border-border bg-white shadow-[0_10px_28px_-22px_rgba(15,23,42,0.35)]">
+    <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
       <CardContent className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
           <h2 className="text-lg font-semibold text-foreground">{subtitle}</h2>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">This tab is intentionally non-actionable in the current rollout.</p>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 flex flex-col gap-2">
             {details.map((detail) => (
               <div key={detail} className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                 {detail}
@@ -51,7 +52,7 @@ export function ProductEditorPlaceholderPanel({
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
             Apply is intentionally unavailable for this tab in the current phase.
           </div>
-          <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+          <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground">
             {group?.targets.map((target) => (
               <div key={target.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
                 <span className="font-medium text-foreground">{target.label}</span>
@@ -83,7 +84,7 @@ export function ProductEditorEmptyPanel({
   onSearch: () => void;
 }) {
   return (
-    <Card className="rounded-2xl border-border bg-white shadow-[0_10px_28px_-22px_rgba(15,23,42,0.35)]">
+    <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
       <CardContent className="py-8">
         <div className="mx-auto grid w-full max-w-4xl gap-5 text-center">
           <div className="mx-auto flex w-full max-w-xl items-center gap-2">
@@ -91,7 +92,7 @@ export function ProductEditorEmptyPanel({
               value={eanValue}
               onChange={(event) => onChangeEan(event.target.value)}
               placeholder="Enter 13-digit EAN for this tab"
-              className="h-11 rounded-xl border-border bg-white"
+              className="h-11 rounded-[var(--radius-control)] border-border bg-background"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && isEanValid && !searching) {
                   event.preventDefault();
@@ -99,31 +100,32 @@ export function ProductEditorEmptyPanel({
                 }
               }}
             />
-            <button
+            <Button
               type="button"
               onClick={onSearch}
               disabled={!isEanValid || searching}
-              className="h-11 shrink-0 rounded-xl border border-border bg-white px-4 text-sm font-semibold text-foreground transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+              variant="outline"
+              className="h-11 shrink-0 rounded-[var(--radius-control)] px-4 text-sm font-semibold"
             >
               {searching ? "Searching..." : "Discover"}
-            </button>
+            </Button>
           </div>
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-1.5">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
             <h2 className="text-2xl font-semibold leading-tight text-foreground">No product loaded</h2>
             <p className="mx-auto max-w-xl text-sm leading-6 text-muted-foreground">Enter an EAN here and run discovery to resolve marketplace targets for this tab.</p>
             <p className="mx-auto max-w-xl text-xs leading-5 text-muted-foreground">{body}</p>
           </div>
-          <div className="grid gap-2 rounded-2xl border border-border bg-muted/25 p-3 text-left text-xs text-muted-foreground sm:grid-cols-3">
-            <span className="rounded-lg border border-border/80 bg-white px-3 py-2">1 Enter EAN - Input product identifier</span>
-            <span className="rounded-lg border border-border/80 bg-white px-3 py-2">2 Discover targets - Resolve across marketplaces</span>
-            <span className="rounded-lg border border-border/80 bg-white px-3 py-2">3 Apply through Orchestrator - Edit and publish changes</span>
+          <div className="grid gap-2 rounded-[var(--radius-card)] border border-border bg-muted/25 p-3 text-left text-xs text-muted-foreground sm:grid-cols-3">
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">1 Enter EAN - Input product identifier</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">2 Discover targets - Resolve across marketplaces</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">3 Apply through Orchestrator - Edit and publish changes</span>
           </div>
           <div className="grid gap-3 pt-1 md:grid-cols-3">
             {["Product Summary", "Marketplace Matrix", "Editable Fields"].map((section) => (
-              <div key={section} className="rounded-xl border border-border bg-muted/20 p-3 text-left">
+              <div key={section} className="rounded-[var(--radius-control)] border border-border bg-muted/20 p-3 text-left">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{section}</p>
-                <div className="mt-2 space-y-2">
+                <div className="mt-2 flex flex-col gap-2">
                   <div className="h-3 w-4/5 rounded bg-muted" />
                   <div className="h-3 w-full rounded bg-muted" />
                   <div className="h-3 w-3/4 rounded bg-muted" />
@@ -140,7 +142,7 @@ export function ProductEditorEmptyPanel({
 
 export function ProductEditorSummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <Card size="sm" className="min-h-14 rounded-xl border-border bg-muted/30 py-2 shadow-none">
+    <Card size="sm" className="min-h-14 rounded-[var(--radius-control)] border-border bg-muted/30 py-2 shadow-none">
       <CardContent className="px-3">
         <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
         <div className="mt-1 truncate text-sm font-semibold text-foreground">{value}</div>
@@ -163,8 +165,8 @@ export function ProductEditorPanelLayout(props: {
   bottom: ReactNode;
 }) {
   return (
-    <Card className="rounded-2xl border-border bg-white shadow-[0_10px_28px_-22px_rgba(15,23,42,0.35)]">
-      <CardHeader className="border-b border-border pb-4">
+    <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
+      <CardHeader className="wh-card-header-divider pb-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.kicker}</p>
@@ -182,7 +184,7 @@ export function ProductEditorPanelLayout(props: {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="flex flex-col gap-4 pt-4">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.9fr)]">
           <section className="min-w-0">{props.topLeft}</section>
           <aside className="min-w-0">{props.topRight}</aside>
@@ -208,7 +210,7 @@ export function ProductEditorSection({
   className?: string;
 }) {
   return (
-    <section className={cn("space-y-2", className)}>
+    <section className={cn("flex flex-col gap-2", className)}>
       {title || subtitle || actions ? (
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
