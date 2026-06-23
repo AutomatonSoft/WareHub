@@ -1,21 +1,16 @@
 ﻿import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ImageIcon, Upload } from "lucide-react";
+import { ImageIcon, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { bulkUpdateKids, patchKidPhotoUrls, uploadKidImages } from "../inventory-api";
+import { bulkUpdateKids, patchKidMarketplaceEans, patchKidPhotoUrls, uploadKidImages } from "../inventory-api";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
-
-function sortIcon(active: boolean, direction: "asc" | "desc") {
-  if (!active) return <ArrowUpDown className="size-3.5" />;
-  return direction === "asc" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />;
-}
 
 function displayNullable(value: string | null): string {
   if (value === null) return "null";
@@ -28,12 +23,9 @@ export function SofortListTableShell(props: {
   query: string;
   selectedRowIds: Set<string>;
   allVisibleSelected: boolean;
-  sortField: "place" | "quantity" | "price" | null;
-  sortDirection: "asc" | "desc";
   placeholderEan: string;
   onToggleSelectVisible: () => void;
   onToggleRowSelection: (rowId: string) => void;
-  onToggleSort: (field: "place" | "quantity" | "price") => void;
   onUpdateRow: (row: SofortListRow) => void;
   highlightText: HighlightText;
   labels: {
@@ -50,6 +42,7 @@ export function SofortListTableShell(props: {
     ean: "",
     room: "",
     furnitureType: "",
+    company: "",
     color: "",
     size: "",
     material: "",
@@ -101,6 +94,7 @@ export function SofortListTableShell(props: {
       ean: row.ean,
       room: row.room ?? "",
       furnitureType: row.furnitureType ?? "",
+      company: row.company ?? "",
       color: row.color ?? "",
       size: row.size ?? "",
       material: row.material ?? "",
@@ -127,6 +121,7 @@ export function SofortListTableShell(props: {
     let nextPhotoCount = editingRow.photoCount;
     const nextRoom = editDraft.room.trim() || null;
     const nextType = editDraft.furnitureType.trim() || null;
+    const nextCompany = editDraft.company.trim() || null;
     const nextColor = editDraft.color.trim() || null;
     const nextSize = editDraft.size.trim() || null;
     const nextMaterial = editDraft.material.trim() || null;
@@ -158,6 +153,7 @@ export function SofortListTableShell(props: {
             kidId: editingRow.kidId,
             room: nextRoom ?? undefined,
             type: nextType ?? undefined,
+            company: nextCompany ?? undefined,
             color: nextColor ?? undefined,
             size: nextSize ?? undefined,
             material: nextMaterial ?? undefined,
@@ -166,19 +162,8 @@ export function SofortListTableShell(props: {
         ]
       });
 
-    const normalizedEan = editDraft.ean.trim() || props.placeholderEan;
-    const nextRow: SofortListRow = {
-      ...editingRow,
-      photo: nextPhoto,
-      photoCount: nextPhotoCount,
-      ean: normalizedEan,
-      room: nextRoom,
-      furnitureType: nextType,
-      color: nextColor,
-      size: nextSize,
-      material: nextMaterial,
-      price: nextPrice,
-      siteEans: {
+      const normalizedEan = editDraft.ean.trim() || props.placeholderEan;
+      const normalizedSiteEans = {
         jv: editDraft.jv.trim() || props.placeholderEan,
         xl: editDraft.xl.trim() || props.placeholderEan,
         ottoJv: editDraft.ottoJv.trim() || props.placeholderEan,
@@ -189,7 +174,36 @@ export function SofortListTableShell(props: {
         kauflandXl: editDraft.kauflandXl.trim() || props.placeholderEan,
         hoodJv: editDraft.hoodJv.trim() || props.placeholderEan,
         hoodXl: editDraft.hoodXl.trim() || props.placeholderEan
-      }
+      };
+
+      await patchKidMarketplaceEans({
+        kidId: editingRow.kidId,
+        mainEan: normalizedEan,
+        jv: normalizedSiteEans.jv,
+        xl: normalizedSiteEans.xl,
+        ottoJv: normalizedSiteEans.ottoJv,
+        ottoXl: normalizedSiteEans.ottoXl,
+        ebayJv: normalizedSiteEans.ebayJv,
+        ebayXl: normalizedSiteEans.ebayXl,
+        kauflandJv: normalizedSiteEans.kauflandJv,
+        kauflandXl: normalizedSiteEans.kauflandXl,
+        hoodJv: normalizedSiteEans.hoodJv,
+        hoodXl: normalizedSiteEans.hoodXl
+      });
+
+    const nextRow: SofortListRow = {
+      ...editingRow,
+      photo: nextPhoto,
+      photoCount: nextPhotoCount,
+      ean: normalizedEan,
+      room: nextRoom,
+      furnitureType: nextType,
+      company: nextCompany,
+      color: nextColor,
+      size: nextSize,
+      material: nextMaterial,
+      price: nextPrice,
+      siteEans: normalizedSiteEans
     };
     props.onUpdateRow(nextRow);
     setEditingRow(null);
@@ -203,68 +217,42 @@ export function SofortListTableShell(props: {
   return (
     <div className="wh-sofort-table-shell">
       <div className="wh-sofort-table-frame">
-        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table ui-listing-scroll hidden max-w-full overflow-x-auto overflow-y-visible px-0 pb-0 pt-0 md:block">
-          <table className="ui-listing-table wh-sofort-data-table w-full min-w-[1514px] border-separate border-spacing-y-0 text-left text-sm">
+        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table hidden max-w-full overflow-x-hidden overflow-y-visible px-0 pb-0 pt-0 md:block">
+          <table className="ui-listing-table wh-sofort-data-table w-full min-w-[1450px] border-separate border-spacing-y-0 text-left text-sm">
             <thead>
               <tr className="ui-table-head-row sticky top-0 z-10">
                 <th scope="col" className="ui-listing-head-cell w-[44px] px-2 py-3 text-center">
                   <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label="Select visible rows" />
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[170px] px-3 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell w-[140px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">IMAGE</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[230px] px-3 py-3 text-left">
-                  <div className="inline-flex items-center gap-3">
-                    <span className="ui-table-head-label">PRODUCT</span>
-                    <button
-                      type="button"
-                      className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 text-[10px] transition hover:bg-[color:rgba(129,135,255,0.14)]"
-                      onClick={() => props.onToggleSort("place")}
-                    >
-                      PLACE {sortIcon(props.sortField === "place", props.sortDirection)}
-                    </button>
-                    <button
-                      type="button"
-                      className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 text-[10px] transition hover:bg-[color:rgba(129,135,255,0.14)]"
-                      onClick={() => props.onToggleSort("quantity")}
-                    >
-                      QTY {sortIcon(props.sortField === "quantity", props.sortDirection)}
-                    </button>
-                  </div>
+                <th scope="col" className="ui-listing-head-cell w-[180px] px-2 py-3 text-left">
+                  <span className="ui-table-head-label">PRODUCT</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[260px] px-3 py-3 text-left">
+                <th scope="col" className="ui-listing-head-cell w-[210px] px-2 py-3 text-left">
                   <span className="ui-table-head-label">ATTRIBUTES</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[140px] px-3 py-3 text-left">
-                  <button
-                    type="button"
-                    className="focus-ring inline-flex items-center gap-1 rounded-xl px-1 py-0.5 transition hover:bg-[color:rgba(129,135,255,0.14)]"
-                    onClick={() => props.onToggleSort("price")}
-                  >
-                    PRICE
-                    {sortIcon(props.sortField === "price", props.sortDirection)}
-                  </button>
+                <th scope="col" className="ui-listing-head-cell w-[210px] px-2 py-3 text-left">
+                  <span className="ui-table-head-label">COMMENTARY</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[180px] px-3 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell w-[120px] px-2 py-3 text-left">
+                  <span className="ui-table-head-label">PRICE</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell w-[110px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[420px] px-3 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell w-[300px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">MARKETPLACE EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[180px] px-3 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell w-[136px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">ACTIONS</span>
                 </th>
                 <th scope="col" className="hidden w-20">
-                  <button type="button" className="inline-flex items-center gap-1" onClick={() => props.onToggleSort("place")}>
-                    {labels.place.toUpperCase()}
-                    {sortIcon(props.sortField === "place", props.sortDirection)}
-                  </button>
+                  <span className="inline-flex items-center gap-1">{labels.place.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="hidden w-24">
-                  <button type="button" className="inline-flex items-center gap-1" onClick={() => props.onToggleSort("quantity")}>
-                    {labels.quantity.toUpperCase()}
-                    {sortIcon(props.sortField === "quantity", props.sortDirection)}
-                  </button>
+                  <span className="inline-flex items-center gap-1">{labels.quantity.toUpperCase()}</span>
                 </th>
               </tr>
             </thead>
@@ -305,9 +293,17 @@ export function SofortListTableShell(props: {
                     <div className="wh-sofort-warehouse-cell">
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Room</span> {props.highlightText(displayNullable(row.room), props.query)}</p>
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Type</span> {props.highlightText(displayNullable(row.furnitureType), props.query)}</p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Company</span> {props.highlightText(displayNullable(row.company), props.query)}</p>
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Color</span> {props.highlightText(displayNullable(row.color), props.query)}</p>
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Size</span> {props.highlightText(displayNullable(row.size), props.query)}</p>
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary"><span>Material</span> {props.highlightText(displayNullable(row.material), props.query)}</p>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-middle">
+                    <div className="wh-sofort-commentary-cell">
+                      <p className="wh-sofort-commentary-text ui-table-data-secondary">
+                        {props.highlightText(displayNullable(row.commentary), props.query)}
+                      </p>
                     </div>
                   </td>
                   <td className="wh-inventory-price-cell wh-sofort-price-cell px-3 py-3 align-middle">
@@ -445,9 +441,10 @@ export function SofortListTableShell(props: {
             <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Price</span><Input value={editDraft.price} onChange={(event) => setEditDraft((current) => ({ ...current, price: event.target.value }))} placeholder="Enter price" /></label>
             <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Room</span><Input value={editDraft.room} onChange={(event) => setEditDraft((current) => ({ ...current, room: event.target.value }))} placeholder="Enter room" /></label>
             <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Type</span><Input value={editDraft.furnitureType} onChange={(event) => setEditDraft((current) => ({ ...current, furnitureType: event.target.value }))} placeholder="Enter type" /></label>
+            <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Company</span><Input value={editDraft.company} onChange={(event) => setEditDraft((current) => ({ ...current, company: event.target.value }))} placeholder="Enter company" /></label>
             <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Color</span><Input value={editDraft.color} onChange={(event) => setEditDraft((current) => ({ ...current, color: event.target.value }))} placeholder="Enter color" /></label>
             <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Size</span><Input value={editDraft.size} onChange={(event) => setEditDraft((current) => ({ ...current, size: event.target.value }))} placeholder="Enter size" /></label>
-            <label className="col-span-2 space-y-1 text-xs font-medium"><span className="text-muted-foreground">Material</span><Input value={editDraft.material} onChange={(event) => setEditDraft((current) => ({ ...current, material: event.target.value }))} placeholder="Enter material" /></label>
+            <label className="space-y-1 text-xs font-medium"><span className="text-muted-foreground">Material</span><Input value={editDraft.material} onChange={(event) => setEditDraft((current) => ({ ...current, material: event.target.value }))} placeholder="Enter material" /></label>
               </div>
               </section>
               <section className="rounded-lg border border-border/70 bg-background/80 p-3 sm:p-4">

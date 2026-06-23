@@ -17,6 +17,7 @@ import { TableErrorBanner } from "../shared/table/table-error-banner";
 import { MobileListSkeletonCard } from "../shared/table/mobile-list-skeleton-card";
 import { TableToolbar } from "../shared/table/table-toolbar";
 import { useVirtualRows } from "../shared/table/use-virtual-rows";
+import { AddProductButton } from "./add-item-button";
 import { deleteInventoryEntity, fetchInventoryRows } from "./inventory-api";
 import {
   formatDate,
@@ -181,7 +182,7 @@ export function InventoryTable() {
     }
     trackUiError("inventory_table_fetch_failed", inventoryQuery.error, { page: backendPage });
     setError(inventoryQuery.error instanceof Error ? inventoryQuery.error.message : t.failedLoadInventory);
-  }, [inventoryQuery.error, t.failedLoadInventory]);
+  }, [backendPage, inventoryQuery.error, t.failedLoadInventory]);
 
   useEffect(() => {
     const payload = inventoryQuery.data;
@@ -204,6 +205,8 @@ export function InventoryTable() {
         orderDbId: item.order_db_id ?? null,
         entity: item.entity,
         place: item.place?.trim() || "-",
+        room: item.room?.trim() || "-",
+        furnitureType: item.type?.trim() || "-",
         parentOrderId: item.parent_order_id?.trim() || "-",
         additionalOrderIds: item.additional_order_ids_text?.trim() || "-",
         platform: item.platform?.trim() || "-",
@@ -215,6 +218,7 @@ export function InventoryTable() {
         status: item.status || "no_paid",
         date: formatDate(item.date),
         photo: getPrimaryPhoto(item.photo),
+        photos,
         photoCount: String(item.photo_count ?? photos.length)
       };
     });
@@ -425,11 +429,8 @@ export function InventoryTable() {
       return;
     }
 
-    const label =
-      row.entity === "order"
-        ? `order ${row.parentOrderId}`
-        : `kid ${row.kidNumber}`;
-    const shouldDelete = window.confirm(`${t.delete} ${label}?`);
+    const label = `kid ${row.kidNumber}`;
+    const shouldDelete = window.confirm(`${t.delete} ${label} and all related orders?`);
     if (!shouldDelete) {
       return;
     }
@@ -441,8 +442,38 @@ export function InventoryTable() {
         orderDbId: row.orderDbId,
         kidId: row.kidId
       });
-      setRows((current) => current.filter((item) => item.id !== row.id));
+      await inventoryQuery.refetch();
+      setSelectedRowIds((current) => {
+        const next = new Set(current);
+        next.delete(row.id);
+        return next;
+      });
+      if (expandedRowId === row.id) {
+        setExpandedRowId(null);
+      }
     } catch (deleteError) {
+      const refreshed = await inventoryQuery.refetch().catch(() => null);
+      const payload = refreshed?.data ?? inventoryQuery.data;
+      const pagedPayload = payload && typeof payload === "object" ? (payload as { results?: KidDto[] }) : null;
+      const items: KidDto[] = Array.isArray(payload)
+        ? payload
+        : Array.isArray(pagedPayload?.results)
+          ? (pagedPayload?.results ?? [])
+          : [];
+      const rowStillExists = items.some((item) => item.id === row.id);
+
+      if (!rowStillExists) {
+        setSelectedRowIds((current) => {
+          const next = new Set(current);
+          next.delete(row.id);
+          return next;
+        });
+        if (expandedRowId === row.id) {
+          setExpandedRowId(null);
+        }
+        return;
+      }
+
       const message = deleteError instanceof Error ? deleteError.message : t.deleteFailed;
       window.alert(message);
     } finally {
@@ -459,6 +490,7 @@ export function InventoryTable() {
         searchPlaceholder="Search by KID / Order"
         filtersSlot={
           <div className="flex flex-wrap items-center gap-2">
+            <AddProductButton onCreated={() => inventoryQuery.refetch()} />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -595,7 +627,7 @@ export function InventoryTable() {
         <TableErrorBanner message={error} onRetry={() => void inventoryQuery.refetch()} />
       ) : (
         <>
-        <div className="space-y-2 px-2 py-2 md:hidden" aria-busy={loading}>
+        <div className="space-y-2 px-2 py-2 md:hidden" aria-busy={loading ? "true" : "false"}>
           {loading
             ? Array.from({ length: 6 }).map((_, index) => (
                 <MobileListSkeletonCard key={`inventory-mobile-skeleton-${index}`} index={index} withThumb />
@@ -604,7 +636,12 @@ export function InventoryTable() {
                 <div key={`inventory-mobile-${row.id}`} className="ui-table-card p-3">
                   <div className="flex gap-3">
                     {row.photo !== "-" ? (
-                      <Image src={row.photo} alt={`${t.kid} ${row.kidNumber}`} width={72} height={72} unoptimized className="h-[72px] w-[72px] rounded-xl border border-[color:var(--outline)] object-cover" />
+                      <div className="relative">
+                        <Image src={row.photo} alt={`${t.kid} ${row.kidNumber}`} width={72} height={72} unoptimized className="h-[72px] w-[72px] rounded-xl border border-[color:var(--outline)] object-cover" />
+                        <div className="absolute -bottom-1 -right-1 rounded-full border border-white/70 bg-[color:rgba(15,23,42,0.8)] px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                          {row.photoCount}
+                        </div>
+                      </div>
                     ) : (
                       <div className="h-[72px] w-[72px] rounded-xl border border-dashed border-[color:var(--outline)] bg-[color:rgba(129,135,255,0.05)]" />
                     )}
@@ -614,6 +651,7 @@ export function InventoryTable() {
                       </Link>
                       <p className="truncate text-xs text-[color:var(--text-secondary)]">{t.order}: {highlightText(row.parentOrderId, query)}</p>
                       <p className="truncate text-xs text-[color:var(--text-secondary)]">{t.place}: {highlightText(row.place, query)}</p>
+                      <p className="truncate text-xs text-[color:var(--text-secondary)]">{t.type}: {highlightText(row.furnitureType, query)}</p>
                       <p className="truncate text-xs text-[color:var(--text-secondary)]">{t.qty}: {highlightText(row.quantity, query)} | {t.status}: {highlightText(row.status, query)}</p>
                     </div>
                   </div>

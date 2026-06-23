@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useLabels } from "../../app/use-labels";
 import { Badge } from "../shared/badge";
 import { Checkbox } from "../ui/checkbox";
@@ -56,26 +56,80 @@ export function InventoryTableRows({
 }: InventoryTableRowsProps) {
   const t = useLabels();
   const skeletonRowCount = 8;
-  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+  const [fullscreenViewer, setFullscreenViewer] = useState<{ rowId: string; photos: string[]; index: number } | null>(null);
+  const [rowPhotoIndexes, setRowPhotoIndexes] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    if (!fullscreenPhoto) return;
+    if (!fullscreenViewer) return;
 
     window.history.pushState({ inventoryPhotoViewer: true }, "");
 
     const handlePopState = () => {
-      setFullscreenPhoto(null);
+      setFullscreenViewer(null);
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [fullscreenPhoto]);
+  }, [fullscreenViewer]);
 
   function closeFullscreenPhoto() {
-    if (!fullscreenPhoto) return;
-    setFullscreenPhoto(null);
+    if (!fullscreenViewer) return;
+    setFullscreenViewer(null);
+  }
+
+  function getRowPhotos(row: InventoryRow): string[] {
+    return row.photos.length > 0 ? row.photos : row.photo !== "-" ? [row.photo] : [];
+  }
+
+  function getRowPhotoIndex(row: InventoryRow): number {
+    const photos = getRowPhotos(row);
+    if (photos.length === 0) {
+      return 0;
+    }
+    const rawIndex = rowPhotoIndexes[row.id] ?? 0;
+    if (rawIndex < 0) {
+      return 0;
+    }
+    if (rawIndex >= photos.length) {
+      return photos.length - 1;
+    }
+    return rawIndex;
+  }
+
+  function updateRowPhotoIndex(row: InventoryRow, direction: -1 | 1) {
+    const photos = getRowPhotos(row);
+    if (photos.length <= 1) {
+      return;
+    }
+    setRowPhotoIndexes((current) => {
+      const currentIndex = typeof current[row.id] === "number" ? current[row.id] : 0;
+      const nextIndex = (currentIndex + direction + photos.length) % photos.length;
+      return { ...current, [row.id]: nextIndex };
+    });
+  }
+
+  function openFullscreenPhoto(row: InventoryRow) {
+    const photos = getRowPhotos(row);
+    if (photos.length === 0) {
+      return;
+    }
+    setFullscreenViewer({
+      rowId: row.id,
+      photos,
+      index: getRowPhotoIndex(row)
+    });
+  }
+
+  function shiftFullscreenPhoto(direction: -1 | 1) {
+    setFullscreenViewer((current) => {
+      if (!current || current.photos.length <= 1) {
+        return current;
+      }
+      const nextIndex = (current.index + direction + current.photos.length) % current.photos.length;
+      return { ...current, index: nextIndex };
+    });
   }
 
   if (loading) {
@@ -136,6 +190,9 @@ export function InventoryTableRows({
       ) : null}
       {rows.map((row, index) => {
         const absoluteIndex = rowIndexOffset + index;
+        const rowPhotos = getRowPhotos(row);
+        const rowPhotoIndex = getRowPhotoIndex(row);
+        const currentPhoto = rowPhotos[rowPhotoIndex] ?? "-";
         const rowClassName =
           absoluteIndex % 2 === 0
             ? "ui-table-row ui-table-row-even transition hover:bg-[color:rgba(16,185,129,0.06)]"
@@ -162,15 +219,17 @@ export function InventoryTableRows({
               </button>
             </td>
             <td className="ui-listing-sticky-col wh-inventory-photo-cell align-middle px-3 py-3 text-[color:var(--text-secondary)]" style={{ left: 134 }}>
-              {row.photo !== "-" ? (
-                <button
-                  type="button"
-                  className="group ui-hover-preview-trigger inline-flex items-center justify-center gap-2 border-0 bg-transparent p-0"
-                  onClick={() => setFullscreenPhoto(row.photo)}
-                >
-                  <span className="relative inline-block">
+              {currentPhoto !== "-" ? (
+                <div className="group relative mx-auto flex w-[128px] flex-col items-center gap-2 rounded-[28px] border border-[color:rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,251,0.98))] px-2 py-2 shadow-[0_14px_36px_rgba(15,23,42,0.12)]">
+                  <button
+                    type="button"
+                    className="relative block overflow-hidden rounded-[20px]"
+                    onClick={() => openFullscreenPhoto(row)}
+                    aria-label={`${t.preview} ${row.kidNumber}`}
+                    title={`${t.preview} ${row.kidNumber}`}
+                  >
                     <Image
-                      src={row.photo}
+                      src={currentPhoto}
                       alt={`${t.kid} ${row.kidNumber}`}
                       width={120}
                       height={120}
@@ -179,7 +238,7 @@ export function InventoryTableRows({
                     />
                     <span className="ui-hover-preview-panel">
                       <Image
-                        src={row.photo}
+                        src={currentPhoto}
                         alt={`${t.preview} ${row.kidNumber}`}
                         width={180}
                         height={180}
@@ -187,8 +246,44 @@ export function InventoryTableRows({
                         className="ui-hover-preview-popover h-[180px] w-[180px]"
                       />
                     </span>
-                  </span>
-                </button>
+                    <span className="absolute right-2 top-2 rounded-full border border-white/70 bg-[color:rgba(15,23,42,0.76)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-white shadow-sm">
+                      {rowPhotos.length}/{row.photoCount}
+                    </span>
+                  </button>
+                  {rowPhotos.length > 1 ? (
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:rgba(15,23,42,0.08)] bg-white/90 text-[color:var(--text-primary)] shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+                        aria-label="Previous photo"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateRowPhotoIndex(row, -1);
+                        }}
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <div className="min-w-0 rounded-full bg-[color:rgba(16,185,129,0.1)] px-3 py-1 text-[11px] font-semibold text-[color:var(--primary)]">
+                        {t.count}: {row.photoCount}
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:rgba(15,23,42,0.08)] bg-white/90 text-[color:var(--text-primary)] shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+                        aria-label="Next photo"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateRowPhotoIndex(row, 1);
+                        }}
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-full bg-[color:rgba(16,185,129,0.1)] px-3 py-1 text-[11px] font-semibold text-[color:var(--primary)]">
+                      {t.count}: {row.photoCount}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center justify-center gap-2">
                   <div className="wh-inventory-thumb rounded-xl border border-dashed border-border bg-[color:rgba(16,185,129,0.06)]" />
@@ -282,6 +377,14 @@ export function InventoryTableRows({
                     <p className="break-all">{row.kidAccount}</p>
                   </div>
                   <div>
+                    <p className="mb-1 uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.type}</p>
+                    <p className="break-all">{row.furnitureType}</p>
+                  </div>
+                  <div>
+                    <p className="mb-1 uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.room}</p>
+                    <p className="break-all">{row.room}</p>
+                  </div>
+                  <div>
                     <p className="mb-1 uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.additionalOrderIds}</p>
                     <p className="break-all">{row.additionalOrderIds}</p>
                   </div>
@@ -299,7 +402,11 @@ export function InventoryTableRows({
                   </div>
                   <div className="md:col-span-2 xl:col-span-3">
                     <p className="mb-1 uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.primaryPhotoUrl}</p>
-                    <p className="break-all">{row.photo}</p>
+                    <p className="break-all">{currentPhoto}</p>
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <p className="mb-1 uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.count}</p>
+                    <p>{row.photoCount}</p>
                   </div>
                 </div>
               </td>
@@ -322,15 +429,38 @@ export function InventoryTableRows({
           onAction={onEmptyAction}
         />
       ) : null}
-      {fullscreenPhoto ? (
+      {fullscreenViewer ? (
         <tr>
           <td colSpan={visibleColumnCount} className="p-0">
             <div className="wh-sofort-photo-viewer" role="dialog" aria-modal="true" onClick={closeFullscreenPhoto}>
               <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label="Close image viewer">
                 Close
               </button>
-              <div className="wh-sofort-photo-viewer__content" onClick={(event) => event.stopPropagation()}>
-                <Image src={fullscreenPhoto} alt="Inventory image" width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
+              <div className="relative wh-sofort-photo-viewer__content" onClick={(event) => event.stopPropagation()}>
+                {fullscreenViewer.photos.length > 1 ? (
+                  <button
+                    type="button"
+                    className="absolute left-4 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[color:rgba(15,23,42,0.56)] text-white shadow-lg backdrop-blur-sm transition hover:bg-[color:rgba(15,23,42,0.74)]"
+                    aria-label="Previous photo"
+                    onClick={() => shiftFullscreenPhoto(-1)}
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                ) : null}
+                <div className="absolute top-5 rounded-full border border-white/20 bg-[color:rgba(15,23,42,0.56)] px-3 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur-sm">
+                  {fullscreenViewer.index + 1} / {fullscreenViewer.photos.length}
+                </div>
+                <Image src={fullscreenViewer.photos[fullscreenViewer.index]} alt="Inventory image" width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
+                {fullscreenViewer.photos.length > 1 ? (
+                  <button
+                    type="button"
+                    className="absolute right-4 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[color:rgba(15,23,42,0.56)] text-white shadow-lg backdrop-blur-sm transition hover:bg-[color:rgba(15,23,42,0.74)]"
+                    aria-label="Next photo"
+                    onClick={() => shiftFullscreenPhoto(1)}
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                ) : null}
               </div>
             </div>
           </td>

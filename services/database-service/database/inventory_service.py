@@ -6,7 +6,8 @@ from django.db import connections
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
-from .models import Kid, Orders, ProductAttributes
+from .kid_number_utils import primary_kid_number
+from .models import Ean, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN = "0000000000000"
@@ -26,6 +27,7 @@ def load_kid_ean_map() -> dict[str, dict[str, str]]:
                 """
                 SELECT
                     kid_number,
+                    COALESCE(NULLIF(ean, ''), %s) AS main_ean,
                     COALESCE(NULLIF(cosmoshop_ean, ''), ean, %s) AS cosmoshop_ean,
                     COALESCE(NULLIF(opencart_ean, ''), ean, %s) AS opencart_ean,
                     COALESCE(NULLIF(otto_jv_ean, ''), ean, %s) AS otto_jv_ean,
@@ -41,7 +43,7 @@ def load_kid_ean_map() -> dict[str, dict[str, str]]:
                   AND btrim(kid_number) <> ''
                 """
                 ,
-                [DEFAULT_EAN] * 10
+                [DEFAULT_EAN] * 11
             )
             rows = cursor.fetchall()
     except Exception:
@@ -51,6 +53,7 @@ def load_kid_ean_map() -> dict[str, dict[str, str]]:
     ean_map: dict[str, dict[str, str]] = {}
     for (
         kid_number,
+        main_ean,
         cosmoshop_ean,
         opencart_ean,
         otto_jv_ean,
@@ -66,6 +69,7 @@ def load_kid_ean_map() -> dict[str, dict[str, str]]:
         if not normalized_kid:
             continue
         ean_map[normalized_kid] = {
+            "main_ean": _norm_ean(main_ean),
             "cosmoshop_ean": _norm_ean(cosmoshop_ean),
             "opencart_ean": _norm_ean(opencart_ean),
             "otto_jv_ean": _norm_ean(otto_jv_ean),
@@ -200,12 +204,29 @@ def build_external_ean_links(eans: set[str]) -> tuple[dict[str, list[dict]], dic
 def build_inventory_rows() -> list[dict]:
     kids = list(Kid.objects.all().order_by("id"))
     orders = list(Orders.objects.select_related("kid").all().order_by("id"))
+    eans_by_kid_id = {
+        row["kid_id"]: row
+        for row in Ean.objects.all().values(
+            "kid_id",
+            "main_ean",
+            "jv",
+            "xl",
+            "otto_jv",
+            "otto_xl",
+            "ebay_jv",
+            "ebay_xl",
+            "kaufland_jv",
+            "kaufland_xl",
+            "hood_jv",
+            "hood_xl",
+        )
+    }
     attributes_by_kid_id = {
         row["kid_id"]: row
         for row in ProductAttributes.objects.all().values(
             "kid_id",
-            "room",
-            "furniture_type",
+            "quantity",
+            "company",
             "color",
             "size",
             "material",
@@ -239,18 +260,21 @@ def build_inventory_rows() -> list[dict]:
     for order, additional_items, additional_order_ids, sku_eans in order_meta:
         kid = order.kid
         attrs = attributes_by_kid_id.get(kid.id) or {}
-        mapped = kid_ean_map.get(str(kid.kid_number or "").strip(), {})
-        cosmoshop_ean = _norm_ean(mapped.get("cosmoshop_ean"))
-        opencart_ean = _norm_ean(mapped.get("opencart_ean"))
-        otto_jv_ean = _norm_ean(mapped.get("otto_jv_ean"))
-        otto_xl_ean = _norm_ean(mapped.get("otto_xl_ean"))
-        ebay_jv_ean = _norm_ean(mapped.get("ebay_jv_ean"))
-        ebay_xl_ean = _norm_ean(mapped.get("ebay_xl_ean"))
-        kaufland_jv_ean = _norm_ean(mapped.get("kaufland_jv_ean"))
-        kaufland_xl_ean = _norm_ean(mapped.get("kaufland_xl_ean"))
-        hood_jv_ean = _norm_ean(mapped.get("hood_jv_ean"))
-        hood_xl_ean = _norm_ean(mapped.get("hood_xl_ean"))
-        mapped_ean = cosmoshop_ean
+        ean_row = eans_by_kid_id.get(kid.id) or {}
+        primary_kid = primary_kid_number(kid.kid_number)
+        mapped = kid_ean_map.get(primary_kid, {})
+        main_ean = _norm_ean(ean_row.get("main_ean"))
+        cosmoshop_ean = _norm_ean(ean_row.get("jv") or mapped.get("cosmoshop_ean"))
+        opencart_ean = _norm_ean(ean_row.get("xl") or mapped.get("opencart_ean"))
+        otto_jv_ean = _norm_ean(ean_row.get("otto_jv") or mapped.get("otto_jv_ean"))
+        otto_xl_ean = _norm_ean(ean_row.get("otto_xl") or mapped.get("otto_xl_ean"))
+        ebay_jv_ean = _norm_ean(ean_row.get("ebay_jv") or mapped.get("ebay_jv_ean"))
+        ebay_xl_ean = _norm_ean(ean_row.get("ebay_xl") or mapped.get("ebay_xl_ean"))
+        kaufland_jv_ean = _norm_ean(ean_row.get("kaufland_jv") or mapped.get("kaufland_jv_ean"))
+        kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl") or mapped.get("kaufland_xl_ean"))
+        hood_jv_ean = _norm_ean(ean_row.get("hood_jv") or mapped.get("hood_jv_ean"))
+        hood_xl_ean = _norm_ean(ean_row.get("hood_xl") or mapped.get("hood_xl_ean"))
+        mapped_ean = main_ean
         kids_with_orders.add(kid.id)
         parent_order_id = str(order.order_id or "").strip()
         if not additional_order_ids:
@@ -264,7 +288,7 @@ def build_inventory_rows() -> list[dict]:
                 "id": f"ORD-{order.id}",
                 "entity": "order",
                 "kid_id": kid.id,
-                "kid_number": kid.kid_number,
+                "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,
                 "photo": kid.photo,
@@ -276,6 +300,8 @@ def build_inventory_rows() -> list[dict]:
                 "additional_items": additional_items,
                 "sku_eans": sku_eans,
                 "ean": mapped_ean,
+                "main_ean": main_ean,
+                "database_ean": main_ean,
                 "jv_ean": cosmoshop_ean,
                 "xl_ean": opencart_ean,
                 "otto_jv_ean": otto_jv_ean,
@@ -291,14 +317,16 @@ def build_inventory_rows() -> list[dict]:
                     "hood_service": {ean: hood_map.get(ean, []) for ean in sku_eans},
                 },
                 "platform": order.platform or "-",
-                "quantity": order.quantity,
-                "room": attrs.get("room"),
-                "type": attrs.get("furniture_type"),
+                "quantity": attrs.get("quantity"),
+                "company": attrs.get("company"),
+                "room": kid.room,
+                "type": kid.furniture_type,
+                "commentary": kid.commentary,
                 "listing_status": kid.listing_status or "unlisted",
                 "title": order.title or "-",
                 "memo": order.memo or "-",
                 "sku": order.sku or "-",
-                "global_price": order.global_price or "-",
+                "global_price": order.payment_status or "-",
                 "color": attrs.get("color"),
                 "size": attrs.get("size"),
                 "material": attrs.get("material"),
@@ -313,24 +341,27 @@ def build_inventory_rows() -> list[dict]:
         if kid.id in kids_with_orders:
             continue
         attrs = attributes_by_kid_id.get(kid.id) or {}
-        mapped = kid_ean_map.get(str(kid.kid_number or "").strip(), {})
-        cosmoshop_ean = _norm_ean(mapped.get("cosmoshop_ean"))
-        opencart_ean = _norm_ean(mapped.get("opencart_ean"))
-        otto_jv_ean = _norm_ean(mapped.get("otto_jv_ean"))
-        otto_xl_ean = _norm_ean(mapped.get("otto_xl_ean"))
-        ebay_jv_ean = _norm_ean(mapped.get("ebay_jv_ean"))
-        ebay_xl_ean = _norm_ean(mapped.get("ebay_xl_ean"))
-        kaufland_jv_ean = _norm_ean(mapped.get("kaufland_jv_ean"))
-        kaufland_xl_ean = _norm_ean(mapped.get("kaufland_xl_ean"))
-        hood_jv_ean = _norm_ean(mapped.get("hood_jv_ean"))
-        hood_xl_ean = _norm_ean(mapped.get("hood_xl_ean"))
-        mapped_ean = cosmoshop_ean
+        ean_row = eans_by_kid_id.get(kid.id) or {}
+        primary_kid = primary_kid_number(kid.kid_number)
+        mapped = kid_ean_map.get(primary_kid, {})
+        main_ean = _norm_ean(ean_row.get("main_ean"))
+        cosmoshop_ean = _norm_ean(ean_row.get("jv") or mapped.get("cosmoshop_ean"))
+        opencart_ean = _norm_ean(ean_row.get("xl") or mapped.get("opencart_ean"))
+        otto_jv_ean = _norm_ean(ean_row.get("otto_jv") or mapped.get("otto_jv_ean"))
+        otto_xl_ean = _norm_ean(ean_row.get("otto_xl") or mapped.get("otto_xl_ean"))
+        ebay_jv_ean = _norm_ean(ean_row.get("ebay_jv") or mapped.get("ebay_jv_ean"))
+        ebay_xl_ean = _norm_ean(ean_row.get("ebay_xl") or mapped.get("ebay_xl_ean"))
+        kaufland_jv_ean = _norm_ean(ean_row.get("kaufland_jv") or mapped.get("kaufland_jv_ean"))
+        kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl") or mapped.get("kaufland_xl_ean"))
+        hood_jv_ean = _norm_ean(ean_row.get("hood_jv") or mapped.get("hood_jv_ean"))
+        hood_xl_ean = _norm_ean(ean_row.get("hood_xl") or mapped.get("hood_xl_ean"))
+        mapped_ean = main_ean
         rows.append(
             {
                 "id": f"KID-{kid.id}",
                 "entity": "kid",
                 "kid_id": kid.id,
-                "kid_number": kid.kid_number,
+                "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,
                 "photo": kid.photo,
@@ -341,6 +372,8 @@ def build_inventory_rows() -> list[dict]:
                 "additional_order_ids_text": "-",
                 "sku_eans": [],
                 "ean": mapped_ean,
+                "main_ean": main_ean,
+                "database_ean": main_ean,
                 "jv_ean": cosmoshop_ean,
                 "xl_ean": opencart_ean,
                 "otto_jv_ean": otto_jv_ean,
@@ -356,9 +389,11 @@ def build_inventory_rows() -> list[dict]:
                     "hood_service": {},
                 },
                 "platform": "-",
-                "quantity": None,
-                "room": attrs.get("room"),
-                "type": attrs.get("furniture_type"),
+                "quantity": attrs.get("quantity"),
+                "company": attrs.get("company"),
+                "room": kid.room,
+                "type": kid.furniture_type,
+                "commentary": kid.commentary,
                 "listing_status": kid.listing_status or "unlisted",
                 "title": "No orders yet",
                 "memo": "-",
@@ -417,6 +452,8 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "room": "",
         "furniture_type": "",
         "listing_status": "unlisted",
+        "main_ean": DEFAULT_EAN,
+        "database_ean": DEFAULT_EAN,
         "main_photo": None,
         "photo_count": 0,
         "last_update": None,
@@ -462,6 +499,8 @@ def build_kid_ean_summary(kid_id: int) -> dict:
             "room": str(base_row.get("room") or "").strip(),
             "furniture_type": str(base_row.get("type") or "").strip(),
             "listing_status": str(base_row.get("listing_status") or "unlisted").strip(),
+            "main_ean": _norm_ean(base_row.get("main_ean") or base_row.get("database_ean") or base_row.get("ean")),
+            "database_ean": _norm_ean(base_row.get("database_ean") or base_row.get("main_ean") or base_row.get("ean")),
             "main_photo": main_photo,
             "photo_count": photo_count,
             "last_update": max(last_dates) if last_dates else None,

@@ -24,6 +24,8 @@ export type SofortListRow = {
   quantity: number;
   room: string | null;
   furnitureType: string | null;
+  company: string | null;
+  commentary: string | null;
   color: string | null;
   size: string | null;
   material: string | null;

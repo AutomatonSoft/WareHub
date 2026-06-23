@@ -31,6 +31,8 @@ export type InventoryRow = {
   orderDbId: number | null;
   entity: "order" | "kid";
   place: string;
+  room: string;
+  furnitureType: string;
   parentOrderId: string;
   additionalOrderIds: string;
   platform: string;
@@ -42,6 +44,7 @@ export type InventoryRow = {
   status: string;
   date: string;
   photo: string;
+  photos: string[];
   photoCount: string;
 };
 

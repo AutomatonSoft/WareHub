@@ -11,6 +11,7 @@ import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
 import { exportRowsToCsv, exportRowsToExcelXml } from "../shared/table/export-utils";
+import { AddProductButton } from "./add-item-button";
 import { fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList } from "./inventory-table-utils";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
@@ -80,6 +81,8 @@ const EXPORT_HEADERS = [
   "quantity",
   "room",
   "type",
+  "company",
+  "commentary",
   "color",
   "size",
   "material",
@@ -107,6 +110,8 @@ function toExportRow(row: SofortListRow): string[] {
     String(row.quantity),
     row.room ?? "null",
     row.furnitureType ?? "null",
+    row.company ?? "null",
+    row.commentary ?? "null",
     row.color ?? "null",
     row.size ?? "null",
     row.material ?? "null",
@@ -143,8 +148,6 @@ export function SofortListTable() {
   const [roomFilter, setRoomFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [listingFilter, setListingFilter] = useState("all");
-  const [sortField, setSortField] = useState<"place" | "quantity" | "price" | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [backendPage, setBackendPage] = useState(1);
   const [backendPageSize] = useState(16);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -161,10 +164,6 @@ export function SofortListTable() {
     setRoomFilter(searchParams.get("room") ?? "all");
     setTypeFilter(searchParams.get("type") ?? "all");
     setListingFilter(searchParams.get("listing") ?? "all");
-    const sortFieldParam = searchParams.get("sort");
-    const sortDirParam = searchParams.get("dir");
-    if (sortFieldParam === "place" || sortFieldParam === "quantity" || sortFieldParam === "price") setSortField(sortFieldParam);
-    if (sortDirParam === "asc" || sortDirParam === "desc") setSortDirection(sortDirParam);
     setBackendPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
     setUrlHydrated(true);
   }, [searchParams, urlHydrated]);
@@ -181,27 +180,24 @@ export function SofortListTable() {
     else params.delete("type");
     if (listingFilter !== "all") params.set("listing", listingFilter);
     else params.delete("listing");
-    if (sortField) params.set("sort", sortField);
-    else params.delete("sort");
-    if (sortDirection !== "asc") params.set("dir", sortDirection);
-    else params.delete("dir");
+    params.delete("sort");
+    params.delete("dir");
     if (backendPage > 1) params.set("page", String(backendPage));
     else params.delete("page");
     const nextQuery = params.toString();
     const next = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     const current = searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname;
     if (next !== current) router.replace(next, { scroll: false });
-  }, [backendPage, listingFilter, pathname, query, roomFilter, router, searchParams, sortDirection, sortField, typeFilter, urlHydrated]);
+  }, [backendPage, listingFilter, pathname, query, roomFilter, router, searchParams, typeFilter, urlHydrated]);
 
   const normalizedServerQuery = query.trim();
-  const serverPlaceSort = sortField === "place" ? sortDirection : undefined;
+  const serverPlaceSort: "asc" | "desc" = "asc";
   const serverRoom = roomFilter !== "all" ? roomFilter : undefined;
   const serverType = typeFilter !== "all" ? typeFilter : undefined;
   const serverListing = listingFilter === "listed" || listingFilter === "unlisted" ? listingFilter : undefined;
-  const serverSort = sortField === "place" || sortField === "quantity" ? sortField : undefined;
 
   const sofortListQuery = useQuery({
-    queryKey: ["sofort-list-rows", backendPage, backendPageSize, normalizedServerQuery, serverPlaceSort, serverRoom, serverType, serverListing, serverSort, sortDirection],
+    queryKey: ["sofort-list-rows", backendPage, backendPageSize, normalizedServerQuery, serverPlaceSort, serverRoom, serverType, serverListing],
     queryFn: () =>
       fetchInventoryRows({
         page: backendPage,
@@ -210,9 +206,7 @@ export function SofortListTable() {
         placeSort: serverPlaceSort,
         room: serverRoom,
         type: serverType,
-        listing: serverListing,
-        sort: serverSort,
-        dir: sortDirection
+        listing: serverListing
       })
   });
 
@@ -247,7 +241,11 @@ export function SofortListTable() {
       const eanFallback = skuFallback ?? placeholderEan;
       const siteEans = extractSiteEans(rawItem, placeholderEan);
       const normalizedRowEan =
-        typeof (item as { ean?: unknown }).ean === "string" && (item as { ean?: string }).ean?.trim()
+        typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
+          ? (item as { database_ean?: string }).database_ean!.trim()
+          : typeof (item as { main_ean?: unknown }).main_ean === "string" && (item as { main_ean?: string }).main_ean?.trim()
+            ? (item as { main_ean?: string }).main_ean!.trim()
+            : typeof (item as { ean?: unknown }).ean === "string" && (item as { ean?: string }).ean?.trim()
           ? (item as { ean?: string }).ean!.trim()
           : typeof (item as { product_ean?: unknown }).product_ean === "string" && (item as { product_ean?: string }).product_ean?.trim()
             ? (item as { product_ean?: string }).product_ean!.trim()
@@ -279,6 +277,8 @@ export function SofortListTable() {
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
         furnitureType: typeof item.type === "string" && item.type.trim().length > 0 ? item.type.trim() : null,
+        company: typeof rawItem.company === "string" && rawItem.company.trim().length > 0 ? rawItem.company.trim() : null,
+        commentary: typeof rawItem.commentary === "string" && rawItem.commentary.trim().length > 0 ? rawItem.commentary.trim() : null,
         color: typeof rawItem.color === "string" && rawItem.color.trim().length > 0 ? rawItem.color.trim() : null,
         size: typeof rawItem.size === "string" && rawItem.size.trim().length > 0 ? rawItem.size.trim() : null,
         material: typeof rawItem.material === "string" && rawItem.material.trim().length > 0 ? rawItem.material.trim() : null,
@@ -320,6 +320,8 @@ export function SofortListTable() {
         // ATTRIBUTES
         row.room ?? "",
         row.furnitureType ?? "",
+        row.company ?? "",
+        row.commentary ?? "",
         row.color ?? "",
         row.size ?? "",
         row.material ?? "",
@@ -346,41 +348,10 @@ export function SofortListTable() {
     });
   }, [listingFilter, query, roomFilter, rows, typeFilter]);
 
-  const sortedRows = useMemo(() => {
-    if (!sortField) return filteredRows;
-    const next = [...filteredRows];
-    if (sortField === "quantity") {
-      next.sort((a, b) => (sortDirection === "asc" ? a.quantity - b.quantity : b.quantity - a.quantity));
-      return next;
-    }
-    if (sortField === "price") {
-      next.sort((a, b) => {
-        const left = Number.parseFloat((a.price ?? "").replace(",", "."));
-        const right = Number.parseFloat((b.price ?? "").replace(",", "."));
-        if (Number.isFinite(left) && Number.isFinite(right)) return sortDirection === "asc" ? left - right : right - left;
-        return sortDirection === "asc"
-          ? (a.price ?? "").localeCompare(b.price ?? "", undefined, { numeric: true, sensitivity: "base" })
-          : (b.price ?? "").localeCompare(a.price ?? "", undefined, { numeric: true, sensitivity: "base" });
-      });
-      return next;
-    }
-    next.sort((a, b) => {
-      const left = Number(a.place);
-      const right = Number(b.place);
-      if (Number.isFinite(left) && Number.isFinite(right)) return sortDirection === "asc" ? left - right : right - left;
-      return sortDirection === "asc" ? a.place.localeCompare(b.place, undefined, { numeric: true, sensitivity: "base" }) : b.place.localeCompare(a.place, undefined, { numeric: true, sensitivity: "base" });
-    });
-    return next;
-  }, [filteredRows, sortDirection, sortField]);
+  const sortedRows = filteredRows;
 
   const allVisibleSelected = useMemo(() => sortedRows.length > 0 && sortedRows.every((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const hasActiveFilters = roomFilter !== "all" || typeFilter !== "all" || listingFilter !== "all";
-
-  function toggleSort(field: "place" | "quantity" | "price") {
-    if (sortField === field) return setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-    setSortField(field);
-    setSortDirection("asc");
-  }
 
   function toggleRowSelection(rowId: string) {
     setSelectedRowIds((current) => {
@@ -405,8 +376,6 @@ export function SofortListTable() {
     setRoomFilter("all");
     setTypeFilter("all");
     setListingFilter("all");
-    setSortField(null);
-    setSortDirection("asc");
     setBackendPage(1);
   }
 
@@ -427,6 +396,9 @@ export function SofortListTable() {
       {error ? <SofortListErrorState message={error} onRetry={() => void sofortListQuery.refetch()} retrying={sofortListQuery.isFetching} /> : null}
       <Card className="wh-sofort-toolbar-card wh-section-card">
         <CardContent className="wh-section-card__body">
+          <div className="mb-3 flex justify-end">
+            <AddProductButton onCreated={() => sofortListQuery.refetch()} />
+          </div>
           <SofortListToolbar
             query={query}
             searchPlaceholder={t.searchSofortPlaceholder}
@@ -476,12 +448,9 @@ export function SofortListTable() {
                 query={query}
                 selectedRowIds={selectedRowIds}
                 allVisibleSelected={allVisibleSelected}
-                sortField={sortField}
-                sortDirection={sortDirection}
                 placeholderEan={placeholderEan}
                 onToggleSelectVisible={toggleSelectVisible}
                 onToggleRowSelection={toggleRowSelection}
-                onToggleSort={toggleSort}
                 onUpdateRow={updateRowDraft}
                 highlightText={highlightText}
                 labels={{ place: t.place, quantity: t.quantity, room: t.room, type: t.type }}
