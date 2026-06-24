@@ -219,6 +219,10 @@ jobs:
         shell: pwsh
         run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/stage/env.stage.sanitized.template -Environment stage -InputKind Template
 
+      - name: Validate prod deploy env template
+        shell: pwsh
+        run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/prod/env.prod.sanitized.template -Environment prod -InputKind Template
+
       - name: Reject legacy deploy host-port variables
         shell: bash
         run: |
@@ -248,7 +252,7 @@ jobs:
         run: docker compose --env-file infra/deploy/stage/env.stage.sanitized.template -f infra/deploy/stage/docker-compose.yml config --quiet
 
       - name: Validate prod compose config
-        run: docker compose --env-file .env.example -f infra/deploy/prod/docker-compose.yml config
+        run: docker compose --env-file infra/deploy/prod/env.prod.sanitized.template -f infra/deploy/prod/docker-compose.yml config --quiet
 
       - name: Enforce gateway-only stage port publishing
         run: >
@@ -261,7 +265,7 @@ jobs:
         run: >
           python3 infra/scripts/verify-gateway-only-ports.py
           --compose infra/deploy/prod/docker-compose.yml
-          --env-file .env.example
+          --env-file infra/deploy/prod/env.prod.sanitized.template
           --expected-gateway-port 8950
 
       - name: Validate gateway contract test compose config
