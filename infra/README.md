@@ -133,6 +133,11 @@ FTP media config for backend:
 - `BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL`
 - `BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL`
 
+Runtime env source of truth:
+- `STAGE_ENV_FILE` and production runtime env are the canonical deploy inputs.
+- They are not generated automatically from `dev` during deploy.
+- If a runtime capability is expected on stage, its required env must be present in the stage runtime env secret; otherwise deploy validation should fail before release.
+
 Sentry backend:
 - `BACKEND_STAGE_SENTRY_DSN`
 - `BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE`

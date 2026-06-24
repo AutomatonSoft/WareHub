@@ -361,7 +361,7 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'malformed.env' $lines)) 1
   }
 
-  Test-Case 'FTP conditional requirements' {
+  Test-Case 'FTP runtime requirements' {
     $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_HOST=' }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'ftp-missing.env' $lines)) 1
 
@@ -369,7 +369,7 @@ try {
     $nonFtpLines = $nonFtpLines | ForEach-Object {
       if ($_ -match '^BACKEND_UPLOAD_STORAGE_BACKEND=') { 'BACKEND_UPLOAD_STORAGE_BACKEND=local' } else { $_ }
     }
-    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 0
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 1
   }
 
   Test-Case 'secret value is not printed' {
