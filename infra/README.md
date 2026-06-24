@@ -195,6 +195,12 @@ docker compose -f deploy/stage/docker-compose.yml --env-file .env ps
 docker compose -f deploy/prod/docker-compose.yml --env-file .env ps
 ```
 
+Stage deploy behavior:
+
+- `stage-deploy.yml` applies Django migrations automatically during the `stage` pipeline after pulling images and before the application services are promoted.
+- `RUN_MIGRATIONS_ON_STARTUP` remains gated to avoid implicit migrations on ordinary container restarts.
+- Production migrations remain manual and require explicit approval.
+
 Remote migration-plan verification (stage+prod on server):
 
 ```powershell

@@ -509,6 +509,24 @@ jobs:
           echo "=== PULL IMAGES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
 
+          echo "=== APPLY STAGE MIGRATIONS ==="
+          for attempt in $(seq 1 10); do
+            if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate; then
+              break
+            fi
+
+            if [ "$attempt" -eq 10 ]; then
+              echo "Stage migrations failed after $attempt attempts." >&2
+              exit 1
+            fi
+
+            echo "Stage migration attempt $attempt failed; retrying..."
+            sleep 5
+          done
+
+          echo "=== VERIFY STAGE MIGRATION PLAN ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan
+
           echo "=== UP APP SERVICES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
 
