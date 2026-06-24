@@ -2,6 +2,7 @@ from django.db.utils import ProgrammingError
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
+import requests
 
 from .kid_number_utils import primary_kid_number
 from .models import Ean, Kid, Orders, ProductAttributes
@@ -61,6 +62,36 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(ean_row.ebay_jv, "0000000000000")
         self.assertEqual(ean_row.ebay_xl, "0000000000000")
         self.assertFalse(kid.store)
+        self.assertIn("sync", response.data)
+        self.assertIsNone(response.data["sync"]["error"])
+        self.assertIsNone(response.data["sync"]["error_detail"])
+
+    @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("Missing Afterbuy login credentials in .env for JV, XL or CH."))
+    def test_create_kid_reports_missing_afterbuy_credentials(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900903"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "missing_afterbuy_credentials")
+        self.assertIn("Missing Afterbuy login credentials", response.data["sync"]["error_detail"])
+        mocked_search.assert_called_once()
+
+    @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("XL login failed. Check AFTERBUY_XL_LOGIN / AFTERBUY_XL_PASS and any second-factor requirements."))
+    def test_create_kid_reports_afterbuy_login_failure(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900904"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "afterbuy_login_failed")
+        self.assertIn("login failed", response.data["sync"]["error_detail"].lower())
+        mocked_search.assert_called_once()
+
+    @patch("database.views.search_items_auktionsliste", side_effect=requests.RequestException("afterbuy stage timeout"))
+    def test_create_kid_reports_afterbuy_network_failure(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900905"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "afterbuy_network_failed")
+        self.assertIn("timeout", response.data["sync"]["error_detail"].lower())
+        mocked_search.assert_called_once()
 
     @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
     def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
