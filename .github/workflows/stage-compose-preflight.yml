@@ -136,6 +136,7 @@ jobs:
         run: |
           $envFile = "${{ steps.tempdir.outputs.candidate_dir }}/.env"
           ./infra/scripts/verify-required-env.ps1 -EnvFile $envFile -Environment stage -InputKind Runtime
+          ./infra/scripts/verify-compose-service-env-mappings.ps1 -ComposePath "${{ steps.tempdir.outputs.candidate_dir }}/docker-compose.yml" -Environment stage
 
       - name: Run isolated remote compose preflight
         shell: bash

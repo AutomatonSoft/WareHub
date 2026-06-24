@@ -121,7 +121,7 @@ Mobile update metadata:
 - `MOBILE_PROD_APP_VERSION`
 - `MOBILE_PROD_APK_URL`
 
-FTP media config for backend:
+FTP media config for backend and services:
 - `BACKEND_UPLOAD_STORAGE_BACKEND=ftp`
 - `BACKEND_UPLOAD_FTP_HOST`
 - `BACKEND_UPLOAD_FTP_USER`
@@ -132,6 +132,10 @@ FTP media config for backend:
 - `BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar`
 - `BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL`
 - `BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL`
+
+Critical deploy guardrails:
+- CI validates that committed stage/prod compose files pass required FTP/media env into both `backend` and `services`.
+- Stage/prod deploy workflows re-run the same compose env mapping validation against the generated candidate bundle before copying it to the server.
 
 Runtime env source of truth:
 - committed sanitized env templates are the runtime base:
