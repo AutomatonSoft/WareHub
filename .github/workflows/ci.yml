@@ -215,6 +215,10 @@ jobs:
         shell: pwsh
         run: ./infra/scripts/tests/verify-required-env.tests.ps1
 
+      - name: Test compose env mapping validator
+        shell: pwsh
+        run: ./infra/scripts/tests/verify-compose-service-env-mappings.tests.ps1
+
       - name: Validate stage deploy env template
         shell: pwsh
         run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/stage/env.stage.sanitized.template -Environment stage -InputKind Template
@@ -222,6 +226,14 @@ jobs:
       - name: Validate prod deploy env template
         shell: pwsh
         run: ./infra/scripts/verify-required-env.ps1 -EnvFile infra/deploy/prod/env.prod.sanitized.template -Environment prod -InputKind Template
+
+      - name: Validate stage compose runtime env mappings
+        shell: pwsh
+        run: ./infra/scripts/verify-compose-service-env-mappings.ps1 -ComposePath infra/deploy/stage/docker-compose.yml -Environment stage
+
+      - name: Validate prod compose runtime env mappings
+        shell: pwsh
+        run: ./infra/scripts/verify-compose-service-env-mappings.ps1 -ComposePath infra/deploy/prod/docker-compose.yml -Environment prod
 
       - name: Reject legacy deploy host-port variables
         shell: bash

@@ -329,6 +329,10 @@ jobs:
             -Environment stage \
             -InputKind Runtime
 
+          pwsh ./infra/scripts/verify-compose-service-env-mappings.ps1 \
+            -ComposePath "$candidate_dir/docker-compose.yml" \
+            -Environment stage
+
           docker compose \
             --project-name "$STAGE_PROJECT_NAME" \
             --env-file "$candidate_dir/.env" \
