@@ -229,10 +229,6 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
   const [fileInputKey, setFileInputKey] = useState(0);
   const [photoPreviews, setPhotoPreviews] = useState<PhotoPreview[]>([]);
 
-  if (!canCreateKid) {
-    return null;
-  }
-
   useEffect(() => {
     const nextPreviews = form.photoFiles.map((file) => ({
       file,
@@ -246,6 +242,10 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
       }
     };
   }, [form.photoFiles]);
+
+  if (!canCreateKid) {
+    return null;
+  }
 
   function resetForm() {
     setForm(createEmptyFormState());
