@@ -1,4 +1,5 @@
-﻿import { Download, Filter, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { Filter, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Toolbar, ToolbarGroup } from "@/components/ui/toolbar";
 export function SofortListToolbar(props: {
   query: string;
   searchPlaceholder: string;
+  primaryAction?: ReactNode;
   showFilters: boolean;
   hasActiveFilters: boolean;
   roomFilter: string;
@@ -22,8 +24,6 @@ export function SofortListToolbar(props: {
   onRoomFilterChange: (value: string) => void;
   onTypeFilterChange: (value: string) => void;
   onListingFilterChange: (value: string) => void;
-  onExportCsv: () => void;
-  onExportExcel: () => void;
   onReset: () => void;
   labels: {
     allRooms: string;
@@ -39,7 +39,7 @@ export function SofortListToolbar(props: {
 
   return (
     <Toolbar className="wh-sofort-toolbar">
-      <ToolbarGroup className="wh-sofort-toolbar__search flex-1">
+      <ToolbarGroup className="wh-sofort-toolbar__search" role="search">
         <Input
           value={props.query}
           onChange={(event) => props.onQueryChange(event.target.value)}
@@ -49,23 +49,18 @@ export function SofortListToolbar(props: {
         />
       </ToolbarGroup>
       <ToolbarGroup className="wh-sofort-toolbar__actions" role="group" aria-label="Sofort list actions">
+        {props.primaryAction ? <div className="wh-sofort-toolbar__primary-action">{props.primaryAction}</div> : null}
         <Button type="button" variant="outline" onClick={props.onToggleFilters} className="wh-sofort-toolbar__button">
           <Filter />
           {props.showFilters ? "Hide filters" : "Filters"}
-        </Button>
-        <Button type="button" variant="outline" onClick={props.onExportCsv} className="wh-sofort-toolbar__button">
-          <Download />
-          Export CSV
-        </Button>
-        <Button type="button" variant="outline" onClick={props.onExportExcel} className="wh-sofort-toolbar__button">
-          <Download />
-          Export XLSX
         </Button>
         <Button type="button" variant="outline" onClick={props.onReset} className="wh-sofort-toolbar__button">
           <Trash2 />
           {clearLabel}
         </Button>
-        <Badge variant="outline" className="wh-sofort-toolbar__status">{props.statusText}</Badge>
+        <Badge variant="outline" className="wh-sofort-toolbar__status">
+          {props.statusText}
+        </Badge>
       </ToolbarGroup>
       {props.showFilters ? (
         <ToolbarGroup className="wh-sofort-toolbar__filters basis-full" role="group" aria-label="Sofort list filters">
@@ -110,4 +105,3 @@ export function SofortListToolbar(props: {
     </Toolbar>
   );
 }
-

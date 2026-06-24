@@ -47,12 +47,12 @@ function Stop-BackgroundPidProcesses {
 
     try {
       $rawPid = (Get-Content -LiteralPath $pidPath -ErrorAction Stop | Select-Object -First 1).ToString().Trim()
-      $pid = 0
-      if ([int]::TryParse($rawPid, [ref]$pid) -and $pid -gt 0) {
-        $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+      $processId = 0
+      if ([int]::TryParse($rawPid, [ref]$processId) -and $processId -gt 0) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if ($process) {
-          Write-Host "Stopping process $($process.ProcessName) (PID $pid) from PID file $pidFileName."
-          Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+          Write-Host "Stopping process $($process.ProcessName) (PID $processId) from PID file $pidFileName."
+          Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
         }
       }
     } finally {

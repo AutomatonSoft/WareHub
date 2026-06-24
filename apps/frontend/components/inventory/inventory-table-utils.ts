@@ -5,9 +5,12 @@ export type KidDto = {
   kid_number: string;
   kid_account?: string | null;
   order_db_id?: number | null;
+  order_id?: string | null;
   parent_order_id?: string | null;
   additional_order_ids_text?: string | null;
+  buyer?: string | null;
   place?: string | null;
+  store?: boolean | null;
   platform?: string | null;
   quantity?: number | null;
   room?: string | null;
@@ -18,6 +21,7 @@ export type KidDto = {
   memo?: string | null;
   status: "paid" | "no_paid" | string;
   date?: string | null;
+  payment_status?: string | null;
   global_price?: string | null;
   photo?: unknown;
   photo_count?: number | null;
@@ -30,26 +34,19 @@ export type InventoryRow = {
   kidId: number;
   orderDbId: number | null;
   entity: "order" | "kid";
-  place: string;
-  parentOrderId: string;
+  orderId: string;
+  buyer: string;
   additionalOrderIds: string;
   platform: string;
-  quantity: string;
   title: string;
   memo: string;
   sku: string;
-  globalPrice: string;
+  paymentStatus: string;
   status: string;
   date: string;
   photo: string;
+  photos: string[];
   photoCount: string;
-};
-
-export type VisibleColumns = {
-  date: boolean;
-  place: boolean;
-  platform: boolean;
-  quantity: boolean;
 };
 
 export function formatDate(value?: string | null): string {
@@ -100,15 +97,3 @@ export function formatPriceWithoutDots(value: string): string {
   return value.replace(/\./g, "");
 }
 
-export function getVisibleColumnsByWidth(width: number): VisibleColumns {
-  if (width < 980) {
-    return { date: true, place: false, platform: false, quantity: false };
-  }
-  if (width < 1180) {
-    return { date: true, place: true, platform: false, quantity: false };
-  }
-  if (width < 1480) {
-    return { date: true, place: true, platform: true, quantity: false };
-  }
-  return { date: true, place: true, platform: true, quantity: true };
-}

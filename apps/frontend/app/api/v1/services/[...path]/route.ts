@@ -49,8 +49,14 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
         cache: "no-store"
       });
 
-      const text = await response.text();
-      const proxiedResponse = new NextResponse(text, {
+      const status = response.status;
+      const shouldUseEmptyBody =
+        request.method === "HEAD" ||
+        status === 204 ||
+        status === 205 ||
+        status === 304;
+      const text = shouldUseEmptyBody ? "" : await response.text();
+      const proxiedResponse = new NextResponse(shouldUseEmptyBody ? null : text, {
         status: response.status,
         headers: {
           "content-type": response.headers.get("content-type") ?? "application/json",

@@ -29,29 +29,28 @@ export function SofortListMarketplaceMatrix(props: {
             row.hasMatch ? "bg-emerald-50/80 ring-1 ring-emerald-200" : ""
           }`}
         >
-          <span className="wh-sofort-marketplace-matrix__market flex items-center gap-2">
-            <span>{row.market}</span>
-            {row.hasMatch ? (
-              <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                FOUND
-              </span>
-            ) : null}
+          <span className="wh-sofort-marketplace-matrix__market" title={row.market}>
+            {row.market}
           </span>
-          {row.cells.map((cell) => (
-            <code
-              key={cell.key}
-              className={`rounded-lg px-2 py-1 transition ${
-                cell.matches
-                  ? "bg-amber-200 text-slate-950 ring-1 ring-amber-400 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.45)]"
-                  : cell.isEmpty
-                    ? "text-slate-400"
-                    : ""
-              }`}
-              aria-label={`${row.market} ${cell.key} ${cell.matches ? "matched" : "value"}`}
-            >
-              {props.highlightText(displayEan(cell.value, props.placeholderEan), props.query) || "—"}
-            </code>
-          ))}
+          {row.cells.map((cell) => {
+            const displayValue = displayEan(cell.value, props.placeholderEan);
+            return (
+              <code
+                key={cell.key}
+                className={`rounded-lg px-2 py-1 transition ${
+                  cell.matches
+                    ? "bg-amber-200 text-slate-950 ring-1 ring-amber-400 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.45)]"
+                    : cell.isEmpty
+                      ? "text-slate-400"
+                      : ""
+                }`}
+                aria-label={`${row.market} ${cell.key} ${cell.matches ? "matched" : "value"}`}
+                title={displayValue === "—" ? undefined : displayValue}
+              >
+                {props.highlightText(displayValue, props.query) || "—"}
+              </code>
+            );
+          })}
         </div>
       ))}
     </div>

@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from .kid_number_utils import normalize_kid_numbers, primary_kid_number
 from .models import EANPool, EANUsage, Kid, Orders
 
 
@@ -11,10 +13,10 @@ class KidModelSerializer(serializers.ModelSerializer):
         }
 
     def validate_kid_number(self, value):
-        value = (value or "").strip()
-        if not value:
+        normalized = normalize_kid_numbers(value)
+        if not normalized:
             raise serializers.ValidationError("kid_number не может быть пустым.")
-        return value
+        return normalized
 
     def validate_account(self, value):
         if value in (None, ""):
@@ -28,10 +30,21 @@ class KidModelSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["kid_number"] = primary_kid_number(instance.kid_number)
+        return data
+
+
 class KidUserReadSerializer(serializers.ModelSerializer):
+    kid_number = serializers.SerializerMethodField()
+
     class Meta:
         model = Kid
         fields = ("kid_number",)
+
+    def get_kid_number(self, obj):
+        return primary_kid_number(obj.kid_number)
 
 
 class OrderModelSerializer(serializers.ModelSerializer):
@@ -59,8 +72,7 @@ class OrderModelSerializer(serializers.ModelSerializer):
     def validate_sku(self, value):
         if value in (None, ""):
             return value
-        value = value.strip()
-        return value
+        return value.strip()
 
     def validate_status(self, value):
         value = (value or "").strip().lower()
@@ -81,16 +93,18 @@ class OrderModelSerializer(serializers.ModelSerializer):
     def validate_memo(self, value):
         if value in (None, ""):
             return value
-        value = value.strip()
-        return value
+        return value.strip()
 
 
 class OrderUserReadSerializer(serializers.ModelSerializer):
-    kid_number = serializers.CharField(source="kid.kid_number", read_only=True)
+    kid_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Orders
         fields = ("order_id", "kid_number")
+
+    def get_kid_number(self, obj):
+        return primary_kid_number(obj.kid.kid_number)
 
 
 class EANPoolSerializer(serializers.ModelSerializer):

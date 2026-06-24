@@ -26,6 +26,47 @@ type PatchOrderBody =
     ? T
     : Record<string, unknown>;
 
+export type CreateKidFieldErrors = Partial<
+  Record<
+    | "kid_number"
+    | "account"
+    | "b_ware"
+    | "commentary"
+    | "in_transit"
+    | "listing_status"
+    | "store"
+    | "photo"
+    | "photo_files"
+    | "place"
+    | "room"
+    | "type"
+    | "quantity"
+    | "company"
+    | "color"
+    | "size"
+    | "material"
+    | "price"
+    ,
+    string
+  >
+>;
+
+export class CreateKidRequestError extends Error {
+  fieldErrors: CreateKidFieldErrors;
+  status: number;
+
+  constructor(message: string, status: number, fieldErrors: CreateKidFieldErrors = {}) {
+    super(message);
+    this.name = "CreateKidRequestError";
+    this.status = status;
+    this.fieldErrors = fieldErrors;
+  }
+}
+
+export type CreateKidItemResult = {
+  id: number | null;
+};
+
 export function getServicesApiBase(): string {
   return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
@@ -179,10 +220,7 @@ export async function deleteInventoryEntity(params: {
   orderDbId: number | null;
   kidId: number;
 }): Promise<void> {
-  const url =
-    params.entity === "order" && params.orderDbId
-      ? `${getServicesApiBase()}/orders/${params.orderDbId}/`
-      : `${getServicesApiBase()}/kids/${params.kidId}/`;
+  const url = `${getServicesApiBase()}/kids/${params.kidId}/`;
 
   const response = await apiFetch(url, { method: "DELETE" });
 
@@ -193,32 +231,214 @@ export async function deleteInventoryEntity(params: {
   throw new Error(`Delete failed: HTTP ${response.status}`);
 }
 
+export type KidDetailsModel = {
+  id: number;
+  kidNumber: string;
+  account: "JV" | "XL" | "CH" | "" | null;
+  place: string;
+  photoUrls: string[];
+  room: string;
+  furnitureType: string;
+  listingStatus: "listed" | "unlisted";
+  bWare: boolean;
+  store: boolean;
+  commentary: string;
+  inTransit: boolean;
+};
+
+export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/`);
+  let response = await requestFactory();
+
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Kid details request failed: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const photoRaw = payload.photo;
+  const photoUrls = Array.isArray(photoRaw)
+    ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const listingStatus = String(payload.listing_status || "").trim().toLowerCase() === "listed" ? "listed" : "unlisted";
+  const account = typeof payload.account === "string" && payload.account.trim() ? (payload.account.trim().toUpperCase() as "JV" | "XL" | "CH") : null;
+
+  return {
+    id: typeof payload.id === "number" ? payload.id : kidId,
+    kidNumber: String(payload.kid_number || "").trim(),
+    account: account ?? "",
+    place: String(payload.place || "").trim(),
+    photoUrls,
+    room: String(payload.room || "").trim(),
+    furnitureType: String(payload.furniture_type || "").trim(),
+    listingStatus,
+    bWare: payload.b_ware === true,
+    store: payload.store === true,
+    commentary: String(payload.commentary || "").trim(),
+    inTransit: payload.in_transit === true,
+  };
+}
+
+export async function patchKidDetails(params: {
+  kidId: number;
+  kidNumber: string;
+  account: "JV" | "XL" | "CH" | "" | null;
+  place: string;
+  photoUrls: string[];
+  room: string;
+  furnitureType: string;
+  listingStatus: "listed" | "unlisted";
+  bWare: boolean;
+  store: boolean;
+  commentary: string;
+  inTransit: boolean;
+}): Promise<void> {
+  const body = {
+    kid_number: params.kidNumber.trim(),
+    account: params.account ? params.account : null,
+    place: params.place.trim() || null,
+    photo: params.photoUrls,
+    room: params.room.trim() || null,
+    furniture_type: params.furnitureType.trim() || null,
+    listing_status: params.listingStatus,
+    b_ware: params.bWare,
+    store: params.store,
+    commentary: params.commentary.trim() || null,
+    in_transit: params.inTransit,
+  };
+
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Kid update failed: HTTP ${response.status}`);
+  }
+}
+
 export async function createKidItem(params: {
   kidNumber: string;
-  place?: string;
-  photo?: string;
-  photoFiles?: File[];
-}): Promise<void> {
-  const formData = new FormData();
-  formData.set("kid_number", params.kidNumber.trim());
-  if (params.place?.trim()) formData.set("place", params.place.trim());
-  if (params.photo?.trim()) formData.set("photo", params.photo.trim());
-  for (const file of params.photoFiles ?? []) formData.append("photo_files", file);
+  account?: "JV" | "XL" | "CH" | null;
+  bWare?: boolean;
+  company?: string | null;
+  color?: string | null;
+  commentary?: string | null;
+  inTransit?: boolean;
+  listingStatus?: "listed" | "unlisted" | string | null;
+  store?: boolean;
+  material?: string | null;
+  place?: string | null;
+  price?: string | null;
+  quantity?: string | null;
+  room?: string | null;
+  size?: string | null;
+  type?: string | null;
+}): Promise<CreateKidItemResult> {
+  const body = {
+    kid_number: params.kidNumber.trim(),
+    ...(params.account ? { account: params.account } : {}),
+    b_ware: Boolean(params.bWare),
+    in_transit: Boolean(params.inTransit),
+    store: Boolean(params.store),
+    ...(params.company?.trim() ? { company: params.company.trim() } : {}),
+    ...(params.color?.trim() ? { color: params.color.trim() } : {}),
+    ...(params.commentary?.trim() ? { commentary: params.commentary.trim() } : {}),
+    ...(params.listingStatus?.trim() ? { listing_status: params.listingStatus.trim() } : {}),
+    ...(params.material?.trim() ? { material: params.material.trim() } : {}),
+    ...(params.place?.trim() ? { place: params.place.trim() } : {}),
+    ...(params.price?.trim() ? { price: params.price.trim() } : {}),
+    ...(params.quantity?.trim() ? { quantity: params.quantity.trim() } : {}),
+    ...(params.room?.trim() ? { room: params.room.trim() } : {}),
+    ...(params.size?.trim() ? { size: params.size.trim() } : {}),
+    ...(params.type?.trim() ? { type: params.type.trim() } : {})
+  };
 
-  const response = await apiFetch(`${getServicesApiBase()}/kids/`, {
-    method: "POST",
-    body: formData
-  });
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    const message =
-      typeof payload === "object" && payload !== null
-        ? Object.values(payload as Record<string, unknown>)
-            .flatMap((value) => (Array.isArray(value) ? value.map(String) : [String(value)]))
-            .join(" ")
-        : "";
-    throw new Error(message || `Create item failed: HTTP ${response.status}`);
+    const fieldErrors: CreateKidFieldErrors = {};
+    const generalMessages: string[] = [];
+
+    if (payload && typeof payload === "object") {
+      for (const [rawKey, rawValue] of Object.entries(payload as Record<string, unknown>)) {
+        const message = Array.isArray(rawValue)
+          ? rawValue.map(String).join(" ")
+          : typeof rawValue === "string"
+            ? rawValue
+            : rawValue && typeof rawValue === "object" && "detail" in rawValue
+              ? String((rawValue as { detail?: unknown }).detail ?? "")
+              : "";
+
+        if (!message) continue;
+
+        if (
+          rawKey === "kid_number" ||
+          rawKey === "account" ||
+          rawKey === "b_ware" ||
+          rawKey === "commentary" ||
+          rawKey === "in_transit" ||
+          rawKey === "listing_status" ||
+          rawKey === "store" ||
+          rawKey === "photo" ||
+          rawKey === "photo_files" ||
+          rawKey === "place" ||
+          rawKey === "room" ||
+          rawKey === "type" ||
+          rawKey === "quantity" ||
+          rawKey === "company" ||
+          rawKey === "color" ||
+          rawKey === "size" ||
+          rawKey === "material" ||
+          rawKey === "price"
+        ) {
+          fieldErrors[rawKey] = message;
+          continue;
+        }
+
+        generalMessages.push(message);
+      }
+    }
+
+    const fallbackMessage = response.status === 403 ? "Create kid is allowed only for admin role." : `Create kid failed: HTTP ${response.status}`;
+    const fieldMessage = Object.values(fieldErrors).find((value) => typeof value === "string" && value.trim().length > 0);
+    const generalMessage = generalMessages.find((value) => value.trim().length > 0);
+    throw new CreateKidRequestError(generalMessage || fieldMessage || fallbackMessage, response.status, fieldErrors);
   }
+
+  const payload = (await response.json().catch(() => null)) as { id?: unknown } | null;
+  const id = typeof payload?.id === "number" && Number.isFinite(payload.id) ? payload.id : null;
+  return { id };
 }
 
 export async function fetchEanPoolCount(): Promise<number | null> {
@@ -247,10 +467,13 @@ export async function bulkUpdateKids(params: {
     kidId: number;
     room?: string;
     type?: string;
+    quantity?: string;
+    company?: string;
     color?: string;
     size?: string;
     material?: string;
     price?: string;
+    currency?: string;
     listingStatus?: "listed" | "unlisted";
   }>;
 }): Promise<number> {
@@ -259,10 +482,13 @@ export async function bulkUpdateKids(params: {
       kid_id: item.kidId,
       room: item.room,
       type: item.type,
+      quantity: item.quantity,
+      company: item.company,
       color: item.color,
       size: item.size,
       material: item.material,
       price: item.price,
+      currency: item.currency,
       listing_status: item.listingStatus
     }))
   };
@@ -314,6 +540,44 @@ export async function patchKidPhotoUrls(kidId: number, photoUrls: string[]): Pro
 
   if (!response.ok) {
     throw new Error(`Kid photo update failed: HTTP ${response.status}`);
+  }
+}
+
+export async function patchKidMarketplaceEans(params: {
+  kidId: number;
+  mainEan: string;
+  jv: string;
+  xl: string;
+  ottoJv: string;
+  ottoXl: string;
+  ebayJv: string;
+  ebayXl: string;
+  kauflandJv: string;
+  kauflandXl: string;
+  hoodJv: string;
+  hoodXl: string;
+}): Promise<void> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-eans/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      main_ean: params.mainEan,
+      database_ean: params.mainEan,
+      cosmoshop_ean: params.jv,
+      opencart_ean: params.xl,
+      otto_jv_ean: params.ottoJv,
+      otto_xl_ean: params.ottoXl,
+      ebay_jv_ean: params.ebayJv,
+      ebay_xl_ean: params.ebayXl,
+      kaufland_jv_ean: params.kauflandJv,
+      kaufland_xl_ean: params.kauflandXl,
+      hood_jv_ean: params.hoodJv,
+      hood_xl_ean: params.hoodXl
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Marketplace EAN update failed: HTTP ${response.status}`);
   }
 }
 

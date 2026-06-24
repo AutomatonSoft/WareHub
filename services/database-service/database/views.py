@@ -19,7 +19,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
-from .models import EANPool, EANUsage, Kid, Orders, ProductAttributes
+from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_rows, build_kid_ean_summary
 from .ftp_upload import (
     FtpUploadConfigError,
@@ -52,6 +53,122 @@ from orders_pars.service import (
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+def _normalize_search_text(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
+    location_value = "store" if row.get("store") else "warehouse"
+    ean_values = " ".join(
+        _normalize_search_text(value)
+        for value in (
+            row.get("ean"),
+            row.get("main_ean"),
+            row.get("database_ean"),
+            row.get("jv_ean"),
+            row.get("xl_ean"),
+            row.get("otto_jv_ean"),
+            row.get("otto_xl_ean"),
+            row.get("ebay_jv_ean"),
+            row.get("ebay_xl_ean"),
+            row.get("kaufland_jv_ean"),
+            row.get("kaufland_xl_ean"),
+            row.get("hood_jv_ean"),
+            row.get("hood_xl_ean"),
+            " ".join(str(value or "") for value in (row.get("sku_eans") or [])),
+        )
+        if _normalize_search_text(value)
+    )
+    order_values = " ".join(
+        _normalize_search_text(value)
+        for value in (
+            row.get("order_db_id"),
+            row.get("order_id"),
+            row.get("parent_order_id"),
+            row.get("additional_order_ids_text"),
+            row.get("platform"),
+            row.get("buyer"),
+            row.get("title"),
+            row.get("memo"),
+            row.get("sku"),
+            row.get("global_price"),
+            row.get("status"),
+        )
+        if _normalize_search_text(value)
+    )
+
+    field_map = {
+        "kid": " ".join(
+            value
+            for value in (
+                _normalize_search_text(row.get("kid_number")),
+                _normalize_search_text(row.get("kid_id")),
+                _normalize_search_text(row.get("kid_account")),
+            )
+            if value
+        ),
+        "kid_number": _normalize_search_text(row.get("kid_number")),
+        "kid_id": _normalize_search_text(row.get("kid_id")),
+        "account": _normalize_search_text(row.get("kid_account")),
+        "place": _normalize_search_text(row.get("place")),
+        "location": location_value,
+        "room": _normalize_search_text(row.get("room")),
+        "type": _normalize_search_text(row.get("type")),
+        "commentary": _normalize_search_text(row.get("commentary")),
+        "listing_status": _normalize_search_text(row.get("listing_status")),
+        "quantity": _normalize_search_text(row.get("quantity")),
+        "company": _normalize_search_text(row.get("company")),
+        "color": _normalize_search_text(row.get("color")),
+        "size": _normalize_search_text(row.get("size")),
+        "material": _normalize_search_text(row.get("material")),
+        "price": " ".join(
+            value
+            for value in (
+                _normalize_search_text(row.get("price")),
+                _normalize_search_text(row.get("price_currency")),
+                _normalize_search_text(row.get("global_price")),
+            )
+            if value
+        ),
+        "order": order_values,
+        "ean": ean_values,
+    }
+    field_map["global"] = " ".join(value for value in field_map.values() if value)
+    return field_map
+
+
+INVENTORY_QUERY_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("listing status", "listing_status"),
+    ("listing", "listing_status"),
+    ("status", "listing_status"),
+    ("kid number", "kid_number"),
+    ("kid id", "kid_id"),
+    ("kid", "kid"),
+    ("account", "account"),
+    ("place", "place"),
+    ("location", "location"),
+    ("room", "room"),
+    ("type", "type"),
+    ("commentary", "commentary"),
+    ("quantity", "quantity"),
+    ("company", "company"),
+    ("color", "color"),
+    ("size", "size"),
+    ("material", "material"),
+    ("price", "price"),
+    ("order", "order"),
+    ("ean", "ean"),
+)
+
+
+def _find_kid_by_number(kid_number: str):
+    normalized = str(kid_number or "").strip()
+    if not normalized:
+        return None
+    return Kid.objects.filter(kid_number__contains=[normalized]).order_by("id").first()
 
 
 class ServiceHealthAPIView(APIView):
@@ -305,7 +422,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         return []
 
     def _sync_orders_for_kid(self, kid):
-        kid_number = (kid.kid_number or "").strip()
+        kid_number = primary_kid_number(kid.kid_number)
         if not kid_number:
             raise ValidationError({"kid_number": "KID обязателен"})
 
@@ -382,7 +499,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
                 "status": "no_paid",
                 "date": parse_afterbuy_datetime(verkaufsdatum),
                 "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                "global_price": rechnungssumme or None,
+                "payment_status": rechnungssumme or None,
                 "additional_items": additional_items,
             }
 
@@ -449,28 +566,145 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             return [part.strip() for part in text.split(",") if part.strip()]
         return [text]
 
+    @staticmethod
+    def _normalize_optional_text(value):
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    def _extract_furniture_type(self, data, query):
+        furniture_type = self._coalesce_value(data, query, "type")
+        if furniture_type in (None, ""):
+            furniture_type = self._coalesce_value(data, query, "furniture_type")
+        normalized = self._normalize_optional_text(furniture_type)
+        if normalized is None:
+            return None
+        max_length = Kid._meta.get_field("furniture_type").max_length
+        if len(normalized) > max_length:
+            raise ValidationError({"type": [f"Ensure this field has no more than {max_length} characters."]})
+        return normalized
+
+    @staticmethod
+    def _extract_product_attributes(data, query):
+        text_field_map = {
+            "company": ProductAttributes._meta.get_field("company").max_length,
+            "color": ProductAttributes._meta.get_field("color").max_length,
+            "size": ProductAttributes._meta.get_field("size").max_length,
+            "material": ProductAttributes._meta.get_field("material").max_length,
+        }
+        attrs: dict = {}
+
+        for field_name, max_length in text_field_map.items():
+            raw_value = KidListCreateAPIView._coalesce_value(data, query, field_name)
+            normalized = KidListCreateAPIView._normalize_optional_text(raw_value)
+            if normalized is None:
+                continue
+            if len(normalized) > max_length:
+                raise ValidationError({field_name: [f"Ensure this field has no more than {max_length} characters."]})
+            attrs[field_name] = normalized
+
+        raw_price = KidListCreateAPIView._coalesce_value(data, query, "price")
+        if raw_price not in (None, ""):
+            parsed_price = _to_decimal_amount(str(raw_price))
+            if parsed_price is None:
+                raise ValidationError({"price": ["Price must be a numeric value."]})
+            attrs["price"] = parsed_price
+
+        raw_quantity = KidListCreateAPIView._coalesce_value(data, query, "quantity")
+        if raw_quantity not in (None, ""):
+            try:
+                parsed_quantity = int(str(raw_quantity).strip())
+            except (TypeError, ValueError):
+                raise ValidationError({"quantity": ["Quantity must be an integer value."]})
+            if parsed_quantity < 0:
+                raise ValidationError({"quantity": ["Quantity must be greater than or equal to 0."]})
+            attrs["quantity"] = parsed_quantity
+
+        return attrs
+
+    @staticmethod
+    def _upsert_product_attributes(kid, attrs: dict):
+        if not attrs:
+            return
+        payload = dict(attrs)
+        payload["currency"] = "EUR"
+        ProductAttributes.objects.update_or_create(
+            kid=kid,
+            defaults=payload,
+        )
+
+    @staticmethod
+    def _ensure_database_ean_defaults(kid) -> None:
+        default_connection = connections["default"]
+        existing_tables = set(default_connection.introspection.table_names())
+        ean_table = Ean._meta.db_table
+        if ean_table not in existing_tables:
+            return
+
+        placeholder = DEFAULT_EAN_PLACEHOLDER
+        defaults = {
+            "main_ean": placeholder,
+            "jv": placeholder,
+            "xl": placeholder,
+            "otto_jv": placeholder,
+            "otto_xl": placeholder,
+            "kaufland_jv": placeholder,
+            "kaufland_xl": placeholder,
+            "hood_jv": placeholder,
+            "hood_xl": placeholder,
+            "ebay_jv": placeholder,
+            "ebay_xl": placeholder,
+        }
+
+        ean_row, _ = Ean.objects.get_or_create(kid=kid, defaults=defaults)
+
+        update_fields: list[str] = []
+        for field_name, fallback in defaults.items():
+            current_value = getattr(ean_row, field_name, None)
+            if current_value in (None, ""):
+                setattr(ean_row, field_name, fallback)
+                update_fields.append(field_name)
+
+        if update_fields:
+            ean_row.save(update_fields=update_fields)
+
     def create(self, request, *args, **kwargs):
         payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data or {})
         query = request.query_params
 
-        payload["kid_number"] = str(
+        payload["kid_number"] = (
             self._coalesce_value(payload, query, "kid_number")
             or self._coalesce_value(payload, query, "kid")
-            or ""
-        ).strip()
+            or []
+        )
         place = self._coalesce_value(payload, query, "place")
         if place not in (None, ""):
             payload["place"] = str(place).strip()
         account = self._coalesce_value(payload, query, "account")
         if account not in (None, ""):
             payload["account"] = str(account).strip().upper()
+        furniture_type = self._extract_furniture_type(payload, query)
+        product_attrs = self._extract_product_attributes(payload, query)
+        if furniture_type is not None:
+            payload["furniture_type"] = furniture_type
+        try:
+            payload.pop("type")
+        except Exception:
+            pass
+        for attr_key in ("company", "color", "size", "material", "price", "quantity", "currency"):
+            try:
+                payload.pop(attr_key)
+            except Exception:
+                pass
 
+        primary_payload_kid_number = primary_kid_number(payload["kid_number"])
         uploaded_files = collect_uploaded_files(request)
         uploaded_photo_urls: list[str] = []
         if uploaded_files:
             try:
                 uploaded_photo_urls = [
-                    upload_kid_photo_file(file_obj, kid_number=payload["kid_number"])
+                    upload_kid_photo_file(file_obj, kid_number=primary_payload_kid_number)
                     for file_obj in uploaded_files
                 ]
             except FtpUploadConfigError as exc:
@@ -501,11 +735,14 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        kid_number = str(validated.get("kid_number") or "").strip()
+        kid_number = primary_kid_number(validated.get("kid_number"))
 
-        existing = Kid.objects.filter(kid_number=kid_number).order_by("id").first()
+        existing = _find_kid_by_number(kid_number)
         if existing is None:
-            kid, sync_summary = self.perform_create(serializer)
+            with transaction.atomic():
+                kid, sync_summary = self.perform_create(serializer)
+                self._upsert_product_attributes(kid, product_attrs)
+                self._ensure_database_ean_defaults(kid)
             output = self.get_serializer(kid)
             headers = self.get_success_headers(output.data)
             response_data = dict(output.data)
@@ -513,7 +750,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
         update_fields = []
-        for field in ("account", "place", "photo"):
+        for field in ("account", "place", "photo", "room", "furniture_type", "listing_status", "commentary", "b_ware", "store", "in_transit"):
             if field in validated:
                 next_value = validated.get(field)
                 if getattr(existing, field) != next_value:
@@ -523,6 +760,8 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         if update_fields:
             existing.save(update_fields=update_fields)
 
+        self._upsert_product_attributes(existing, product_attrs)
+        self._ensure_database_ean_defaults(existing)
         sync_summary = self._sync_orders_for_kid(existing)
         output = self.get_serializer(existing)
         response_data = dict(output.data)
@@ -540,6 +779,15 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
             return KidUserReadSerializer
         return KidModelSerializer
 
+    def perform_destroy(self, instance):
+        default_connection = connections["default"]
+        with transaction.atomic():
+            Ean.objects.filter(kid_id=instance.id).delete()
+            Orders.objects.filter(kid_id=instance.id).delete()
+            ProductAttributes.objects.filter(kid_id=instance.id).delete()
+            with default_connection.cursor() as cursor:
+                cursor.execute(f'DELETE FROM "{Kid._meta.db_table}" WHERE id = %s', [instance.id])
+
 
 class OrderListCreateAPIView(generics.ListCreateAPIView):
     queryset = Orders.objects.select_related("kid").all().order_by("id")
@@ -553,14 +801,14 @@ class OrderListCreateAPIView(generics.ListCreateAPIView):
         return OrderModelSerializer
 
     def create(self, request, *args, **kwargs):
-        kid_number = (request.data.get("kid_number") or "").strip()
+        kid_number = primary_kid_number(request.data.get("kid_number"))
         if not kid_number:
             return Response(
                 {"kid_number": ["Укажите kid_number."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        kid = Kid.objects.filter(kid_number=kid_number).first()
+        kid = _find_kid_by_number(kid_number)
         if kid is None:
             return Response(
                 {"kid_number": [f"Kid с kid_number='{kid_number}' не найден."]},
@@ -622,7 +870,7 @@ class KidEanSummaryAPIView(APIView):
     def get(self, request, kid_id):
         kid = get_object_or_404(Kid, id=kid_id)
         payload = build_kid_ean_summary(kid.id)
-        payload["kid_number"] = kid.kid_number
+        payload["kid_number"] = primary_kid_number(kid.kid_number)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -641,74 +889,38 @@ class KidMarketplaceEansAPIView(APIView):
         if len(value) != 13 or not value.isdigit():
             raise ValidationError({field_name: "EAN must be a 13-digit numeric string."})
 
+    @classmethod
+    def _build_ean_response(cls, kid: Kid, kid_number: str, ean_row: Ean | None) -> dict:
+        fallback = DEFAULT_EAN_PLACEHOLDER
+        return {
+            "kid_id": kid.id,
+            "kid_number": kid_number,
+            "main_ean": cls._normalize_ean(getattr(ean_row, "main_ean", fallback)),
+            "database_ean": cls._normalize_ean(getattr(ean_row, "main_ean", fallback)),
+            "cosmoshop_ean": cls._normalize_ean(getattr(ean_row, "jv", fallback)),
+            "opencart_ean": cls._normalize_ean(getattr(ean_row, "xl", fallback)),
+            "otto_jv_ean": cls._normalize_ean(getattr(ean_row, "otto_jv", fallback)),
+            "otto_xl_ean": cls._normalize_ean(getattr(ean_row, "otto_xl", fallback)),
+            "ebay_jv_ean": cls._normalize_ean(getattr(ean_row, "ebay_jv", fallback)),
+            "ebay_xl_ean": cls._normalize_ean(getattr(ean_row, "ebay_xl", fallback)),
+            "kaufland_jv_ean": cls._normalize_ean(getattr(ean_row, "kaufland_jv", fallback)),
+            "kaufland_xl_ean": cls._normalize_ean(getattr(ean_row, "kaufland_xl", fallback)),
+            "hood_jv_ean": cls._normalize_ean(getattr(ean_row, "hood_jv", fallback)),
+            "hood_xl_ean": cls._normalize_ean(getattr(ean_row, "hood_xl", fallback)),
+        }
+
     def get(self, request, kid_id: int):
         kid = get_object_or_404(Kid, id=kid_id)
-        kid_number = str(kid.kid_number or "").strip()
+        kid_number = primary_kid_number(kid.kid_number)
         if not kid_number:
             return Response({"detail": "kid_number is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
-        with connections["ean_map"].cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    COALESCE(NULLIF(cosmoshop_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(opencart_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(otto_jv_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(otto_xl_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(ebay_jv_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(ebay_xl_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(kaufland_jv_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(kaufland_xl_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(hood_jv_ean, ''), '0000000000000'),
-                    COALESCE(NULLIF(hood_xl_ean, ''), '0000000000000')
-                FROM kid_ean_map
-                WHERE kid_number = %s
-                LIMIT 1
-                """,
-                [kid_number],
-            )
-            row = cursor.fetchone()
-
-        if row is None:
-            return Response(
-                {
-                    "kid_id": kid.id,
-                    "kid_number": kid_number,
-                    "cosmoshop_ean": "0000000000000",
-                    "opencart_ean": "0000000000000",
-                    "otto_jv_ean": "0000000000000",
-                    "otto_xl_ean": "0000000000000",
-                    "ebay_jv_ean": "0000000000000",
-                    "ebay_xl_ean": "0000000000000",
-                    "kaufland_jv_ean": "0000000000000",
-                    "kaufland_xl_ean": "0000000000000",
-                    "hood_jv_ean": "0000000000000",
-                    "hood_xl_ean": "0000000000000",
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        return Response(
-            {
-                "kid_id": kid.id,
-                "kid_number": kid_number,
-                "cosmoshop_ean": str(row[0]),
-                "opencart_ean": str(row[1]),
-                "otto_jv_ean": str(row[2]),
-                "otto_xl_ean": str(row[3]),
-                "ebay_jv_ean": str(row[4]),
-                "ebay_xl_ean": str(row[5]),
-                "kaufland_jv_ean": str(row[6]),
-                "kaufland_xl_ean": str(row[7]),
-                "hood_jv_ean": str(row[8]),
-                "hood_xl_ean": str(row[9]),
-            },
-            status=status.HTTP_200_OK,
-        )
+        ean_row = Ean.objects.filter(kid=kid).first()
+        return Response(self._build_ean_response(kid, kid_number, ean_row), status=status.HTTP_200_OK)
 
     def patch(self, request, kid_id: int):
         kid = get_object_or_404(Kid, id=kid_id)
-        kid_number = str(kid.kid_number or "").strip()
+        kid_number = primary_kid_number(kid.kid_number)
         if not kid_number:
             return Response({"detail": "kid_number is empty."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -727,6 +939,19 @@ class KidMarketplaceEansAPIView(APIView):
         ]
 
         updates: dict[str, str] = {}
+        if "main_ean" in payload or "database_ean" in payload:
+            raw_main = payload.get("main_ean", payload.get("database_ean"))
+            raw_database = payload.get("database_ean", payload.get("main_ean"))
+            normalized_main = self._normalize_ean(raw_main)
+            normalized_database = self._normalize_ean(raw_database)
+            if normalized_main != normalized_database:
+                return Response(
+                    {"detail": "main_ean and database_ean must match when both are provided."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            self._validate_ean(normalized_main, "main_ean")
+            updates["ean"] = normalized_main
+
         for field in fields:
             if field not in payload:
                 continue
@@ -737,50 +962,29 @@ class KidMarketplaceEansAPIView(APIView):
         if not updates:
             return Response({"detail": "No valid fields to update."}, status=status.HTTP_400_BAD_REQUEST)
 
+        ean_defaults = {
+            "main_ean": updates.get("ean", DEFAULT_EAN_PLACEHOLDER),
+            "jv": updates.get("cosmoshop_ean", DEFAULT_EAN_PLACEHOLDER),
+            "xl": updates.get("opencart_ean", DEFAULT_EAN_PLACEHOLDER),
+            "otto_jv": updates.get("otto_jv_ean", DEFAULT_EAN_PLACEHOLDER),
+            "otto_xl": updates.get("otto_xl_ean", DEFAULT_EAN_PLACEHOLDER),
+            "ebay_jv": updates.get("ebay_jv_ean", DEFAULT_EAN_PLACEHOLDER),
+            "ebay_xl": updates.get("ebay_xl_ean", DEFAULT_EAN_PLACEHOLDER),
+            "kaufland_jv": updates.get("kaufland_jv_ean", DEFAULT_EAN_PLACEHOLDER),
+            "kaufland_xl": updates.get("kaufland_xl_ean", DEFAULT_EAN_PLACEHOLDER),
+            "hood_jv": updates.get("hood_jv_ean", DEFAULT_EAN_PLACEHOLDER),
+            "hood_xl": updates.get("hood_xl_ean", DEFAULT_EAN_PLACEHOLDER),
+        }
+
         with transaction.atomic():
-            with connections["ean_map"].cursor() as cursor:
-                cursor.execute(
-                    "SELECT id FROM kid_ean_map WHERE kid_number = %s LIMIT 1",
-                    [kid_number],
-                )
-                exists = cursor.fetchone()
-                if exists is None:
-                    cursor.execute(
-                        """
-                        INSERT INTO kid_ean_map (
-                            kid_id, kid_number, ean,
-                            cosmoshop_ean, opencart_ean,
-                            otto_jv_ean, otto_xl_ean,
-                            ebay_jv_ean, ebay_xl_ean,
-                            kaufland_jv_ean, kaufland_xl_ean,
-                            hood_jv_ean, hood_xl_ean,
-                            source_db, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
-                        """,
-                        [
-                            kid.id,
-                            kid_number,
-                            updates.get("cosmoshop_ean", "0000000000000"),
-                            updates.get("cosmoshop_ean", "0000000000000"),
-                            updates.get("opencart_ean", "0000000000000"),
-                            updates.get("otto_jv_ean", "0000000000000"),
-                            updates.get("otto_xl_ean", "0000000000000"),
-                            updates.get("ebay_jv_ean", "0000000000000"),
-                            updates.get("ebay_xl_ean", "0000000000000"),
-                            updates.get("kaufland_jv_ean", "0000000000000"),
-                            updates.get("kaufland_xl_ean", "0000000000000"),
-                            updates.get("hood_jv_ean", "0000000000000"),
-                            updates.get("hood_xl_ean", "0000000000000"),
-                            "sofortbot_shared_dev",
-                        ],
-                    )
-                else:
-                    set_clause = ", ".join(f"{field} = %s" for field in updates.keys())
-                    params = list(updates.values()) + [kid.id, kid_number]
-                    cursor.execute(
-                        f"UPDATE kid_ean_map SET {set_clause}, kid_id = %s, updated_at = now() WHERE kid_number = %s",
-                        params,
-                    )
+            ean_row, _ = Ean.objects.get_or_create(kid=kid, defaults=ean_defaults)
+            ean_update_fields: list[str] = []
+            for field_name, field_value in ean_defaults.items():
+                if getattr(ean_row, field_name) != field_value:
+                    setattr(ean_row, field_name, field_value)
+                    ean_update_fields.append(field_name)
+            if ean_update_fields:
+                ean_row.save(update_fields=ean_update_fields)
 
         return self.get(request, kid_id)
 
@@ -848,18 +1052,23 @@ class InventoryRowsAPIView(APIView):
             ]
 
         if query_raw:
+            query_tokens = [token for token in query_raw.split() if token]
+            scoped_field = None
+            scoped_query = query_raw
+            for prefix, field_name in INVENTORY_QUERY_PREFIXES:
+                marker = f"{prefix} "
+                if query_raw.startswith(marker):
+                    scoped_field = field_name
+                    scoped_query = query_raw[len(marker):].strip()
+                    break
+
+            scoped_tokens = [token for token in scoped_query.split() if token]
+
             def _matches_query(row: dict) -> bool:
-                fields = (
-                    row.get("place"),
-                    row.get("kid_number"),
-                    row.get("kid_id"),
-                    row.get("room"),
-                    row.get("type"),
-                    row.get("listing_status"),
-                    row.get("quantity"),
-                )
-                haystack = " ".join(str(value or "") for value in fields).lower()
-                return query_raw in haystack
+                haystacks = _inventory_row_search_haystacks(row)
+                if scoped_field and scoped_tokens:
+                    return all(token in haystacks.get(scoped_field, "") for token in scoped_tokens)
+                return all(token in haystacks["global"] for token in query_tokens)
 
             rows = [row for row in rows if _matches_query(row)]
 
@@ -921,10 +1130,14 @@ class KidsBulkUpdateAPIView(APIView):
                 patch_data["listing_status"] = listing_status
             if "color" in raw:
                 patch_data["color"] = str(raw.get("color") or "").strip()
+            if "company" in raw:
+                patch_data["company"] = str(raw.get("company") or "").strip()
             if "size" in raw:
                 patch_data["size"] = str(raw.get("size") or "").strip()
             if "material" in raw:
                 patch_data["material"] = str(raw.get("material") or "").strip()
+            if "currency" in raw:
+                patch_data["currency"] = str(raw.get("currency") or "").strip()
             if "price" in raw:
                 parsed_price = _to_decimal_amount(str(raw.get("price") or ""))
                 if parsed_price is None:
@@ -933,6 +1146,24 @@ class KidsBulkUpdateAPIView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 patch_data["price"] = parsed_price
+            if "quantity" in raw:
+                quantity_raw = str(raw.get("quantity") or "").strip()
+                if not quantity_raw:
+                    patch_data["quantity"] = None
+                else:
+                    try:
+                        parsed_quantity = int(quantity_raw)
+                    except (TypeError, ValueError):
+                        return Response(
+                            {"detail": "quantity must be an integer."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    if parsed_quantity < 0:
+                        return Response(
+                            {"detail": "quantity must be greater than or equal to 0."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    patch_data["quantity"] = parsed_quantity
             normalized_updates.append(patch_data)
             kid_ids.add(kid_id)
 
@@ -949,15 +1180,21 @@ class KidsBulkUpdateAPIView(APIView):
             for patch_data in normalized_updates:
                 kid = kids[patch_data["kid_id"]]
                 update_fields: list[str] = []
+                if "room" in patch_data and kid.room != patch_data["room"]:
+                    kid.room = patch_data["room"]
+                    update_fields.append("room")
                 if "listing_status" in patch_data and kid.listing_status != patch_data["listing_status"]:
                     kid.listing_status = patch_data["listing_status"]
                     update_fields.append("listing_status")
+                if "furniture_type" in patch_data and kid.furniture_type != patch_data["furniture_type"]:
+                    kid.furniture_type = patch_data["furniture_type"]
+                    update_fields.append("furniture_type")
                 if update_fields:
                     kid.save(update_fields=update_fields)
                     updated_count += 1
 
                 attrs_updates: dict = {}
-                for attr_key in ("room", "furniture_type", "color", "size", "material", "price"):
+                for attr_key in ("quantity", "company", "color", "size", "material", "price", "currency"):
                     if attr_key in patch_data:
                         attrs_updates[attr_key] = patch_data[attr_key]
                 if attrs_updates:
