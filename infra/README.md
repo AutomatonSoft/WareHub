@@ -133,6 +133,16 @@ FTP media config for backend:
 - `BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL`
 - `BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL`
 
+Runtime env source of truth:
+- committed sanitized env templates are the runtime base:
+  - `infra/deploy/stage/env.stage.sanitized.template`
+  - `infra/deploy/prod/env.prod.sanitized.template`
+- stage deploy builds the runtime `.env` from the committed template plus the secret overlay in `STAGE_ENV_FILE`, then copies only the merged runtime file to the server.
+- production deploy builds the runtime `.env` from the committed template plus the secret overlay in `PROD_ENV_FILE`, then copies only the merged runtime file to the server.
+- `STAGE_ENV_FILE` is therefore an override layer for secrets and environment-specific deviations, not a git-tracked full env file.
+- `PROD_ENV_FILE` is the corresponding production override layer.
+- if a runtime capability is expected on stage, its required env must be present either in the committed template defaults or in the secret overlay; otherwise deploy validation should fail before release.
+
 Sentry backend:
 - `BACKEND_STAGE_SENTRY_DSN`
 - `BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE`
