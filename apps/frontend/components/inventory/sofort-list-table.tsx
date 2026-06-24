@@ -10,7 +10,6 @@ import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
-import { exportRowsToCsv, exportRowsToExcelXml } from "../shared/table/export-utils";
 import { AddProductButton } from "./add-item-button";
 import { fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList } from "./inventory-table-utils";
@@ -22,26 +21,9 @@ import { SofortListTableShell } from "./sofort-list/sofort-list-table-shell";
 import { SofortListToolbar } from "./sofort-list/sofort-list-toolbar";
 import type { SofortListRow } from "./sofort-list/sofort-list-types";
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function highlightText(value: string, query: string) {
-  const normalized = query.trim();
-  if (!normalized) return value;
-  const normalizedLower = normalized.toLowerCase();
-  const regex = new RegExp(`(${escapeRegex(normalized)})`, "ig");
-  const parts = value.split(regex);
-  if (parts.length === 1) return value;
-  return parts.map((part, index) =>
-    part.toLowerCase() === normalizedLower ? (
-      <mark key={`${part}-${index}`} className="rounded bg-muted px-0.5 text-foreground">
-        {part}
-      </mark>
-    ) : (
-      <span key={`${part}-${index}`}>{part}</span>
-    )
-  );
+  void query;
+  return value;
 }
 
 function normalizeEanValue(value: unknown, fallback: string): string {
@@ -76,62 +58,10 @@ function firstSkuEan(item: Record<string, unknown>): string | null {
   return null;
 }
 
-const EXPORT_HEADERS = [
-  "place",
-  "quantity",
-  "room",
-  "type",
-  "company",
-  "commentary",
-  "color",
-  "size",
-  "material",
-  "price",
-  "price_currency",
-  "ean",
-  "ean_jv",
-  "ean_xl",
-  "ean_otto_jv",
-  "ean_otto_xl",
-  "ean_ebay_jv",
-  "ean_ebay_xl",
-  "ean_kaufland_jv",
-  "ean_kaufland_xl",
-  "ean_hood_jv",
-  "ean_hood_xl",
-  "kid_number",
-  "kid_id",
-  "listing_status"
-];
-
-function toExportRow(row: SofortListRow): string[] {
-  return [
-    row.place,
-    String(row.quantity),
-    row.room ?? "null",
-    row.furnitureType ?? "null",
-    row.company ?? "null",
-    row.commentary ?? "null",
-    row.color ?? "null",
-    row.size ?? "null",
-    row.material ?? "null",
-    row.price ?? "null",
-    row.priceCurrency ?? "null",
-    row.ean,
-    row.siteEans.jv,
-    row.siteEans.xl,
-    row.siteEans.ottoJv,
-    row.siteEans.ottoXl,
-    row.siteEans.ebayJv,
-    row.siteEans.ebayXl,
-    row.siteEans.kauflandJv,
-    row.siteEans.kauflandXl,
-    row.siteEans.hoodJv,
-    row.siteEans.hoodXl,
-    row.kidNumber,
-    String(row.kidId),
-    row.listingStatus
-  ];
+function displayNullable(value: string | null): string {
+  if (value === null) return "null";
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : "null";
 }
 
 export function SofortListTable() {
@@ -274,6 +204,7 @@ export function SofortListTable() {
         photo: getPrimaryPhoto(item.photo),
         photoCount: item.photo_count ?? photos.length,
         place: item.place?.trim() || "-",
+        store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
         furnitureType: typeof item.type === "string" && item.type.trim().length > 0 ? item.type.trim() : null,
@@ -301,54 +232,7 @@ export function SofortListTable() {
   const roomOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.room ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const typeOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.furnitureType ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
 
-  const filteredRows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const tokens = normalized
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0);
-    return rows.filter((row) => {
-      const matchesRoom = roomFilter === "all" || row.room === roomFilter;
-      const matchesType = typeFilter === "all" || row.furnitureType === typeFilter;
-      const matchesListing = listingFilter === "all" || (listingFilter === "listed" ? row.listingStatus === "listed" : row.listingStatus === "unlisted");
-      if (!matchesRoom || !matchesType || !matchesListing) return false;
-      if (!normalized) return true;
-      const searchable = [
-        // PRODUCT
-        row.kidNumber,
-        String(row.kidId),
-        // ATTRIBUTES
-        row.room ?? "",
-        row.furnitureType ?? "",
-        row.company ?? "",
-        row.commentary ?? "",
-        row.color ?? "",
-        row.size ?? "",
-        row.material ?? "",
-        // PRICE
-        row.price ?? "",
-        row.priceCurrency ?? "",
-        // EAN
-        row.ean,
-        // MARKETPLACE EAN
-        row.siteEans.jv,
-        row.siteEans.xl,
-        row.siteEans.ottoJv,
-        row.siteEans.ottoXl,
-        row.siteEans.ebayJv,
-        row.siteEans.ebayXl,
-        row.siteEans.kauflandJv,
-        row.siteEans.kauflandXl,
-        row.siteEans.hoodJv,
-        row.siteEans.hoodXl
-      ]
-        .join(" ")
-        .toLowerCase();
-      return tokens.every((token) => searchable.includes(token));
-    });
-  }, [listingFilter, query, roomFilter, rows, typeFilter]);
-
-  const sortedRows = filteredRows;
+  const sortedRows = rows;
 
   const allVisibleSelected = useMemo(() => sortedRows.length > 0 && sortedRows.every((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const hasActiveFilters = roomFilter !== "all" || typeFilter !== "all" || listingFilter !== "all";
@@ -379,14 +263,6 @@ export function SofortListTable() {
     setBackendPage(1);
   }
 
-  function exportFilteredCsv() {
-    exportRowsToCsv(EXPORT_HEADERS, sortedRows.map(toExportRow), "sofort-list-filtered.csv");
-  }
-
-  function exportFilteredExcel() {
-    exportRowsToExcelXml(EXPORT_HEADERS, sortedRows.map(toExportRow), "sofort-list-filtered.xls");
-  }
-
   function updateRowDraft(nextRow: SofortListRow) {
     setRows((current) => current.map((row) => (row.id === nextRow.id ? nextRow : row)));
   }
@@ -396,12 +272,10 @@ export function SofortListTable() {
       {error ? <SofortListErrorState message={error} onRetry={() => void sofortListQuery.refetch()} retrying={sofortListQuery.isFetching} /> : null}
       <Card className="wh-sofort-toolbar-card wh-section-card">
         <CardContent className="wh-section-card__body">
-          <div className="mb-3 flex justify-end">
-            <AddProductButton onCreated={() => sofortListQuery.refetch()} />
-          </div>
           <SofortListToolbar
             query={query}
             searchPlaceholder={t.searchSofortPlaceholder}
+            primaryAction={<AddProductButton onCreated={() => sofortListQuery.refetch()} />}
             showFilters={showFilters}
             hasActiveFilters={hasActiveFilters}
             roomFilter={roomFilter}
@@ -409,14 +283,12 @@ export function SofortListTable() {
             listingFilter={listingFilter}
             roomOptions={roomOptions}
             typeOptions={typeOptions}
-            statusText={loading ? t.loadingRows : `${t.rows}: ${filteredRows.length}`}
+            statusText={loading ? t.loadingRows : `${t.rows}: ${rows.length}`}
             onQueryChange={setQuery}
             onToggleFilters={() => setShowFilters((current) => !current)}
             onRoomFilterChange={setRoomFilter}
             onTypeFilterChange={setTypeFilter}
             onListingFilterChange={setListingFilter}
-            onExportCsv={exportFilteredCsv}
-            onExportExcel={exportFilteredExcel}
             onReset={resetFiltersAndSearch}
             labels={{ allRooms: t.allRooms, allTypes: t.allTypes, allListingStatuses: t.allListingStatuses, listed: t.listed, unlisted: t.unlisted, clear: t.clear }}
           />

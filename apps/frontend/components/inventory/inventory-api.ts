@@ -34,6 +34,7 @@ export type CreateKidFieldErrors = Partial<
     | "commentary"
     | "in_transit"
     | "listing_status"
+    | "store"
     | "photo"
     | "photo_files"
     | "place"
@@ -230,6 +231,108 @@ export async function deleteInventoryEntity(params: {
   throw new Error(`Delete failed: HTTP ${response.status}`);
 }
 
+export type KidDetailsModel = {
+  id: number;
+  kidNumber: string;
+  account: "JV" | "XL" | "CH" | "" | null;
+  place: string;
+  photoUrls: string[];
+  room: string;
+  furnitureType: string;
+  listingStatus: "listed" | "unlisted";
+  bWare: boolean;
+  store: boolean;
+  commentary: string;
+  inTransit: boolean;
+};
+
+export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/`);
+  let response = await requestFactory();
+
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Kid details request failed: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const photoRaw = payload.photo;
+  const photoUrls = Array.isArray(photoRaw)
+    ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const listingStatus = String(payload.listing_status || "").trim().toLowerCase() === "listed" ? "listed" : "unlisted";
+  const account = typeof payload.account === "string" && payload.account.trim() ? (payload.account.trim().toUpperCase() as "JV" | "XL" | "CH") : null;
+
+  return {
+    id: typeof payload.id === "number" ? payload.id : kidId,
+    kidNumber: String(payload.kid_number || "").trim(),
+    account: account ?? "",
+    place: String(payload.place || "").trim(),
+    photoUrls,
+    room: String(payload.room || "").trim(),
+    furnitureType: String(payload.furniture_type || "").trim(),
+    listingStatus,
+    bWare: payload.b_ware === true,
+    store: payload.store === true,
+    commentary: String(payload.commentary || "").trim(),
+    inTransit: payload.in_transit === true,
+  };
+}
+
+export async function patchKidDetails(params: {
+  kidId: number;
+  kidNumber: string;
+  account: "JV" | "XL" | "CH" | "" | null;
+  place: string;
+  photoUrls: string[];
+  room: string;
+  furnitureType: string;
+  listingStatus: "listed" | "unlisted";
+  bWare: boolean;
+  store: boolean;
+  commentary: string;
+  inTransit: boolean;
+}): Promise<void> {
+  const body = {
+    kid_number: params.kidNumber.trim(),
+    account: params.account ? params.account : null,
+    place: params.place.trim() || null,
+    photo: params.photoUrls,
+    room: params.room.trim() || null,
+    furniture_type: params.furnitureType.trim() || null,
+    listing_status: params.listingStatus,
+    b_ware: params.bWare,
+    store: params.store,
+    commentary: params.commentary.trim() || null,
+    in_transit: params.inTransit,
+  };
+
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Kid update failed: HTTP ${response.status}`);
+  }
+}
+
 export async function createKidItem(params: {
   kidNumber: string;
   account?: "JV" | "XL" | "CH" | null;
@@ -239,6 +342,7 @@ export async function createKidItem(params: {
   commentary?: string | null;
   inTransit?: boolean;
   listingStatus?: "listed" | "unlisted" | string | null;
+  store?: boolean;
   material?: string | null;
   place?: string | null;
   price?: string | null;
@@ -252,6 +356,7 @@ export async function createKidItem(params: {
     ...(params.account ? { account: params.account } : {}),
     b_ware: Boolean(params.bWare),
     in_transit: Boolean(params.inTransit),
+    store: Boolean(params.store),
     ...(params.company?.trim() ? { company: params.company.trim() } : {}),
     ...(params.color?.trim() ? { color: params.color.trim() } : {}),
     ...(params.commentary?.trim() ? { commentary: params.commentary.trim() } : {}),
@@ -304,6 +409,7 @@ export async function createKidItem(params: {
           rawKey === "commentary" ||
           rawKey === "in_transit" ||
           rawKey === "listing_status" ||
+          rawKey === "store" ||
           rawKey === "photo" ||
           rawKey === "photo_files" ||
           rawKey === "place" ||
@@ -361,11 +467,13 @@ export async function bulkUpdateKids(params: {
     kidId: number;
     room?: string;
     type?: string;
+    quantity?: string;
     company?: string;
     color?: string;
     size?: string;
     material?: string;
     price?: string;
+    currency?: string;
     listingStatus?: "listed" | "unlisted";
   }>;
 }): Promise<number> {
@@ -374,11 +482,13 @@ export async function bulkUpdateKids(params: {
       kid_id: item.kidId,
       room: item.room,
       type: item.type,
+      quantity: item.quantity,
       company: item.company,
       color: item.color,
       size: item.size,
       material: item.material,
       price: item.price,
+      currency: item.currency,
       listing_status: item.listingStatus
     }))
   };

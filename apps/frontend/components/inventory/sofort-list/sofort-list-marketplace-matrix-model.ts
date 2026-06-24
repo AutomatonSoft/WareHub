@@ -52,7 +52,7 @@ export function buildMarketplaceMatrixRows(
     { market: "SITES", keys: ["jv", "xl"] },
     { market: "OTTO", keys: ["ottoJv", "ottoXl"] },
     { market: "EBAY", keys: ["ebayJv", "ebayXl"] },
-    { market: "KAUFLAND", keys: ["kauflandJv", "kauflandXl"] },
+    { market: "KAUF", keys: ["kauflandJv", "kauflandXl"] },
     { market: "HOOD", keys: ["hoodJv", "hoodXl"] }
   ];
 
