@@ -92,6 +92,7 @@ class KidPayload:
     kid_number: str
     place: str
     photos: list[str]
+    room: str | None
     store: bool
     b_ware: bool
     company: str | None
@@ -249,6 +250,7 @@ def load_kid_payloads(json_path: Path) -> dict[tuple[str, str], KidPayload]:
                 kid_number=kid_number,
                 place=place,
                 photos=[photo] if photo else [],
+                room=_normalize_optional_text(row.get("Kid.room")),
                 store=_parse_bool(row.get("Kid.store")),
                 b_ware=_parse_bool(row.get("Kid.b_ware")),
                 company=_normalize_optional_text(row.get("company")),
@@ -355,6 +357,7 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> dict[str, list[K
                     kid_number=[kid_number],
                     place=[target_place] if target_place else [],
                     photo=payload.photos,
+                    room=payload.room,
                     store=payload.store,
                     b_ware=payload.b_ware,
                     listing_status=payload.listing_status or "unlisted",
