@@ -25,6 +25,7 @@ import {
   getPrimaryPhoto,
   type KidDto,
   type InventoryRow,
+  normalizePlaceValue,
   normalizePhotoList,
   type VisibleColumns
 } from "./inventory-table-utils";
@@ -204,7 +205,7 @@ export function InventoryTable() {
         kidId: item.kid_id,
         orderDbId: item.order_db_id ?? null,
         entity: item.entity,
-        place: item.place?.trim() || "-",
+        place: normalizePlaceValue(item.place),
         room: item.room?.trim() || "-",
         furnitureType: item.type?.trim() || "-",
         parentOrderId: item.parent_order_id?.trim() || "-",
@@ -829,6 +830,5 @@ export function InventoryTable() {
     </Card>
   );
 }
-
 
 

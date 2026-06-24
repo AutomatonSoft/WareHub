@@ -7,7 +7,7 @@ export type KidDto = {
   order_db_id?: number | null;
   parent_order_id?: string | null;
   additional_order_ids_text?: string | null;
-  place?: string | null;
+  place?: string | string[] | null;
   platform?: string | null;
   quantity?: number | null;
   room?: string | null;
@@ -87,6 +87,21 @@ export function normalizePhotoList(photo: unknown): string[] {
 export function getPrimaryPhoto(photo: unknown): string {
   const photos = normalizePhotoList(photo);
   return photos[0] ?? "-";
+}
+
+export function normalizePlaceValue(place: unknown): string {
+  if (Array.isArray(place)) {
+    const normalized = place
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    return normalized.length > 0 ? normalized.join(", ") : "-";
+  }
+  if (typeof place === "string") {
+    const trimmed = place.trim();
+    return trimmed.length > 0 ? trimmed : "-";
+  }
+  return "-";
 }
 
 export function compactText(value: string, max: number): string {

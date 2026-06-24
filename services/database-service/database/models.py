@@ -38,7 +38,8 @@ class Kid(Model):
         blank=True,
         db_index=True,
     )
-    place = CharField(max_length=255, null=True, blank=True)
+    place = JSONField(default=list, null=True, blank=True)
+    store = BooleanField(default=False)
     photo = JSONField(default=list, blank=True)
     room = CharField(max_length=128, null=True, blank=True)
     furniture_type = CharField(max_length=128, null=True, blank=True)
@@ -54,17 +55,17 @@ class Kid(Model):
 
 class Ean(Model):
     kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean_site")
-    main_ean = CharField(max_length=13, null=True, blank=True)
-    jv = CharField(max_length=13, null=True, blank=True)
-    xl = CharField(max_length=13, null=True, blank=True)
-    otto_jv = CharField(max_length=13, null=True, blank=True)
-    otto_xl = CharField(max_length=13, null=True, blank=True)
-    kaufland_jv = CharField(max_length=13, null=True, blank=True)
-    kaufland_xl = CharField(max_length=13, null=True, blank=True)
-    hood_jv = CharField(max_length=13, null=True, blank=True)
-    hood_xl = CharField(max_length=13, null=True, blank=True)
-    ebay_jv = CharField(max_length=13, null=True, blank=True)
-    ebay_xl = CharField(max_length=13, null=True, blank=True)
+    main_ean = CharField(max_length=16, null=True, blank=True)
+    jv = CharField(max_length=16, null=True, blank=True)
+    xl = CharField(max_length=16, null=True, blank=True)
+    otto_jv = CharField(max_length=16, null=True, blank=True)
+    otto_xl = CharField(max_length=16, null=True, blank=True)
+    kaufland_jv = CharField(max_length=16, null=True, blank=True)
+    kaufland_xl = CharField(max_length=16, null=True, blank=True)
+    hood_jv = CharField(max_length=16, null=True, blank=True)
+    hood_xl = CharField(max_length=16, null=True, blank=True)
+    ebay_jv = CharField(max_length=16, null=True, blank=True)
+    ebay_xl = CharField(max_length=16, null=True, blank=True)
 
 
 
