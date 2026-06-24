@@ -455,7 +455,7 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
     with zipfile.ZipFile(excel_path, "r") as archive:
         style_colors = _style_color_map(archive)
 
-    # A=place, C=company, E=kid, F=Ean.ebay_xl, H=Ean.jv,
+    # A=place, C=company, D=Kid.room, E=kid, F=Ean.ebay_xl, H=Ean.jv,
     # J=Ean.otto_jv, L=Ean.otto_xl, N=ProductAttributes.quantity,
     # R=commentary, S=comment2, T=listing_status
     for row_number, row in _iter_active_sheet_rows(excel_path, max_col=20):
@@ -464,6 +464,7 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
 
         place_cell = row[0]
         company_cell = row[2]
+        room_cell = row[3]
         kid_cell = row[4]
         ean_ebay_xl_cell = row[5]
         ean_jv_cell = row[7]
@@ -486,6 +487,7 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
             {
                 "place": _normalize_place(place_cell["value"]),
                 "company": _cell_to_text(company_cell["value"]),
+                "Kid.room": _cell_to_text(room_cell["value"]),
                 "kid": kid,
                 "Kid.store": kid_store,
                 "Kid.b_ware": kid_b_ware,
