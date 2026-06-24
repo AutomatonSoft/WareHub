@@ -15,6 +15,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import json
+import requests
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -54,6 +55,25 @@ from orders_pars.service import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
+    message = str(exc or "").strip()
+    normalized = message.lower()
+
+    if isinstance(exc, requests.RequestException):
+        return "afterbuy_network_failed", message or exc.__class__.__name__
+
+    if isinstance(exc, (urllib.error.URLError, TimeoutError)):
+        return "afterbuy_network_failed", message or exc.__class__.__name__
+
+    if isinstance(exc, RuntimeError):
+        if "missing afterbuy login credentials" in normalized or "missing required env vars" in normalized:
+            return "missing_afterbuy_credentials", message or "Missing Afterbuy credentials."
+        if "login failed" in normalized or "missing login credentials" in normalized:
+            return "afterbuy_login_failed", message or "Afterbuy login failed."
+
+    return "afterbuy_sync_failed", message or exc.__class__.__name__
 
 
 def _normalize_search_text(value: object) -> str:
@@ -434,6 +454,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             "updated": 0,
             "skipped_without_order_id": 0,
             "error": None,
+            "error_detail": None,
         }
 
         # Best-effort sync with Afterbuy: Kid creation should not fail
@@ -449,9 +470,11 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             if not items and normalized_raw_items:
                 # Fallback: keep raw items when collapse returns nothing.
                 items = normalized_raw_items
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("KID_AFTERBUY_SYNC_FAILED kid_number=%s", kid_number)
-            summary["error"] = "afterbuy_sync_failed"
+            error_code, error_detail = _classify_afterbuy_sync_exception(exc)
+            summary["error"] = error_code
+            summary["error_detail"] = error_detail
             return summary
 
         summary["fetched_items"] = len(normalized_raw_items)
