@@ -5,7 +5,13 @@ from rest_framework.test import APITestCase
 from unittest.mock import patch
 import requests
 
-from .kid_green_import_service import KidGreenImportResult, KidImportStats, OrderImportStats
+from .kid_green_import_service import (
+    FetchResult,
+    KidGreenImportResult,
+    KidImportStats,
+    OrderImportStats,
+    upsert_orders_for_kids,
+)
 from .kid_number_utils import primary_kid_number
 from .models import Ean, Kid, Orders, ProductAttributes
 from .views import KidListCreateAPIView
@@ -234,6 +240,136 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["unique_kids"], 1)
         self.assertEqual(response.data["failed_kids"], ["KID-001"])
         mocked_import.assert_called_once()
+
+    @patch("database.views.import_kid_green_json_bytes")
+    def test_kid_green_import_streams_progress_events(self, mocked_import):
+        mocked_import.return_value = KidGreenImportResult(
+            total_payloads=1,
+            unique_kids=1,
+            kid_stats=KidImportStats(created=0, place_appended=0, skipped=1, total_payloads=1),
+            order_stats=OrderImportStats(created=1, updated=0, collapsed_positions=3, skipped_without_order_id=0, failed_kids_count=0),
+            failed_kids=[],
+        )
+        uploaded = SimpleUploadedFile(
+            "kid_green.json",
+            b'[{"kid":"KID-001","place":"A-1"}]',
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            "/api/v1/kids/import-kid-green/?stream=1",
+            {"file": uploaded, "workers": "1"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "application/x-ndjson")
+        payload = b"".join(response.streaming_content).decode("utf-8")
+        self.assertIn('"type": "complete"', payload)
+        self.assertIn('"total_payloads": 1', payload)
+        mocked_import.assert_called_once()
+
+    @patch("database.kid_green_import_service.fetch_orders_for_kid")
+    def test_upsert_orders_for_kids_creates_orders_from_completed_fetches(self, mocked_fetch):
+        kid_a = Kid.objects.create(kid_number=["KG-1001"], place=["A-1"])
+        kid_b = Kid.objects.create(kid_number=["KG-1002"], place=["A-2"])
+        kid_map = {
+            "KG-1001": [kid_a],
+            "KG-1002": [kid_b],
+        }
+        mocked_fetch.side_effect = [
+            FetchResult(
+                kid_number="KG-1001",
+                items=[
+                    {
+                        "order_id": "ORDER-1001",
+                        "title": "First item",
+                        "sku": "1111111111111",
+                        "verkaufsdatum": "24.06.2026 12:00:00",
+                        "zahlungssumme": "100,00",
+                        "rechnungssumme": "100,00",
+                        "memo": "alpha",
+                        "platform": "XL",
+                        "buyer": "buyer-a",
+                    }
+                ],
+            ),
+            FetchResult(
+                kid_number="KG-1002",
+                items=[
+                    {
+                        "order_id": "ORDER-1002",
+                        "title": "Second item",
+                        "sku": "2222222222222",
+                        "verkaufsdatum": "24.06.2026 13:00:00",
+                        "zahlungssumme": "50,00",
+                        "rechnungssumme": "75,00",
+                        "memo": "beta",
+                        "platform": "JV",
+                        "buyer": "buyer-b",
+                    }
+                ],
+            ),
+        ]
+
+        failed_kids, order_stats, item_results = upsert_orders_for_kids(
+            kid_map,
+            max_total=100,
+            max_items_per_page=20,
+            workers=2,
+            timeout_retries=0,
+            timeout_retry_delay=0.0,
+            show_progress=False,
+        )
+
+        self.assertEqual(failed_kids, [])
+        self.assertEqual(order_stats.created, 2)
+        self.assertEqual(order_stats.updated, 0)
+        self.assertEqual(len(item_results), 2)
+        self.assertTrue(Orders.objects.filter(kid=kid_a, order_id="ORDER-1001").exists())
+        self.assertTrue(Orders.objects.filter(kid=kid_b, order_id="ORDER-1002").exists())
+
+    @patch("database.kid_green_import_service.fetch_orders_for_kid")
+    def test_upsert_orders_for_kids_retries_fetch_errors_at_end(self, mocked_fetch):
+        kid = Kid.objects.create(kid_number=["KG-2001"], place=["B-1"])
+        kid_map = {"KG-2001": [kid]}
+        mocked_fetch.side_effect = [
+            FetchResult(kid_number="KG-2001", items=[], error="Connection timeout"),
+            FetchResult(
+                kid_number="KG-2001",
+                items=[
+                    {
+                        "order_id": "ORDER-2001",
+                        "title": "Recovered item",
+                        "sku": "3333333333333",
+                        "verkaufsdatum": "24.06.2026 14:00:00",
+                        "zahlungssumme": "75,00",
+                        "rechnungssumme": "75,00",
+                        "memo": "retry-ok",
+                        "platform": "XL",
+                        "buyer": "buyer-c",
+                    }
+                ],
+            ),
+        ]
+
+        failed_kids, order_stats, item_results = upsert_orders_for_kids(
+            kid_map,
+            max_total=100,
+            max_items_per_page=20,
+            workers=1,
+            timeout_retries=0,
+            timeout_retry_delay=0.0,
+            show_progress=False,
+        )
+
+        self.assertEqual(failed_kids, [])
+        self.assertEqual(order_stats.created, 1)
+        self.assertEqual(order_stats.failed_kids_count, 0)
+        self.assertEqual(len(item_results), 1)
+        self.assertEqual(item_results[0].status, "ok")
+        self.assertEqual(item_results[0].orders_created, 1)
+        self.assertTrue(Orders.objects.filter(kid=kid, order_id="ORDER-2001").exists())
 
     def test_list_and_retrieve_kid(self):
         list_response = self.client.get("/api/v1/kids/")
@@ -711,7 +847,7 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(any(int(row["kid_id"]) == self.kid.id for row in global_rows))
         self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in global_rows))
 
-    def test_inventory_rows_do_not_return_orphan_kid_rows_without_orders(self):
+    def test_inventory_rows_return_orphan_kid_rows_without_orders(self):
         self.order.delete()
         self.kid.room = "ROOM-X"
         self.kid.furniture_type = "SOFA"
@@ -728,7 +864,15 @@ class DatabaseApiTests(APITestCase):
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["results"], [])
+        rows = response.data["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["entity"], "kid")
+        self.assertIsNone(rows[0]["order_db_id"])
+        self.assertEqual(rows[0]["order_id"], "-")
+        self.assertEqual(rows[0]["room"], "ROOM-X")
+        self.assertEqual(rows[0]["type"], "SOFA")
+        self.assertEqual(rows[0]["quantity"], 4)
+        self.assertEqual(rows[0]["company"], "Nordic House")
 
     def test_inventory_rows_include_direct_database_order_fields(self):
         self.order.buyer = "John Buyer"

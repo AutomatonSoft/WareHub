@@ -280,8 +280,8 @@ export function InventoryTableRows({
         <TableEmptyRow
           colSpan={COLUMN_COUNT}
           variant="inventory"
-          title="No orders found"
-          message="No order rows match the current query."
+          title="No inventory rows found"
+          message="No inventory rows match the current query."
           actionLabel={emptyActionLabel}
           onAction={onEmptyAction}
         />

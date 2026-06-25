@@ -16,6 +16,7 @@ import { MobileListSkeletonCard } from "../shared/table/mobile-list-skeleton-car
 import { TableToolbar } from "../shared/table/table-toolbar";
 import { AddProductButton } from "./add-item-button";
 import { deleteInventoryEntity, fetchInventoryRows } from "./inventory-api";
+import { ImportKidGreenButton } from "./import-kid-green-button";
 import { formatDate, getPrimaryPhoto, type KidDto, type InventoryRow, normalizePhotoList } from "./inventory-table-utils";
 import { InventoryTableRows } from "./inventory-table-rows";
 
@@ -161,7 +162,7 @@ export function InventoryTable() {
         ? ((payload as { results?: KidDto[] }).results ?? [])
         : [];
     const mappedRows = items
-      .filter((item) => item.entity === "order" && typeof item.order_db_id === "number")
+      .filter((item) => item.entity === "order" || item.entity === "kid")
       .map((item) => {
         const photos = normalizePhotoList(item.photo);
         return {
@@ -334,7 +335,12 @@ export function InventoryTable() {
         query={query}
         onQueryChange={setQuery}
         searchPlaceholder={t.searchInventoryPlaceholder}
-        filtersSlot={<AddProductButton onCreated={() => inventoryQuery.refetch()} />}
+        filtersSlot={
+          <>
+            <ImportKidGreenButton onImported={() => inventoryQuery.refetch()} />
+            <AddProductButton onCreated={() => inventoryQuery.refetch()} />
+          </>
+        }
       />
 
       {error ? (
@@ -375,7 +381,7 @@ export function InventoryTable() {
               <EmptyState
                 compact
                 variant="inventory"
-                title="No order matches"
+                title="No inventory matches"
                 message="Try another query."
                 actionLabel={query.trim() ? t.clearSearch : undefined}
                 onAction={query.trim() ? () => setQuery("") : undefined}

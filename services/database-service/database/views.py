@@ -1,12 +1,15 @@
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
+from queue import Queue
 import logging
 import ast
 from decimal import Decimal, InvalidOperation
+import threading
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -19,6 +22,7 @@ import requests
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
 from .kid_number_utils import primary_kid_number
@@ -59,6 +63,42 @@ from orders_pars.service import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+KID_GREEN_IMPORT_JOBS: dict[str, dict] = {}
+KID_GREEN_IMPORT_JOBS_LOCK = threading.Lock()
+
+
+def _kid_green_job_snapshot(job_id: str) -> dict | None:
+    with KID_GREEN_IMPORT_JOBS_LOCK:
+        job = KID_GREEN_IMPORT_JOBS.get(job_id)
+        return dict(job) if job is not None else None
+
+
+def _kid_green_job_update(job_id: str, **changes) -> None:
+    with KID_GREEN_IMPORT_JOBS_LOCK:
+        job = KID_GREEN_IMPORT_JOBS.get(job_id)
+        if job is None:
+            return
+        job.update(changes)
+
+
+def _kid_green_progress_percent(job: dict) -> int:
+    upload_percent = 15
+    total = int(job.get("total") or 0)
+    completed = int(job.get("completed") or 0)
+    stage = str(job.get("stage") or "")
+    if stage == "queued":
+        return upload_percent
+    if stage == "fetching":
+        ratio = completed / total if total > 0 else 0
+        return max(18, min(55, 20 + round(ratio * 35)))
+    if stage == "processing":
+        ratio = completed / total if total > 0 else 0
+        return max(55, min(95, 55 + round(ratio * 40)))
+    if stage == "completed":
+        return 100
+    if stage == "failed":
+        return max(18, min(95, int(job.get("progress_percent") or 95)))
+    return upload_percent
 
 
 def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
@@ -1052,6 +1092,174 @@ class KidGreenImportAPIView(APIView):
             timeout_retry_delay=self._request_value(request, "timeout_retry_delay"),
             show_progress=False,
         )
+        async_job = str(self._request_value(request, "async") or "").strip().lower() in {"1", "true", "yes", "on"}
+        stream_progress = str(self._request_value(request, "stream") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+        if async_job:
+            job_id = uuid4().hex
+            _kid_green_job_update  # keep linters honest about helper use before thread closure
+            with KID_GREEN_IMPORT_JOBS_LOCK:
+                KID_GREEN_IMPORT_JOBS[job_id] = {
+                    "job_id": job_id,
+                    "status": "queued",
+                    "stage": "queued",
+                    "progress_percent": 15,
+                    "message": "Upload accepted. Waiting to start import...",
+                    "total_payloads": 0,
+                    "unique_kids": 0,
+                    "total": 0,
+                    "completed": 0,
+                    "current_kid": None,
+                    "result": None,
+                    "error": None,
+                }
+
+            def emit_job_progress(event: dict) -> None:
+                if event.get("type") == "start":
+                    total_payloads = int(event.get("total_payloads") or 0)
+                    unique_kids = int(event.get("unique_kids") or 0)
+                    _kid_green_job_update(
+                        job_id,
+                        status="running",
+                        stage="fetching",
+                        total_payloads=total_payloads,
+                        unique_kids=unique_kids,
+                        total=unique_kids,
+                        completed=0,
+                        current_kid=None,
+                        message=f"Preparing {unique_kids} item(s) for import...",
+                    )
+                    snapshot = _kid_green_job_snapshot(job_id) or {}
+                    _kid_green_job_update(job_id, progress_percent=_kid_green_progress_percent(snapshot))
+                    return
+
+                if event.get("type") == "afterbuy_fetched":
+                    completed = int(event.get("completed") or 0)
+                    total = int(event.get("total") or 0)
+                    kid_number = str(event.get("kid_number") or "").strip() or None
+                    error = str(event.get("error") or "").strip()
+                    _kid_green_job_update(
+                        job_id,
+                        status="running",
+                        stage="fetching",
+                        completed=completed,
+                        total=total,
+                        current_kid=kid_number,
+                        message=(
+                            f"Afterbuy fetch failed for {kid_number} ({completed}/{total})."
+                            if error and kid_number
+                            else f"Fetched Afterbuy data for {kid_number} ({completed}/{total})."
+                        ),
+                    )
+                    snapshot = _kid_green_job_snapshot(job_id) or {}
+                    _kid_green_job_update(job_id, progress_percent=_kid_green_progress_percent(snapshot))
+                    return
+
+                if event.get("type") == "kid_processed":
+                    completed = int(event.get("completed") or 0)
+                    total = int(event.get("total") or 0)
+                    kid_number = str(event.get("kid_number") or "").strip() or None
+                    status_value = str(event.get("status") or "").strip()
+                    message = (
+                        f"Imported {kid_number} ({completed}/{total}), created {int(event.get('orders_created') or 0)}, updated {int(event.get('orders_updated') or 0)}."
+                        if status_value == "ok" and kid_number
+                        else f"Processed {kid_number} ({completed}/{total}): {str(event.get('error') or status_value)}."
+                    )
+                    _kid_green_job_update(
+                        job_id,
+                        status="running",
+                        stage="processing",
+                        completed=completed,
+                        total=total,
+                        current_kid=kid_number,
+                        message=message,
+                    )
+                    snapshot = _kid_green_job_snapshot(job_id) or {}
+                    _kid_green_job_update(job_id, progress_percent=_kid_green_progress_percent(snapshot))
+
+            def async_worker() -> None:
+                try:
+                    result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit_job_progress)
+                    _kid_green_job_update(
+                        job_id,
+                        status="completed",
+                        stage="completed",
+                        progress_percent=100,
+                        message="Import completed.",
+                        result={"status": "ok", **result.to_dict()},
+                        error=None,
+                    )
+                except ValueError as exc:
+                    snapshot = _kid_green_job_snapshot(job_id) or {}
+                    _kid_green_job_update(
+                        job_id,
+                        status="failed",
+                        stage="failed",
+                        progress_percent=_kid_green_progress_percent(snapshot),
+                        message=str(exc),
+                        error={"code": "kid_green_invalid_payload", "message": str(exc)},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("KID_GREEN_IMPORT_FAILED")
+                    snapshot = _kid_green_job_snapshot(job_id) or {}
+                    _kid_green_job_update(
+                        job_id,
+                        status="failed",
+                        stage="failed",
+                        progress_percent=_kid_green_progress_percent(snapshot),
+                        message="Failed to import kid_green.json.",
+                        error={
+                            "code": "kid_green_import_failed",
+                            "message": "Failed to import kid_green.json.",
+                            "details": {"error": str(exc)},
+                        },
+                    )
+
+            threading.Thread(target=async_worker, daemon=True).start()
+            return Response(
+                {
+                    "status": "accepted",
+                    "job_id": job_id,
+                    "progress_percent": 15,
+                    "message": "Upload accepted. Waiting to start import...",
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        if stream_progress:
+            event_queue: Queue[dict | None] = Queue()
+
+            def emit(event: dict) -> None:
+                event_queue.put(event)
+
+            def worker() -> None:
+                try:
+                    result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit)
+                    emit({"type": "complete", "status": "ok", "result": result.to_dict()})
+                except ValueError as exc:
+                    emit({"type": "error", "code": "kid_green_invalid_payload", "message": str(exc)})
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("KID_GREEN_IMPORT_FAILED")
+                    emit(
+                        {
+                            "type": "error",
+                            "code": "kid_green_import_failed",
+                            "message": "Failed to import kid_green.json.",
+                            "details": {"error": str(exc)},
+                        }
+                    )
+                finally:
+                    event_queue.put(None)
+
+            def stream_events():
+                while True:
+                    event = event_queue.get()
+                    if event is None:
+                        break
+                    yield json.dumps(event) + "\n"
+
+            threading.Thread(target=worker, daemon=True).start()
+            return StreamingHttpResponse(stream_events(), content_type="application/x-ndjson")
 
         try:
             result = import_kid_green_json_bytes(raw_bytes, options=options)
@@ -1075,6 +1283,16 @@ class KidGreenImportAPIView(APIView):
             )
 
         return Response({"status": "ok", **result.to_dict()}, status=status.HTTP_200_OK)
+
+
+class KidGreenImportJobStatusAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request, job_id: str):
+        snapshot = _kid_green_job_snapshot(job_id)
+        if snapshot is None:
+            return Response({"code": "kid_green_job_not_found", "message": "Import job was not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(snapshot, status=status.HTTP_200_OK)
 
 
 class InventoryRowsAPIView(APIView):

@@ -6,8 +6,9 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
+from typing import Callable
 
 import requests
 from django.db import transaction
@@ -93,12 +94,25 @@ class OrderImportStats:
 
 
 @dataclass(frozen=True)
+class KidGreenImportItemResult:
+    kid_number: str
+    status: str
+    fetched_items: int
+    collapsed_items: int
+    orders_created: int
+    orders_updated: int
+    skipped_without_order_id: int
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class KidGreenImportResult:
     total_payloads: int
     unique_kids: int
     kid_stats: KidImportStats
     order_stats: OrderImportStats
     failed_kids: list[str]
+    item_results: list[KidGreenImportItemResult] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +121,7 @@ class KidGreenImportResult:
             "kid_stats": asdict(self.kid_stats),
             "order_stats": asdict(self.order_stats),
             "failed_kids": list(self.failed_kids),
+            "item_results": [asdict(item) for item in self.item_results],
         }
 
 
@@ -141,6 +156,9 @@ class ProgressBar:
             line = f"\r{self.prefix} [{bar}] {self.current}/{self.total} {percent:3d}%"
         sys.stdout.write(line)
         sys.stdout.flush()
+
+
+FINAL_FETCH_RETRY_WORKERS = 1
 
 
 def _to_int(value: object, *, default: int) -> int:
@@ -402,6 +420,7 @@ def fetch_afterbuy_orders_parallel(
     timeout_retries: int,
     timeout_retry_delay: float,
     show_progress: bool,
+    on_result: Callable[[FetchResult, int, int], None] | None = None,
 ) -> list[FetchResult]:
     if not kid_numbers:
         return []
@@ -431,12 +450,135 @@ def fetch_afterbuy_orders_parallel(
             except Exception as exc:  # noqa: BLE001
                 result = FetchResult(kid_number=kid_number, items=[], error=str(exc))
             results[kid_number] = result
+            if on_result is not None:
+                on_result(result, len(results), len(kid_numbers))
             if progress is not None:
                 progress.tick()
 
     if progress is not None:
         progress.finish()
     return [results[kid_number] for kid_number in kid_numbers]
+
+
+def _upsert_orders_for_fetch_result(
+    *,
+    kid_map: dict[str, list[Kid]],
+    result: FetchResult,
+) -> tuple[bool, int, int, int, int, KidGreenImportItemResult]:
+    if result.error:
+        return (
+            True,
+            0,
+            0,
+            0,
+            0,
+            KidGreenImportItemResult(
+                kid_number=result.kid_number,
+                status="fetch_error",
+                fetched_items=0,
+                collapsed_items=0,
+                orders_created=0,
+                orders_updated=0,
+                skipped_without_order_id=0,
+                error=result.error,
+            ),
+        )
+
+    kids = kid_map.get(result.kid_number) or []
+    if not kids:
+        return (
+            True,
+            0,
+            0,
+            0,
+            0,
+            KidGreenImportItemResult(
+                kid_number=result.kid_number,
+                status="missing_kid",
+                fetched_items=len(result.items) if isinstance(result.items, list) else 0,
+                collapsed_items=0,
+                orders_created=0,
+                orders_updated=0,
+                skipped_without_order_id=0,
+                error="Kid was not found after upsert.",
+            ),
+        )
+
+    raw_items = result.items if isinstance(result.items, list) else []
+    items, dropped_count = collapse_items_to_orders(raw_items)
+    created = 0
+    updated = 0
+    skipped_without_order_id = 0
+
+    for kid in kids:
+        for item in items:
+            order_id = str(item.get("order_id") or "").strip()
+            if not order_id:
+                skipped_without_order_id += 1
+                continue
+
+            verkaufsdatum = str(item.get("verkaufsdatum") or item.get("order_date") or "").strip()
+            zahlungssumme = str(item.get("zahlungssumme") or "").strip()
+            rechnungssumme = str(item.get("rechnungssumme") or "").strip()
+            title = str(item.get("title") or "").strip()
+            sku = str(item.get("sku") or "").strip() or None
+            memo = str(item.get("memo") or "").strip() or None
+            platform = str(item.get("platform") or "").strip() or None
+            buyer = str(item.get("buyer") or "").strip() or None
+
+            defaults = {
+                "platform": platform,
+                "buyer": buyer,
+                "title": title,
+                "sku": sku,
+                "memo": memo,
+                "date": parse_afterbuy_datetime(verkaufsdatum),
+                "status": _status_by_amounts(zahlungssumme, rechnungssumme),
+                "payment_status": rechnungssumme or None,
+            }
+            source_order_ids = [str(x).strip() for x in (item.get("source_order_ids") or []) if str(x).strip()]
+            order_id_candidates = [order_id, *source_order_ids]
+            seen_candidates: set[str] = set()
+            order_id_candidates = [
+                value
+                for value in order_id_candidates
+                if value and not (value in seen_candidates or seen_candidates.add(value))
+            ]
+
+            order = Orders.objects.filter(kid=kid, order_id__in=order_id_candidates).first()
+            if order is None:
+                Orders.objects.create(kid=kid, order_id=order_id, **defaults)
+                created += 1
+                continue
+
+            fields_to_update: list[str] = []
+            if order.order_id != order_id:
+                order.order_id = order_id
+                fields_to_update.append("order_id")
+            for field, value in defaults.items():
+                if getattr(order, field) != value:
+                    setattr(order, field, value)
+                    fields_to_update.append(field)
+            if fields_to_update:
+                order.save(update_fields=fields_to_update)
+                updated += 1
+
+    return (
+        False,
+        created,
+        updated,
+        skipped_without_order_id,
+        dropped_count,
+        KidGreenImportItemResult(
+            kid_number=result.kid_number,
+            status="ok",
+            fetched_items=len(raw_items),
+            collapsed_items=len(items),
+            orders_created=created,
+            orders_updated=updated,
+            skipped_without_order_id=skipped_without_order_id,
+        ),
+    )
 
 
 def upsert_orders_for_kids(
@@ -448,101 +590,151 @@ def upsert_orders_for_kids(
     timeout_retries: int,
     timeout_retry_delay: float,
     show_progress: bool,
-) -> tuple[list[str], OrderImportStats]:
+    progress_callback: Callable[[dict], None] | None = None,
+) -> tuple[list[str], OrderImportStats, list[KidGreenImportItemResult]]:
     created = 0
     updated = 0
     skipped_without_order_id = 0
     failed_kids: list[str] = []
     collapsed_positions_total = 0
+    item_results: list[KidGreenImportItemResult] = []
+    item_results_by_kid: dict[str, KidGreenImportItemResult] = {}
+    processed_count = 0
+    total_kid_numbers = len(kid_map)
+    if total_kid_numbers == 0:
+        return (
+            [],
+            OrderImportStats(
+                created=0,
+                updated=0,
+                collapsed_positions=0,
+                skipped_without_order_id=0,
+                failed_kids_count=0,
+            ),
+            [],
+        )
 
-    fetch_results = fetch_afterbuy_orders_parallel(
-        list(kid_map.keys()),
-        max_total=max_total,
-        max_items_per_page=max_items_per_page,
-        workers=workers,
-        timeout_retries=timeout_retries,
-        timeout_retry_delay=timeout_retry_delay,
-        show_progress=show_progress,
-    )
+    safe_workers = max(1, workers)
+    progress = ProgressBar(total=total_kid_numbers, prefix="Afterbuy fetch") if show_progress else None
+    if progress is not None:
+        progress._render()
+    retry_candidates: list[str] = []
 
-    for result in fetch_results:
-        if result.error:
-            failed_kids.append(result.kid_number)
-            continue
+    with ThreadPoolExecutor(max_workers=safe_workers) as executor:
+        future_to_kid = {
+            executor.submit(
+                fetch_orders_for_kid,
+                kid_number=kid_number,
+                max_total=max_total,
+                max_items_per_page=max_items_per_page,
+                timeout_retries=timeout_retries,
+                timeout_retry_delay=timeout_retry_delay,
+            ): kid_number
+            for kid_number in kid_map.keys()
+        }
 
-        kids = kid_map.get(result.kid_number) or []
-        if not kids:
-            failed_kids.append(result.kid_number)
-            continue
+        for future in as_completed(future_to_kid):
+            kid_number = future_to_kid[future]
+            try:
+                result = future.result()
+            except Exception as exc:  # noqa: BLE001
+                result = FetchResult(kid_number=kid_number, items=[], error=str(exc))
 
-        raw_items = result.items if isinstance(result.items, list) else []
-        items, dropped_count = collapse_items_to_orders(raw_items)
-        collapsed_positions_total += dropped_count
+            processed_count += 1
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "type": "afterbuy_fetched",
+                        "kid_number": result.kid_number,
+                        "completed": processed_count,
+                        "total": total_kid_numbers,
+                        "fetched_items": len(result.items) if isinstance(result.items, list) else 0,
+                        "error": result.error,
+                    }
+                )
 
-        for kid in kids:
-            for item in items:
-                order_id = str(item.get("order_id") or "").strip()
-                if not order_id:
-                    skipped_without_order_id += 1
-                    continue
+            failed, created_delta, updated_delta, skipped_delta, dropped_delta, item_result = _upsert_orders_for_fetch_result(
+                kid_map=kid_map,
+                result=result,
+            )
+            if failed:
+                failed_kids.append(result.kid_number)
+                if item_result.status == "fetch_error":
+                    retry_candidates.append(result.kid_number)
+            created += created_delta
+            updated += updated_delta
+            skipped_without_order_id += skipped_delta
+            collapsed_positions_total += dropped_delta
+            item_results.append(item_result)
+            item_results_by_kid[result.kid_number] = item_result
 
-                verkaufsdatum = str(item.get("verkaufsdatum") or item.get("order_date") or "").strip()
-                zahlungssumme = str(item.get("zahlungssumme") or "").strip()
-                rechnungssumme = str(item.get("rechnungssumme") or "").strip()
-                title = str(item.get("title") or "").strip()
-                sku = str(item.get("sku") or "").strip() or None
-                memo = str(item.get("memo") or "").strip() or None
-                platform = str(item.get("platform") or "").strip() or None
-                buyer = str(item.get("buyer") or "").strip() or None
+            if progress_callback is not None:
+                progress_callback({"type": "kid_processed", "completed": processed_count, "total": total_kid_numbers, **asdict(item_result)})
+            if progress is not None:
+                progress.tick()
 
-                defaults = {
-                    "platform": platform,
-                    "buyer": buyer,
-                    "title": title,
-                    "sku": sku,
-                    "memo": memo,
-                    "date": parse_afterbuy_datetime(verkaufsdatum),
-                    "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                    "payment_status": rechnungssumme or None,
-                }
-                source_order_ids = [str(x).strip() for x in (item.get("source_order_ids") or []) if str(x).strip()]
-                order_id_candidates = [order_id, *source_order_ids]
-                seen_candidates: set[str] = set()
-                order_id_candidates = [
-                    value
-                    for value in order_id_candidates
-                    if value and not (value in seen_candidates or seen_candidates.add(value))
-                ]
+    if progress is not None:
+        progress.finish()
 
-                order = Orders.objects.filter(kid=kid, order_id__in=order_id_candidates).first()
-                if order is None:
-                    Orders.objects.create(kid=kid, order_id=order_id, **defaults)
-                    created += 1
-                    continue
+    unique_retry_candidates = list(dict.fromkeys(retry_candidates))
+    if unique_retry_candidates:
+        final_retry_timeout_retries = max(timeout_retries, 1)
+        final_retry_workers = min(FINAL_FETCH_RETRY_WORKERS, len(unique_retry_candidates))
+        retry_results = fetch_afterbuy_orders_parallel(
+            unique_retry_candidates,
+            max_total=max_total,
+            max_items_per_page=max_items_per_page,
+            workers=final_retry_workers,
+            timeout_retries=final_retry_timeout_retries,
+            timeout_retry_delay=timeout_retry_delay,
+            show_progress=False,
+        )
+        for retry_result in retry_results:
+            previous_item_result = item_results_by_kid.get(retry_result.kid_number)
+            if previous_item_result is None or previous_item_result.status != "fetch_error":
+                continue
 
-                fields_to_update: list[str] = []
-                if order.order_id != order_id:
-                    order.order_id = order_id
-                    fields_to_update.append("order_id")
-                for field, value in defaults.items():
-                    if getattr(order, field) != value:
-                        setattr(order, field, value)
-                        fields_to_update.append(field)
-                if fields_to_update:
-                    order.save(update_fields=fields_to_update)
-                    updated += 1
+            failed, created_delta, updated_delta, skipped_delta, dropped_delta, item_result = _upsert_orders_for_fetch_result(
+                kid_map=kid_map,
+                result=retry_result,
+            )
+            if failed:
+                item_results_by_kid[retry_result.kid_number] = item_result
+                continue
+
+            created += created_delta
+            updated += updated_delta
+            skipped_without_order_id += skipped_delta
+            collapsed_positions_total += dropped_delta
+            item_results_by_kid[retry_result.kid_number] = item_result
+            failed_kids = [kid_number for kid_number in failed_kids if kid_number != retry_result.kid_number]
+
+    item_results = [
+        item_results_by_kid[kid_number]
+        for kid_number in kid_map.keys()
+        if kid_number in item_results_by_kid
+    ]
 
     unique_failed = list(dict.fromkeys(failed_kids))
-    return unique_failed, OrderImportStats(
-        created=created,
-        updated=updated,
-        collapsed_positions=collapsed_positions_total,
-        skipped_without_order_id=skipped_without_order_id,
-        failed_kids_count=len(unique_failed),
+    return (
+        unique_failed,
+        OrderImportStats(
+            created=created,
+            updated=updated,
+            collapsed_positions=collapsed_positions_total,
+            skipped_without_order_id=skipped_without_order_id,
+            failed_kids_count=len(unique_failed),
+        ),
+        item_results,
     )
 
 
-def import_kid_green_json_bytes(raw_bytes: bytes, *, options: KidGreenImportOptions | None = None) -> KidGreenImportResult:
+def import_kid_green_json_bytes(
+    raw_bytes: bytes,
+    *,
+    options: KidGreenImportOptions | None = None,
+    progress_callback: Callable[[dict], None] | None = None,
+) -> KidGreenImportResult:
     effective_options = options or KidGreenImportOptions()
     payloads = load_kid_payloads_from_bytes(raw_bytes)
     if not payloads:
@@ -555,7 +747,15 @@ def import_kid_green_json_bytes(raw_bytes: bytes, *, options: KidGreenImportOpti
         )
 
     kid_map, kid_stats = upsert_kids(payloads)
-    failed_kids, order_stats = upsert_orders_for_kids(
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "type": "start",
+                "total_payloads": len(payloads),
+                "unique_kids": len(kid_map),
+            }
+        )
+    failed_kids, order_stats, item_results = upsert_orders_for_kids(
         kid_map,
         max_total=effective_options.max_total,
         max_items_per_page=effective_options.max_items_per_page,
@@ -563,6 +763,7 @@ def import_kid_green_json_bytes(raw_bytes: bytes, *, options: KidGreenImportOpti
         timeout_retries=effective_options.timeout_retries,
         timeout_retry_delay=effective_options.timeout_retry_delay,
         show_progress=effective_options.show_progress,
+        progress_callback=progress_callback,
     )
     unique_kids = len({payload.kid_number for payload in payloads.values()})
     return KidGreenImportResult(
@@ -571,4 +772,5 @@ def import_kid_green_json_bytes(raw_bytes: bytes, *, options: KidGreenImportOpti
         kid_stats=kid_stats,
         order_stats=order_stats,
         failed_kids=failed_kids,
+        item_results=item_results,
     )

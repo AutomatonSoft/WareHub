@@ -67,6 +67,88 @@ export type CreateKidItemResult = {
   id: number | null;
 };
 
+export type KidGreenImportResult = {
+  status: string;
+  total_payloads?: number;
+  unique_kids?: number;
+  failed_kids?: string[];
+  item_results?: KidGreenImportItemResult[];
+};
+
+export type KidGreenImportItemResult = {
+  kid_number: string;
+  status: string;
+  fetched_items: number;
+  collapsed_items: number;
+  orders_created: number;
+  orders_updated: number;
+  skipped_without_order_id: number;
+  error?: string | null;
+};
+
+export type KidGreenImportProgressEvent =
+  | {
+      type: "start";
+      total_payloads: number;
+      unique_kids: number;
+    }
+  | {
+      type: "afterbuy_fetched";
+      kid_number: string;
+      completed: number;
+      total: number;
+      fetched_items: number;
+      error?: string | null;
+    }
+  | ({
+      type: "kid_processed";
+      completed: number;
+      total: number;
+    } & KidGreenImportItemResult)
+  | {
+      type: "complete";
+      status: string;
+      result: KidGreenImportResult;
+    }
+  | {
+      type: "error";
+      code?: string;
+      message: string;
+      details?: { error?: string | null } | null;
+    };
+
+type KidGreenImportJobAccepted = {
+  status: "accepted";
+  job_id: string;
+  progress_percent: number;
+  message: string;
+};
+
+type KidGreenImportJobStatus = {
+  job_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  stage: string;
+  progress_percent: number;
+  message: string;
+  total_payloads?: number;
+  unique_kids?: number;
+  total?: number;
+  completed?: number;
+  current_kid?: string | null;
+  result?: ({ status: string } & KidGreenImportResult) | null;
+  error?: {
+    code?: string;
+    message: string;
+    details?: { error?: string | null } | null;
+  } | null;
+};
+
+type KidGreenImportRequestOptions = {
+  workers?: number;
+  onUploadProgress?: (percent: number) => void;
+  onProgressEvent?: (event: KidGreenImportProgressEvent) => void;
+};
+
 export function getServicesApiBase(): string {
   return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
@@ -75,7 +157,7 @@ function buildServicesUrl(path: string, params: URLSearchParams): string {
   return `${getServicesApiBase()}${path}${query ? `?${query}` : ""}`;
 }
 
-async function retryWithSyncedDatabaseServiceSession(requestFactory: () => Promise<Response>): Promise<Response | null> {
+async function retryWithSyncedDatabaseServiceSession<T>(requestFactory: () => Promise<T>): Promise<T | null> {
   if (typeof window === "undefined") {
     return null;
   }
@@ -529,6 +611,192 @@ export async function uploadKidImages(files: File[]): Promise<string[]> {
   }
 
   return urls;
+}
+
+function normalizeKidGreenImportResult(payload: {
+  status?: unknown;
+  total_payloads?: unknown;
+  unique_kids?: unknown;
+  failed_kids?: unknown;
+  item_results?: unknown;
+} | null): KidGreenImportResult {
+  return {
+    status: typeof payload?.status === "string" ? payload.status : "ok",
+    total_payloads: typeof payload?.total_payloads === "number" ? payload.total_payloads : undefined,
+    unique_kids: typeof payload?.unique_kids === "number" ? payload.unique_kids : undefined,
+    failed_kids: Array.isArray(payload?.failed_kids) ? payload.failed_kids.map((item) => String(item)) : undefined,
+    item_results: Array.isArray(payload?.item_results)
+      ? payload.item_results.map((item) => {
+          const row = (item ?? {}) as Record<string, unknown>;
+          return {
+            kid_number: String(row.kid_number ?? ""),
+            status: String(row.status ?? ""),
+            fetched_items: Number(row.fetched_items ?? 0),
+            collapsed_items: Number(row.collapsed_items ?? 0),
+            orders_created: Number(row.orders_created ?? 0),
+            orders_updated: Number(row.orders_updated ?? 0),
+            skipped_without_order_id: Number(row.skipped_without_order_id ?? 0),
+            error: typeof row.error === "string" ? row.error : null,
+          } satisfies KidGreenImportItemResult;
+        })
+      : undefined,
+  };
+}
+
+function uploadKidGreenFileWithXhr(
+  file: File,
+  workers: number,
+  onUploadProgress?: (percent: number) => void,
+): Promise<KidGreenImportJobAccepted> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${getServicesApiBase()}/kids/import-kid-green/?async=1`);
+    xhr.withCredentials = true;
+    xhr.responseType = "text";
+
+    xhr.upload.onprogress = (event) => {
+      if (!onUploadProgress || !event.lengthComputable || event.total <= 0) {
+        return;
+      }
+      const percent = Math.max(0, Math.min(90, Math.round((event.loaded / event.total) * 90)));
+      onUploadProgress(percent);
+    };
+
+    xhr.onerror = () => reject(new Error("Kid green import failed: network error."));
+    xhr.onabort = () => reject(new Error("Kid green import aborted."));
+    xhr.onload = () => {
+      if (xhr.status === 403) {
+        reject(new Error("Database service session required. Login again and retry."));
+        return;
+      }
+      const payload = (JSON.parse(xhr.responseText || "null") as Record<string, unknown> | null) ?? null;
+      if (xhr.status === 202 && typeof payload?.job_id === "string") {
+        resolve({
+          status: "accepted",
+          job_id: payload.job_id,
+          progress_percent: typeof payload.progress_percent === "number" ? payload.progress_percent : 15,
+          message: typeof payload.message === "string" ? payload.message : "Upload accepted.",
+        });
+        return;
+      }
+      const message =
+        typeof payload?.message === "string" && payload.message.trim().length > 0
+          ? payload.message
+          : payload?.details && typeof payload.details === "object" && typeof (payload.details as Record<string, unknown>).error === "string" && String((payload.details as Record<string, unknown>).error).trim().length > 0
+            ? String((payload.details as Record<string, unknown>).error)
+            : `Kid green import failed: HTTP ${xhr.status}`;
+      reject(new Error(message));
+    };
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("workers", String(workers));
+    xhr.send(formData);
+  });
+}
+
+async function fetchKidGreenImportJob(jobId: string): Promise<KidGreenImportJobStatus> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/import-kid-green/jobs/${jobId}/`);
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok) {
+    const message = typeof payload?.message === "string" ? payload.message : `Kid green import status failed: HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return {
+    job_id: String(payload?.job_id ?? jobId),
+    status: String(payload?.status ?? "queued") as KidGreenImportJobStatus["status"],
+    stage: String(payload?.stage ?? ""),
+    progress_percent: typeof payload?.progress_percent === "number" ? payload.progress_percent : 0,
+    message: typeof payload?.message === "string" ? payload.message : "",
+    total_payloads: typeof payload?.total_payloads === "number" ? payload.total_payloads : undefined,
+    unique_kids: typeof payload?.unique_kids === "number" ? payload.unique_kids : undefined,
+    total: typeof payload?.total === "number" ? payload.total : undefined,
+    completed: typeof payload?.completed === "number" ? payload.completed : undefined,
+    current_kid: typeof payload?.current_kid === "string" ? payload.current_kid : null,
+    result: payload?.result && typeof payload.result === "object"
+      ? normalizeKidGreenImportResult(payload.result as Record<string, unknown>)
+      : null,
+    error: payload?.error && typeof payload.error === "object"
+      ? {
+          code: typeof (payload.error as Record<string, unknown>).code === "string" ? String((payload.error as Record<string, unknown>).code) : undefined,
+          message: String((payload.error as Record<string, unknown>).message ?? "Kid green import failed."),
+          details: ((payload.error as Record<string, unknown>).details as { error?: string | null } | null) ?? null,
+        }
+      : null,
+  };
+}
+
+export async function importKidGreenFile(file: File, options: KidGreenImportRequestOptions = {}): Promise<KidGreenImportResult> {
+  const workers = options.workers ?? 5;
+  const requestFactory = () => uploadKidGreenFileWithXhr(file, workers, options.onUploadProgress);
+
+  try {
+    const accepted = await requestFactory();
+    let announcedStart = false;
+
+    while (true) {
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      const snapshot = await fetchKidGreenImportJob(accepted.job_id);
+      const total = snapshot.total ?? snapshot.unique_kids ?? 0;
+      const completed = snapshot.completed ?? 0;
+
+      if (!announcedStart && (snapshot.total_payloads || snapshot.unique_kids)) {
+        options.onProgressEvent?.({
+          type: "start",
+          total_payloads: snapshot.total_payloads ?? 0,
+          unique_kids: snapshot.unique_kids ?? total,
+        });
+        announcedStart = true;
+      }
+
+      if (snapshot.stage === "fetching" && total > 0) {
+        options.onProgressEvent?.({
+          type: "afterbuy_fetched",
+          kid_number: snapshot.current_kid ?? "",
+          completed,
+          total,
+          fetched_items: 0,
+          error: null,
+        });
+      } else if (snapshot.stage === "processing" && total > 0) {
+        options.onProgressEvent?.({
+          type: "kid_processed",
+          kid_number: snapshot.current_kid ?? "",
+          completed,
+          total,
+          status: "ok",
+          fetched_items: 0,
+          collapsed_items: 0,
+          orders_created: 0,
+          orders_updated: 0,
+          skipped_without_order_id: 0,
+          error: null,
+        });
+      }
+
+      if (snapshot.status === "completed" && snapshot.result) {
+        options.onProgressEvent?.({ type: "complete", status: "ok", result: snapshot.result });
+        return normalizeKidGreenImportResult(snapshot.result);
+      }
+
+      if (snapshot.status === "failed") {
+        const message =
+          snapshot.error?.message ||
+          snapshot.message ||
+          "Kid green import failed.";
+        throw new Error(message);
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("Database service session required")) {
+      const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+      if (retriedResponse) {
+        return retriedResponse;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function patchKidPhotoUrls(kidId: number, photoUrls: string[]): Promise<void> {
