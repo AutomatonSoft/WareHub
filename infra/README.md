@@ -146,6 +146,7 @@ Runtime env source of truth:
 - `STAGE_ENV_FILE` is therefore an override layer for secrets and environment-specific deviations, not a git-tracked full env file.
 - `PROD_ENV_FILE` is the corresponding production override layer.
 - if a runtime capability is expected on stage, its required env must be present either in the committed template defaults or in the secret overlay; otherwise deploy validation should fail before release.
+- local workstation `.env` can be used as the operator source for those overlays via `infra/scripts/sync-runtime-env-to-github.ps1`; this uploads only the stage/prod subset to GitHub Environment secrets and still keeps real secrets out of git.
 
 Sentry backend:
 - `BACKEND_STAGE_SENTRY_DSN`
@@ -265,6 +266,19 @@ Run infra ops preflight (env + migration checks):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/ops-preflight.ps1 -RepoPath .
+```
+
+Sync local root `.env` into GitHub Environment secret overlays:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment prod
+```
+
+Dry-run the same sync without uploading:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage -DryRun
 ```
 
 Run infra ops preflight in remote mode (server-hosted stage/prod):
