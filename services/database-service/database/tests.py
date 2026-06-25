@@ -1,9 +1,11 @@
 from django.db.utils import ProgrammingError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
 import requests
 
+from .kid_green_import_service import KidGreenImportResult, KidImportStats, OrderImportStats
 from .kid_number_utils import primary_kid_number
 from .models import Ean, Kid, Orders, ProductAttributes
 from .views import KidListCreateAPIView
@@ -198,6 +200,40 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.material, "Wood")
         self.assertEqual(str(attrs.price), "199.50")
         self.assertEqual(attrs.currency, "EUR")
+
+    def test_kid_green_import_requires_file_or_body(self):
+        response = self.client.post("/api/v1/kids/import-kid-green/", {}, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "kid_green_file_required")
+
+    @patch("database.views.import_kid_green_json_bytes")
+    def test_kid_green_import_accepts_uploaded_file(self, mocked_import):
+        mocked_import.return_value = KidGreenImportResult(
+            total_payloads=2,
+            unique_kids=1,
+            kid_stats=KidImportStats(created=1, place_appended=1, skipped=0, total_payloads=2),
+            order_stats=OrderImportStats(created=3, updated=0, collapsed_positions=1, skipped_without_order_id=0, failed_kids_count=1),
+            failed_kids=["KID-001"],
+        )
+        uploaded = SimpleUploadedFile(
+            "kid_green.json",
+            b'[{"kid":"KID-001","place":"A-1"}]',
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            "/api/v1/kids/import-kid-green/",
+            {"file": uploaded, "workers": "7"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["total_payloads"], 2)
+        self.assertEqual(response.data["unique_kids"], 1)
+        self.assertEqual(response.data["failed_kids"], ["KID-001"])
+        mocked_import.assert_called_once()
 
     def test_list_and_retrieve_kid(self):
         list_response = self.client.get("/api/v1/kids/")

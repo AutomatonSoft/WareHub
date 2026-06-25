@@ -23,6 +23,10 @@ from urllib.parse import urlparse
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
 from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_rows, build_kid_ean_summary
+from .kid_green_import_service import (
+    KidGreenImportOptions,
+    import_kid_green_json_bytes,
+)
 from .ftp_upload import (
     FtpUploadConfigError,
     FtpUploadCorruptedFileError,
@@ -1010,6 +1014,67 @@ class KidMarketplaceEansAPIView(APIView):
                 ean_row.save(update_fields=ean_update_fields)
 
         return self.get(request, kid_id)
+
+
+class KidGreenImportAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    @staticmethod
+    def _request_value(request, key: str):
+        data = getattr(request, "data", None)
+        if hasattr(data, "get"):
+            value = data.get(key)
+            if value not in (None, ""):
+                return value
+        return request.query_params.get(key)
+
+    def post(self, request):
+        uploaded_file = (
+            request.FILES.get("file")
+            or request.FILES.get("json_file")
+            or request.FILES.get("kid_green")
+        )
+        raw_bytes = uploaded_file.read() if uploaded_file is not None else bytes(request.body or b"")
+        if not raw_bytes:
+            return Response(
+                {
+                    "code": "kid_green_file_required",
+                    "message": "Upload kid_green.json as multipart file or send a JSON array body.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        options = KidGreenImportOptions.from_raw(
+            max_total=self._request_value(request, "max_total"),
+            max_items_per_page=self._request_value(request, "max_items_per_page"),
+            workers=self._request_value(request, "workers"),
+            timeout_retries=self._request_value(request, "timeout_retries"),
+            timeout_retry_delay=self._request_value(request, "timeout_retry_delay"),
+            show_progress=False,
+        )
+
+        try:
+            result = import_kid_green_json_bytes(raw_bytes, options=options)
+        except ValueError as exc:
+            return Response(
+                {
+                    "code": "kid_green_invalid_payload",
+                    "message": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("KID_GREEN_IMPORT_FAILED")
+            return Response(
+                {
+                    "code": "kid_green_import_failed",
+                    "message": "Failed to import kid_green.json.",
+                    "details": {"error": str(exc)},
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"status": "ok", **result.to_dict()}, status=status.HTTP_200_OK)
 
 
 class InventoryRowsAPIView(APIView):

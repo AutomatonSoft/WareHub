@@ -12,7 +12,7 @@ import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
 import { fetchInventoryRows } from "./inventory-api";
-import { getPrimaryPhoto, normalizePhotoList } from "./inventory-table-utils";
+import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
 import { SofortListErrorState } from "./sofort-list/sofort-list-error-state";
 import { SofortListLoadingState } from "./sofort-list/sofort-list-loading-state";
@@ -203,7 +203,7 @@ export function SofortListTable() {
         siteEans: normalizedSiteEans,
         photo: getPrimaryPhoto(item.photo),
         photoCount: item.photo_count ?? photos.length,
-        place: item.place?.trim() || "-",
+        place: normalizePlaceValue(item.place),
         store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
@@ -343,4 +343,3 @@ export function SofortListTable() {
     </div>
   );
 }
-

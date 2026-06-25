@@ -160,7 +160,6 @@ export function InventoryTable() {
       : Array.isArray((payload as { results?: KidDto[] }).results)
         ? ((payload as { results?: KidDto[] }).results ?? [])
         : [];
-
     const mappedRows = items
       .filter((item) => item.entity === "order" && typeof item.order_db_id === "number")
       .map((item) => {
