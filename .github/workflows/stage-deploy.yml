@@ -254,12 +254,11 @@ jobs:
           echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
           echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
 
-          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
-            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
-            exit 1
-          fi
-
-          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
+          printf '%s' "${STAGE_ENV_FILE_SECRET:-}" > "$candidate_dir/.env.override"
+          python3 infra/scripts/build-runtime-env.py \
+            --template infra/deploy/stage/env.stage.sanitized.template \
+            --override "$candidate_dir/.env.override" \
+            --output "$candidate_dir/.env"
           cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
 
           tag_keys=(
@@ -290,7 +289,7 @@ jobs:
             printf 'ORCHESTRATOR_REF=%s:%s\n' "$ORCHESTRATOR_IMAGE" "$IMAGE_TAG"
           } > "$candidate_dir/metadata.env"
 
-          chmod 600 "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
+          chmod 600 "$candidate_dir/.env.override" "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
 
           (
             cd "$candidate_dir"
@@ -329,6 +328,10 @@ jobs:
             -EnvFile "$candidate_dir/.env" \
             -Environment stage \
             -InputKind Runtime
+
+          pwsh ./infra/scripts/verify-compose-service-env-mappings.ps1 \
+            -ComposePath "$candidate_dir/docker-compose.yml" \
+            -Environment stage
 
           docker compose \
             --project-name "$STAGE_PROJECT_NAME" \
@@ -508,6 +511,24 @@ jobs:
 
           echo "=== PULL IMAGES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
+
+          echo "=== APPLY STAGE MIGRATIONS ==="
+          for attempt in $(seq 1 10); do
+            if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate; then
+              break
+            fi
+
+            if [ "$attempt" -eq 10 ]; then
+              echo "Stage migrations failed after $attempt attempts." >&2
+              exit 1
+            fi
+
+            echo "Stage migration attempt $attempt failed; retrying..."
+            sleep 5
+          done
+
+          echo "=== VERIFY STAGE MIGRATION PLAN ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan
 
           echo "=== UP APP SERVICES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator

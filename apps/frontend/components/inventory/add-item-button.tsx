@@ -1,14 +1,14 @@
 "use client";
 
 import { ImagePlus, Loader2, Package2, Palette, Upload, X, type LucideIcon } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { readAuth } from "../../app/client-api-shared";
 import { useToast } from "../shared/toast-provider";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { createKidItem, patchKidPhotoUrls, uploadKidImages, type CreateKidFieldErrors, type CreateKidRequestError } from "./inventory-api";
 import { dedupeKidUploadFiles, validateKidUploadFiles } from "./kid-upload-validation";
@@ -41,6 +41,7 @@ type CreateKidFormState = {
   quantity: string;
   room: string;
   size: string;
+  store: boolean;
   type: string;
   photoFiles: File[];
 };
@@ -50,6 +51,10 @@ type AddProductButtonProps = {
 };
 
 type SubmitPhase = "creating" | "uploading" | "linking" | null;
+type PhotoPreview = {
+  file: File;
+  url: string;
+};
 
 function createEmptyFormState(): CreateKidFormState {
   return {
@@ -67,6 +72,7 @@ function createEmptyFormState(): CreateKidFormState {
     quantity: "",
     room: "",
     size: "",
+    store: false,
     type: "",
     photoFiles: []
   };
@@ -156,14 +162,14 @@ function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[var(--radius-card)] border border-border/70 bg-muted/20 p-4 ${className}`}>
-      <div className="mb-3 flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-border/80 bg-background text-primary">
+    <section className={`h-auto rounded-[var(--radius-card)] border border-border/70 bg-muted/20 p-4 ${className}`}>
+      <div className="mb-3.5 flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-border/80 bg-background text-primary">
           <Icon size={16} />
         </div>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
       </div>
       {children}
@@ -193,6 +199,23 @@ function CompactField({
   );
 }
 
+function StatusFlagField({
+  label,
+  checked,
+  onCheckedChange
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex h-10 min-w-0 items-center justify-between gap-2.5 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm text-foreground transition-colors hover:border-primary/30 hover:bg-muted/20">
+      <span className="truncate text-sm font-medium">{label}</span>
+      <Checkbox checked={checked} onCheckedChange={(value) => onCheckedChange(value === true)} />
+    </label>
+  );
+}
+
 export function AddProductButton({ onCreated }: AddProductButtonProps) {
   const { showToast } = useToast();
   const auth = readAuth();
@@ -204,6 +227,21 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [photoPreviews, setPhotoPreviews] = useState<PhotoPreview[]>([]);
+
+  useEffect(() => {
+    const nextPreviews = form.photoFiles.map((file) => ({
+      file,
+      url: URL.createObjectURL(file)
+    }));
+    setPhotoPreviews(nextPreviews);
+
+    return () => {
+      for (const preview of nextPreviews) {
+        URL.revokeObjectURL(preview.url);
+      }
+    };
+  }, [form.photoFiles]);
 
   if (!canCreateKid) {
     return null;
@@ -273,6 +311,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
         commentary: normalizeOptionalText(form.commentary),
         inTransit: form.inTransit,
         listingStatus: form.listingStatus || null,
+        store: form.store,
         material: normalizeOptionalText(form.material),
         place: normalizeOptionalText(form.place),
         price: normalizeOptionalText(form.price),
@@ -362,30 +401,30 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
         }}
       >
         <DialogContent
-          className="w-[min(1180px,calc(100vw-28px))] max-h-[96vh] overflow-hidden p-0 sm:max-w-[1180px]"
+          className="w-[min(1180px,calc(100vw-24px))] max-h-[94vh] overflow-hidden p-0 sm:max-w-[1180px]"
           showCloseButton={!isSubmitting}
         >
-          <DialogHeader className="border-b border-border/70 px-5 py-4 sm:px-6">
+          <DialogHeader className="border-b border-border/70 px-6 py-3.5">
             <DialogTitle className="text-base font-semibold text-foreground">Create kid</DialogTitle>
             <DialogDescription>
               Compact inventory entry for kid, placement and product attributes.
             </DialogDescription>
           </DialogHeader>
 
-          <form className="flex max-h-[calc(96vh-73px)] flex-col" onSubmit={(event) => void handleSubmit(event)}>
-            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4 sm:px-6">
-              <div className="grid gap-3 xl:grid-cols-[1.12fr_0.88fr]">
+          <form className="flex max-h-[calc(94vh-81px)] min-h-0 flex-col" onSubmit={(event) => void handleSubmit(event)}>
+            <div className="flex-1 space-y-3 overflow-y-auto px-6 pb-20 pt-4">
+              <div className="mt-0 grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.95fr)] lg:items-start">
                 <SectionCard
                   icon={Package2}
                   title="Identity & Logistics"
                   description="Core kid data, status and warehouse placement."
                 >
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <div className="md:col-span-2 xl:col-span-3">
+                    <div className="md:col-span-2 xl:col-span-2">
                       <CompactField label="Kid number *" htmlFor="create-kid-kid-number" error={fieldErrors.kid_number}>
                         <Input
                           id="create-kid-kid-number"
-                          className="h-9"
+                          className="h-10 rounded-[var(--radius-control)]"
                           value={form.kidNumber}
                           maxLength={MAX_KID_NUMBER_LENGTH}
                           aria-invalid={fieldErrors.kid_number ? "true" : "false"}
@@ -394,137 +433,148 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                       </CompactField>
                     </div>
 
-                    <CompactField label="Account" htmlFor="create-kid-account" error={fieldErrors.account}>
-                      <Select
-                        value={form.account || ACCOUNT_EMPTY_VALUE}
-                        onValueChange={(value) => {
-                          const nextValue = String(value || "");
-                          setForm((current) => ({
-                            ...current,
-                            account: nextValue === ACCOUNT_EMPTY_VALUE ? "" : (nextValue as CreateKidFormState["account"])
-                          }));
-                        }}
-                      >
-                        <SelectTrigger id="create-kid-account" size="sm" className="w-full min-w-0" aria-invalid={fieldErrors.account ? "true" : "false"}>
-                          <SelectValue placeholder=" " />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ACCOUNT_EMPTY_VALUE}>Clear selection</SelectItem>
-                          <SelectItem value="JV">JV</SelectItem>
-                          <SelectItem value="XL">XL</SelectItem>
-                          <SelectItem value="CH">CH</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </CompactField>
-
-                    <CompactField label="Listing status" htmlFor="create-kid-listing-status" error={fieldErrors.listing_status}>
-                      <Select
-                        value={form.listingStatus || LISTING_STATUS_EMPTY_VALUE}
-                        onValueChange={(value) => {
-                          const nextValue = String(value || "");
-                          setForm((current) => ({
-                            ...current,
-                            listingStatus:
-                              nextValue === LISTING_STATUS_EMPTY_VALUE ? "" : (nextValue as CreateKidFormState["listingStatus"])
-                          }));
-                        }}
-                      >
-                        <SelectTrigger
-                          id="create-kid-listing-status"
-                          size="sm"
-                          className="w-full"
-                          aria-invalid={fieldErrors.listing_status ? "true" : "false"}
+                    <div className="md:col-span-2 xl:col-span-1">
+                      <CompactField label="Account" htmlFor="create-kid-account" error={fieldErrors.account}>
+                        <Select
+                          value={form.account || ACCOUNT_EMPTY_VALUE}
+                          onValueChange={(value) => {
+                            const nextValue = String(value || "");
+                            setForm((current) => ({
+                              ...current,
+                              account: nextValue === ACCOUNT_EMPTY_VALUE ? "" : (nextValue as CreateKidFormState["account"])
+                            }));
+                          }}
                         >
-                          <SelectValue placeholder=" " />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={LISTING_STATUS_EMPTY_VALUE}>Clear selection</SelectItem>
-                          <SelectItem value="listed">listed</SelectItem>
-                          <SelectItem value="unlisted">unlisted</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </CompactField>
-
-                    <CompactField label="Place" htmlFor="create-kid-place" error={fieldErrors.place}>
-                      <Input
-                        id="create-kid-place"
-                        className="h-9"
-                        value={form.place}
-                        maxLength={MAX_PLACE_LENGTH}
-                        aria-invalid={fieldErrors.place ? "true" : "false"}
-                        onChange={(event) => setForm((current) => ({ ...current, place: event.target.value }))}
-                      />
-                    </CompactField>
-
-                    <CompactField label="Company" htmlFor="create-kid-company" error={fieldErrors.company}>
-                      <Input
-                        id="create-kid-company"
-                        className="h-9"
-                        value={form.company}
-                        maxLength={MAX_COMPANY_LENGTH}
-                        aria-invalid={fieldErrors.company ? "true" : "false"}
-                        onChange={(event) => setForm((current) => ({ ...current, company: event.target.value }))}
-                      />
-                    </CompactField>
-
-                    <CompactField label="Room" htmlFor="create-kid-room" error={fieldErrors.room}>
-                      <Input
-                        id="create-kid-room"
-                        className="h-9"
-                        value={form.room}
-                        maxLength={MAX_ROOM_LENGTH}
-                        aria-invalid={fieldErrors.room ? "true" : "false"}
-                        onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))}
-                      />
-                    </CompactField>
-
-                    <CompactField label="Type" htmlFor="create-kid-type" error={fieldErrors.type}>
-                      <Input
-                        id="create-kid-type"
-                        className="h-9"
-                        value={form.type}
-                        maxLength={MAX_TYPE_LENGTH}
-                        aria-invalid={fieldErrors.type ? "true" : "false"}
-                        onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
-                      />
-                    </CompactField>
-
-                    <CompactField label="Price" htmlFor="create-kid-price" error={fieldErrors.price}>
-                      <Input
-                        id="create-kid-price"
-                        className="h-9"
-                        inputMode="decimal"
-                        value={form.price}
-                        aria-invalid={fieldErrors.price ? "true" : "false"}
-                        onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
-                      />
-                    </CompactField>
-
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        B-ware
-                      </span>
-                      <label className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm text-foreground transition-colors hover:border-primary/30 hover:bg-muted/20">
-                        <Checkbox
-                          checked={form.bWare}
-                          onCheckedChange={(checked) => setForm((current) => ({ ...current, bWare: checked === true }))}
-                        />
-                        <p className="truncate text-xs text-muted-foreground">Returned or imperfect stock.</p>
-                      </label>
+                          <SelectTrigger
+                            id="create-kid-account"
+                            className="h-10 w-full min-w-0 rounded-[var(--radius-control)]"
+                            aria-invalid={fieldErrors.account ? "true" : "false"}
+                          >
+                            <span className={`min-w-0 truncate text-left ${form.account ? "text-foreground" : "text-muted-foreground"}`}>
+                              {form.account || "Select account"}
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ACCOUNT_EMPTY_VALUE}>Not selected</SelectItem>
+                            <SelectItem value="JV">JV</SelectItem>
+                            <SelectItem value="XL">XL</SelectItem>
+                            <SelectItem value="CH">CH</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </CompactField>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        In transit
-                      </span>
-                      <label className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm text-foreground transition-colors hover:border-primary/30 hover:bg-muted/20">
-                        <Checkbox
-                          checked={form.inTransit}
-                          onCheckedChange={(checked) => setForm((current) => ({ ...current, inTransit: checked === true }))}
-                        />
-                        <p className="truncate text-xs text-muted-foreground">Not yet physically in warehouse.</p>
-                      </label>
+                    <div className="xl:col-span-1">
+                      <CompactField label="Listing status" htmlFor="create-kid-listing-status" error={fieldErrors.listing_status}>
+                        <Select
+                          value={form.listingStatus || LISTING_STATUS_EMPTY_VALUE}
+                          onValueChange={(value) => {
+                            const nextValue = String(value || "");
+                            setForm((current) => ({
+                              ...current,
+                              listingStatus:
+                                nextValue === LISTING_STATUS_EMPTY_VALUE ? "" : (nextValue as CreateKidFormState["listingStatus"])
+                            }));
+                          }}
+                        >
+                          <SelectTrigger
+                            id="create-kid-listing-status"
+                            className="h-10 w-full min-w-0 rounded-[var(--radius-control)]"
+                            aria-invalid={fieldErrors.listing_status ? "true" : "false"}
+                          >
+                            <span className={`min-w-0 truncate text-left ${form.listingStatus ? "text-foreground" : "text-muted-foreground"}`}>
+                              {form.listingStatus || "Select status"}
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={LISTING_STATUS_EMPTY_VALUE}>Not selected</SelectItem>
+                            <SelectItem value="listed">listed</SelectItem>
+                            <SelectItem value="unlisted">unlisted</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </CompactField>
                     </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label="Place" htmlFor="create-kid-place" error={fieldErrors.place}>
+                        <Input
+                          id="create-kid-place"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          value={form.place}
+                          maxLength={MAX_PLACE_LENGTH}
+                          aria-invalid={fieldErrors.place ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, place: event.target.value }))}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label="Company" htmlFor="create-kid-company" error={fieldErrors.company}>
+                        <Input
+                          id="create-kid-company"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          value={form.company}
+                          maxLength={MAX_COMPANY_LENGTH}
+                          aria-invalid={fieldErrors.company ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, company: event.target.value }))}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label="Room" htmlFor="create-kid-room" error={fieldErrors.room}>
+                        <Input
+                          id="create-kid-room"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          value={form.room}
+                          maxLength={MAX_ROOM_LENGTH}
+                          aria-invalid={fieldErrors.room ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label="Type" htmlFor="create-kid-type" error={fieldErrors.type}>
+                        <Input
+                          id="create-kid-type"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          value={form.type}
+                          maxLength={MAX_TYPE_LENGTH}
+                          aria-invalid={fieldErrors.type ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label="Price" htmlFor="create-kid-price" error={fieldErrors.price}>
+                        <Input
+                          id="create-kid-price"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          inputMode="decimal"
+                          value={form.price}
+                          aria-invalid={fieldErrors.price ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <StatusFlagField
+                      label="B-Ware"
+                      checked={form.bWare}
+                      onCheckedChange={(checked) => setForm((current) => ({ ...current, bWare: checked }))}
+                    />
+                    <StatusFlagField
+                      label="Store"
+                      checked={form.store}
+                      onCheckedChange={(checked) => setForm((current) => ({ ...current, store: checked }))}
+                    />
+                    <StatusFlagField
+                      label="In Transit"
+                      checked={form.inTransit}
+                      onCheckedChange={(checked) => setForm((current) => ({ ...current, inTransit: checked }))}
+                    />
                   </div>
                 </SectionCard>
 
@@ -537,7 +587,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                     <CompactField label="Quantity" htmlFor="create-kid-quantity" error={fieldErrors.quantity}>
                       <Input
                         id="create-kid-quantity"
-                        className="h-9"
+                        className="h-10 rounded-[var(--radius-control)]"
                         inputMode="numeric"
                         value={form.quantity}
                         aria-invalid={fieldErrors.quantity ? "true" : "false"}
@@ -548,7 +598,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                     <CompactField label="Color" htmlFor="create-kid-color" error={fieldErrors.color}>
                       <Input
                         id="create-kid-color"
-                        className="h-9"
+                        className="h-10 rounded-[var(--radius-control)]"
                         value={form.color}
                         maxLength={MAX_COLOR_LENGTH}
                         aria-invalid={fieldErrors.color ? "true" : "false"}
@@ -559,7 +609,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                     <CompactField label="Size" htmlFor="create-kid-size" error={fieldErrors.size}>
                       <Input
                         id="create-kid-size"
-                        className="h-9"
+                        className="h-10 rounded-[var(--radius-control)]"
                         value={form.size}
                         maxLength={MAX_SIZE_LENGTH}
                         aria-invalid={fieldErrors.size ? "true" : "false"}
@@ -570,7 +620,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                     <CompactField label="Material" htmlFor="create-kid-material" error={fieldErrors.material}>
                       <Input
                         id="create-kid-material"
-                        className="h-9"
+                        className="h-10 rounded-[var(--radius-control)]"
                         value={form.material}
                         maxLength={MAX_MATERIAL_LENGTH}
                         aria-invalid={fieldErrors.material ? "true" : "false"}
@@ -578,11 +628,11 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                       />
                     </CompactField>
 
-                    <div className="md:col-span-2">
+                    <div className="min-w-0 md:col-span-2">
                       <CompactField label="Commentary" htmlFor="create-kid-commentary" error={fieldErrors.commentary}>
                         <Textarea
                           id="create-kid-commentary"
-                          className="min-h-[110px] w-full rounded-[var(--radius-card)] px-3 py-2.5"
+                          className="h-[100px] min-h-[90px] max-h-[120px] w-full resize-y rounded-[var(--radius-control)] px-3 py-2.5"
                           value={form.commentary}
                           aria-invalid={fieldErrors.commentary ? "true" : "false"}
                           onChange={(event) => setForm((current) => ({ ...current, commentary: event.target.value }))}
@@ -597,10 +647,11 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                 icon={Upload}
                 title="Photos"
                 description="Attach product photos."
+                className="mt-3"
               >
                 <div className="grid gap-3">
                   <CompactField label="Photos" htmlFor="create-kid-photo" error={fieldErrors.photo ?? fieldErrors.photo_files}>
-                    <div className="relative min-h-[160px] rounded-[var(--radius-card)] border border-dashed border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+                    <div className="relative rounded-[var(--radius-card)] border border-dashed border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
                       {isSubmitting ? (
                         <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius-card)] bg-background/75 backdrop-blur-[1px]">
                           <div className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-border bg-background px-3 py-2 text-xs font-medium text-foreground shadow-[var(--wh-shadow-card)]">
@@ -624,7 +675,7 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                           }))
                         }
                       />
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="space-y-1">
                           <div className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-primary/15 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary">
                             <ImagePlus size={14} />
@@ -636,45 +687,47 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                         </div>
                         <label
                           htmlFor="create-kid-photo"
-                          className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40"
+                          className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius-control)] border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40"
                         >
                           <Upload size={14} className="text-primary" />
                           <span>Choose files</span>
                         </label>
                       </div>
-                      <div className="mt-3 rounded-[calc(var(--radius-card)-6px)] border border-border/70 bg-background/80 p-2">
-                        {form.photoFiles.length > 0 ? (
-                          <div className="max-h-[76px] space-y-2 overflow-y-auto pr-1">
-                            {form.photoFiles.map((file, index) => (
+                      <div className="mt-3 min-h-[90px] rounded-[calc(var(--radius-card)-6px)] border border-border/70 bg-background/80 p-2.5">
+                        {photoPreviews.length > 0 ? (
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {photoPreviews.map((preview, index) => (
                               <div
-                                key={`${file.name}-${file.size}-${file.lastModified}`}
-                                className="flex items-center gap-2 rounded-[var(--radius-control)] border border-border/70 bg-muted/[0.28] px-2.5 py-2"
+                                key={`${preview.file.name}-${preview.file.size}-${preview.file.lastModified}`}
+                                className="overflow-hidden rounded-[var(--radius-control)] border border-border/70 bg-muted/[0.28]"
                               >
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
-                                  <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-primary/10 text-primary">
-                                    <ImagePlus size={14} />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="truncate text-xs font-medium text-foreground" title={file.name}>
-                                      {file.name}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
-                                  </div>
+                                <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted/40">
+                                  <img
+                                    src={preview.url}
+                                    alt={preview.file.name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="absolute right-2 top-2 inline-flex size-8 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground transition-colors hover:border-destructive/30 hover:text-destructive"
+                                    aria-label={`Remove ${preview.file.name}`}
+                                    onClick={() => removePhotoFile(index)}
+                                    disabled={isSubmitting}
+                                  >
+                                    <X size={14} />
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-destructive/30 hover:text-destructive"
-                                  aria-label={`Remove ${file.name}`}
-                                  onClick={() => removePhotoFile(index)}
-                                  disabled={isSubmitting}
-                                >
-                                  <X size={14} />
-                                </button>
+                                <div className="space-y-1 px-3 py-2">
+                                  <p className="truncate text-sm font-medium text-foreground" title={preview.file.name}>
+                                    {preview.file.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">{formatFileSize(preview.file.size)}</p>
+                                </div>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="flex min-h-[76px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/[0.18] px-4 text-center text-xs leading-5 text-muted-foreground">
+                          <div className="flex min-h-[90px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/[0.18] px-4 text-center text-sm leading-6 text-muted-foreground">
                             Add photos to see them listed here. The block keeps its size, so the modal will not jump.
                           </div>
                         )}
@@ -686,15 +739,15 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
             </div>
 
             {generalError ? (
-              <div className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 sm:px-6">
+              <div className="border-t border-destructive/20 bg-destructive/5 px-6 py-3">
                 <div className="rounded-[var(--radius-control)] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   {generalError}
                 </div>
               </div>
             ) : null}
 
-            <DialogFooter className="sticky bottom-0 z-20 border-t border-border/70 bg-background/95 px-5 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] sm:px-6">
-              <div className="mr-auto hidden text-xs text-muted-foreground md:block">
+            <DialogFooter className="sticky bottom-0 z-20 flex flex-col-reverse gap-2 border-t border-border/70 bg-background/95 px-6 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] sm:flex-row sm:items-center sm:justify-end">
+              <div className="mr-auto text-xs text-muted-foreground">
                 {submitPhaseLabel ?? "Required: kid number. Everything else can be added gradually."}
               </div>
               <Button type="button" variant="outline" size="sm" onClick={closeModal} disabled={isSubmitting}>

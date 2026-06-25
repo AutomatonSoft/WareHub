@@ -45,6 +45,7 @@ class Kid(Model):
     furniture_type = CharField(max_length=128, null=True, blank=True)
     listing_status = CharField(max_length=16, default="unlisted", db_index=True)
     b_ware = BooleanField(default=False)
+    store = BooleanField(default=False)
     commentary = TextField(null=True, blank=True)
     in_transit = BooleanField(default=False)
 

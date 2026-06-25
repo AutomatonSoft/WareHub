@@ -3,6 +3,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
+import requests
 
 from .kid_green_import_service import KidGreenImportResult, KidImportStats, OrderImportStats
 from .kid_number_utils import primary_kid_number
@@ -62,9 +63,40 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(ean_row.hood_xl, "0000000000000")
         self.assertEqual(ean_row.ebay_jv, "0000000000000")
         self.assertEqual(ean_row.ebay_xl, "0000000000000")
+        self.assertFalse(kid.store)
+        self.assertIn("sync", response.data)
+        self.assertIsNone(response.data["sync"]["error"])
+        self.assertIsNone(response.data["sync"]["error_detail"])
 
-    @patch.object(KidListCreateAPIView, "_ensure_marketplace_ean_defaults")
-    def test_create_kid_initializes_marketplace_ean_defaults(self, mocked_sync):
+    @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("Missing Afterbuy login credentials in .env for JV, XL or CH."))
+    def test_create_kid_reports_missing_afterbuy_credentials(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900903"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "missing_afterbuy_credentials")
+        self.assertIn("Missing Afterbuy login credentials", response.data["sync"]["error_detail"])
+        mocked_search.assert_called_once()
+
+    @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("XL login failed. Check AFTERBUY_XL_LOGIN / AFTERBUY_XL_PASS and any second-factor requirements."))
+    def test_create_kid_reports_afterbuy_login_failure(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900904"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "afterbuy_login_failed")
+        self.assertIn("login failed", response.data["sync"]["error_detail"].lower())
+        mocked_search.assert_called_once()
+
+    @patch("database.views.search_items_auktionsliste", side_effect=requests.RequestException("afterbuy stage timeout"))
+    def test_create_kid_reports_afterbuy_network_failure(self, mocked_search):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900905"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "afterbuy_network_failed")
+        self.assertIn("timeout", response.data["sync"]["error_detail"].lower())
+        mocked_search.assert_called_once()
+
+    @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
+    def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
         payload = {"kid_number": "900902"}
 
         response = self.client.post("/api/v1/kids/", payload, format="json")
@@ -73,17 +105,6 @@ class DatabaseApiTests(APITestCase):
         mocked_sync.assert_called_once()
         synced_kid = mocked_sync.call_args.args[0]
         self.assertEqual(primary_kid_number(synced_kid.kid_number), "900902")
-
-    @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
-    def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
-        payload = {"kid_number": "900903"}
-
-        response = self.client.post("/api/v1/kids/", payload, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        mocked_sync.assert_called_once()
-        synced_kid = mocked_sync.call_args.args[0]
-        self.assertEqual(primary_kid_number(synced_kid.kid_number), "900903")
 
     def test_create_kid_with_type_and_photo_list(self):
         payload = {
@@ -153,6 +174,7 @@ class DatabaseApiTests(APITestCase):
             "listing_status": "listed",
             "commentary": "Updated note",
             "b_ware": True,
+            "store": True,
             "in_transit": True,
             "photo": ["https://cdn.example.com/photo-main.jpg"],
         }
@@ -167,6 +189,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(self.kid.listing_status, "listed")
         self.assertEqual(self.kid.commentary, "Updated note")
         self.assertTrue(self.kid.b_ware)
+        self.assertTrue(self.kid.store)
         self.assertTrue(self.kid.in_transit)
         self.assertEqual(self.kid.photo, ["https://cdn.example.com/photo-main.jpg"])
         attrs = ProductAttributes.objects.get(kid=self.kid)
@@ -309,6 +332,47 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(response.data["inventory_flags"]["missing_room"])
         self.assertFalse(response.data["inventory_flags"]["missing_photo"])
         self.assertTrue(response.data["inventory_flags"]["listed"])
+
+    def test_marketplace_eans_patch_updates_database_ean(self):
+        ean_row = Ean.objects.create(
+            kid=self.kid,
+            main_ean="0000000000000",
+            jv="0000000000000",
+            xl="0000000000000",
+            otto_jv="0000000000000",
+            otto_xl="0000000000000",
+            kaufland_jv="0000000000000",
+            kaufland_xl="0000000000000",
+            hood_jv="0000000000000",
+            hood_xl="0000000000000",
+            ebay_jv="0000000000000",
+            ebay_xl="0000000000000",
+        )
+
+        payload = {
+            "main_ean": "4444444444444",
+            "database_ean": "4444444444444",
+            "cosmoshop_ean": "4444444444444",
+            "opencart_ean": "4444444444444",
+            "otto_jv_ean": "4444444444444",
+            "otto_xl_ean": "4444444444444",
+            "ebay_jv_ean": "4444444444444",
+            "ebay_xl_ean": "4444444444444",
+            "kaufland_jv_ean": "4444444444444",
+            "kaufland_xl_ean": "4444444444444",
+            "hood_jv_ean": "4444444444444",
+            "hood_xl_ean": "4444444444444",
+        }
+
+        response = self.client.patch(f"/api/v1/kids/{self.kid.id}/marketplace-eans/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ean_row.refresh_from_db()
+        self.assertEqual(ean_row.main_ean, "4444444444444")
+        self.assertEqual(ean_row.jv, "4444444444444")
+        self.assertEqual(response.data["main_ean"], "4444444444444")
+        self.assertEqual(response.data["database_ean"], "4444444444444")
+        self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
 
     def test_get_kid_ean_summary_not_found(self):
         response = self.client.get("/api/v1/kids/999999/ean-summary/")
@@ -524,6 +588,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(row["quantity"], 9)
         self.assertEqual(row["company"], "Blue Label")
         self.assertEqual(row["color"], "Blue")
+        self.assertEqual(row["order_id"], "ORDER-001")
 
     def test_inventory_rows_filter_by_room_type_listing_and_query(self):
         self.kid.listing_status = "listed"
@@ -542,7 +607,111 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(all(row["type"] == RU_SOFA for row in rows))
         self.assertTrue(all(row["listing_status"] == "listed" for row in rows))
 
-    def test_inventory_rows_include_unified_product_attributes(self):
+    def test_inventory_rows_query_searches_across_kid_order_attributes_and_ean_fields(self):
+        self.kid.place = "Place 12"
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Sofa"
+        self.kid.commentary = "commentary token"
+        self.kid.store = True
+        self.kid.save(update_fields=["place", "room", "furniture_type", "commentary", "store"])
+        self.order.order_id = "ORDER-SEARCH-777"
+        self.order.title = "Title Search Token"
+        self.order.memo = "Memo Search Token"
+        self.order.sku = "SKU-SEARCH-999"
+        self.order.payment_status = "1560.00 EUR"
+        self.order.save(update_fields=["order_id", "title", "memo", "sku", "payment_status"])
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=3,
+            company="bathtub",
+            color="Black",
+            size="360x821x152cm",
+            material="Stoff",
+            price="1560.00",
+            currency="EUR",
+        )
+        Ean.objects.create(
+            kid=self.kid,
+            main_ean="5555555555555",
+            jv="1111111111111",
+            xl="2222222222222",
+            otto_jv="3333333333333",
+            otto_xl="4444444444444",
+            ebay_jv="6666666666666",
+            ebay_xl="7777777777777",
+            kaufland_jv="8888888888888",
+            kaufland_xl="9999999999999",
+            hood_jv="1212121212121",
+            hood_xl="3434343434343",
+        )
+
+        cases = (
+            "commentary token",
+            "bathtub",
+            "360x821x152cm",
+            "ORDER-SEARCH-777",
+            "Title Search Token",
+            "SKU-SEARCH-999",
+            "5555555555555",
+            "3333333333333",
+        )
+
+        for query in cases:
+            response = self.client.get(f"/api/v1/inventory/rows/?q={query}&page_size=100")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            rows = response.data["results"]
+            self.assertTrue(rows, msg=f"Expected rows for query {query!r}")
+            self.assertTrue(any(int(row["kid_id"]) == self.kid.id for row in rows), msg=f"Expected kid row for query {query!r}")
+
+    def test_inventory_rows_query_supports_field_scoped_prefixes(self):
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Sofa"
+        self.kid.commentary = "special sofa note"
+        self.kid.save(update_fields=["room", "furniture_type", "commentary"])
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=3,
+            company="bathtub",
+            color="Black",
+            size="360x821x152cm",
+            material="Stoff",
+            price="1560.00",
+            currency="EUR",
+        )
+
+        other_kid = Kid.objects.create(
+            kid_number="99887766",
+            room="Bedroom",
+            furniture_type="Chair",
+            commentary="has sofa only in commentary",
+        )
+        ProductAttributes.objects.create(
+            kid=other_kid,
+            quantity=13,
+            company="other-brand",
+        )
+
+        scoped_type = self.client.get("/api/v1/inventory/rows/?q=type%20sofa&page_size=100")
+        self.assertEqual(scoped_type.status_code, status.HTTP_200_OK)
+        type_rows = scoped_type.data["results"]
+        self.assertTrue(type_rows)
+        self.assertTrue(all(str(row["type"]).lower() == "sofa" for row in type_rows))
+        self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in type_rows))
+
+        scoped_quantity = self.client.get("/api/v1/inventory/rows/?q=quantity%203&page_size=100")
+        self.assertEqual(scoped_quantity.status_code, status.HTTP_200_OK)
+        quantity_rows = scoped_quantity.data["results"]
+        self.assertTrue(quantity_rows)
+        self.assertTrue(all(int(row["quantity"] or 0) == 3 for row in quantity_rows))
+        self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in quantity_rows))
+
+        global_sofa = self.client.get("/api/v1/inventory/rows/?q=sofa&page_size=100")
+        self.assertEqual(global_sofa.status_code, status.HTTP_200_OK)
+        global_rows = global_sofa.data["results"]
+        self.assertTrue(any(int(row["kid_id"]) == self.kid.id for row in global_rows))
+        self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in global_rows))
+
+    def test_inventory_rows_do_not_return_orphan_kid_rows_without_orders(self):
         self.order.delete()
         self.kid.room = "ROOM-X"
         self.kid.furniture_type = "SOFA"
@@ -559,20 +728,25 @@ class DatabaseApiTests(APITestCase):
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.kid.refresh_from_db()
+        self.assertEqual(response.data["results"], [])
+
+    def test_inventory_rows_include_direct_database_order_fields(self):
+        self.order.buyer = "John Buyer"
+        self.order.payment_status = "199.99 EUR"
+        self.order.additional_items = [{"order_id": "ORDER-001-A"}, {"order_id": "ORDER-001-B"}]
+        self.order.save(update_fields=["buyer", "payment_status", "additional_items"])
+
+        response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data["results"]
         self.assertTrue(rows)
         row = rows[0]
-        self.assertEqual(self.kid.furniture_type, "SOFA")
-        self.assertEqual(row["company"], "Nordic House")
-        self.assertEqual(row["color"], "Black")
-        self.assertEqual(row["size"], "200x80")
-        self.assertEqual(row["material"], "Wood")
-        self.assertEqual(row["quantity"], 4)
-        self.assertEqual(row["room"], "ROOM-X")
-        self.assertEqual(row["type"], "SOFA")
-        self.assertIsNone(row["price"])
-        self.assertIsNone(row["price_currency"])
+        self.assertEqual(row["buyer"], "John Buyer")
+        self.assertEqual(row["payment_status"], "199.99 EUR")
+        self.assertEqual(row["global_price"], "199.99 EUR")
+        self.assertEqual(row["order_id"], "ORDER-001")
+        self.assertEqual(row["additional_order_ids_text"], "ORDER-001-A, ORDER-001-B")
 
     @patch("database.views.build_inventory_rows")
     def test_inventory_rows_returns_structured_500_on_schema_error(self, mocked_build_inventory_rows):

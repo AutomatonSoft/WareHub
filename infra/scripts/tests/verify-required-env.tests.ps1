@@ -94,10 +94,14 @@ function New-ValidStageEnvLines {
     'AFTERBUY_JV_PASS=placeholder-secret',
     'AFTERBUY_XL_LOGIN=placeholder-user',
     'AFTERBUY_XL_PASS=placeholder-secret',
+    'AFTERBUY_CH_LOGIN=placeholder-user',
+    'AFTERBUY_CH_PASS=placeholder-secret',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
+    'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
     'AFTERBUY_JV_COOKIE_CACHE_FILE=/tmp/afterbuy-jv-cookie-cache.json',
     'AFTERBUY_XL_COOKIE_CACHE_FILE=/tmp/afterbuy-xl-cookie-cache.json',
+    'AFTERBUY_CH_COOKIE_CACHE_FILE=/tmp/afterbuy-ch-cookie-cache.json',
     'BACKEND_UPLOAD_STORAGE_BACKEND=ftp',
     'BACKEND_UPLOAD_FTP_HOST=ftp.example.test',
     'BACKEND_UPLOAD_FTP_USER=placeholder-user',
@@ -201,10 +205,14 @@ function New-TemplateStageEnvLines {
     'AFTERBUY_JV_PASS=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_LOGIN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_LOGIN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_PASS=**SET_OUTSIDE_GIT**',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
+    'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
     'AFTERBUY_JV_COOKIE_CACHE_FILE=/tmp/afterbuy-jv-cookie-cache.json',
     'AFTERBUY_XL_COOKIE_CACHE_FILE=/tmp/afterbuy-xl-cookie-cache.json',
+    'AFTERBUY_CH_COOKIE_CACHE_FILE=/tmp/afterbuy-ch-cookie-cache.json',
     'BACKEND_UPLOAD_STORAGE_BACKEND=ftp',
     'BACKEND_UPLOAD_FTP_HOST=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_USER=**SET_OUTSIDE_GIT**',
@@ -361,7 +369,7 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'malformed.env' $lines)) 1
   }
 
-  Test-Case 'FTP conditional requirements' {
+  Test-Case 'FTP runtime requirements' {
     $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_HOST=' }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'ftp-missing.env' $lines)) 1
 
@@ -369,7 +377,7 @@ try {
     $nonFtpLines = $nonFtpLines | ForEach-Object {
       if ($_ -match '^BACKEND_UPLOAD_STORAGE_BACKEND=') { 'BACKEND_UPLOAD_STORAGE_BACKEND=local' } else { $_ }
     }
-    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 0
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 1
   }
 
   Test-Case 'secret value is not printed' {
