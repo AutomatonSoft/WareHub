@@ -50,6 +50,27 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
       });
 
       const status = response.status;
+      const contentType = response.headers.get("content-type") ?? "application/json";
+      if (response.body && contentType.includes("application/x-ndjson")) {
+        const proxiedResponse = new NextResponse(response.body, {
+          status: response.status,
+          headers: {
+            "content-type": contentType,
+            "x-request-id": response.headers.get("x-request-id") ?? requestId
+          }
+        });
+        const responseHeaders = response.headers as Headers & { getSetCookie?: () => string[] };
+        const setCookieValues =
+          typeof responseHeaders.getSetCookie === "function"
+            ? responseHeaders.getSetCookie()
+            : response.headers.get("set-cookie")
+              ? [response.headers.get("set-cookie") as string]
+              : [];
+        for (const cookieValue of setCookieValues) {
+          proxiedResponse.headers.append("set-cookie", cookieValue);
+        }
+        return proxiedResponse;
+      }
       const shouldUseEmptyBody =
         request.method === "HEAD" ||
         status === 204 ||
@@ -59,7 +80,7 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
       const proxiedResponse = new NextResponse(shouldUseEmptyBody ? null : text, {
         status: response.status,
         headers: {
-          "content-type": response.headers.get("content-type") ?? "application/json",
+          "content-type": contentType,
           "x-request-id": response.headers.get("x-request-id") ?? requestId
         }
       });

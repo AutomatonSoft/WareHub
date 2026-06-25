@@ -30,9 +30,22 @@ type KidSummaryMeta = {
   gallery: KidImageGalleryModel;
 };
 
-function normalizeLabel(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : "-";
+function normalizeLabel(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : "-";
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => (typeof item === "string" ? item.trim() : typeof item === "number" && Number.isFinite(item) ? String(item) : ""))
+      .filter(Boolean)
+      .join(", ");
+    return normalized || "-";
+  }
+  return "-";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

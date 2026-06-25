@@ -134,6 +134,7 @@ def build_external_ean_links(eans: set[str]) -> tuple[dict[str, list[dict]], dic
 
 def build_inventory_rows() -> list[dict]:
     orders = list(Orders.objects.select_related("kid").all().order_by("id"))
+    kids = list(Kid.objects.all().order_by("id"))
     eans_by_kid_id = {
         row["kid_id"]: row
         for row in Ean.objects.all().values(
@@ -167,8 +168,10 @@ def build_inventory_rows() -> list[dict]:
     order_meta: list[tuple[Orders, list[dict], list[str], list[str]]] = []
     all_eans: set[str] = set()
     rows: list[dict] = []
+    kid_ids_with_orders: set[int] = set()
 
     for order in orders:
+        kid_ids_with_orders.add(order.kid_id)
         additional_items = order.additional_items if isinstance(order.additional_items, list) else []
         sku_eans = extract_order_eans(order, additional_items)
         for ean in sku_eans:
@@ -264,6 +267,83 @@ def build_inventory_rows() -> list[dict]:
                 "price_currency": attrs.get("currency"),
                 "status": order.status or "no_paid",
                 "date": order.date,
+            }
+        )
+
+    for kid in kids:
+        if kid.id in kid_ids_with_orders:
+            continue
+
+        attrs = attributes_by_kid_id.get(kid.id) or {}
+        ean_row = eans_by_kid_id.get(kid.id) or {}
+        primary_kid = primary_kid_number(kid.kid_number)
+        main_ean = _norm_ean(ean_row.get("main_ean"))
+        cosmoshop_ean = _norm_ean(ean_row.get("jv"))
+        opencart_ean = _norm_ean(ean_row.get("xl"))
+        otto_jv_ean = _norm_ean(ean_row.get("otto_jv"))
+        otto_xl_ean = _norm_ean(ean_row.get("otto_xl"))
+        ebay_jv_ean = _norm_ean(ean_row.get("ebay_jv"))
+        ebay_xl_ean = _norm_ean(ean_row.get("ebay_xl"))
+        kaufland_jv_ean = _norm_ean(ean_row.get("kaufland_jv"))
+        kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl"))
+        hood_jv_ean = _norm_ean(ean_row.get("hood_jv"))
+        hood_xl_ean = _norm_ean(ean_row.get("hood_xl"))
+
+        rows.append(
+            {
+                "id": f"KID-{kid.id}",
+                "entity": "kid",
+                "kid_id": kid.id,
+                "kid_number": primary_kid,
+                "kid_account": kid.account or "-",
+                "place": kid.place,
+                "store": bool(kid.store),
+                "photo": kid.photo,
+                "photo_count": len(kid.photo or []) if isinstance(kid.photo, list) else 0,
+                "order_db_id": None,
+                "order_id": "-",
+                "parent_order_id": "-",
+                "additional_order_ids": [],
+                "additional_order_ids_text": "-",
+                "additional_items": [],
+                "sku_eans": [],
+                "ean": main_ean,
+                "main_ean": main_ean,
+                "database_ean": main_ean,
+                "jv_ean": cosmoshop_ean,
+                "xl_ean": opencart_ean,
+                "otto_jv_ean": otto_jv_ean,
+                "otto_xl_ean": otto_xl_ean,
+                "ebay_jv_ean": ebay_jv_ean,
+                "ebay_xl_ean": ebay_xl_ean,
+                "kaufland_jv_ean": kaufland_jv_ean,
+                "kaufland_xl_ean": kaufland_xl_ean,
+                "hood_jv_ean": hood_jv_ean,
+                "hood_xl_ean": hood_xl_ean,
+                "linked_products_by_ean": {
+                    "catalog": {},
+                    "hood_service": {},
+                },
+                "platform": "-",
+                "buyer": "-",
+                "quantity": attrs.get("quantity"),
+                "company": attrs.get("company"),
+                "room": kid.room,
+                "type": kid.furniture_type,
+                "commentary": kid.commentary,
+                "listing_status": kid.listing_status or "unlisted",
+                "title": primary_kid or "Kid without orders",
+                "memo": kid.commentary or "-",
+                "sku": "-",
+                "payment_status": "-",
+                "global_price": "-",
+                "color": attrs.get("color"),
+                "size": attrs.get("size"),
+                "material": attrs.get("material"),
+                "price": str(attrs.get("price")) if attrs.get("price") is not None else None,
+                "price_currency": attrs.get("currency"),
+                "status": "no_paid",
+                "date": kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None,
             }
         )
 
