@@ -10,9 +10,25 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='kid',
-            name='store',
-            field=models.BooleanField(default=False),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    sql="""
+                    ALTER TABLE database_kid
+                    ADD COLUMN IF NOT EXISTS store boolean NOT NULL DEFAULT false
+                    """,
+                    reverse_sql="""
+                    ALTER TABLE database_kid
+                    DROP COLUMN IF EXISTS store
+                    """,
+                ),
+            ],
+            state_operations=[
+                migrations.AddField(
+                    model_name='kid',
+                    name='store',
+                    field=models.BooleanField(default=False),
+                ),
+            ],
         ),
     ]
