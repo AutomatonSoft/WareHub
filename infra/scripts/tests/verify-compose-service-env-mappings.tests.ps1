@@ -12,7 +12,13 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("warehub-compose-env-te
 $script:failures = [System.Collections.Generic.List[string]]::new()
 
 function New-ComposeLines {
-  param([string]$PublicBaseKey)
+  param(
+    [string]$RootDirKey,
+    [string]$StorageRootDirKey,
+    [string]$AvatarDirKey,
+    [string]$ImageDirKey,
+    [string]$PublicBaseKey
+  )
 
   $publicBaseLine = ('      UPLOAD_FTP_PUBLIC_BASE_URL: ${{{0}:-}}' -f $PublicBaseKey)
 
@@ -25,9 +31,10 @@ function New-ComposeLines {
     '      UPLOAD_FTP_USER: ${BACKEND_UPLOAD_FTP_USER:-}',
     '      UPLOAD_FTP_PASS: ${BACKEND_UPLOAD_FTP_PASS:-}',
     '      UPLOAD_FTP_PORT: ${BACKEND_UPLOAD_FTP_PORT:-21}',
-    '      UPLOAD_FTP_ROOT_DIR: ${BACKEND_UPLOAD_FTP_ROOT_DIR:-warehub}',
-    '      UPLOAD_FTP_STORAGE_ROOT_DIR: ${BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR:-}',
-    '      UPLOAD_FTP_AVATAR_DIR: ${BACKEND_UPLOAD_FTP_AVATAR_DIR:-avatar}',
+    ('      UPLOAD_FTP_ROOT_DIR: ${{{0}:-warehub}}' -f $RootDirKey),
+    ('      UPLOAD_FTP_STORAGE_ROOT_DIR: ${{{0}:-}}' -f $StorageRootDirKey),
+    ('      UPLOAD_FTP_AVATAR_DIR: ${{{0}:-avatar}}' -f $AvatarDirKey),
+    ('      UPLOAD_FTP_IMAGE_DIR: ${{{0}:-images}}' -f $ImageDirKey),
     $publicBaseLine,
     '      AFTERBUY_JV_LOGIN: ${AFTERBUY_JV_LOGIN:-}',
     '      AFTERBUY_JV_PASS: ${AFTERBUY_JV_PASS:-}',
@@ -48,9 +55,10 @@ function New-ComposeLines {
     '      UPLOAD_FTP_USER: ${BACKEND_UPLOAD_FTP_USER:-}',
     '      UPLOAD_FTP_PASS: ${BACKEND_UPLOAD_FTP_PASS:-}',
     '      UPLOAD_FTP_PORT: ${BACKEND_UPLOAD_FTP_PORT:-21}',
-    '      UPLOAD_FTP_ROOT_DIR: ${BACKEND_UPLOAD_FTP_ROOT_DIR:-warehub}',
-    '      UPLOAD_FTP_STORAGE_ROOT_DIR: ${BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR:-}',
-    '      UPLOAD_FTP_AVATAR_DIR: ${BACKEND_UPLOAD_FTP_AVATAR_DIR:-avatar}',
+    ('      UPLOAD_FTP_ROOT_DIR: ${{{0}:-warehub}}' -f $RootDirKey),
+    ('      UPLOAD_FTP_STORAGE_ROOT_DIR: ${{{0}:-}}' -f $StorageRootDirKey),
+    ('      UPLOAD_FTP_AVATAR_DIR: ${{{0}:-avatar}}' -f $AvatarDirKey),
+    ('      UPLOAD_FTP_IMAGE_DIR: ${{{0}:-images}}' -f $ImageDirKey),
     $publicBaseLine,
     '      AFTERBUY_JV_LOGIN: ${AFTERBUY_JV_LOGIN:-}',
     '      AFTERBUY_JV_PASS: ${AFTERBUY_JV_PASS:-}',
@@ -123,15 +131,15 @@ function Assert-True {
 try {
   [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
 
-  $validStage = Write-Fixture -Name 'valid-stage.compose.yml' -Lines (New-ComposeLines -PublicBaseKey 'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL')
+  $validStage = Write-Fixture -Name 'valid-stage.compose.yml' -Lines (New-ComposeLines -RootDirKey 'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR' -StorageRootDirKey 'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR' -AvatarDirKey 'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR' -ImageDirKey 'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR' -PublicBaseKey 'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL')
   $validStageResult = Invoke-Validator -ComposePath $validStage -Environment stage
   Assert-True ($validStageResult.ExitCode -eq 0) "Expected valid stage compose fixture to pass. stderr: $($validStageResult.StdErr)"
 
-  $validProd = Write-Fixture -Name 'valid-prod.compose.yml' -Lines (New-ComposeLines -PublicBaseKey 'BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL')
+  $validProd = Write-Fixture -Name 'valid-prod.compose.yml' -Lines (New-ComposeLines -RootDirKey 'BACKEND_PROD_UPLOAD_FTP_ROOT_DIR' -StorageRootDirKey 'BACKEND_PROD_UPLOAD_FTP_STORAGE_ROOT_DIR' -AvatarDirKey 'BACKEND_PROD_UPLOAD_FTP_AVATAR_DIR' -ImageDirKey 'BACKEND_PROD_UPLOAD_FTP_IMAGE_DIR' -PublicBaseKey 'BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL')
   $validProdResult = Invoke-Validator -ComposePath $validProd -Environment prod
   Assert-True ($validProdResult.ExitCode -eq 0) "Expected valid prod compose fixture to pass. stderr: $($validProdResult.StdErr)"
 
-  $brokenStageLines = New-ComposeLines -PublicBaseKey 'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL'
+  $brokenStageLines = New-ComposeLines -RootDirKey 'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR' -StorageRootDirKey 'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR' -AvatarDirKey 'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR' -ImageDirKey 'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR' -PublicBaseKey 'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL'
   $seenBackendFtpHost = $false
   $filteredLines = [System.Collections.Generic.List[string]]::new()
   foreach ($line in $brokenStageLines) {

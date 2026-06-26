@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{internal_error, validation_error, AppState, ErrorResponse};
+use crate::{delete_uploaded_photo_by_url, internal_error, validation_error, AppState, ErrorResponse};
 
 use super::{
     dto::{AuthUserResponse, ChangePasswordRequest, UpdateProfileRequest},
@@ -64,16 +64,28 @@ pub(crate) async fn auth_update_me(
         Some(value) => Some(normalize_phone_number(value)?),
         None => current.phone_number,
     };
+    let current_avatar_url = current.avatar_url.clone();
     let next_avatar_url = if let Some(value) = payload.avatar_url.as_deref() {
         normalize_avatar_url(value)?
     } else {
-        current.avatar_url
+        current_avatar_url.clone()
+    };
+    let avatar_to_remove = match (&current_avatar_url, &next_avatar_url) {
+        (Some(current_url), Some(next_url)) if current_url.trim() == next_url.trim() => None,
+        (Some(current_url), _) if !current_url.trim().is_empty() => Some(current_url.clone()),
+        _ => None,
     };
     let next_username = resolve_profile_username(
         next_first_name.as_deref(),
         next_last_name.as_deref(),
         &current.login,
     );
+
+    if let Some(current_avatar_url) = avatar_to_remove {
+        delete_uploaded_photo_by_url(&current_avatar_url)
+            .await
+            .map_err(|error| internal_error(format!("failed to delete previous avatar: {error}")))?;
+    }
 
     let updated = sqlx::query_as::<_, AuthUserResponse>(
         r#"
