@@ -107,9 +107,10 @@ function New-ValidStageEnvLines {
     'BACKEND_UPLOAD_FTP_USER=placeholder-user',
     'BACKEND_UPLOAD_FTP_PASS=placeholder-secret',
     'BACKEND_UPLOAD_FTP_PORT=21',
-    'BACKEND_UPLOAD_FTP_ROOT_DIR=warehub',
-    'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR=storage',
-    'BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR=warehub/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR=storage/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR=images',
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
@@ -218,9 +219,10 @@ function New-TemplateStageEnvLines {
     'BACKEND_UPLOAD_FTP_USER=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_PASS=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_PORT=21',
-    'BACKEND_UPLOAD_FTP_ROOT_DIR=warehub',
-    'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR=storage',
-    'BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR=warehub/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR=storage/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR=images',
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
@@ -373,7 +375,7 @@ try {
     $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_HOST=' }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'ftp-missing.env' $lines)) 1
 
-    $nonFtpLines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_' -and $_ -notmatch '^BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=' }
+    $nonFtpLines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_' -and $_ -notmatch '^BACKEND_STAGE_UPLOAD_FTP_' }
     $nonFtpLines = $nonFtpLines | ForEach-Object {
       if ($_ -match '^BACKEND_UPLOAD_STORAGE_BACKEND=') { 'BACKEND_UPLOAD_STORAGE_BACKEND=local' } else { $_ }
     }

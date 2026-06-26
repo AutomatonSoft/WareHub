@@ -35,6 +35,7 @@ from .ftp_upload import (
     FtpUploadConfigError,
     FtpUploadCorruptedFileError,
     collect_uploaded_files,
+    delete_uploaded_photo_urls,
     upload_kid_photo_file,
     upload_jv_product_file_for_site,
     upload_public_file,
@@ -118,6 +119,15 @@ def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
             return "afterbuy_login_failed", message or "Afterbuy login failed."
 
     return "afterbuy_sync_failed", message or exc.__class__.__name__
+
+
+def _normalize_photo_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    return []
 
 
 def _normalize_search_text(value: object) -> str:
@@ -846,9 +856,31 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
             return KidUserReadSerializer
         return KidModelSerializer
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        old_photos = _normalize_photo_list(instance.photo)
+        payload = request.data.copy() if hasattr(request.data, "copy") else request.data
+        serializer = self.get_serializer(instance, data=payload, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        photo_was_provided = "photo" in serializer.validated_data
+        next_photos = _normalize_photo_list(serializer.validated_data.get("photo")) if photo_was_provided else old_photos
+        removed_photos = [url for url in old_photos if url not in next_photos]
+
+        with transaction.atomic():
+            self.perform_update(serializer)
+            if removed_photos:
+                delete_uploaded_photo_urls(removed_photos)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def perform_destroy(self, instance):
         default_connection = connections["default"]
         with transaction.atomic():
+            photo_urls = _normalize_photo_list(instance.photo)
+            if photo_urls:
+                delete_uploaded_photo_urls(photo_urls)
             Ean.objects.filter(kid_id=instance.id).delete()
             Orders.objects.filter(kid_id=instance.id).delete()
             ProductAttributes.objects.filter(kid_id=instance.id).delete()

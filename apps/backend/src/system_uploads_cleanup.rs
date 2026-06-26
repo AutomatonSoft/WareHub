@@ -81,32 +81,30 @@ fn extract_relative_public_path(photo_url: &str, config: &CleanupConfig) -> Opti
         if let Some(rest) = value.strip_prefix(&(base.to_string() + "/")) {
             rest.to_string()
         } else {
-            parse_relative_path_from_url(value, &config.ftp_root_dir)?
+            parse_managed_ftp_relative_path(value, &config.ftp_root_dir)?
         }
+    } else if value.starts_with("ftp://") {
+        parse_managed_ftp_relative_path(value, &config.ftp_root_dir)?
     } else {
-        parse_relative_path_from_url(value, &config.ftp_root_dir)?
+        return None;
     };
 
     sanitize_relative_path(&normalized)
 }
 
-fn parse_relative_path_from_url(value: &str, ftp_root_dir: &str) -> Option<String> {
-    if value.contains("://") {
-        let after_scheme = value.split_once("://")?.1;
-        let slash_pos = after_scheme.find('/')?;
-        let mut path = after_scheme[(slash_pos + 1)..].to_string();
-        if !ftp_root_dir.is_empty() {
-            let prefix = format!("{ftp_root_dir}/");
-            if let Some(rest) = path.strip_prefix(&prefix) {
-                path = rest.to_string();
-            }
-        }
+fn parse_managed_ftp_relative_path(value: &str, ftp_root_dir: &str) -> Option<String> {
+    if !value.starts_with("ftp://") {
+        return None;
+    }
+    let after_scheme = value.split_once("://")?.1;
+    let slash_pos = after_scheme.find('/')?;
+    let path = after_scheme[(slash_pos + 1)..].to_string();
+    if ftp_root_dir.is_empty() {
         return Some(path);
     }
-    if let Some(rest) = value.strip_prefix('/') {
-        return Some(rest.to_string());
-    }
-    Some(value.to_string())
+    let prefix = format!("{}/", ftp_root_dir.trim_matches('/'));
+    let rest = path.strip_prefix(&prefix)?;
+    Some(rest.to_string())
 }
 
 fn sanitize_relative_path(path: &str) -> Option<String> {

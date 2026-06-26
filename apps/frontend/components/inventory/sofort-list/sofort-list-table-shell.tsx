@@ -56,9 +56,9 @@ type PhotoPreview = {
 };
 
 function displayNullable(value: string | null): string {
-  if (value === null) return "null";
+  if (value === null) return "-";
   const normalized = value.trim();
-  return normalized.length > 0 ? normalized : "null";
+  return normalized.length > 0 ? normalized : "-";
 }
 
 function formatFileSize(bytes: number): string {
@@ -499,23 +499,23 @@ export function SofortListTableShell(props: {
                     <div className="wh-sofort-product-cell">
                       <div className="wh-sofort-product-cell__content">
                         <p className="wh-sofort-product-cell__title wh-inventory-title-text">
-                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID</span>
+                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID: </span>
                           <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Place ${row.place}`}>Place {props.highlightText(row.place, props.query)}</p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Location ${row.store ? "Store" : "Warehouse"}`}>Location {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}</p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Quantity ${row.quantity}`}>Quantity {props.highlightText(String(row.quantity), props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Place ${row.place}`}>Place: {props.highlightText(row.place, props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Location ${row.store ? "Store" : "Warehouse"}`}>Location: {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Quantity ${row.quantity}`}>Quantity: {props.highlightText(String(row.quantity), props.query)}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-3 py-3 align-middle">
                     <div className="wh-sofort-warehouse-cell">
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Room ${displayNullable(row.room)}`}><span>Room</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Type ${displayNullable(row.furnitureType)}`}><span>Type</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Company ${displayNullable(row.company)}`}><span>Company</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Color ${displayNullable(row.color)}`}><span>Color</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Size ${displayNullable(row.size)}`}><span>Size</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Material ${displayNullable(row.material)}`}><span>Material</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Room ${displayNullable(row.room)}`}><span>Room:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Type ${displayNullable(row.furnitureType)}`}><span>Type:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Company ${displayNullable(row.company)}`}><span>Company:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Color ${displayNullable(row.color)}`}><span>Color:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Size ${displayNullable(row.size)}`}><span>Size:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Material ${displayNullable(row.material)}`}><span>Material:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
                     </div>
                   </td>
                   <td className="px-3 py-3 align-middle">

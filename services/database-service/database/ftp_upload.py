@@ -34,7 +34,9 @@ UPLOAD_FTP_PORT = int((os.getenv("UPLOAD_FTP_PORT") or "21").strip())
 UPLOAD_FTP_ROOT_DIR = (os.getenv("UPLOAD_FTP_ROOT_DIR") or "").strip().strip("/")
 UPLOAD_FTP_STORAGE_ROOT_DIR = (os.getenv("UPLOAD_FTP_STORAGE_ROOT_DIR") or "").strip().strip("/")
 UPLOAD_FTP_AVATAR_DIR = (os.getenv("UPLOAD_FTP_AVATAR_DIR") or "avatar").strip().strip("/")
+UPLOAD_FTP_IMAGE_DIR = (os.getenv("UPLOAD_FTP_IMAGE_DIR") or "images").strip().strip("/")
 UPLOAD_FTP_PUBLIC_BASE_URL = (os.getenv("UPLOAD_FTP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+UPLOAD_STORAGE_BACKEND = (os.getenv("UPLOAD_STORAGE_BACKEND") or "").strip().lower()
 UPLOAD_FTP_USE_TLS = _is_true(os.getenv("UPLOAD_FTP_USE_TLS", "false"))
 UPLOAD_FTP_PASSIVE = _is_true(os.getenv("UPLOAD_FTP_PASSIVE", "true"))
 UPLOAD_FTP_CONNECT_TIMEOUT = int((os.getenv("UPLOAD_FTP_CONNECT_TIMEOUT") or "15").strip())
@@ -111,7 +113,7 @@ def _replace_filename_ext(filename: str, ext: str) -> str:
     return f"{stem}.{clean_ext}"
 
 
-def _ensure_config() -> tuple[str, int, str, str, list[str], str, str]:
+def _ensure_config(*, leaf_dir: str) -> tuple[str, int, str, str, list[str], str, str]:
     if not UPLOAD_FTP_HOST:
         raise FtpUploadConfigError("FTP config error: UPLOAD_FTP_HOST is empty.")
     if not UPLOAD_FTP_USER:
@@ -128,8 +130,10 @@ def _ensure_config() -> tuple[str, int, str, str, list[str], str, str]:
     else:
         remote_root = []
 
-    avatar_dir = UPLOAD_FTP_AVATAR_DIR or "avatar"
-    remote_parts = remote_root + [avatar_dir]
+    final_dir = (leaf_dir or "").strip().strip("/")
+    if not final_dir:
+        raise FtpUploadConfigError("FTP config error: target upload directory is empty.")
+    remote_parts = remote_root + [final_dir]
     return (
         UPLOAD_FTP_HOST,
         UPLOAD_FTP_PORT,
@@ -137,7 +141,7 @@ def _ensure_config() -> tuple[str, int, str, str, list[str], str, str]:
         UPLOAD_FTP_PASS,
         remote_parts,
         UPLOAD_FTP_PUBLIC_BASE_URL,
-        avatar_dir,
+        final_dir,
     )
 
 
@@ -201,7 +205,7 @@ def _xl_public_base_for_site_key(site_key: str) -> str:
     return f"https://www.{domain}/image" if domain else ""
 
 
-def _ensure_config_for_site_key(site_key: str) -> tuple[str, int, str, str, list[str], str, str, bool, bool, int]:
+def _ensure_config_for_site_key(site_key: str, *, leaf_dir: str) -> tuple[str, int, str, str, list[str], str, str, bool, bool, int]:
     key_norm = (site_key or "").strip().upper()
     is_jv_site = key_norm.startswith("JV_")
     is_xl_site = key_norm in XL_SITE_PUBLIC_DOMAINS
@@ -229,7 +233,7 @@ def _ensure_config_for_site_key(site_key: str) -> tuple[str, int, str, str, list
         or _jv_legacy_env_any(site_key, ["DOMAIN", "DOMIN"])
         or ("image" if is_xl_site else ("" if is_jv_site else UPLOAD_FTP_ROOT_DIR))
     ).strip().strip("/")
-    avatar_dir = (_sitekey_env_any(site_key, ["FTP_AVATAR_DIR", "AVATAR_DIR"]) or UPLOAD_FTP_AVATAR_DIR or "avatar").strip().strip("/")
+    final_dir = (leaf_dir or "").strip().strip("/")
     public_base_specific = (
         _sitekey_env_any(site_key, ["FTP_PUBLIC_BASE_URL", "PUBLIC_BASE_URL", "URL", "DOMAIN", "DOMIN"])
         or _jv_legacy_env_any(site_key, ["URL", "DOMAIN", "DOMIN"])
@@ -259,6 +263,8 @@ def _ensure_config_for_site_key(site_key: str) -> tuple[str, int, str, str, list
         raise FtpUploadConfigError(
             f"FTP config error: {site_key}_FTP_PUBLIC_BASE_URL (or UPLOAD_FTP_PUBLIC_BASE_URL) is empty."
         )
+    if not final_dir:
+        raise FtpUploadConfigError("FTP config error: target upload directory is empty.")
     if is_jv_site and not (storage_root or root_dir):
         raise FtpUploadConfigError(
             f"FTP config error: {site_key} needs FTP_*_DOMIN/DOMAIN (or FTP_ROOT_DIR) for JV cosmoshop path."
@@ -270,20 +276,128 @@ def _ensure_config_for_site_key(site_key: str) -> tuple[str, int, str, str, list
         remote_root = [p for p in root_dir.split("/") if p]
     else:
         remote_root = []
-    remote_parts = remote_root + [avatar_dir]
-    return host, port, user, password, remote_parts, public_base, avatar_dir, use_tls, passive, timeout
+    remote_parts = remote_root + [final_dir]
+    return host, port, user, password, remote_parts, public_base, final_dir, use_tls, passive, timeout
 
 
-def _build_public_url(public_base: str, avatar_dir: str, filename: str) -> str:
+def _build_public_url(public_base: str, leaf_dir: str, filename: str) -> str:
     parsed = urlparse(public_base)
     base_parts = [p for p in (parsed.path or "").split("/") if p]
-    avatar_parts = [p for p in avatar_dir.split("/") if p]
-    final_path = "/" + "/".join(base_parts + avatar_parts + [filename])
+    leaf_parts = [p for p in leaf_dir.split("/") if p]
+    final_path = "/" + "/".join(base_parts + leaf_parts + [filename])
     return urlunparse((parsed.scheme, parsed.netloc, final_path, "", "", ""))
 
 
-def _build_open_cart_image_path(avatar_dir: str, filename: str) -> str:
-    return "/".join([p for p in [*(avatar_dir or "").split("/"), filename] if p]).strip("/")
+def _build_open_cart_image_path(leaf_dir: str, filename: str) -> str:
+    return "/".join([p for p in [*(leaf_dir or "").split("/"), filename] if p]).strip("/")
+
+
+def _extract_managed_relative_path(photo_url: str) -> str | None:
+    value = str(photo_url or "").strip()
+    if not value:
+        return None
+
+    if value.startswith("/uploads/"):
+        candidate = value[len("/uploads/") :]
+        return _sanitize_relative_path(candidate)
+
+    if UPLOAD_FTP_PUBLIC_BASE_URL:
+        public_prefix = f"{UPLOAD_FTP_PUBLIC_BASE_URL}/"
+        if value.startswith(public_prefix):
+            candidate = value[len(public_prefix) :]
+            return _sanitize_relative_path(candidate)
+
+    if value.startswith("ftp://"):
+        parsed = urlparse(value)
+        path = (parsed.path or "").lstrip("/")
+        root = (UPLOAD_FTP_ROOT_DIR or "").strip().strip("/")
+        if root:
+            prefix = f"{root}/"
+            if not path.startswith(prefix):
+                return None
+            path = path[len(prefix) :]
+        return _sanitize_relative_path(path)
+
+    return None
+
+
+def _sanitize_relative_path(path: str) -> str | None:
+    parts = []
+    for part in str(path or "").split("/"):
+        trimmed = part.strip()
+        if not trimmed or trimmed in {".", ".."}:
+            continue
+        parts.append(trimmed)
+    if not parts:
+        return None
+    return "/".join(parts)
+
+
+def delete_uploaded_photo_by_url(photo_url: str) -> None:
+    relative_path = _extract_managed_relative_path(photo_url)
+    if not relative_path:
+        return
+
+    if UPLOAD_STORAGE_BACKEND == "ftp":
+        _delete_via_ftp(relative_path)
+        return
+
+    _delete_on_local_disk(relative_path)
+
+
+def delete_uploaded_photo_urls(photo_urls: list[str]) -> None:
+    for photo_url in photo_urls:
+        delete_uploaded_photo_by_url(photo_url)
+
+
+def _delete_on_local_disk(relative_path: str) -> None:
+    disk_path = Path("uploads") / relative_path.replace("\\", "/")
+    try:
+        disk_path.unlink(missing_ok=True)
+    except FileNotFoundError:
+        return
+
+
+def _delete_via_ftp(relative_path: str) -> None:
+    host = UPLOAD_FTP_HOST
+    user = UPLOAD_FTP_USER
+    password = UPLOAD_FTP_PASS
+    if not host or not user or not password:
+        raise FtpUploadConfigError("FTP config error: missing FTP credentials for delete.")
+
+    root = (UPLOAD_FTP_STORAGE_ROOT_DIR or "").strip().strip("/")
+    remote_full_path = f"{root}/{relative_path}" if root else relative_path
+    remote_dir, _, remote_file = remote_full_path.rpartition("/")
+    if not remote_file:
+        return
+
+    ftp_class = FTP_TLS if UPLOAD_FTP_USE_TLS else FTP
+    ftp = ftp_class()
+    try:
+        ftp.connect(host=host, port=UPLOAD_FTP_PORT, timeout=UPLOAD_FTP_CONNECT_TIMEOUT)
+        ftp.login(user=user, passwd=password)
+        ftp.set_pasv(UPLOAD_FTP_PASSIVE)
+
+        if isinstance(ftp, FTP_TLS):
+            ftp.prot_p()
+
+        if remote_dir:
+            ftp.cwd(remote_dir)
+        try:
+            ftp.delete(remote_file)
+        except FTP_ERRORS:
+            return
+    finally:
+        try:
+            if getattr(ftp, "sock", None):
+                ftp.quit()
+            else:
+                ftp.close()
+        except FTP_ERRORS:
+            try:
+                ftp.close()
+            except FTP_ERRORS:
+                pass
 
 
 def collect_uploaded_files(request, field_names: tuple[str, ...] = ("photo_files", "files", "images")) -> list:
@@ -301,7 +415,9 @@ def collect_uploaded_files(request, field_names: tuple[str, ...] = ("photo_files
 
 
 def upload_kid_photo_file(uploaded_file, *, kid_number: str) -> str:
-    host, port, user, password, remote_parts, public_base, avatar_dir = _ensure_config()
+    host, port, user, password, remote_parts, public_base, image_dir = _ensure_config(
+        leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images"
+    )
     filename = _build_filename(
         kid_number=kid_number.strip() or "unknown",
         original_name=getattr(uploaded_file, "name", ""),
@@ -349,11 +465,13 @@ def upload_kid_photo_file(uploaded_file, *, kid_number: str) -> str:
             except FTP_ERRORS:
                 pass
 
-    return _build_public_url(public_base, avatar_dir, filename)
+    return _build_public_url(public_base, image_dir, filename)
 
 
 def upload_public_file(uploaded_file, *, prefix: str = "jv") -> str:
-    host, port, user, password, remote_parts, public_base, avatar_dir = _ensure_config()
+    host, port, user, password, remote_parts, public_base, image_dir = _ensure_config(
+        leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images"
+    )
     filename = _build_generic_filename(
         prefix=prefix,
         original_name=getattr(uploaded_file, "name", ""),
@@ -400,11 +518,14 @@ def upload_public_file(uploaded_file, *, prefix: str = "jv") -> str:
             except FTP_ERRORS:
                 pass
 
-    return _build_public_url(public_base, avatar_dir, filename)
+    return _build_public_url(public_base, image_dir, filename)
 
 
 def upload_public_file_for_site_payload(uploaded_file, *, site_key: str, prefix: str = "jv") -> dict:
-    host, port, user, password, remote_parts, public_base, avatar_dir, use_tls, passive, timeout = _ensure_config_for_site_key(site_key)
+    host, port, user, password, remote_parts, public_base, image_dir, use_tls, passive, timeout = _ensure_config_for_site_key(
+        site_key,
+        leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images",
+    )
     filename = _build_generic_filename(
         prefix=prefix,
         original_name=getattr(uploaded_file, "name", ""),
@@ -452,8 +573,8 @@ def upload_public_file_for_site_payload(uploaded_file, *, site_key: str, prefix:
                 pass
 
     return {
-        "public_url": _build_public_url(public_base, avatar_dir, filename),
-        "db_path": _build_open_cart_image_path(avatar_dir, filename),
+        "public_url": _build_public_url(public_base, image_dir, filename),
+        "db_path": _build_open_cart_image_path(image_dir, filename),
         "filename": filename,
     }
 
@@ -531,7 +652,10 @@ def upload_jv_product_file_for_site(
       - "extra": write into z/zg
     Returns DB path and uploaded public URLs.
     """
-    host, port, user, password, remote_parts, public_base, avatar_dir, use_tls, passive, timeout = _ensure_config_for_site_key(site_key)
+    host, port, user, password, remote_parts, public_base, image_dir, use_tls, passive, timeout = _ensure_config_for_site_key(
+        site_key,
+        leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images",
+    )
     ean_digits = "".join(ch for ch in str(ean or "") if ch.isdigit())
     upload_bytes = _repair_known_image_header_corruption(_read_uploaded_bytes(uploaded_file))
     detected_ext = _validate_uploaded_image_bytes(upload_bytes, getattr(uploaded_file, "name", ""))
@@ -543,8 +667,8 @@ def upload_jv_product_file_for_site(
     filename = _replace_filename_ext(filename, detected_ext)
 
     base_parts = [p for p in remote_parts if p]
-    # _ensure_config_for_site_key appends avatar_dir for generic uploader, but JV needs cosmoshop root.
-    if avatar_dir and base_parts and base_parts[-1] == avatar_dir:
+    # _ensure_config_for_site_key appends the generic image dir, but JV needs cosmoshop root.
+    if image_dir and base_parts and base_parts[-1] == image_dir:
         base_parts = base_parts[:-1]
     base_parts = base_parts + ["cosmoshop", "default", "pix", "a"]
     is_main = str(kind or "").strip().lower() == "main"
