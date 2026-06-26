@@ -12,8 +12,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .api.marketplace_job_routes import MarketplaceJobDeps
 from .api.product_editor_routes import ProductEditorDeps
 from .api.routes import Deps, router
+from .application.marketplace_job_service import MarketplaceJobService
+from .application.marketplace_job_worker import run_marketplace_job_worker
 from .application.product_editor_service import ProductEditorService
 from .application.job_worker import run_job_worker
 from .application.reconciliation_scheduler import run_reconciliation_scheduler
@@ -25,6 +28,8 @@ from .infra.http_client import HttpClient
 from .infra.idempotency import SqliteIdempotencyStore
 from .infra.job_store import SqliteJobStore
 from .infra.marketplace_adapters import MarketplaceAdapters
+from .infra.marketplace_job_gateway import MarketplaceJobGateway
+from .infra.marketplace_job_store import SqliteMarketplaceJobStore
 from .infra.metrics import InMemoryMetrics
 from .infra.product_editor_gateway import ProductEditorGateway
 from .infra.product_editor_store import SqliteProductEditorStore
@@ -72,6 +77,22 @@ def _build_service() -> OrchestratorService:
     return OrchestratorService(adapters=adapters, circuit_breaker=circuit_breaker, channel_limiter=channel_limiter)
 
 
+def _build_marketplace_job_store() -> SqliteMarketplaceJobStore:
+    store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_marketplace.sqlite3")
+    return SqliteMarketplaceJobStore(db_path=_ensure_sqlite_parent_dir(store_path))
+
+
+def _build_marketplace_job_service() -> MarketplaceJobService:
+    http_client = _build_http_client()
+    gateway = MarketplaceJobGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+        timeout_seconds=settings.marketplace_toggle_timeout_seconds,
+    )
+    return MarketplaceJobService(gateway=gateway)
+
+
 def _build_idempotency_store() -> SqliteIdempotencyStore:
     return SqliteIdempotencyStore(
         db_path=_ensure_sqlite_parent_dir(settings.idempotency_sqlite_path),
@@ -112,6 +133,10 @@ def configure_runtime_dependencies() -> None:
         Deps.job_store = _build_job_store()
     if Deps.metrics is None:
         Deps.metrics = _build_metrics()
+    if MarketplaceJobDeps.store is None:
+        MarketplaceJobDeps.store = _build_marketplace_job_store()
+    if MarketplaceJobDeps.service is None:
+        MarketplaceJobDeps.service = _build_marketplace_job_service()
     if ProductEditorDeps.service is None:
         ProductEditorDeps.service = _build_product_editor_service(job_store=Deps.job_store)
 
@@ -124,12 +149,15 @@ def close_runtime_dependencies() -> None:
         _shared_http_client = None
 
     Deps.service = None
+    MarketplaceJobDeps.service = None
+    MarketplaceJobDeps.store = None
     ProductEditorDeps.service = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
+    marketplace_job_worker_task: asyncio.Task | None = None
     reconciliation_scheduler_task: asyncio.Task | None = None
     configure_runtime_dependencies()
     if settings.enable_job_worker:
@@ -141,6 +169,17 @@ async def lifespan(_app: FastAPI):
             run_job_worker(
                 service=service,
                 job_store=job_store,
+                poll_interval_seconds=settings.job_worker_poll_interval_seconds,
+            )
+        )
+        marketplace_service = MarketplaceJobDeps.service
+        marketplace_store = MarketplaceJobDeps.store
+        if marketplace_service is None or marketplace_store is None:
+            raise RuntimeError("Marketplace worker dependencies are not configured")
+        marketplace_job_worker_task = asyncio.create_task(
+            run_marketplace_job_worker(
+                service=marketplace_service,
+                job_store=marketplace_store,
                 poll_interval_seconds=settings.job_worker_poll_interval_seconds,
             )
         )
@@ -163,6 +202,12 @@ async def lifespan(_app: FastAPI):
             job_worker_task.cancel()
             try:
                 await job_worker_task
+            except asyncio.CancelledError:
+                pass
+        if marketplace_job_worker_task is not None:
+            marketplace_job_worker_task.cancel()
+            try:
+                await marketplace_job_worker_task
             except asyncio.CancelledError:
                 pass
         if reconciliation_scheduler_task is not None:

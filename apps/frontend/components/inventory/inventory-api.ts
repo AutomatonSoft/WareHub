@@ -313,6 +313,115 @@ export async function deleteInventoryEntity(params: {
   throw new Error(`Delete failed: HTTP ${response.status}`);
 }
 
+export type DeactivateJvSofortByKidResponse = {
+  status: string;
+  job_status?: "queued" | "running" | "completed" | "failed";
+  job_id?: string;
+  kid_number?: string;
+  kid_id?: number;
+  ean?: string;
+  mode?: string;
+  inactive?: boolean;
+  summary?: {
+    total: number;
+    success: number;
+    failed: number;
+  };
+  results?: Array<{
+    ok: boolean;
+    site_key: string;
+    channel: string;
+    status_code: number;
+    details?: Record<string, unknown>;
+  }>;
+};
+
+async function readJsonSafe(response: Response): Promise<Record<string, unknown> | null> {
+  try {
+    return (await response.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export async function createMarketplaceToggleJob(kidNumber: string, inactive = true): Promise<{ jobId: string }> {
+  const body = {
+    kid_number: kidNumber.trim(),
+    inactive: Boolean(inactive),
+  };
+
+  const response = await apiFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await readJsonSafe(response);
+  if (!response.ok) {
+    const backendMessage =
+      payload && typeof payload["message"] === "string"
+        ? payload["message"]
+        : payload && typeof payload["detail"] === "string"
+          ? payload["detail"]
+          : "";
+    throw new Error(backendMessage || `Marketplace toggle job create failed: HTTP ${response.status}`);
+  }
+  const jobId = String(payload?.["job_id"] || "").trim();
+  if (!jobId) {
+    throw new Error("Marketplace toggle job create failed: missing job_id");
+  }
+  return { jobId };
+}
+
+export async function getMarketplaceToggleJob(jobId: string): Promise<DeactivateJvSofortByKidResponse> {
+  const response = await apiFetch(`/api/v1/orchestrator/marketplace/jobs/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+  });
+  const payload = await readJsonSafe(response);
+  if (!response.ok) {
+    const backendMessage =
+      payload && typeof payload["message"] === "string"
+        ? payload["message"]
+        : payload && typeof payload["detail"] === "string"
+          ? payload["detail"]
+          : "";
+    throw new Error(backendMessage || `Marketplace toggle job fetch failed: HTTP ${response.status}`);
+  }
+  return (payload as DeactivateJvSofortByKidResponse | null) ?? { status: "failed", job_status: "failed" };
+}
+
+export async function deactivateJvSofortByKid(kidNumber: string, inactive = true): Promise<DeactivateJvSofortByKidResponse> {
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/marketplace/jv/deactivate-sofort-by-kid/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kid_number: kidNumber.trim(),
+        inactive: Boolean(inactive),
+      }),
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  const payload = await response.json().catch(() => null) as DeactivateJvSofortByKidResponse | null;
+  if (!response.ok) {
+    const backendMessage =
+      payload && typeof payload === "object" && "detail" in payload && typeof payload.detail === "string"
+        ? payload.detail
+        : payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+          ? payload.message
+          : "";
+    throw new Error(backendMessage || `JV sofort deactivate failed: HTTP ${response.status}`);
+  }
+
+  return payload ?? { status: "ok" };
+}
+
 export type KidDetailsModel = {
   id: number;
   kidNumber: string;

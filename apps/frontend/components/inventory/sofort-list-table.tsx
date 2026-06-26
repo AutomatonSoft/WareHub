@@ -13,6 +13,7 @@ import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
 import { fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
+import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
 import { SofortListErrorState } from "./sofort-list/sofort-list-error-state";
 import { SofortListLoadingState } from "./sofort-list/sofort-list-loading-state";
@@ -193,6 +194,7 @@ export function SofortListTable() {
         hoodJv: siteEans.hoodJv === placeholderEan ? normalizedRowEan : siteEans.hoodJv,
         hoodXl: siteEans.hoodXl === placeholderEan ? normalizedRowEan : siteEans.hoodXl
       };
+      const marketplaceActive = resolveMarketplaceActive(rawItem);
 
       return {
         id: item.id,
@@ -215,7 +217,8 @@ export function SofortListTable() {
         material: typeof rawItem.material === "string" && rawItem.material.trim().length > 0 ? rawItem.material.trim() : null,
         price: typeof rawItem.price === "string" && rawItem.price.trim().length > 0 ? rawItem.price.trim() : null,
         priceCurrency: typeof rawItem.price_currency === "string" && rawItem.price_currency.trim().length > 0 ? rawItem.price_currency.trim() : null,
-        listingStatus: item.listing_status === "listed" ? "listed" : "unlisted"
+        listingStatus: item.listing_status === "listed" ? "listed" : "unlisted",
+        marketplaceActive,
       } satisfies SofortListRow;
     });
 
@@ -324,8 +327,35 @@ export function SofortListTable() {
                 onToggleSelectVisible={toggleSelectVisible}
                 onToggleRowSelection={toggleRowSelection}
                 onUpdateRow={updateRowDraft}
+                onRefresh={() => void sofortListQuery.refetch()}
                 highlightText={highlightText}
-                labels={{ place: t.place, quantity: t.quantity, room: t.room, type: t.type }}
+                labels={{
+                  place: t.place,
+                  quantity: t.quantity,
+                  room: t.room,
+                  type: t.type,
+                  active: t.active,
+                  inactive: t.inactive,
+                  activate: t.activate,
+                  delete: t.delete,
+                  deactivate: t.deactivate,
+                  deleteFailed: t.deleteFailed,
+                  markedActive: t.markedActive,
+                  markedInactive: t.markedInactive,
+                  resultSuccessSites: t.resultSuccessSites,
+                  resultFailedSites: t.resultFailedSites,
+                  resultNoSiteData: t.resultNoSiteData,
+                  resultDialogTitle: t.resultDialogTitle,
+                  confirmActionTitle: t.confirmActionTitle,
+                  confirmActionMessage: t.confirmActionMessage,
+                  confirmActionCancel: t.cancel,
+                  confirmActionConfirm: t.confirm,
+                  confirmActionDetails: t.confirmActionDetails,
+                  confirmActionLive: t.confirmActionLive,
+                  confirmActionPending: t.confirmActionPending,
+                  confirmActionFootnoteDeactivate: t.confirmActionFootnoteDeactivate,
+                  confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
+                }}
               />
               {!error && rows.length > 0 ? (
                 <SofortListPagination

@@ -657,11 +657,26 @@ class DatabaseApiTests(APITestCase):
         first_call = mocked_fetch_snapshot.call_args_list[0]
         self.assertEqual(first_call.args[1], "JVM4062292028939")
         self.assertEqual(mocked_push.call_count, 4)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
 
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
     def test_marketplace_jv_deactivate_sofort_by_kid_falls_back_without_prefix(self, mocked_fetch_snapshot):
         kid = Kid.objects.create(kid_number=["KID-JV-FALLBACK"])
         Ean.objects.create(kid=kid, jv="4062292028939")
+        for site_key, product_id in (
+            ("JV_DE", 601),
+            ("JV_CO_UK", 602),
+            ("JV_CH", 603),
+            ("JV_AT", 604),
+        ):
+            ImportedProduct.objects.create(
+                site="JV",
+                site_key=site_key,
+                source_product_id=product_id,
+                ean="4062292028939",
+                status=True,
+            )
         mocked_fetch_snapshot.side_effect = [
             None,
             {
@@ -767,10 +782,17 @@ class DatabaseApiTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_207_MULTI_STATUS)
-        self.assertEqual(response.data["results"][0]["details"]["code"], "jv_sofort_not_found")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 4)
+        self.assertEqual(response.data["results"][0]["details"]["code"], "jv_sofort_already_inactive")
         self.assertEqual(mocked_fetch_snapshot.call_args_list[0].args[1], "JVM4062292028939")
         self.assertEqual(mocked_fetch_snapshot.call_args_list[1].args[1], "4062292028939")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
+        for site_key in ("JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"):
+            product = ImportedProduct.objects.get(site="JV", site_key=site_key, ean="4062292028939")
+            self.assertFalse(product.status)
 
     @patch("database.marketplace_deactivate_service.sync_children_from_snapshot")
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")

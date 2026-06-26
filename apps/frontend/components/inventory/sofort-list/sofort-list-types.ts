@@ -33,6 +33,7 @@ export type SofortListRow = {
   price: string | null;
   priceCurrency: string | null;
   listingStatus: "listed" | "unlisted";
+  marketplaceActive: boolean | null;
 };
 
 export type HighlightText = (value: string, query: string) => string | ReactNode[];

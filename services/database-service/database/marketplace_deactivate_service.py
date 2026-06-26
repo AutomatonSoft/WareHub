@@ -4,6 +4,7 @@ import requests
 from django.db import IntegrityError, transaction
 from rest_framework import status
 
+from catalog_core.models import ImportedProduct
 from database.models import EanStatus, Kid
 from hood_service.core import (
     HOOD_API_TIMEOUT,
@@ -587,6 +588,18 @@ def _apply_jv_sofort_deactivate(*, ean: str, site_key: str, inactive: bool, acto
     matched_candidate = None
     matched_snapshot = None
 
+    def _mark_local_inactive_if_present() -> ImportedProduct | None:
+        product = ImportedProduct.all_objects.filter(site="JV", site_key=site_key, ean=ean.strip()).first()
+        if product is None:
+            return None
+        desired_status = not bool(inactive)
+        product.status = desired_status
+        product.is_modified_locally = True
+        product.update_user = actor
+        product.save(update_fields=["status", "is_modified_locally", "update_user", "updated_at"])
+        mark_push_pushed(product)
+        return product
+
     for index, artikelnr_candidate in enumerate(candidates):
         try:
             snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, artikelnr_candidate)
@@ -615,31 +628,55 @@ def _apply_jv_sofort_deactivate(*, ean: str, site_key: str, inactive: bool, acto
         matched_candidate = artikelnr_candidate
         matched_snapshot = snapshot
         if not _is_truthy_sofort((snapshot.get("jv_fields") or {}).get("is_sofort")):
+            product, upsert_error = _ensure_local_jv_product_from_snapshot(
+                snapshot=matched_snapshot,
+                fallback_ean=ean,
+                site_key=site_key,
+                actor=actor,
+            )
+            if upsert_error is not None:
+                return upsert_error
+
+            desired_status = not bool(inactive)
+            product.status = desired_status
+            product.is_modified_locally = True
+            product.update_user = actor
+            product.save(update_fields=["status", "is_modified_locally", "update_user", "updated_at"])
+            mark_push_pushed(product)
             return {
-                "ok": False,
+                "ok": True,
                 "site_key": site_key,
                 "channel": "JV",
-                "status_code": status.HTTP_404_NOT_FOUND,
+                "status_code": status.HTTP_200_OK,
                 "details": {
-                    "code": "jv_sofort_not_found",
-                    "detail": "Товар найден по Artikel-Nr, но флаг is_sofort не установлен.",
+                    "code": "jv_sofort_already_inactive",
+                    "detail": "Товар найден по Artikel-Nr, но флаг is_sofort не установлен. Считаем сайт уже деактивированным.",
                     "artikelnr": artikelnr_candidate,
                     "ean": ean,
+                    "inactive": bool(inactive),
+                    "status": desired_status,
+                    "source_product_id": product.source_product_id,
+                    "is_sofort": False,
                 },
             }
         break
 
     if not matched_snapshot:
+        local_product = _mark_local_inactive_if_present()
         return {
-            "ok": False,
+            "ok": True,
             "site_key": site_key,
             "channel": "JV",
-            "status_code": status.HTTP_404_NOT_FOUND,
+            "status_code": status.HTTP_200_OK,
             "details": {
-                "code": "jv_artikelnr_not_found",
-                "detail": "Товар не найден в source DB по Artikel-Nr ни с префиксом JVM, ни без него.",
+                "code": "jv_artikelnr_missing_treated_inactive",
+                "detail": "Товар не найден в source DB по Artikel-Nr. Считаем сайт деактивированным.",
                 "ean": ean,
                 "attempted_artikelnr": candidates,
+                "inactive": bool(inactive),
+                "status": not bool(inactive),
+                "local_product_id": local_product.id if local_product is not None else None,
+                "source_product_id": local_product.source_product_id if local_product is not None else None,
             },
         }
 
@@ -1394,6 +1431,11 @@ def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor
         )
         for site_key in FIXED_JV_BATCH_SITE_KEYS
     ]
+
+    if results and all(row.get("ok") and row.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED} for row in results):
+        status_row, _ = EanStatus.objects.get_or_create(ean=kid)
+        status_row.jv = not bool(inactive)
+        status_row.save(update_fields=["jv"])
 
     response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_207_MULTI_STATUS
     payload = _build_success_response(
