@@ -157,9 +157,20 @@ async fn delete_via_ftp(config: CleanupConfig, relative_path: &str) -> Result<()
         ftp.login(&user, &pass).map_err(|e| e.to_string())?;
         ftp.transfer_type(FileType::Binary).map_err(|e| e.to_string())?;
         if !remote_dir.is_empty() {
-            ftp.cwd(&remote_dir).map_err(|e| e.to_string())?;
+            match ftp.cwd(&remote_dir) {
+                Ok(_) => {}
+                Err(error) if is_ftp_not_found_error(&error.to_string()) => {
+                    let _ = ftp.quit();
+                    return Ok(());
+                }
+                Err(error) => return Err(error.to_string()),
+            }
         }
-        let _ = ftp.rm(&remote_file);
+        if let Err(error) = ftp.rm(&remote_file) {
+            if !is_ftp_not_found_error(&error.to_string()) {
+                return Err(error.to_string());
+            }
+        }
         ftp.quit().map_err(|e| e.to_string())?;
         Ok(())
     })
@@ -176,9 +187,14 @@ fn split_remote_path(path: &str) -> (String, String) {
     }
 }
 
+fn is_ftp_not_found_error(error: &str) -> bool {
+    let normalized = error.to_ascii_lowercase();
+    normalized.contains("[550]") || normalized.contains("no such file or directory")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_relative_public_path, CleanupConfig};
+    use super::{extract_relative_public_path, is_ftp_not_found_error, CleanupConfig};
 
     fn cfg(base: Option<&str>) -> CleanupConfig {
         CleanupConfig {
@@ -206,5 +222,14 @@ mod tests {
             &cfg(Some("https://cdn.example.com")),
         );
         assert_eq!(path.as_deref(), Some("dev/A1/photo.jpg"));
+    }
+
+    #[test]
+    fn ftp_not_found_detection_matches_expected_errors() {
+        assert!(is_ftp_not_found_error(
+            "Invalid response: [550] 550 mediawarehub.veloxdesk.com/warehub/stage/avatar: No such file or directory"
+        ));
+        assert!(is_ftp_not_found_error("No such file or directory"));
+        assert!(!is_ftp_not_found_error("authentication failed"));
     }
 }
