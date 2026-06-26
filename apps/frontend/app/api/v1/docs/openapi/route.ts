@@ -59,7 +59,11 @@ async function fetchFirstOpenApiDocument(baseCandidates: string[], timeoutMs: nu
 
 function resolveDocsOrigin(request: Request): string | null {
   try {
-    return new URL(request.url).origin;
+    const url = new URL(request.url);
+    if (url.hostname === "localhost") {
+      url.hostname = "127.0.0.1";
+    }
+    return url.origin;
   } catch {
     return null;
   }
