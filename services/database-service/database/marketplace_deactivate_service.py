@@ -1,4 +1,5 @@
 import logging
+import re
 
 import requests
 from django.db import IntegrityError, transaction
@@ -89,6 +90,35 @@ def _find_kid_by_number(kid_number: str) -> Kid | None:
     if not normalized:
         return None
     return Kid.objects.filter(kid_number__contains=[normalized]).order_by("id").first()
+
+
+def _normalized_kid_place_value(value) -> str:
+    if isinstance(value, list):
+        if not value:
+            return ""
+        return str(value[-1] or "").strip()
+    return str(value or "").strip()
+
+
+def _resolve_marketplace_place_target(*, kid: Kid, inactive: bool, place: str | None) -> str:
+    if inactive:
+        current_place = _normalized_kid_place_value(kid.place)
+        if not re.fullmatch(r"-?\d+", current_place):
+            raise ValueError("Current place must be a whole number to deactivate.")
+        return f"-{abs(int(current_place))}"
+
+    normalized_place = str(place or "").strip()
+    if not normalized_place:
+        raise ValueError("place is required to activate marketplace item.")
+    return normalized_place
+
+
+def _update_kid_place_after_marketplace_toggle(*, kid: Kid, inactive: bool, place: str | None) -> None:
+    next_place = _resolve_marketplace_place_target(kid=kid, inactive=inactive, place=place)
+    if kid.place == next_place:
+        return
+    kid.place = next_place
+    kid.save(update_fields=["place"])
 
 
 def _response_payload_from_error(response) -> dict:
@@ -1249,7 +1279,14 @@ def deactivate_marketplaces_by_explicit_sites(*, ean: str, site_keys: list[str],
     )
 
 
-def deactivate_marketplaces_by_kid_number(*, kid_number: str, inactive: bool, actor: str, payloads_by_site_key: dict | None = None):
+def deactivate_marketplaces_by_kid_number(
+    *,
+    kid_number: str,
+    inactive: bool,
+    actor: str,
+    place: str | None = None,
+    payloads_by_site_key: dict | None = None,
+):
     payloads_by_site_key = {
         _normalize_target_site_key(key): value
         for key, value in (payloads_by_site_key or {}).items()
@@ -1283,23 +1320,43 @@ def deactivate_marketplaces_by_kid_number(*, kid_number: str, inactive: bool, ac
     for target in targets:
         source_field = target["source_field"]
         if target.get("unsupported"):
-            results.append(
-                {
-                    "ok": False,
-                    "site_key": target["site_key"],
-                    "channel": target["channel"],
-                    "status_code": status.HTTP_501_NOT_IMPLEMENTED,
-                    "details": {
-                        "code": "marketplace_deactivate_not_supported",
-                        "detail": (
-                            f"Автоматическая деактивация для поля EanStatus.{source_field} "
-                            "в текущей кодовой базе не реализована."
-                        ),
-                        "ean": target["ean"],
-                        "field": source_field,
-                    },
-                }
-            )
+            if inactive:
+                setattr(status_row, source_field, desired_flag_value)
+                status_row.save(update_fields=[source_field])
+                results.append(
+                    {
+                        "ok": True,
+                        "site_key": target["site_key"],
+                        "channel": target["channel"],
+                        "status_code": status.HTTP_200_OK,
+                        "details": {
+                            "code": "marketplace_deactivate_local_status_only",
+                            "detail": f"EanStatus.{source_field} updated locally without marketplace integration.",
+                            "ean": target["ean"],
+                            "field": source_field,
+                            "inactive": True,
+                            "status": desired_flag_value,
+                        },
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "ok": False,
+                        "site_key": target["site_key"],
+                        "channel": target["channel"],
+                        "status_code": status.HTTP_501_NOT_IMPLEMENTED,
+                        "details": {
+                            "code": "marketplace_deactivate_not_supported",
+                            "detail": (
+                                f"Автоматическая деактивация для поля EanStatus.{source_field} "
+                                "в текущей кодовой базе не реализована."
+                            ),
+                            "ean": target["ean"],
+                            "field": source_field,
+                        },
+                    }
+                )
             continue
 
         if target["channel"] == "JV":
@@ -1317,33 +1374,53 @@ def deactivate_marketplaces_by_kid_number(*, kid_number: str, inactive: bool, ac
                 actor=actor,
             )
         elif target["channel"] == "HOOD":
-            payload_override = payloads_by_site_key.get(target["site_key"])
-            if not isinstance(payload_override, dict) or not payload_override:
+            if inactive:
+                setattr(status_row, source_field, desired_flag_value)
+                status_row.save(update_fields=[source_field])
                 result = {
-                    "ok": False,
+                    "ok": True,
                     "site_key": target["site_key"],
                     "channel": "HOOD",
-                    "status_code": status.HTTP_400_BAD_REQUEST,
+                    "status_code": status.HTTP_200_OK,
                     "details": {
-                        "code": "marketplace_deactivate_payload_required",
+                        "code": "marketplace_deactivate_local_status_only",
                         "detail": (
-                            f"Для {target['site_key']} нужен explicit payloads['{target['site_key']}'], "
-                            "потому что точное downstream поле деактивации для Hood в текущем коде не зафиксировано."
+                            f"EanStatus.{source_field} updated locally without HOOD integration."
                         ),
                         "ean": target["ean"],
                         "field": source_field,
+                        "inactive": True,
+                        "status": desired_flag_value,
                     },
                 }
             else:
-                outbound_payload = dict(payload_override)
-                outbound_payload.setdefault("ean", target["ean"])
-                outbound_payload.setdefault("account", target["account"])
-                result = _apply_hood_patch(
-                    ean=target["ean"],
-                    site_key=target["site_key"],
-                    account=target["account"],
-                    payload=outbound_payload,
-                )
+                payload_override = payloads_by_site_key.get(target["site_key"])
+                if not isinstance(payload_override, dict) or not payload_override:
+                    result = {
+                        "ok": False,
+                        "site_key": target["site_key"],
+                        "channel": "HOOD",
+                        "status_code": status.HTTP_400_BAD_REQUEST,
+                        "details": {
+                            "code": "marketplace_deactivate_payload_required",
+                            "detail": (
+                                f"Для {target['site_key']} нужен explicit payloads['{target['site_key']}'], "
+                                "потому что точное downstream поле деактивации для Hood в текущем коде не зафиксировано."
+                            ),
+                            "ean": target["ean"],
+                            "field": source_field,
+                        },
+                    }
+                else:
+                    outbound_payload = dict(payload_override)
+                    outbound_payload.setdefault("ean", target["ean"])
+                    outbound_payload.setdefault("account", target["account"])
+                    result = _apply_hood_patch(
+                        ean=target["ean"],
+                        site_key=target["site_key"],
+                        account=target["account"],
+                        payload=outbound_payload,
+                    )
         else:
             result = {
                 "ok": False,
@@ -1377,6 +1454,19 @@ def deactivate_marketplaces_by_kid_number(*, kid_number: str, inactive: bool, ac
             }
         )
 
+    if results and all(row.get("ok") for row in results):
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
+
     payload = _build_success_response(
         entity_name="kid_number",
         entity_value=_primary_kid_number_value(kid),
@@ -1388,7 +1478,98 @@ def deactivate_marketplaces_by_kid_number(*, kid_number: str, inactive: bool, ac
     return payload
 
 
-def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor: str):
+def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive: bool, actor: str):
+    kid = _find_kid_by_number(kid_number)
+    if kid is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_not_found",
+                "detail": "Kid с таким kid_number не найден.",
+                "kid_number": str(kid_number or "").strip(),
+            },
+            "status_code": status.HTTP_404_NOT_FOUND,
+        }
+
+    ean_row = getattr(kid, "ean", None)
+    if ean_row is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_mapping_missing",
+                "detail": "У Kid отсутствует связанный Ean.",
+                "kid_number": _primary_kid_number_value(kid),
+            },
+            "status_code": status.HTTP_409_CONFLICT,
+        }
+
+    status_row, _ = EanStatus.objects.get_or_create(ean=kid)
+    desired_flag_value = not bool(inactive)
+    results: list[dict] = []
+    update_fields: list[str] = []
+
+    for field_name, channel in (
+        ("hood_jv", "HOOD"),
+        ("hood_xl", "HOOD"),
+        ("otto_jv", "OTTO"),
+        ("otto_xl", "OTTO"),
+        ("ebay_jv", "EBAY"),
+        ("ebay_xl", "EBAY"),
+        ("kaufland_jv", "KAUFLAND"),
+        ("kaufland_xl", "KAUFLAND"),
+    ):
+        ean_value = str(getattr(ean_row, field_name, "") or "").strip()
+        if not ean_value:
+            continue
+        if getattr(status_row, field_name, None) != desired_flag_value:
+            setattr(status_row, field_name, desired_flag_value)
+            update_fields.append(field_name)
+        results.append(
+            {
+                "ok": True,
+                "site_key": field_name.upper(),
+                "channel": channel,
+                "status_code": status.HTTP_200_OK,
+                "details": {
+                    "code": "marketplace_local_status_updated",
+                    "detail": f"EanStatus.{field_name} updated locally without marketplace integration.",
+                    "ean": ean_value,
+                    "field": field_name,
+                    "inactive": bool(inactive),
+                    "status": desired_flag_value,
+                },
+            }
+        )
+
+    if update_fields:
+        status_row.save(update_fields=update_fields)
+
+    if not results:
+        results.append(
+            {
+                "ok": False,
+                "site_key": "",
+                "channel": "LOCAL",
+                "status_code": status.HTTP_409_CONFLICT,
+                "details": {
+                    "code": "marketplace_local_status_no_targets",
+                    "detail": "Для этого Kid нет локальных marketplace targets для обновления.",
+                },
+            }
+        )
+
+    response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_409_CONFLICT
+    payload = _build_success_response(
+        entity_name="kid_number",
+        entity_value=_primary_kid_number_value(kid),
+        inactive=inactive,
+        results=results,
+        response_status=response_status,
+    )
+    payload["payload"]["kid_id"] = kid.id
+    payload["payload"]["mode"] = "local_status_only"
+    return payload
+
+
+def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
     kid = _find_kid_by_number(kid_number)
     if kid is None:
         return {
@@ -1436,6 +1617,17 @@ def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor
         status_row, _ = EanStatus.objects.get_or_create(ean=kid)
         status_row.jv = not bool(inactive)
         status_row.save(update_fields=["jv"])
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
 
     response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_207_MULTI_STATUS
     payload = _build_success_response(
@@ -1451,7 +1643,7 @@ def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor
     return payload
 
 
-def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str):
+def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
     kid = _find_kid_by_number(kid_number)
     if kid is None:
         return {
@@ -1550,6 +1742,18 @@ def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str
     response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_207_MULTI_STATUS
     if len(results) == 1 and results[0]["details"].get("code") == "marketplace_deactivate_no_active_targets":
         response_status = status.HTTP_409_CONFLICT
+    elif any(row.get("ok") and row.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED} for row in results):
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
 
     payload = _build_success_response(
         entity_name="kid_number",

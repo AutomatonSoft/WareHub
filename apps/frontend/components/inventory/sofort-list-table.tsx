@@ -353,6 +353,10 @@ export function SofortListTable() {
                   confirmActionDetails: t.confirmActionDetails,
                   confirmActionLive: t.confirmActionLive,
                   confirmActionPending: t.confirmActionPending,
+                  confirmActionCurrentPlace: t.confirmActionCurrentPlace,
+                  confirmActionNewPlace: t.confirmActionNewPlace,
+                  confirmActionPlacePlaceholder: t.confirmActionPlacePlaceholder,
+                  confirmActionPlaceRequired: t.confirmActionPlaceRequired,
                   confirmActionFootnoteDeactivate: t.confirmActionFootnoteDeactivate,
                   confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
                 }}

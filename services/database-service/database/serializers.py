@@ -181,6 +181,7 @@ class MarketplaceDeactivateByEANSerializer(serializers.Serializer):
 class MarketplaceDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
     inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     payloads = serializers.DictField(required=False, default=dict)
 
     def validate_kid_number(self, value):
@@ -189,27 +190,44 @@ class MarketplaceDeactivateByKidSerializer(serializers.Serializer):
             raise serializers.ValidationError("kid_number не может быть пустым.")
         return normalized
 
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
+
 
 class MarketplaceJVDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
     inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
 
     def validate_kid_number(self, value):
         normalized = str(value or "").strip()
         if not normalized:
             raise serializers.ValidationError("kid_number не может быть пустым.")
         return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
 
 
 class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
     inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
 
     def validate_kid_number(self, value):
         normalized = str(value or "").strip()
         if not normalized:
             raise serializers.ValidationError("kid_number не может быть пустым.")
         return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
 
 
 class EANPoolTakeNextSerializer(serializers.Serializer):

@@ -70,6 +70,8 @@ type MarketplaceResultDialogState = {
 type MarketplaceConfirmDialogState = {
   row: SofortListRow;
   inactive: boolean;
+  nextPlace: string;
+  placeError: string | null;
 };
 
 const MARKETPLACE_CONFIRM_TARGETS = [
@@ -271,6 +273,10 @@ export function SofortListTableShell(props: {
     confirmActionDetails: string;
     confirmActionLive: string;
     confirmActionPending: string;
+    confirmActionCurrentPlace: string;
+    confirmActionNewPlace: string;
+    confirmActionPlacePlaceholder: string;
+    confirmActionPlaceRequired: string;
     confirmActionFootnoteDeactivate: string;
     confirmActionFootnoteActivate: string;
   };
@@ -531,12 +537,12 @@ export function SofortListTableShell(props: {
     throw new Error(`Marketplace toggle job ${jobId} polling timed out.`);
   }
 
-  async function runMarketplaceAction(row: SofortListRow, nextInactive: boolean) {
+  async function runMarketplaceAction(row: SofortListRow, nextInactive: boolean, nextPlace: string) {
     if (deactivatingRowId) return;
 
     setDeactivatingRowId(row.id);
     try {
-      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive);
+      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive, nextPlace);
       const result = await waitForMarketplaceJobToFinish(created.jobId);
       props.onRefresh();
       setMarketplaceResult(buildMarketplaceResultDialogState(result, row.kidNumber, props.labels));
@@ -551,7 +557,7 @@ export function SofortListTableShell(props: {
   function requestMarketplaceAction(row: SofortListRow) {
     if (deactivatingRowId) return;
     const nextInactive = row.marketplaceActive !== false;
-    setMarketplaceConfirm({ row, inactive: nextInactive });
+    setMarketplaceConfirm({ row, inactive: nextInactive, nextPlace: "", placeError: null });
   }
 
   return (
@@ -743,9 +749,33 @@ export function SofortListTableShell(props: {
                 <div className="space-y-1 text-xs text-muted-foreground">
                   <p>KID: {marketplaceConfirm.row.kidNumber}</p>
                   <p>EAN: {marketplaceConfirm.row.ean || "—"}</p>
-                  <p>Place: {marketplaceConfirm.row.place || "—"}</p>
+                  <p>{props.labels.confirmActionCurrentPlace}: {marketplaceConfirm.row.place || "—"}</p>
                 </div>
               </div>
+
+              {!marketplaceConfirm.inactive ? (
+                <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      {props.labels.confirmActionNewPlace}
+                    </label>
+                    <Input
+                      value={marketplaceConfirm.nextPlace}
+                      placeholder={props.labels.confirmActionPlacePlaceholder}
+                      onChange={(event) =>
+                        setMarketplaceConfirm((current) =>
+                          current
+                            ? { ...current, nextPlace: event.target.value, placeError: null }
+                            : current
+                        )
+                      }
+                    />
+                    {marketplaceConfirm.placeError ? (
+                      <p className="text-xs text-destructive">{marketplaceConfirm.placeError}</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-border/70 bg-background p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -781,9 +811,13 @@ export function SofortListTableShell(props: {
               variant={marketplaceConfirm?.inactive ? "destructive" : "default"}
               onClick={() => {
                 if (!marketplaceConfirm) return;
-                const { row, inactive } = marketplaceConfirm;
+                if (!marketplaceConfirm.inactive && !marketplaceConfirm.nextPlace.trim()) {
+                  setMarketplaceConfirm((current) => current ? { ...current, placeError: props.labels.confirmActionPlaceRequired } : current);
+                  return;
+                }
+                const { row, inactive, nextPlace } = marketplaceConfirm;
                 setMarketplaceConfirm(null);
-                void runMarketplaceAction(row, inactive);
+                void runMarketplaceAction(row, inactive, nextPlace);
               }}
             >
               {marketplaceConfirm?.inactive ? props.labels.deactivate : props.labels.activate}

@@ -13,46 +13,54 @@ class MarketplaceJobService:
     def __init__(self, gateway: MarketplaceJobGateway) -> None:
         self.gateway = gateway
 
-    def execute(self, *, kid_number: str, inactive: bool, request_id: str) -> MarketplaceToggleExecutionResult:
+    def execute(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> MarketplaceToggleExecutionResult:
+        if inactive:
+            results = self._call_channel(
+                fallback_site_key="MARKETPLACE",
+                fallback_channel="MARKETPLACE",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_all_by_kid(
+                    kid_number=kid_number,
+                    inactive=True,
+                    request_id=request_id,
+                    place=place,
+                ),
+            )
+            success = sum(1 for item in results if item.ok)
+            failed = len(results) - success
+            if success == len(results):
+                status = "ok"
+            elif success == 0:
+                status = "failed"
+            else:
+                status = "partial"
+            return MarketplaceToggleExecutionResult(
+                status=status,
+                inactive=inactive,
+                summary=MarketplaceToggleSummary(total=len(results), success=success, failed=failed),
+                results=results,
+            )
+
         results: list[MarketplaceToggleResultItem] = []
         results.extend(
             self._call_channel(
                 fallback_site_key="JV",
                 fallback_channel="JV",
                 request_id=request_id,
-                call=lambda: self.gateway.toggle_jv_by_kid(kid_number=kid_number, inactive=inactive, request_id=request_id),
+                call=lambda: self.gateway.toggle_jv_by_kid(kid_number=kid_number, inactive=inactive, request_id=request_id, place=place),
             )
         )
-
-        if inactive:
-            results.extend(
-                self._call_channel(
-                    fallback_site_key="HOOD",
-                    fallback_channel="HOOD",
-                    request_id=request_id,
-                    call=lambda: self.gateway.toggle_hood_by_kid(kid_number=kid_number, inactive=True, request_id=request_id),
-                )
-            )
-        else:
-            results.append(
-                MarketplaceToggleResultItem(
-                    ok=False,
-                    site_key="HOOD",
-                    channel="HOOD",
-                    status_code=501,
-                    details={
-                        "code": "marketplace_toggle_not_supported_yet",
-                        "detail": "HOOD activate flow is not implemented yet in database-service.",
-                    },
-                )
-            )
-
         results.extend(
-            [
-                self._stub_result(site_key="OTTO", channel="OTTO"),
-                self._stub_result(site_key="EBAY", channel="EBAY"),
-                self._stub_result(site_key="KAUFLAND", channel="KAUFLAND"),
-            ]
+            self._call_channel(
+                fallback_site_key="LOCAL",
+                fallback_channel="LOCAL",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_local_statuses_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                ),
+            )
         )
 
         success = sum(1 for item in results if item.ok)
@@ -147,15 +155,3 @@ class MarketplaceJobService:
                 details=body,
             )
         ]
-
-    def _stub_result(self, *, site_key: str, channel: str) -> MarketplaceToggleResultItem:
-        return MarketplaceToggleResultItem(
-            ok=False,
-            site_key=site_key,
-            channel=channel,
-            status_code=501,
-            details={
-                "code": "marketplace_toggle_not_supported_yet",
-                "detail": f"{channel} toggle flow is not implemented yet.",
-            },
-        )

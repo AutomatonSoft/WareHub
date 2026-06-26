@@ -51,6 +51,7 @@ from database.views_dectivate import (
     MarketplaceDeactivateByKidAPIView,
     MarketplaceHoodDeactivateByKidAPIView,
     MarketplaceJVDeactivateSofortByKidAPIView,
+    MarketplaceLocalStatusesByKidAPIView,
 )
 from orders_pars.views import (
     AfterbuyItemSearchAPIView,
@@ -110,6 +111,7 @@ api_v1_patterns = [
     path("api/v1/marketplace/deactivate-by-kid/", MarketplaceDeactivateByKidAPIView.as_view(), name="marketplace-deactivate-by-kid-v1"),
     path("api/v1/marketplace/jv/deactivate-sofort-by-kid/", MarketplaceJVDeactivateSofortByKidAPIView.as_view(), name="marketplace-jv-deactivate-sofort-by-kid-v1"),
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
+    path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
     path("api/v1/kids/import-kid-green/", KidGreenImportAPIView.as_view(), name="kid-green-import-v1"),
     path("api/v1/kids/import-kid-green/jobs/<str:job_id>/", KidGreenImportJobStatusAPIView.as_view(), name="kid-green-import-job-status-v1"),

@@ -34,22 +34,51 @@ class MarketplaceJobGateway:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
         return headers
 
-    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str) -> GatewayResult:
+    def toggle_all_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> GatewayResult:
+        body = {"kid_number": kid_number, "inactive": inactive}
+        if place:
+            body["place"] = place
         response = self.http.request(
             "POST",
-            f"{self.base_url}/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            f"{self.base_url}/api/v1/marketplace/deactivate-by-kid/",
+            headers=self._headers(request_id),
+            json=body,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def toggle_local_statuses_by_kid(self, *, kid_number: str, inactive: bool, request_id: str) -> GatewayResult:
+        response = self.http.request(
+            "POST",
+            f"{self.base_url}/api/v1/marketplace/local-statuses-by-kid/",
             headers=self._headers(request_id),
             json={"kid_number": kid_number, "inactive": inactive},
             timeout_seconds=self.timeout_seconds,
         )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
-    def toggle_hood_by_kid(self, *, kid_number: str, inactive: bool, request_id: str) -> GatewayResult:
+    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> GatewayResult:
+        body = {"kid_number": kid_number, "inactive": inactive}
+        if place:
+            body["place"] = place
+        response = self.http.request(
+            "POST",
+            f"{self.base_url}/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            headers=self._headers(request_id),
+            json=body,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def toggle_hood_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> GatewayResult:
+        body = {"kid_number": kid_number, "inactive": inactive}
+        if place:
+            body["place"] = place
         response = self.http.request(
             "POST",
             f"{self.base_url}/api/v1/marketplace/hood/deactivate-by-kid/",
             headers=self._headers(request_id),
-            json={"kid_number": kid_number, "inactive": inactive},
+            json=body,
             timeout_seconds=self.timeout_seconds,
         )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))

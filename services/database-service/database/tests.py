@@ -545,10 +545,82 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.hood_jv)
         self.assertFalse(status_row.hood_xl)
 
+    def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
+        kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+            otto_jv="5062292028939",
+            ebay_jv="6062292028939",
+            kaufland_jv="7062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=True,
+            otto_jv=True,
+            ebay_jv=True,
+            kaufland_jv=True,
+        )
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-LOCAL-ONLY", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["failed"], 0)
+        site_keys = {row["site_key"]: row for row in response.data["results"]}
+        self.assertEqual(site_keys["HOOD_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["OTTO_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["KAUFLAND_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.hood_jv)
+        self.assertFalse(status_row.otto_jv)
+        self.assertFalse(status_row.ebay_jv)
+        self.assertFalse(status_row.kaufland_jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    def test_marketplace_local_statuses_by_kid_updates_unsupported_channels_on_activate(self):
+        kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+            otto_jv="5062292028939",
+            ebay_jv="6062292028939",
+            kaufland_jv="7062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=False,
+            otto_jv=False,
+            ebay_jv=False,
+            kaufland_jv=False,
+        )
+
+        response = self.client.post(
+            "/api/v1/marketplace/local-statuses-by-kid/",
+            {"kid_number": "KID-LOCAL-ACTIVATE", "inactive": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["failed"], 0)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
+        self.assertTrue(status_row.otto_jv)
+        self.assertTrue(status_row.ebay_jv)
+        self.assertTrue(status_row.kaufland_jv)
+
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
     @patch("database.marketplace_deactivate_service.push_product_to_source")
     def test_marketplace_jv_deactivate_sofort_by_kid_uses_jvm_prefix_first(self, mocked_push, mocked_fetch_snapshot):
-        kid = Kid.objects.create(kid_number=["KID-JV-SOFORT"])
+        kid = Kid.objects.create(kid_number=["KID-JV-SOFORT"], place="4")
         Ean.objects.create(kid=kid, jv="4062292028939")
         mocked_fetch_snapshot.side_effect = [
             {
@@ -659,6 +731,118 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(mocked_push.call_count, 4)
         status_row = EanStatus.objects.get(ean=kid)
         self.assertFalse(status_row.jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_jv_activate_sofort_by_kid_updates_place_from_request(self, mocked_push, mocked_fetch_snapshot):
+        kid = Kid.objects.create(kid_number=["KID-JV-ACTIVATE"], place="-4")
+        Ean.objects.create(kid=kid, jv="4062292028939")
+        mocked_fetch_snapshot.side_effect = [
+            {
+                "product": {
+                    "product_id": 701,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-701",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 702,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-702",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 703,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-703",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 704,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-704",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-JV-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
 
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
     def test_marketplace_jv_deactivate_sofort_by_kid_falls_back_without_prefix(self, mocked_fetch_snapshot):

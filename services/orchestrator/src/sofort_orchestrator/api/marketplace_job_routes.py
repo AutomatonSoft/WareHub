@@ -76,7 +76,14 @@ def create_marketplace_toggle_job(
             message="kid_number must be non-empty",
         )
     job_id = str(uuid.uuid4())
-    store.create_job(job_id=job_id, request_id=request_id, kid_number=kid_number, inactive=body.inactive)
+    place = body.place.strip() if isinstance(body.place, str) else ""
+    store.create_job(
+        job_id=job_id,
+        request_id=request_id,
+        kid_number=kid_number,
+        inactive=body.inactive,
+        place=place or None,
+    )
     return MarketplaceToggleCreateResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED)
 
 

@@ -344,10 +344,11 @@ async function readJsonSafe(response: Response): Promise<Record<string, unknown>
   }
 }
 
-export async function createMarketplaceToggleJob(kidNumber: string, inactive = true): Promise<{ jobId: string }> {
+export async function createMarketplaceToggleJob(kidNumber: string, inactive = true, place?: string): Promise<{ jobId: string }> {
   const body = {
     kid_number: kidNumber.trim(),
     inactive: Boolean(inactive),
+    ...(place?.trim() ? { place: place.trim() } : {}),
   };
 
   const response = await apiFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
