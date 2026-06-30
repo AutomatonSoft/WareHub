@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from .models import ImportedProduct
+from .batch_defaults import DEFAULT_CURRENCY_BY_SITE_KEY
 from .source_schema import (
     table_exists as _table_exists,
     table_has_column as _table_has_column,
@@ -32,6 +33,27 @@ from .source_values import (
 )
 
 
+# JV-wide invariants enforced here so create and push share the same guarantee:
+#  - manufacturer (hersteller) is always "JVMOEBEL";
+#  - the manufacturer article number (Hersteller-Artikelnr., stored as the
+#    supplier liefernr in shopartikellieferanteninfo) is always "JVM<EAN>".
+# The plain article number (artikelnr / "Artikel-Nr.") stays user-controlled.
+_JV_HERSTELLER = "JVMOEBEL"
+
+
+def _jv_hersteller_artikelnr(product: ImportedProduct) -> str:
+    ean = (product.ean or "").strip()
+    return f"JVM{ean}" if ean else ""
+
+
+def _currency_for_product(product: ImportedProduct) -> str:
+    # The price row currency must match the shop currency, otherwise the storefront
+    # (which filters prices by currency) finds no price and shows 0 until a manual
+    # admin save fixes it. CH -> CHF, CO_UK -> GBP, DE/AT -> EUR.
+    site_key = str(getattr(product, "site_key", "") or "").strip().upper()
+    return DEFAULT_CURRENCY_BY_SITE_KEY.get(site_key, "EUR")
+
+
 def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
     if not _table_exists(cur, "shopartikel"):
         raise RuntimeError("source JV table shopartikel not found")
@@ -46,6 +68,10 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
         "artikelnr": (product.source_model or "").strip() or (product.ean or "").strip(),
         "is_sofort": _to_int_or_default(jv_overrides.get("is_sofort"), 1),
         "auto": 0,
+        # The storefront price calculation skips rows where `subsequent` is NULL
+        # (the column default), showing 0 until a manual admin save sets it to 0.
+        # New JV products must carry subsequent=0 so the price renders immediately.
+        "subsequent": 0,
         "inaktiv": 0 if bool(product.status) else 1,
         "mwstid": _to_int_or_default(jv_overrides.get("mwstid"), 3),
         "lieferzeitid": lieferzeit_value,
@@ -54,12 +80,16 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
         "einheitid": _to_int_or_default(jv_overrides.get("einheitid"), 6),
         "grundeinheit": _to_int_or_default(jv_overrides.get("grundeinheit"), 6),
         "vpe": _to_int_or_default(jv_overrides.get("vpe"), 1),
+        # "Menge" in the Grundpreis block ("Menge und Einheit") maps to shopartikel.inhalt,
+        # which defaults to 0 in the DB. New products must carry a content quantity of 1
+        # (matching the main product), otherwise the storefront shows "Menge 0".
+        "inhalt": _to_int_or_default(jv_overrides.get("vpe"), 1),
         "type": 0,
         "erfasst": now,
         "geaendert": now,
         "user": (product.update_user or "system_import"),
         "ean": (product.ean or "").strip(),
-        "hersteller": str(product.manufacturer_id or ""),
+        "hersteller": _JV_HERSTELLER,
         "uvp": uvp_value,
         "jfsku": (product.source_sku or "").strip(),
         "jtl_dimensions_length": 0,
@@ -95,7 +125,7 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
             "prozent": 0,
             "basis": str(jv_overrides.get("preisbasis") or "brutto"),
             "filter": str(jv_overrides.get("preisfilter") or "default"),
-            "waehrung": "EUR",
+            "waehrung": _currency_for_product(product),
             "auto": 0,
             "second_price": 0,
         }
@@ -158,13 +188,10 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
         seo_values = _resolve_jv_seo_values(product, content_overrides)
         _sync_jv_seo(cur, artikelid, language_code="de", **seo_values)
 
-    supplier_value = (
-        jv_overrides.get("liefernr")
-        if jv_overrides.get("liefernr") is not None
-        else jv_overrides.get("supplier_liefernr")
-    )
-    if supplier_value is not None:
-        _sync_jv_supplier_liefernr(cur, artikelid, supplier_value)
+    # Hersteller-Artikelnr.: always store "JVM<EAN>" as the supplier liefernr.
+    hersteller_artikelnr = _jv_hersteller_artikelnr(product)
+    if hersteller_artikelnr:
+        _sync_jv_supplier_liefernr(cur, artikelid, hersteller_artikelnr)
 
     _sync_jv_rubrikartikel(cur, artikelid, list(product.categories.all().values("category_id", "main_category")))
     _sync_jv_images(cur, artikelid, product)
@@ -199,7 +226,6 @@ def _push_product_to_jv_source(
         "source_sku": ("jfsku", (product.source_sku or "").strip()),
         "source_ean_field": ("ean", (product.ean or "").strip()),
         "status": ("inaktiv", 0 if bool(product.status) else 1),
-        "manufacturer_id": ("hersteller", str(product.manufacturer_id or "")),
         "image": ("bild", normalized_main_image),
     }
     update_pairs = []
@@ -208,6 +234,16 @@ def _push_product_to_jv_source(
             col, val = update_map[key]
             if _table_has_column(cur, "shopartikel", col):
                 update_pairs.append((col, val))
+
+    # JV invariant: manufacturer is always JVMOEBEL (the plain artikelnr /
+    # "Artikel-Nr." stays user-controlled; the Hersteller-Artikelnr. is enforced
+    # below via the supplier liefernr).
+    if _table_has_column(cur, "shopartikel", "hersteller"):
+        update_pairs.append(("hersteller", _JV_HERSTELLER))
+    # Ensure the storefront-price guard column is never left NULL on re-pushes of
+    # products that were created before this was set (see create path for details).
+    if _table_has_column(cur, "shopartikel", "subsequent"):
+        update_pairs.append(("subsequent", 0))
     if _table_has_column(cur, "shopartikel", "geaendert"):
         update_pairs.append(("geaendert", datetime.utcnow()))
     if "image" in changed_scalar_fields and _table_has_column(cur, "shopartikel", "image"):
@@ -255,7 +291,7 @@ def _push_product_to_jv_source(
             "prozent": 0,
             "basis": str(jv_overrides.get("preisbasis") or "brutto"),
             "filter": str(jv_overrides.get("preisfilter") or "default"),
-            "waehrung": "EUR",
+            "waehrung": _currency_for_product(product),
             "auto": 0,
             "second_price": 0,
         }
@@ -334,13 +370,10 @@ def _push_product_to_jv_source(
         seo_values = _resolve_jv_seo_values(product, content_overrides)
         _sync_jv_seo(cur, artikelid, language_code="de", **seo_values)
 
-    supplier_value = (
-        jv_overrides.get("liefernr")
-        if jv_overrides.get("liefernr") is not None
-        else jv_overrides.get("supplier_liefernr")
-    )
-    if supplier_value is not None:
-        _sync_jv_supplier_liefernr(cur, artikelid, supplier_value)
+    # Hersteller-Artikelnr.: always store "JVM<EAN>" as the supplier liefernr.
+    hersteller_artikelnr = _jv_hersteller_artikelnr(product)
+    if hersteller_artikelnr:
+        _sync_jv_supplier_liefernr(cur, artikelid, hersteller_artikelnr)
 
     if "images" in changed_relations or "image" in changed_scalar_fields:
         _sync_jv_images(cur, artikelid, product)

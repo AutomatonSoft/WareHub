@@ -38,7 +38,7 @@ class Kid(Model):
         blank=True,
         db_index=True,
     )
-    place = JSONField(default=list, null=True, blank=True)
+    place = CharField(max_length=255, null=True, blank=True)
     store = BooleanField(default=False)
     photo = JSONField(default=list, blank=True)
     room = CharField(max_length=128, null=True, blank=True)
@@ -55,9 +55,9 @@ class Kid(Model):
 
 
 class Ean(Model):
-    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean_site")
+    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean")
     main_ean = CharField(max_length=16, null=True, blank=True)
-    jv = CharField(max_length=16, null=True, blank=True)
+    jv = CharField(max_length=64, null=True, blank=True)
     xl = CharField(max_length=16, null=True, blank=True)
     otto_jv = CharField(max_length=16, null=True, blank=True)
     otto_xl = CharField(max_length=16, null=True, blank=True)
@@ -68,6 +68,18 @@ class Ean(Model):
     ebay_jv = CharField(max_length=16, null=True, blank=True)
     ebay_xl = CharField(max_length=16, null=True, blank=True)
 
+class EanStatus(Model):
+    ean = OneToOneField(Kid, on_delete=CASCADE, related_name="status")
+    jv = BooleanField(default=False)
+    xl = BooleanField(default=False)
+    otto_jv = BooleanField(default=False)
+    otto_xl = BooleanField(default=False)
+    kaufland_jv = BooleanField(default=False)
+    kaufland_xl = BooleanField(default=False)
+    hood_jv = BooleanField(default=False)
+    hood_xl = BooleanField(default=False)
+    ebay_jv = BooleanField(default=False)
+    ebay_xl = BooleanField(default=False)
 
 
 class Orders(Model):

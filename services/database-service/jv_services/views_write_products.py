@@ -12,6 +12,13 @@ def create_local_product_from_payload(
     payload: dict,
     actor: str,
 ) -> ImportedProduct:
+    raw_quantity = payload.get("quantity")
+    try:
+        normalized_quantity = int(raw_quantity) if raw_quantity is not None else 1
+    except (TypeError, ValueError):
+        normalized_quantity = 1
+    if normalized_quantity <= 0:
+        normalized_quantity = 1
     product = ImportedProduct.objects.create(
         site=site,
         site_key=site_key,
@@ -21,7 +28,7 @@ def create_local_product_from_payload(
         source_sku=str(payload.get("source_sku") or "").strip(),
         source_ean_field=str(payload.get("source_ean_field") or "").strip(),
         price=payload.get("price"),
-        quantity=payload.get("quantity"),
+        quantity=normalized_quantity,
         status=bool(payload.get("status", False)),
         manufacturer_id=payload.get("manufacturer_id"),
         stock_status_id=payload.get("stock_status_id"),

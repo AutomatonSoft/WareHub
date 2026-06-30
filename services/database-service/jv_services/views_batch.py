@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from database.permissions import SessionRolePermission
 
 from .batch_service import create_job_with_plan
+from .create_service import enqueue_create_job
 from .models import ImportedProduct, JVBatchJob, JVBatchJobItem
 from .serializers import JVBatchJobSerializer, JVBatchPayloadSerializer
 from .source_client import fetch_source_language_id_by_locale, source_db_config_for_site
@@ -144,6 +145,52 @@ class JVBatchApplyByEANAPIView(APIView):
                 "accepted": True,
                 "job": JVBatchJobSerializer(job).data,
                 "language_mapping_by_site": _collect_language_mapping_by_site(job),
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class JVProductCreateJobEnqueueAPIView(APIView):
+    """Enqueue a background "create JV sofort product" job (one per 4 sites).
+
+    The frontend uploads the gallery and builds the per-site create payloads,
+    then posts them here. The persistent JV batch worker picks the job up and
+    runs create-and-push per site, so the work survives a page reload and the
+    user can keep working while a toast is shown on completion.
+    """
+
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        ean = str(body.get("ean") or "").strip()
+        name = str(body.get("name") or "").strip()
+        sites = body.get("sites")
+
+        if not ean:
+            return Response(
+                {"code": "jv_create_job_missing_ean", "detail": "EAN is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(sites, list) or not any(
+            isinstance(entry, dict) and entry.get("site_key") and isinstance(entry.get("payload"), dict)
+            for entry in sites
+        ):
+            return Response(
+                {
+                    "code": "jv_create_job_missing_sites",
+                    "detail": "At least one site with a payload is required.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        job = enqueue_create_job(request=request, ean=ean, name=name, sites=sites)
+        return Response(
+            {
+                "code": "jv_create_job_accepted",
+                "detail": "Create job accepted and queued.",
+                "accepted": True,
+                "job": JVBatchJobSerializer(job).data,
             },
             status=status.HTTP_202_ACCEPTED,
         )

@@ -105,16 +105,20 @@ def bulk_create_stores(product: ImportedProduct, stores) -> None:
 def bulk_create_images(product: ImportedProduct, images) -> None:
     if not images:
         return
-    ImportedProductImage.objects.bulk_create(
-        [
-            ImportedProductImage(
-                product=product,
-                image=str(item.get("image") or "").strip(),
-                sort_order=int(item.get("sort_order") or 0),
-            )
-            for item in images
-        ]
-    )
+    # Deduplicate by image path (the upstream feed can repeat images) and
+    # re-sequence sort_order so the stored gallery has no gaps or duplicates.
+    seen: set[str] = set()
+    rows: list[ImportedProductImage] = []
+    for item in images:
+        image = str(item.get("image") or "").strip()
+        if not image or image in seen:
+            continue
+        seen.add(image)
+        rows.append(
+            ImportedProductImage(product=product, image=image, sort_order=len(rows))
+        )
+    if rows:
+        ImportedProductImage.objects.bulk_create(rows)
 
 
 def bulk_create_specials(product: ImportedProduct, specials, *, modified_default: bool) -> None:

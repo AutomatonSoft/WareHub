@@ -136,6 +136,11 @@ class ImportedProductPatchSerializer(serializers.Serializer):
     images = ImportedProductImagePatchSerializer(many=True, required=False)
     specials = ImportedProductSpecialPatchSerializer(many=True, required=False)
     jv_fields = serializers.DictField(required=False)
+    translate_texts = serializers.BooleanField(required=False, default=False)
+    translation_source_language = serializers.CharField(max_length=16, required=False, allow_blank=True)
+    locale_by_site_key = serializers.DictField(child=serializers.CharField(max_length=16), required=False)
+    convert_currency = serializers.BooleanField(required=False, default=False)
+    source_currency = serializers.CharField(max_length=8, required=False, allow_blank=True)
 
     def validate_descriptions(self, value):
         lang_ids = [item["language_id"] for item in value]

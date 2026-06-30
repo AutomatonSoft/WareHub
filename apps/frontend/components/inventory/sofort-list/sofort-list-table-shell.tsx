@@ -1,15 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { ImageIcon, ImagePlus, Loader2, Package2, Palette, Plus, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ImageIcon, ImagePlus, Loader2, Package2, Palette, Plus, Upload, X } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { bulkUpdateKids, fetchKidDetails, patchKidDetails, patchKidMarketplaceEans, uploadKidImages } from "../inventory-api";
+import { cn } from "@/lib/utils";
+import { bulkUpdateKids, createMarketplaceToggleJob, fetchKidDetails, getMarketplaceToggleJob, patchKidDetails, patchKidMarketplaceEans, uploadKidImages } from "../inventory-api";
+import { useToast } from "../../shared/toast-provider";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
@@ -55,6 +59,30 @@ type PhotoPreview = {
   url: string;
 };
 
+type MarketplaceActionResult = Awaited<ReturnType<typeof getMarketplaceToggleJob>>;
+
+type MarketplaceResultDialogState = {
+  kidNumber: string;
+  title: string;
+  successSites: string[];
+  failedSites: string[];
+};
+
+type MarketplaceConfirmDialogState = {
+  row: SofortListRow;
+  inactive: boolean;
+  nextPlace: string;
+  placeError: string | null;
+};
+
+const MARKETPLACE_CONFIRM_TARGETS = [
+  { key: "JV", state: "live" as const },
+  { key: "HOOD", state: "live" as const },
+  { key: "OTTO", state: "pending" as const },
+  { key: "EBAY", state: "pending" as const },
+  { key: "KAUFLAND", state: "pending" as const },
+];
+
 function displayNullable(value: string | null): string {
   if (value === null) return "-";
   const normalized = value.trim();
@@ -67,6 +95,40 @@ function formatFileSize(bytes: number): string {
     return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildMarketplaceResultDialogState(
+  payload: MarketplaceActionResult,
+  kidNumber: string,
+  labels: {
+    markedActive: string;
+    markedInactive: string;
+  },
+): MarketplaceResultDialogState {
+  const successSites: string[] = [];
+  const failedSites: string[] = [];
+
+  for (const row of payload.results ?? []) {
+    const siteKey = String(row.site_key || "").trim() || "UNKNOWN";
+    const detailCode =
+      row.details && typeof row.details === "object" && typeof row.details.code === "string"
+        ? row.details.code
+        : null;
+    const suffix = row.ok ? `${siteKey} (${row.status_code})` : `${siteKey} (${row.status_code}${detailCode ? `, ${detailCode}` : ""})`;
+    if (row.ok) successSites.push(suffix);
+    else failedSites.push(suffix);
+  }
+
+  return {
+    kidNumber,
+    title: payload.inactive ? labels.markedInactive : labels.markedActive,
+    successSites,
+    failedSites,
+  };
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function createEditDraft(row: SofortListRow): EditDraftState {
@@ -186,22 +248,52 @@ export function SofortListTableShell(props: {
   onToggleSelectVisible: () => void;
   onToggleRowSelection: (rowId: string) => void;
   onUpdateRow: (row: SofortListRow) => void;
+  onRefresh: () => void;
   highlightText: HighlightText;
   labels: {
     place: string;
     quantity: string;
     room: string;
     type: string;
+    active: string;
+    inactive: string;
+    activate: string;
+    delete: string;
+    deleteFailed: string;
+    markedActive: string;
+    markedInactive: string;
+    deactivate: string;
+    resultSuccessSites: string;
+    resultFailedSites: string;
+    resultNoSiteData: string;
+    resultDialogTitle: string;
+    confirmActionTitle: string;
+    confirmActionMessage: string;
+    confirmActionCancel: string;
+    confirmActionConfirm: string;
+    confirmActionDetails: string;
+    confirmActionLive: string;
+    confirmActionPending: string;
+    confirmActionCurrentPlace: string;
+    confirmActionNewPlace: string;
+    confirmActionPlacePlaceholder: string;
+    confirmActionPlaceRequired: string;
+    confirmActionFootnoteDeactivate: string;
+    confirmActionFootnoteActivate: string;
   };
 }) {
   const { labels } = props;
+  const { showToast } = useToast();
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
   const [editingRow, setEditingRow] = useState<SofortListRow | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraftState | null>(null);
   const [photoPreviews, setPhotoPreviews] = useState<PhotoPreview[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deactivatingRowId, setDeactivatingRowId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [marketplaceResult, setMarketplaceResult] = useState<MarketplaceResultDialogState | null>(null);
+  const [marketplaceConfirm, setMarketplaceConfirm] = useState<MarketplaceConfirmDialogState | null>(null);
 
   useEffect(() => {
     if (!fullscreenPhoto) return;
@@ -374,18 +466,18 @@ export function SofortListTableShell(props: {
         ]
       });
 
-      const normalizedEan = editDraft.ean.trim() || props.placeholderEan;
+      const normalizedEan = editDraft.ean.trim();
       const normalizedSiteEans = {
-        jv: editDraft.jv.trim() || props.placeholderEan,
-        xl: editDraft.xl.trim() || props.placeholderEan,
-        ottoJv: editDraft.ottoJv.trim() || props.placeholderEan,
-        ottoXl: editDraft.ottoXl.trim() || props.placeholderEan,
-        ebayJv: editDraft.ebayJv.trim() || props.placeholderEan,
-        ebayXl: editDraft.ebayXl.trim() || props.placeholderEan,
-        kauflandJv: editDraft.kauflandJv.trim() || props.placeholderEan,
-        kauflandXl: editDraft.kauflandXl.trim() || props.placeholderEan,
-        hoodJv: editDraft.hoodJv.trim() || props.placeholderEan,
-        hoodXl: editDraft.hoodXl.trim() || props.placeholderEan
+        jv: editDraft.jv.trim(),
+        xl: editDraft.xl.trim(),
+        ottoJv: editDraft.ottoJv.trim(),
+        ottoXl: editDraft.ottoXl.trim(),
+        ebayJv: editDraft.ebayJv.trim(),
+        ebayXl: editDraft.ebayXl.trim(),
+        kauflandJv: editDraft.kauflandJv.trim(),
+        kauflandXl: editDraft.kauflandXl.trim(),
+        hoodJv: editDraft.hoodJv.trim(),
+        hoodXl: editDraft.hoodXl.trim()
       };
 
       await patchKidMarketplaceEans({
@@ -435,6 +527,40 @@ export function SofortListTableShell(props: {
     }
   }
 
+  async function waitForMarketplaceJobToFinish(jobId: string): Promise<MarketplaceActionResult> {
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      const response = await getMarketplaceToggleJob(jobId);
+      if (response.job_status === "completed" || response.job_status === "failed") {
+        return response;
+      }
+      await waitMs(400);
+    }
+    throw new Error(`Marketplace toggle job ${jobId} polling timed out.`);
+  }
+
+  async function runMarketplaceAction(row: SofortListRow, nextInactive: boolean, nextPlace: string) {
+    if (deactivatingRowId) return;
+
+    setDeactivatingRowId(row.id);
+    try {
+      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive, nextPlace);
+      const result = await waitForMarketplaceJobToFinish(created.jobId);
+      props.onRefresh();
+      setMarketplaceResult(buildMarketplaceResultDialogState(result, row.kidNumber, props.labels));
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : props.labels.deleteFailed;
+      showToast(message, "error");
+    } finally {
+      setDeactivatingRowId(null);
+    }
+  }
+
+  function requestMarketplaceAction(row: SofortListRow) {
+    if (deactivatingRowId) return;
+    const nextInactive = row.marketplaceActive !== false;
+    setMarketplaceConfirm({ row, inactive: nextInactive, nextPlace: "", placeError: null });
+  }
+
   return (
     <div className="wh-sofort-table-shell">
       <div className="wh-sofort-table-frame">
@@ -463,7 +589,7 @@ export function SofortListTableShell(props: {
                 <th scope="col" className="ui-listing-head-cell w-[260px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">MARKETPLACE EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head w-[116px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head w-[188px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">ACTIONS</span>
                 </th>
                 <th scope="col" className="hidden w-20">
@@ -550,8 +676,22 @@ export function SofortListTableShell(props: {
                   </td>
                   <td className="wh-sofort-actions-cell px-3 py-3 align-middle">
                     <div className="wh-sofort-row-actions">
+                      <Link
+                        href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
+                        className={buttonVariants({ variant: "default", size: "sm", className: "min-w-[68px]" })}
+                      >
+                        Create
+                      </Link>
                       <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>Edit</Button>
-                      <Button type="button" variant="outline" size="sm">Delete</Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => requestMarketplaceAction(row)}
+                        disabled={deactivatingRowId === row.id}
+                      >
+                        {deactivatingRowId === row.id ? "..." : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                      </Button>
                     </div>
                   </td>
                   <td className="hidden">{row.place}</td>
@@ -572,6 +712,170 @@ export function SofortListTableShell(props: {
           </div>
         </div>
       ) : null}
+      <Dialog open={Boolean(marketplaceConfirm)} onOpenChange={(open) => { if (!open) setMarketplaceConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{props.labels.confirmActionTitle}</DialogTitle>
+          </DialogHeader>
+          {marketplaceConfirm ? (
+            <div className="space-y-4">
+              <div
+                className={cn(
+                  "rounded-xl border p-4",
+                  marketplaceConfirm.inactive
+                    ? "border-destructive/30 bg-destructive/5"
+                    : "border-emerald-300/50 bg-emerald-50/60"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-full border",
+                      marketplaceConfirm.inactive
+                        ? "border-destructive/30 bg-destructive/10 text-destructive"
+                        : "border-emerald-300/50 bg-emerald-100 text-emerald-700"
+                    )}
+                  >
+                    {marketplaceConfirm.inactive ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      {props.labels.confirmActionMessage
+                        .replace("{action}", marketplaceConfirm.inactive ? props.labels.deactivate : props.labels.activate)
+                        .replace("{kid}", marketplaceConfirm.row.kidNumber)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{props.labels.confirmActionDetails}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {props.labels.confirmActionDetails}
+                </p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>KID: {marketplaceConfirm.row.kidNumber}</p>
+                  <p>EAN: {marketplaceConfirm.row.ean || "—"}</p>
+                  <p>{props.labels.confirmActionCurrentPlace}: {marketplaceConfirm.row.place || "—"}</p>
+                </div>
+              </div>
+
+              {!marketplaceConfirm.inactive ? (
+                <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      {props.labels.confirmActionNewPlace}
+                    </label>
+                    <Input
+                      value={marketplaceConfirm.nextPlace}
+                      placeholder={props.labels.confirmActionPlacePlaceholder}
+                      onChange={(event) =>
+                        setMarketplaceConfirm((current) =>
+                          current
+                            ? { ...current, nextPlace: event.target.value, placeError: null }
+                            : current
+                        )
+                      }
+                    />
+                    {marketplaceConfirm.placeError ? (
+                      <p className="text-xs text-destructive">{marketplaceConfirm.placeError}</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="rounded-xl border border-border/70 bg-background p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Marketplace
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {MARKETPLACE_CONFIRM_TARGETS.map((target) => (
+                    <div key={target.key} className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5">
+                      <span className="text-xs font-medium text-foreground">{target.key}</span>
+                      <Badge variant={target.state === "live" ? "success" : "warning"}>
+                        {target.state === "live" ? props.labels.confirmActionLive : props.labels.confirmActionPending}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock3 size={14} />
+                  <span>
+                    {marketplaceConfirm.inactive
+                      ? props.labels.confirmActionFootnoteDeactivate
+                      : props.labels.confirmActionFootnoteActivate}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMarketplaceConfirm(null)}>
+              {props.labels.confirmActionCancel}
+            </Button>
+            <Button
+              type="button"
+              variant={marketplaceConfirm?.inactive ? "destructive" : "default"}
+              onClick={() => {
+                if (!marketplaceConfirm) return;
+                if (!marketplaceConfirm.inactive && !marketplaceConfirm.nextPlace.trim()) {
+                  setMarketplaceConfirm((current) => current ? { ...current, placeError: props.labels.confirmActionPlaceRequired } : current);
+                  return;
+                }
+                const { row, inactive, nextPlace } = marketplaceConfirm;
+                setMarketplaceConfirm(null);
+                void runMarketplaceAction(row, inactive, nextPlace);
+              }}
+            >
+              {marketplaceConfirm?.inactive ? props.labels.deactivate : props.labels.activate}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(marketplaceResult)} onOpenChange={(open) => { if (!open) setMarketplaceResult(null); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{props.labels.resultDialogTitle}</DialogTitle>
+          </DialogHeader>
+          {marketplaceResult ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p className="text-sm font-semibold text-foreground">{marketplaceResult.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">KID {marketplaceResult.kidNumber}</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                  <h3 className="text-sm font-semibold text-emerald-900">{props.labels.resultSuccessSites}</h3>
+                  {marketplaceResult.successSites.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-sm text-emerald-900">
+                      {marketplaceResult.successSites.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-emerald-900/80">{props.labels.resultNoSiteData}</p>
+                  )}
+                </section>
+                <section className="rounded-xl border border-rose-200 bg-rose-50/60 p-4">
+                  <h3 className="text-sm font-semibold text-rose-900">{props.labels.resultFailedSites}</h3>
+                  {marketplaceResult.failedSites.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-sm text-rose-900">
+                      {marketplaceResult.failedSites.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-rose-900/80">{props.labels.resultNoSiteData}</p>
+                  )}
+                </section>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMarketplaceResult(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(editingRow)} onOpenChange={(open) => { if (!open) closeEditModal(); }}>
         <DialogContent className="!flex !w-[min(1120px,calc(100vw-32px))] !max-w-[1120px] !gap-0 !p-0 h-auto max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl">
           <DialogHeader className="sticky top-0 z-20 border-b border-[#e5e7eb] bg-background px-5 py-4 sm:px-6">

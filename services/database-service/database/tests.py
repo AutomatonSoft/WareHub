@@ -5,15 +5,18 @@ from rest_framework.test import APITestCase
 from unittest.mock import patch
 import requests
 
+from catalog_core.models import ImportedProduct
 from .kid_green_import_service import (
     FetchResult,
     KidGreenImportResult,
     KidImportStats,
     OrderImportStats,
+    load_kid_payloads_from_bytes,
+    upsert_kids,
     upsert_orders_for_kids,
 )
 from .kid_number_utils import primary_kid_number
-from .models import Ean, Kid, Orders, ProductAttributes
+from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -58,17 +61,17 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(Kid.objects.filter(kid_number__contains=["900900"]).count(), 1)
         kid = Kid.objects.get(kid_number__contains=["900900"])
         ean_row = Ean.objects.get(kid=kid)
-        self.assertEqual(ean_row.main_ean, "0000000000000")
-        self.assertEqual(ean_row.jv, "0000000000000")
-        self.assertEqual(ean_row.xl, "0000000000000")
-        self.assertEqual(ean_row.otto_jv, "0000000000000")
-        self.assertEqual(ean_row.otto_xl, "0000000000000")
-        self.assertEqual(ean_row.kaufland_jv, "0000000000000")
-        self.assertEqual(ean_row.kaufland_xl, "0000000000000")
-        self.assertEqual(ean_row.hood_jv, "0000000000000")
-        self.assertEqual(ean_row.hood_xl, "0000000000000")
-        self.assertEqual(ean_row.ebay_jv, "0000000000000")
-        self.assertEqual(ean_row.ebay_xl, "0000000000000")
+        self.assertIsNone(ean_row.main_ean)
+        self.assertIsNone(ean_row.jv)
+        self.assertIsNone(ean_row.xl)
+        self.assertIsNone(ean_row.otto_jv)
+        self.assertIsNone(ean_row.otto_xl)
+        self.assertIsNone(ean_row.kaufland_jv)
+        self.assertIsNone(ean_row.kaufland_xl)
+        self.assertIsNone(ean_row.hood_jv)
+        self.assertIsNone(ean_row.hood_xl)
+        self.assertIsNone(ean_row.ebay_jv)
+        self.assertIsNone(ean_row.ebay_xl)
         self.assertFalse(kid.store)
         self.assertIn("sync", response.data)
         self.assertIsNone(response.data["sync"]["error"])
@@ -240,6 +243,874 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["unique_kids"], 1)
         self.assertEqual(response.data["failed_kids"], ["KID-001"])
         mocked_import.assert_called_once()
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_deactivate_by_ean_updates_jv_target(self, mocked_push, mocked_fetch_snapshot):
+        ImportedProduct.objects.create(
+            site="JV",
+            site_key="JV_DE",
+            source_product_id=101,
+            ean="4012345678901",
+            status=True,
+        )
+        mocked_fetch_snapshot.return_value = {
+            "product": {
+                "product_id": 101,
+                "ean": "4012345678901",
+                "sku": "SKU-101",
+                "model": "MODEL-101",
+                "price": "12.3400",
+                "quantity": 5,
+                "status": 1,
+                "manufacturer_id": 7,
+                "stock_status_id": 8,
+                "tax_class_id": 9,
+                "image": "catalog/demo.jpg",
+                "date_available": "2026-06-25",
+                "date_modified": "2026-06-25 12:00:00",
+            },
+            "descriptions": [],
+            "categories": [],
+            "stores": [],
+            "images": [],
+            "specials": [],
+            "jv_fields": {},
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"ean": "4012345678901", "site_keys": ["JV_DE"], "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 1)
+        self.assertEqual(response.data["results"][0]["channel"], "JV")
+        self.assertTrue(response.data["results"][0]["details"]["inactive"])
+        mocked_fetch_snapshot.assert_called_once()
+        mocked_push.assert_called_once()
+
+    def test_kid_green_import_creates_new_kid_for_same_kid_number_with_different_place(self):
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"},
+              {"kid":"KID-001","place":"B-2","listing_status":"unlisted"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 2)
+        self.assertEqual(kid_stats.skipped, 0)
+        self.assertEqual(kid_stats.place_appended, 0)
+        self.assertEqual(len(kid_map["KID-001"]), 2)
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 2)
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["KID-001"], place="A-1").exists())
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["KID-001"], place="B-2").exists())
+
+    def test_kid_green_import_skips_same_kid_number_with_same_place(self):
+        Kid.objects.create(kid_number=["KID-001"], place="A-1")
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 0)
+        self.assertEqual(kid_stats.skipped, 1)
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 1)
+        self.assertEqual(len(kid_map["KID-001"]), 1)
+        self.assertEqual(kid_map["KID-001"][0].place, "A-1")
+
+    def test_kid_green_import_sets_ean_status_true_for_listed_items_with_eans(self):
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {
+                "kid":"KID-555",
+                "place":"A-1",
+                "listing_status":"listed",
+                "Ean.jv":"4062292028939",
+                "Ean.otto_jv":"5062292028939",
+                "Ean.ebay_xl":"6062292028939"
+              }
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 1)
+        kid = kid_map["KID-555"][0]
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.jv)
+        self.assertTrue(status_row.otto_jv)
+        self.assertTrue(status_row.ebay_xl)
+        self.assertFalse(status_row.xl)
+        self.assertFalse(status_row.otto_xl)
+        self.assertFalse(status_row.hood_jv)
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_deactivate_by_kid_number_fans_out_jv_and_updates_status(self, mocked_push, mocked_fetch_snapshot):
+        kid = Kid.objects.create(kid_number=["KID-777"])
+        Ean.objects.create(
+            kid=kid,
+            jv="4062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            jv=True,
+        )
+        for site_key, product_id in (
+            ("JV_DE", 101),
+            ("JV_CO_UK", 102),
+            ("JV_CH", 103),
+            ("JV_AT", 104),
+        ):
+            ImportedProduct.objects.create(
+                site="JV",
+                site_key=site_key,
+                source_product_id=product_id,
+                ean="4062292028939",
+                status=True,
+            )
+        mocked_fetch_snapshot.side_effect = [
+            {
+                "product": {
+                    "product_id": 101,
+                    "ean": "4062292028939",
+                    "sku": "SKU-101",
+                    "model": "MODEL-101",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {},
+            },
+            {
+                "product": {
+                    "product_id": 102,
+                    "ean": "4062292028939",
+                    "sku": "SKU-102",
+                    "model": "MODEL-102",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {},
+            },
+            {
+                "product": {
+                    "product_id": 103,
+                    "ean": "4062292028939",
+                    "sku": "SKU-103",
+                    "model": "MODEL-103",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {},
+            },
+            {
+                "product": {
+                    "product_id": 104,
+                    "ean": "4062292028939",
+                    "sku": "SKU-104",
+                    "model": "MODEL-104",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-777", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["kid_number"], "KID-777")
+        self.assertEqual(response.data["summary"]["total"], 4)
+        self.assertEqual(response.data["summary"]["success"], 4)
+        self.assertEqual(mocked_fetch_snapshot.call_count, 4)
+        self.assertEqual(mocked_push.call_count, 4)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
+        for site_key in ("JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"):
+            product = ImportedProduct.objects.get(site="JV", site_key=site_key, ean="4062292028939")
+            self.assertFalse(product.status)
+
+    def test_marketplace_deactivate_by_kid_number_requires_payload_for_hood(self):
+        kid = Kid.objects.create(kid_number=["KID-HOOD"])
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=True,
+        )
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-HOOD", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_207_MULTI_STATUS)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["results"][0]["channel"], "HOOD")
+        self.assertEqual(
+            response.data["results"][0]["details"]["code"],
+            "marketplace_deactivate_payload_required",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
+
+    @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
+    def test_marketplace_hood_deactivate_by_kid_uses_ean_as_item_number(self, mocked_delete):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=True,
+        )
+
+        mocked_delete.return_value = {
+            "ok": True,
+            "site_key": "HOOD_JV",
+            "channel": "HOOD",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": "4062292028939",
+                "account": "jv",
+                "item_number": "4062292028939",
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/hood/deactivate-by-kid/",
+            {"kid_number": "KID-HOOD-ONLY", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "hood_only")
+        self.assertEqual(response.data["results"][0]["details"]["item_number"], "4062292028939")
+        mocked_delete.assert_called_once_with(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+            item_number="4062292028939",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.hood_jv)
+
+    @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
+    def test_marketplace_hood_deactivate_by_kid_updates_active_hood_targets(self, mocked_delete):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-BOTH"])
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+            hood_xl="5062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=True,
+            hood_xl=True,
+        )
+
+        def _fake_apply(*, ean, site_key, account, item_number):
+            return {
+                "ok": True,
+                "site_key": site_key,
+                "channel": "HOOD",
+                "status_code": status.HTTP_200_OK,
+                "details": {
+                    "ean": ean,
+                    "account": account,
+                    "item_number": item_number,
+                },
+            }
+
+        mocked_delete.side_effect = _fake_apply
+
+        response = self.client.post(
+            "/api/v1/marketplace/hood/deactivate-by-kid/",
+            {"kid_number": "KID-HOOD-BOTH", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "hood_only")
+        self.assertEqual(response.data["summary"]["total"], 2)
+        self.assertEqual(response.data["summary"]["success"], 2)
+        self.assertEqual(mocked_delete.call_count, 2)
+        first_call = mocked_delete.call_args_list[0].kwargs
+        second_call = mocked_delete.call_args_list[1].kwargs
+        self.assertEqual(first_call["item_number"], first_call["ean"])
+        self.assertEqual(second_call["item_number"], second_call["ean"])
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.hood_jv)
+        self.assertFalse(status_row.hood_xl)
+
+    def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
+        kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+            otto_jv="5062292028939",
+            ebay_jv="6062292028939",
+            kaufland_jv="7062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=True,
+            otto_jv=True,
+            ebay_jv=True,
+            kaufland_jv=True,
+        )
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-LOCAL-ONLY", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["failed"], 0)
+        site_keys = {row["site_key"]: row for row in response.data["results"]}
+        self.assertEqual(site_keys["HOOD_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["OTTO_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["KAUFLAND_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.hood_jv)
+        self.assertFalse(status_row.otto_jv)
+        self.assertFalse(status_row.ebay_jv)
+        self.assertFalse(status_row.kaufland_jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    def test_marketplace_local_statuses_by_kid_updates_unsupported_channels_on_activate(self):
+        kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
+        Ean.objects.create(
+            kid=kid,
+            hood_jv="4062292028939",
+            otto_jv="5062292028939",
+            ebay_jv="6062292028939",
+            kaufland_jv="7062292028939",
+        )
+        EanStatus.objects.create(
+            ean=kid,
+            hood_jv=False,
+            otto_jv=False,
+            ebay_jv=False,
+            kaufland_jv=False,
+        )
+
+        response = self.client.post(
+            "/api/v1/marketplace/local-statuses-by-kid/",
+            {"kid_number": "KID-LOCAL-ACTIVATE", "inactive": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["failed"], 0)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
+        self.assertTrue(status_row.otto_jv)
+        self.assertTrue(status_row.ebay_jv)
+        self.assertTrue(status_row.kaufland_jv)
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_jv_deactivate_sofort_by_kid_uses_jvm_prefix_first(self, mocked_push, mocked_fetch_snapshot):
+        kid = Kid.objects.create(kid_number=["KID-JV-SOFORT"], place="4")
+        Ean.objects.create(kid=kid, jv="4062292028939")
+        mocked_fetch_snapshot.side_effect = [
+            {
+                "product": {
+                    "product_id": 501,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-501",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 502,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-502",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 503,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-503",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 504,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-504",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-JV-SOFORT", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["success"], 4)
+        self.assertEqual(mocked_fetch_snapshot.call_count, 4)
+        first_call = mocked_fetch_snapshot.call_args_list[0]
+        self.assertEqual(first_call.args[1], "JVM4062292028939")
+        self.assertEqual(mocked_push.call_count, 4)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_jv_activate_sofort_by_kid_updates_place_from_request(self, mocked_push, mocked_fetch_snapshot):
+        kid = Kid.objects.create(kid_number=["KID-JV-ACTIVATE"], place="-4")
+        Ean.objects.create(kid=kid, jv="4062292028939")
+        mocked_fetch_snapshot.side_effect = [
+            {
+                "product": {
+                    "product_id": 701,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-701",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 702,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-702",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 703,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-703",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+            {
+                "product": {
+                    "product_id": 704,
+                    "ean": "4062292028939",
+                    "model": "JVM4062292028939",
+                    "sku": "SKU-704",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 0,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 1},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-JV-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
+
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
+    def test_marketplace_jv_deactivate_sofort_by_kid_falls_back_without_prefix(self, mocked_fetch_snapshot):
+        kid = Kid.objects.create(kid_number=["KID-JV-FALLBACK"])
+        Ean.objects.create(kid=kid, jv="4062292028939")
+        for site_key, product_id in (
+            ("JV_DE", 601),
+            ("JV_CO_UK", 602),
+            ("JV_CH", 603),
+            ("JV_AT", 604),
+        ):
+            ImportedProduct.objects.create(
+                site="JV",
+                site_key=site_key,
+                source_product_id=product_id,
+                ean="4062292028939",
+                status=True,
+            )
+        mocked_fetch_snapshot.side_effect = [
+            None,
+            {
+                "product": {
+                    "product_id": 601,
+                    "ean": "4062292028939",
+                    "model": "4062292028939",
+                    "sku": "SKU-601",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 0},
+            },
+            None,
+            {
+                "product": {
+                    "product_id": 602,
+                    "ean": "4062292028939",
+                    "model": "4062292028939",
+                    "sku": "SKU-602",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 0},
+            },
+            None,
+            {
+                "product": {
+                    "product_id": 603,
+                    "ean": "4062292028939",
+                    "model": "4062292028939",
+                    "sku": "SKU-603",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 0},
+            },
+            None,
+            {
+                "product": {
+                    "product_id": 604,
+                    "ean": "4062292028939",
+                    "model": "4062292028939",
+                    "sku": "SKU-604",
+                    "price": "12.3400",
+                    "quantity": 5,
+                    "status": 1,
+                    "manufacturer_id": 7,
+                    "stock_status_id": 8,
+                    "tax_class_id": 9,
+                    "image": "catalog/demo.jpg",
+                    "date_available": "2026-06-25",
+                    "date_modified": "2026-06-25 12:00:00",
+                },
+                "descriptions": [],
+                "categories": [],
+                "stores": [],
+                "images": [],
+                "specials": [],
+                "jv_fields": {"is_sofort": 0},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-JV-FALLBACK", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 4)
+        self.assertEqual(response.data["results"][0]["details"]["code"], "jv_sofort_already_inactive")
+        self.assertEqual(mocked_fetch_snapshot.call_args_list[0].args[1], "JVM4062292028939")
+        self.assertEqual(mocked_fetch_snapshot.call_args_list[1].args[1], "4062292028939")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
+        for site_key in ("JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"):
+            product = ImportedProduct.objects.get(site="JV", site_key=site_key, ean="4062292028939")
+            self.assertFalse(product.status)
+
+    @patch("database.marketplace_deactivate_service.sync_children_from_snapshot")
+    @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")
+    @patch("database.marketplace_deactivate_service.push_product_to_source")
+    def test_marketplace_deactivate_by_ean_syncs_from_source_when_local_missing(
+        self,
+        mocked_push,
+        mocked_fetch_snapshot,
+        mocked_sync_children,
+    ):
+        mocked_fetch_snapshot.return_value = {
+            "product": {
+                "product_id": 202,
+                "ean": "4062292028939",
+                "sku": "SKU-202",
+                "model": "MODEL-202",
+                "price": "12.3400",
+                "quantity": 5,
+                "status": 1,
+                "manufacturer_id": 7,
+                "stock_status_id": 8,
+                "tax_class_id": 9,
+                "image": "catalog/demo.jpg",
+                "date_available": "2026-06-25",
+                "date_modified": "2026-06-25 12:00:00",
+            },
+            "descriptions": [],
+            "categories": [],
+            "stores": [],
+            "images": [],
+            "specials": [],
+            "jv_fields": {},
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"ean": "4062292028939", "site_keys": ["JV_DE"], "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 1)
+        self.assertTrue(
+            ImportedProduct.objects.filter(site="JV", site_key="JV_DE", ean="4062292028939").exists()
+        )
+        product = ImportedProduct.objects.get(site="JV", site_key="JV_DE", ean="4062292028939")
+        self.assertFalse(product.status)
+        mocked_fetch_snapshot.assert_called_once()
+        mocked_sync_children.assert_called_once()
+        mocked_push.assert_called_once()
+
+    def test_marketplace_deactivate_by_ean_requires_explicit_hood_payload(self):
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"ean": "4012345678901", "site_keys": ["HOOD_JV"], "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_207_MULTI_STATUS)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["results"][0]["channel"], "HOOD")
+        self.assertEqual(
+            response.data["results"][0]["details"]["code"],
+            "marketplace_deactivate_payload_required",
+        )
 
     @patch("database.views.import_kid_green_json_bytes")
     def test_kid_green_import_streams_progress_events(self, mocked_import):
@@ -454,8 +1325,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kid_snapshot"]["room"], "ROOM-1")
         self.assertEqual(response.data["kid_snapshot"]["furniture_type"], "chair")
         self.assertEqual(response.data["kid_snapshot"]["listing_status"], "listed")
-        self.assertEqual(response.data["kid_snapshot"]["main_ean"], "0000000000000")
-        self.assertEqual(response.data["kid_snapshot"]["database_ean"], "0000000000000")
+        self.assertEqual(response.data["kid_snapshot"]["main_ean"], "")
+        self.assertEqual(response.data["kid_snapshot"]["database_ean"], "")
         self.assertEqual(
             response.data["kid_snapshot"]["main_photo"],
             "https://cdn.example.com/photo-main.jpg",
@@ -509,6 +1380,38 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["main_ean"], "4444444444444")
         self.assertEqual(response.data["database_ean"], "4444444444444")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
+
+    def test_marketplace_eans_get_hides_placeholder_values(self):
+        Ean.objects.create(
+            kid=self.kid,
+            main_ean="0000000000000",
+            jv="0000000000000",
+            xl="0000000000000",
+            otto_jv="0000000000000",
+            otto_xl="0000000000000",
+            kaufland_jv="0000000000000",
+            kaufland_xl="0000000000000",
+            hood_jv="0000000000000",
+            hood_xl="0000000000000",
+            ebay_jv="0000000000000",
+            ebay_xl="0000000000000",
+        )
+
+        response = self.client.get(f"/api/v1/kids/{self.kid.id}/marketplace-eans/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["main_ean"], "")
+        self.assertEqual(response.data["database_ean"], "")
+        self.assertEqual(response.data["cosmoshop_ean"], "")
+        self.assertEqual(response.data["opencart_ean"], "")
+        self.assertEqual(response.data["otto_jv_ean"], "")
+        self.assertEqual(response.data["otto_xl_ean"], "")
+        self.assertEqual(response.data["ebay_jv_ean"], "")
+        self.assertEqual(response.data["ebay_xl_ean"], "")
+        self.assertEqual(response.data["kaufland_jv_ean"], "")
+        self.assertEqual(response.data["kaufland_xl_ean"], "")
+        self.assertEqual(response.data["hood_jv_ean"], "")
+        self.assertEqual(response.data["hood_xl_ean"], "")
 
     def test_get_kid_ean_summary_not_found(self):
         response = self.client.get("/api/v1/kids/999999/ean-summary/")

@@ -12,6 +12,7 @@ from .views_batch import (
     JVBatchApplyByEANAPIView as _BaseJVBatchApplyByEANAPIView,
     JVBatchJobStatusAPIView as _BaseJVBatchJobStatusAPIView,
     JVBatchPlanByEANAPIView as _BaseJVBatchPlanByEANAPIView,
+    JVProductCreateJobEnqueueAPIView as _BaseJVProductCreateJobEnqueueAPIView,
 )
 from .views_write import (
     JVProductCreateAndPushAPIView as _BaseJVProductCreateAndPushAPIView,
@@ -60,4 +61,7 @@ class JVBatchPlanByEANAPIView(_ForcedSiteMixin, _BaseJVBatchPlanByEANAPIView):
     forced_site = ImportedProduct.Site.JV
 
 class JVBatchJobStatusAPIView(_ForcedSiteMixin, _BaseJVBatchJobStatusAPIView):
+    forced_site = ImportedProduct.Site.JV
+
+class JVProductCreateJobEnqueueAPIView(_ForcedSiteMixin, _BaseJVProductCreateJobEnqueueAPIView):
     forced_site = ImportedProduct.Site.JV
