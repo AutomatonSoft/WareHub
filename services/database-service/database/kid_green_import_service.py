@@ -13,7 +13,7 @@ from typing import Callable
 import requests
 from django.db import transaction
 
-from .models import Ean, Kid, Orders, ProductAttributes
+from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 from orders_pars.service import (
     collapse_items_to_orders,
     parse_afterbuy_datetime,
@@ -264,8 +264,28 @@ def _normalized_place_list(value: object) -> list[str]:
     return result
 
 
-def _find_kid_by_number(kid_number: str) -> Kid | None:
-    return Kid.objects.filter(kid_number__contains=[kid_number]).order_by("id").first()
+def _find_kid_by_number_and_place(kid_number: str, place: str) -> Kid | None:
+    candidates = Kid.objects.filter(kid_number__contains=[kid_number]).order_by("id")
+    target_place = _normalize_text(place)
+    for kid in candidates:
+        if _normalize_text(kid.place) == target_place:
+            return kid
+    return None
+
+
+def _build_ean_status_defaults(ean_row: Ean) -> dict[str, bool]:
+    return {
+        "jv": bool(ean_row.jv),
+        "xl": bool(ean_row.xl),
+        "otto_jv": bool(ean_row.otto_jv),
+        "otto_xl": bool(ean_row.otto_xl),
+        "kaufland_jv": bool(ean_row.kaufland_jv),
+        "kaufland_xl": bool(ean_row.kaufland_xl),
+        "hood_jv": bool(ean_row.hood_jv),
+        "hood_xl": bool(ean_row.hood_xl),
+        "ebay_jv": bool(ean_row.ebay_jv),
+        "ebay_xl": bool(ean_row.ebay_xl),
+    }
 
 
 def load_kid_payloads_from_bytes(raw_bytes: bytes) -> dict[tuple[str, str], KidPayload]:
@@ -323,23 +343,16 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
     for payload in payloads.values():
         kid_number = payload.kid_number
         target_place = payload.place
-        existing = _find_kid_by_number(kid_number)
+        existing = _find_kid_by_number_and_place(kid_number, target_place)
 
         if existing is not None:
             kid = existing
-            current_places = _normalized_place_list(kid.place)
-            if target_place and target_place not in current_places:
-                current_places.append(target_place)
-                kid.place = current_places
-                kid.save(update_fields=["place"])
-                place_appended += 1
-            else:
-                skipped += 1
+            skipped += 1
         else:
             with transaction.atomic():
                 kid = Kid.objects.create(
                     kid_number=[kid_number],
-                    place=[target_place] if target_place else [],
+                    place=target_place or "",
                     photo=payload.photos,
                     room=payload.room,
                     store=payload.store,
@@ -347,13 +360,18 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
                     listing_status=payload.listing_status or "unlisted",
                     commentary=payload.commentary,
                 )
-                Ean.objects.create(
+                ean_row = Ean.objects.create(
                     kid=kid,
                     jv=payload.jv,
                     otto_jv=payload.otto_jv,
                     otto_xl=payload.otto_xl,
                     ebay_xl=payload.ebay_xl,
                 )
+                if (payload.listing_status or "").lower() == "listed":
+                    EanStatus.objects.create(
+                        ean=kid,
+                        **_build_ean_status_defaults(ean_row),
+                    )
                 ProductAttributes.objects.create(
                     kid=kid,
                     quantity=payload.quantity,

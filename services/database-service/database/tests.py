@@ -11,6 +11,8 @@ from .kid_green_import_service import (
     KidGreenImportResult,
     KidImportStats,
     OrderImportStats,
+    load_kid_payloads_from_bytes,
+    upsert_kids,
     upsert_orders_for_kids,
 )
 from .kid_number_utils import primary_kid_number
@@ -289,6 +291,72 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(response.data["results"][0]["details"]["inactive"])
         mocked_fetch_snapshot.assert_called_once()
         mocked_push.assert_called_once()
+
+    def test_kid_green_import_creates_new_kid_for_same_kid_number_with_different_place(self):
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"},
+              {"kid":"KID-001","place":"B-2","listing_status":"unlisted"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 2)
+        self.assertEqual(kid_stats.skipped, 0)
+        self.assertEqual(kid_stats.place_appended, 0)
+        self.assertEqual(len(kid_map["KID-001"]), 2)
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 2)
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["KID-001"], place="A-1").exists())
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["KID-001"], place="B-2").exists())
+
+    def test_kid_green_import_skips_same_kid_number_with_same_place(self):
+        Kid.objects.create(kid_number=["KID-001"], place="A-1")
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 0)
+        self.assertEqual(kid_stats.skipped, 1)
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 1)
+        self.assertEqual(len(kid_map["KID-001"]), 1)
+        self.assertEqual(kid_map["KID-001"][0].place, "A-1")
+
+    def test_kid_green_import_sets_ean_status_true_for_listed_items_with_eans(self):
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {
+                "kid":"KID-555",
+                "place":"A-1",
+                "listing_status":"listed",
+                "Ean.jv":"4062292028939",
+                "Ean.otto_jv":"5062292028939",
+                "Ean.ebay_xl":"6062292028939"
+              }
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 1)
+        kid = kid_map["KID-555"][0]
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.jv)
+        self.assertTrue(status_row.otto_jv)
+        self.assertTrue(status_row.ebay_xl)
+        self.assertFalse(status_row.xl)
+        self.assertFalse(status_row.otto_xl)
+        self.assertFalse(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")
     @patch("database.marketplace_deactivate_service.push_product_to_source")

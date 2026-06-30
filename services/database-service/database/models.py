@@ -38,7 +38,7 @@ class Kid(Model):
         blank=True,
         db_index=True,
     )
-    place = JSONField(default=list, null=True, blank=True)
+    place = CharField(max_length=255, null=True, blank=True)
     store = BooleanField(default=False)
     photo = JSONField(default=list, blank=True)
     room = CharField(max_length=128, null=True, blank=True)
