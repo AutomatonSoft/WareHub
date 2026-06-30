@@ -113,20 +113,45 @@ function normalizeSourceSites(payload: {
     : [];
 }
 
-function normalizeImageUrls(payload: Record<string, unknown>): string[] {
+// Mirrors the backend JV_PUBLIC_BASE_BY_SITE_KEY (jv_services/sync_utils.py): the
+// public host that serves the cosmoshop media for each JV site.
+const JV_SITE_PUBLIC_BASE: Record<string, string> = {
+  JV_DE: "https://www.jvmoebel.de",
+  JV_AT: "https://www.jvmoebel.at",
+  JV_CH: "https://www.jvmoebel.ch",
+  JV_CO_UK: "https://www.jvfurniture.co.uk",
+};
+
+// Make an image reference safe to use as an <img> src and as a relay/fetch source.
+// The backend usually returns absolute public URLs, but when the public base is
+// missing it falls back to a bare relative path like "cosmoshop/default/pix/...".
+// Rendering that relative path resolves against the app origin and hits the
+// POST-only /api/v1/uploads/images/ route (HTTP 405), so always resolve relatives
+// against the site's public media host instead.
+function toAbsoluteImageUrl(raw: string, siteKey: string): string {
+  const value = raw.trim();
+  if (!value) return "";
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
+    return value;
+  }
+  const base = JV_SITE_PUBLIC_BASE[siteKey.trim().toUpperCase()] || JV_SITE_PUBLIC_BASE.JV_DE;
+  return `${base}/${value.replace(/^\/+/, "")}`;
+}
+
+function normalizeImageUrls(payload: Record<string, unknown>, siteKey: string): string[] {
   const urls: string[] = [];
   const mainImage = asTrimmedString(payload.image_public_url) || asTrimmedString(payload.image);
-  if (mainImage) urls.push(mainImage);
+  if (mainImage) urls.push(toAbsoluteImageUrl(mainImage, siteKey));
 
   const gallery = Array.isArray(payload.images_public_urls) ? payload.images_public_urls : [];
   for (const row of gallery) {
     if (!row || typeof row !== "object") continue;
     const record = row as Record<string, unknown>;
     const url = asTrimmedString(record.public_url) || asTrimmedString(record.image);
-    if (url) urls.push(url);
+    if (url) urls.push(toAbsoluteImageUrl(url, siteKey));
   }
 
-  return Array.from(new Set(urls));
+  return Array.from(new Set(urls.filter(Boolean)));
 }
 
 function normalizeCategories(payload: Record<string, unknown>): Array<{ id: number; name: string; main: boolean }> {
@@ -202,7 +227,7 @@ export async function fetchCreateProductJvSourceSnapshot(input: {
     (primary ? asTrimmedString(primary.name) : "") ||
     asTrimmedString(payload.source_model) ||
     asTrimmedString(payload.ean);
-  const imageUrls = normalizeImageUrls(payload as Record<string, unknown>);
+  const imageUrls = normalizeImageUrls(payload as Record<string, unknown>, input.siteKey);
 
   return {
     siteKey: input.siteKey,
