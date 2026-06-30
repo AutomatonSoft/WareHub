@@ -2,6 +2,8 @@
 .env.*
 !.env.example
 .claude/settings.local.json
+.claude/skills/
+.mcp.json
 !.env.*.example
 .env.local
 *.local
