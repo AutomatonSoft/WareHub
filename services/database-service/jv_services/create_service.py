@@ -179,9 +179,10 @@ def _create_one_item(*, job_id: int, item_id: int, ean: str, actor: str) -> dict
             close_old_connections()
             return summary
 
-        # Article with this EAN already exists on the site -> update instead,
+        # The same article (by artikelnr, or by EAN in the legacy/no-artikelnr case)
+        # already exists on the site -> update that product instead of creating a new one,
         # mirroring the previous client-side create-then-update fallback.
-        if str(data.get("code") or "") == "jv_create_ean_conflict":
+        if str(data.get("code") or "") in ("jv_create_artikelnr_conflict", "jv_create_ean_conflict"):
             update_item_progress(item, phase="updating", message="Article already exists; updating instead.")
             update_response = update_and_push_jv_product_by_ean(
                 ean=ean,

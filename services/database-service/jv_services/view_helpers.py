@@ -32,7 +32,7 @@ def normalize_site_key(site_key_raw: str | None) -> str | None:
     return value
 
 
-def resolve_product_by_ean(ean: str, site_raw: str | None, site_key_raw: str | None):
+def resolve_product_by_ean(ean: str, site_raw: str | None, site_key_raw: str | None, source_model: str | None = None):
     site = normalize_site(site_raw)
     if site_raw and site is None:
         return None, Response(
@@ -45,6 +45,13 @@ def resolve_product_by_ean(ean: str, site_raw: str | None, site_key_raw: str | N
     if site:
         queryset = queryset.filter(site=site)
     queryset = queryset.filter(site_key=site_key)
+
+    # One EAN can carry many products (a main item + Sofort colour variants). When the caller
+    # knows the article number (artikelnr / source_model), target that exact product instead
+    # of an arbitrary one.
+    artikelnr = str(source_model or "").strip()
+    if artikelnr:
+        queryset = queryset.filter(source_model=artikelnr)
 
     if not queryset.exists():
         return None, Response(

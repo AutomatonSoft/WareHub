@@ -69,7 +69,15 @@ class ImportedProduct(models.Model):
         ordering = ["-updated_at"]
         constraints = [
             models.UniqueConstraint(fields=["site", "site_key", "source_product_id"], name="uniq_imported_product_site_site_key_source_product_id"),
-            models.UniqueConstraint(fields=["site", "site_key", "ean"], name="uniq_imported_product_site_site_key_ean"),
+            # Product identity is the article number (source_model / artikelnr), NOT the EAN:
+            # one EAN can carry many products (e.g. a main item plus several Sofort colour
+            # variants), each with its own artikelnr. Enforced only when source_model is set
+            # (XL rows may leave it blank, and blanks must not collide with each other).
+            models.UniqueConstraint(
+                fields=["site", "site_key", "source_model"],
+                condition=models.Q(source_model__gt=""),
+                name="uniq_imported_product_site_site_key_source_model",
+            ),
         ]
 
 
