@@ -128,7 +128,7 @@ export async function xljvUploadImages(params: {
     : [];
   if (params.files.length === 0 && normalizedSourceUrls.length > 0) {
     return postJsonWithFallback(
-      ["/api/v1/uploads/images"],
+      ["/api/v1/uploads/images/"],
       {
         source_urls: normalizedSourceUrls,
         ...(params.site ? { site: params.site } : {}),
@@ -142,7 +142,7 @@ export async function xljvUploadImages(params: {
   const formData = new FormData();
   for (const file of params.files) formData.append("images", file);
   return postFormDataWithFallback(
-    ["/api/v1/uploads/images"],
+    ["/api/v1/uploads/images/"],
     formData,
     {
       ...(params.site ? { site: params.site } : {}),
