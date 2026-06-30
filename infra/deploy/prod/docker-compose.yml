@@ -186,6 +186,7 @@ services:
       else
         echo 'RUN_MIGRATIONS_ON_STARTUP=false; skipping migrate on startup';
       fi;
+      python manage.py run_jv_batch_worker &
       python manage.py runserver 0.0.0.0:8000
       "
 
