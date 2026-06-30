@@ -28,14 +28,24 @@ FROM node:24-alpine AS stage
 WORKDIR /app
 ENV NODE_ENV=production
 ENV APP_ENV=stage
-COPY --from=builder /app /app
+ENV PORT=8931
+ENV HOSTNAME=0.0.0.0
+# Next.js standalone output: minimal traced server + static assets only.
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 8931
-CMD ["sh", "-c", "if [ -f package.json ]; then npm run start -- --port 8931; else echo 'No frontend code to run'; tail -f /dev/null; fi"]
+CMD ["node", "server.js"]
 
 FROM node:24-alpine AS prod
 WORKDIR /app
 ENV NODE_ENV=production
 ENV APP_ENV=prod
-COPY --from=builder /app /app
+ENV PORT=8931
+ENV HOSTNAME=0.0.0.0
+# Next.js standalone output: minimal traced server + static assets only.
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 8931
-CMD ["sh", "-c", "if [ -f package.json ]; then npm run start -- --port 8931; else echo 'No frontend code to run'; tail -f /dev/null; fi"]
+CMD ["node", "server.js"]
