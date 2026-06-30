@@ -393,6 +393,80 @@ def _fetch_jv_product_snapshot_by_ean(cur, ean: str, *, site_key: str | None = N
     }
 
 
+def _fetch_jv_product_snapshot_by_artikelnr(cur, artikelnr: str, *, site_key: str | None = None):
+    normalized_artikelnr = re.sub(r"[\s-]+", "", str(artikelnr or "").strip())
+    has_shopartikelpreise = _table_exists(cur, "shopartikelpreise")
+    has_staffel = _table_has_column(cur, "shopartikelpreise", "staffel") if has_shopartikelpreise else False
+    has_preis = _table_has_column(cur, "shopartikelpreise", "preis") if has_shopartikelpreise else False
+    has_waehrung = _table_has_column(cur, "shopartikelpreise", "waehrung") if has_shopartikelpreise else False
+    has_jfsku = _table_has_column(cur, "shopartikel", "jfsku")
+    has_inaktiv = _table_has_column(cur, "shopartikel", "inaktiv")
+    has_geaendert = _table_has_column(cur, "shopartikel", "geaendert")
+
+    sku_sql = "a.jfsku AS sku" if has_jfsku else "NULL AS sku"
+    inaktiv_sql = "a.inaktiv AS inaktiv" if has_inaktiv else "0 AS inaktiv"
+    geaendert_sql = "a.geaendert AS date_modified" if has_geaendert else "NULL AS date_modified"
+    price_sql = "p.preis AS price" if (has_shopartikelpreise and has_preis) else "NULL AS price"
+    currency_sql = "p.waehrung AS currency_code" if (has_shopartikelpreise and has_waehrung) else "NULL AS currency_code"
+    join_price_sql = (
+        "LEFT JOIN shopartikelpreise p ON p.artikelid = a.artikelid AND p.staffel = 1"
+        if has_shopartikelpreise and has_staffel
+        else "LEFT JOIN shopartikelpreise p ON p.artikelid = a.artikelid"
+        if has_shopartikelpreise
+        else ""
+    )
+
+    query_with_currency = f"""
+        SELECT
+            a.artikelid AS product_id,
+            a.ean AS ean,
+            a.artikelnr AS model,
+            {sku_sql},
+            {inaktiv_sql},
+            {geaendert_sql},
+            {price_sql},
+            {currency_sql}
+        FROM shopartikel a
+        {join_price_sql}
+        WHERE a.artikelnr = %s
+           OR TRIM(a.artikelnr) = TRIM(%s)
+           OR REPLACE(REPLACE(TRIM(a.artikelnr), ' ', ''), '-', '') = %s
+        ORDER BY a.artikelid DESC
+        LIMIT 1
+    """
+    query_without_currency = f"""
+        SELECT
+            a.artikelid AS product_id,
+            a.ean AS ean,
+            a.artikelnr AS model,
+            {sku_sql},
+            {inaktiv_sql},
+            {geaendert_sql},
+            {price_sql},
+            NULL AS currency_code
+        FROM shopartikel a
+        {join_price_sql}
+        WHERE a.artikelnr = %s
+           OR TRIM(a.artikelnr) = TRIM(%s)
+           OR REPLACE(REPLACE(TRIM(a.artikelnr), ' ', ''), '-', '') = %s
+        ORDER BY a.artikelid DESC
+        LIMIT 1
+    """
+    try:
+        cur.execute(query_with_currency, (artikelnr, artikelnr, normalized_artikelnr))
+    except mysql.connector.Error:
+        logger.warning(
+            "JV_JV_QUERY_BY_ARTIKELNR_WITH_CURRENCY_FAILED code=jv_jv_query_by_artikelnr_with_currency_failed",
+            exc_info=True,
+        )
+        cur.execute(query_without_currency, (artikelnr, artikelnr, normalized_artikelnr))
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    return _fetch_jv_product_snapshot_by_product_id(cur, int(row["product_id"]), site_key=site_key)
+
+
 def _fetch_jv_product_snapshot_by_product_id(cur, source_product_id: int, *, site_key: str | None = None):
     has_shopartikelpreise = _table_exists(cur, "shopartikelpreise")
     has_staffel = _table_has_column(cur, "shopartikelpreise", "staffel") if has_shopartikelpreise else False
@@ -757,6 +831,37 @@ def fetch_source_product_snapshot_by_ean(config: dict, ean: str):
             LIMIT 1
             """,
             (ean, ean, normalized_ean, ean, ean, normalized_ean),
+        )
+        product = cur.fetchone()
+        if not product:
+            return None
+
+        return _fetch_oc_snapshot_by_product_id(cur, product_id=int(product["product_id"]), prefix=prefix)
+    finally:
+        cur.close()
+        conn.close()
+
+
+def fetch_source_product_snapshot_by_artikelnr(config: dict, artikelnr: str):
+    conn = _mysql_connect(config)
+    cur = conn.cursor(dictionary=True)
+    try:
+        prefix = config.get("table_prefix", "oc_")
+        if not _table_exists(cur, f"{prefix}product") and _table_exists(cur, "shopartikel"):
+            return _fetch_jv_product_snapshot_by_artikelnr(cur, artikelnr, site_key=config.get("site_key"))
+
+        normalized_artikelnr = re.sub(r"[\s-]+", "", str(artikelnr or "").strip())
+        cur.execute(
+            f"""
+            SELECT *
+            FROM `{prefix}product`
+            WHERE model = %s
+               OR TRIM(model) = TRIM(%s)
+               OR REPLACE(REPLACE(TRIM(model), ' ', ''), '-', '') = %s
+            ORDER BY product_id DESC
+            LIMIT 1
+            """,
+            (artikelnr, artikelnr, normalized_artikelnr),
         )
         product = cur.fetchone()
         if not product:

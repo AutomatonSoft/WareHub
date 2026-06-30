@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..application.orchestrator_service import OrchestratorService
+from .marketplace_job_routes import router as marketplace_job_router
 from .product_editor_routes import router as product_editor_router
 from ..domain.models import (
     BatchJobStatusItem,
@@ -37,6 +38,7 @@ from ..infra.settings import settings
 
 router = APIRouter()
 router.include_router(product_editor_router)
+router.include_router(marketplace_job_router)
 logger = logging.getLogger("sofort_orchestrator")
 _JOB_INTAKE_TIMESTAMPS_MS = deque()
 _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS = {

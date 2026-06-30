@@ -5,7 +5,7 @@ from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
-from .models import Ean, Kid, Orders, ProductAttributes
+from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN = ""
@@ -152,6 +152,22 @@ def build_inventory_rows() -> list[dict]:
             "hood_xl",
         )
     }
+    statuses_by_kid_id = {
+        row["ean_id"]: row
+        for row in EanStatus.objects.all().values(
+            "ean_id",
+            "jv",
+            "xl",
+            "otto_jv",
+            "otto_xl",
+            "ebay_jv",
+            "ebay_xl",
+            "kaufland_jv",
+            "kaufland_xl",
+            "hood_jv",
+            "hood_xl",
+        )
+    }
     attributes_by_kid_id = {
         row["kid_id"]: row
         for row in ProductAttributes.objects.all().values(
@@ -192,6 +208,7 @@ def build_inventory_rows() -> list[dict]:
         kid = order.kid
         attrs = attributes_by_kid_id.get(kid.id) or {}
         ean_row = eans_by_kid_id.get(kid.id) or {}
+        status_row = statuses_by_kid_id.get(kid.id) or {}
         primary_kid = primary_kid_number(kid.kid_number)
         main_ean = _norm_ean(ean_row.get("main_ean"))
         cosmoshop_ean = _norm_ean(ean_row.get("jv"))
@@ -243,6 +260,7 @@ def build_inventory_rows() -> list[dict]:
                 "kaufland_xl_ean": kaufland_xl_ean,
                 "hood_jv_ean": hood_jv_ean,
                 "hood_xl_ean": hood_xl_ean,
+                "ean_status": status_row,
                 "linked_products_by_ean": {
                     "catalog": {ean: catalog_map.get(ean, []) for ean in sku_eans},
                     "hood_service": {ean: hood_map.get(ean, []) for ean in sku_eans},
@@ -276,6 +294,7 @@ def build_inventory_rows() -> list[dict]:
 
         attrs = attributes_by_kid_id.get(kid.id) or {}
         ean_row = eans_by_kid_id.get(kid.id) or {}
+        status_row = statuses_by_kid_id.get(kid.id) or {}
         primary_kid = primary_kid_number(kid.kid_number)
         main_ean = _norm_ean(ean_row.get("main_ean"))
         cosmoshop_ean = _norm_ean(ean_row.get("jv"))
@@ -320,6 +339,7 @@ def build_inventory_rows() -> list[dict]:
                 "kaufland_xl_ean": kaufland_xl_ean,
                 "hood_jv_ean": hood_jv_ean,
                 "hood_xl_ean": hood_xl_ean,
+                "ean_status": status_row,
                 "linked_products_by_ean": {
                     "catalog": {},
                     "hood_service": {},

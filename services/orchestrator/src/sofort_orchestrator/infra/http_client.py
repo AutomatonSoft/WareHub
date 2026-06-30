@@ -34,12 +34,29 @@ class HttpClient:
         self._client.close()
         self._client = None
 
-    def request(self, method: str, url: str, *, headers: dict[str, str], params: dict | None = None, json: dict | list | None = None) -> httpx.Response:
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict | None = None,
+        json: dict | list | None = None,
+        timeout_seconds: float | None = None,
+    ) -> httpx.Response:
         last_exc: Exception | None = None
         last_kind = "network"
         for attempt in range(self._retries + 1):
             try:
-                response = self._get_client().request(method, url, headers=headers, params=params, json=json)
+                request_timeout = timeout_seconds if timeout_seconds is not None and timeout_seconds > 0 else None
+                response = self._get_client().request(
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    json=json,
+                    timeout=request_timeout,
+                )
                 if response.status_code >= 500 and attempt < self._retries:
                     time.sleep(0.2 * (attempt + 1))
                     continue
