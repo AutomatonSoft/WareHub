@@ -76,9 +76,19 @@ $optionalPresentKeysByEnvironment = @{
   )
 }
 
+# Per-site JV cosmoshop FTP credentials. Optional/empty: the services container
+# forwards them with ${VAR:-} defaults, so a deploy without them stays valid and
+# JV image upload simply reports a config error until the runtime override sets them.
+$jvPerSiteFtpKeys = @(
+  'FTP_DE_HOST','FTP_DE_USER','FTP_DE_PASS','FTP_DE_PORT','FTP_DE_URL','FTP_DE_DOMIN',
+  'FTP_AT_HOST','FTP_AT_USER','FTP_AT_PASS','FTP_AT_PORT','FTP_AT_URL','FTP_AT_DOMIN',
+  'FTP_CH_HOST','FTP_CH_USER','FTP_CH_PASS','FTP_CH_PORT','FTP_CH_URL','FTP_CH_DOMIN',
+  'FTP_CO_UK_HOST','FTP_CO_UK_USER','FTP_CO_UK_PASS','FTP_CO_UK_PORT','FTP_CO_UK_URL','FTP_CO_UK_DOMIN'
+)
+
 $optionalEmptyKeysByEnvironment = @{
-  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX')
-  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL')
+  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX') + $jvPerSiteFtpKeys
+  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL') + $jvPerSiteFtpKeys
 }
 
 $sampleRateKeysByEnvironment = @{
