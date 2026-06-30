@@ -26,16 +26,36 @@ def prepare_create_identity(*, site: str, site_key: str, payload: dict, actor: s
         else int(provided_source_product_id)
     )
 
-    ean_conflict = ImportedProduct.all_objects.filter(site=site, site_key=site_key, ean=ean).first()
-    if ean_conflict:
-        return None, None, None, Response(
-            {
-                "code": "jv_create_ean_conflict",
-                "detail": "Товар с таким EAN уже существует для выбранного site/site_key.",
-                "local_id": ean_conflict.id,
-            },
-            status=status.HTTP_409_CONFLICT,
-        )
+    # Product identity is the article number (artikelnr / source_model), not the EAN:
+    # a single EAN can carry many products (a main item + several Sofort colour variants),
+    # each with its own artikelnr. So a create only conflicts when the SAME artikelnr already
+    # exists; a new artikelnr on an existing EAN is a new product. When no artikelnr is given
+    # (legacy/XL), fall back to the previous EAN-based conflict for safety.
+    artikelnr = str(payload.get("source_model") or "").strip()
+    if artikelnr:
+        artikelnr_conflict = ImportedProduct.all_objects.filter(
+            site=site, site_key=site_key, source_model=artikelnr
+        ).first()
+        if artikelnr_conflict:
+            return None, None, None, Response(
+                {
+                    "code": "jv_create_artikelnr_conflict",
+                    "detail": "Товар с таким ARTIKELNR уже существует для выбранного site/site_key.",
+                    "local_id": artikelnr_conflict.id,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+    else:
+        ean_conflict = ImportedProduct.all_objects.filter(site=site, site_key=site_key, ean=ean).first()
+        if ean_conflict:
+            return None, None, None, Response(
+                {
+                    "code": "jv_create_ean_conflict",
+                    "detail": "Товар с таким EAN уже существует для выбранного site/site_key.",
+                    "local_id": ean_conflict.id,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
     source_id_conflict = ImportedProduct.all_objects.filter(
         site=site,

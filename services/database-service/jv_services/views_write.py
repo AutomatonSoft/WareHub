@@ -282,7 +282,12 @@ def update_and_push_jv_product_by_ean(
     to skip idempotency bookkeeping. Returns the same DRF ``Response`` objects
     as the view.
     """
-    product, error_response = _resolve_product_by_ean(ean, site, site_key)
+    # When several products share this EAN (Sofort colour variants), target the exact one by
+    # its article number from the payload; falls back to EAN-only resolution when absent.
+    _artikelnr = ""
+    if isinstance(payload_data, dict):
+        _artikelnr = str(payload_data.get("source_model") or "").strip()
+    product, error_response = _resolve_product_by_ean(ean, site, site_key, source_model=_artikelnr or None)
     if error_response is not None:
         _finalize_error_if_tracked(
             idem_record,
