@@ -266,6 +266,7 @@ jobs:
         id: candidate
         shell: bash
         env:
+          SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
           STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
         run: |
           set -euo pipefail
@@ -278,7 +279,13 @@ jobs:
           echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
           echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
 
-          printf '%s' "${STAGE_ENV_FILE_SECRET:-}" > "$candidate_dir/.env.override"
+          # Runtime env layering: committed template -> shared repo secrets -> per-env override.
+          # Cross-env shared third-party creds (e.g. JV FTP) live once in SHARED_ENV_FILE;
+          # env-specific values in STAGE_ENV_FILE win because they are appended last.
+          {
+            printf '%s\n' "${SHARED_ENV_FILE_SECRET:-}"
+            printf '%s\n' "${STAGE_ENV_FILE_SECRET:-}"
+          } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/stage/env.stage.sanitized.template \
             --override "$candidate_dir/.env.override" \
