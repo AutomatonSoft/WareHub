@@ -328,7 +328,32 @@ function resolveGallerySourceUrl(item: GalleryItem, sourceSiteKey: string): stri
   return sourcePath.startsWith("/") ? `${publicBase}${sourcePath}` : `${publicBase}/${sourcePath}`;
 }
 
-function buildSourceGalleryItems(payload: Record<string, unknown>, publicUrls: string[]): GalleryItem[] {
+// Resolve a source image reference to an absolute URL for display. The backend
+// usually returns absolute public URLs, but when its public base is missing it
+// falls back to a bare relative path (e.g. "cosmoshop/default/pix/..."). Rendering
+// that relative path resolves against the app origin and hits the POST-only
+// /api/v1/uploads/images/ route (HTTP 405), so resolve relatives against the JV
+// site's public media host instead.
+function resolveDisplaySrc(rawSrc: string, sourceSiteKey: string): string {
+  const src = asTrimmedString(rawSrc);
+  if (!src) {
+    return "";
+  }
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("blob:") || src.startsWith("data:")) {
+    return src;
+  }
+  const base = JV_PUBLIC_BASE_BY_SITE_KEY[String(sourceSiteKey || "").trim().toUpperCase()] || "";
+  if (!base) {
+    return src;
+  }
+  return `${base}/${src.replace(/^\/+/, "")}`;
+}
+
+function buildSourceGalleryItems(
+  payload: Record<string, unknown>,
+  publicUrls: string[],
+  sourceSiteKey: string
+): GalleryItem[] {
   const items: GalleryItem[] = [];
   // Deduplicate by the underlying source image path (falling back to src) so the
   // same image is never uploaded or stored twice — the source feed often repeats
@@ -347,7 +372,7 @@ function buildSourceGalleryItems(payload: Record<string, unknown>, publicUrls: s
 
   const mainSourcePath = normalizeSourceImagePath(payload.image);
   const mainPublicUrl = asTrimmedString(payload.image_public_url);
-  const mainSrc = mainPublicUrl || publicUrls[0] || mainSourcePath;
+  const mainSrc = resolveDisplaySrc(mainPublicUrl || publicUrls[0] || mainSourcePath, sourceSiteKey);
 
   if (mainSrc) {
     pushUnique({
@@ -365,7 +390,7 @@ function buildSourceGalleryItems(payload: Record<string, unknown>, publicUrls: s
     const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
     const sourcePath = normalizeSourceImagePath(record.image);
     const publicUrl = asTrimmedString(record.public_url);
-    const src = publicUrl || sourcePath;
+    const src = resolveDisplaySrc(publicUrl || sourcePath, sourceSiteKey);
     if (!src) {
       return;
     }
@@ -386,7 +411,7 @@ function buildSourceGalleryItems(payload: Record<string, unknown>, publicUrls: s
       }
       pushUnique({
         id: `remote-fallback-${index}`,
-        src: sourcePath,
+        src: resolveDisplaySrc(sourcePath, sourceSiteKey),
         sourcePath,
         isLocal: false,
       });
@@ -535,8 +560,8 @@ export default function CreateProductPage() {
     [sourceJvFields]
   );
   const sourceGalleryItems = useMemo(
-    () => buildSourceGalleryItems(sourcePayload, galleryImages),
-    [galleryImages, sourcePayload]
+    () => buildSourceGalleryItems(sourcePayload, galleryImages, controller.sourceSnapshot?.siteKey || ""),
+    [galleryImages, sourcePayload, controller.sourceSnapshot?.siteKey]
   );
   const primaryContentRow = useMemo(() => pickPrimaryJvContentRow(sourceContentRows), [sourceContentRows]);
   const normalizedDescriptionPreviewHtml = useMemo(
