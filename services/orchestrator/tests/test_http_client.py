@@ -14,7 +14,7 @@ class FakeSyncClient:
         self.calls: list[dict] = []
         self.closed = False
 
-    def request(self, method, url, *, headers, params=None, json=None):
+    def request(self, method, url, *, headers, params=None, json=None, timeout=None):
         self.calls.append(
             {
                 "method": method,
@@ -22,6 +22,7 @@ class FakeSyncClient:
                 "headers": headers,
                 "params": params,
                 "json": json,
+                "timeout": timeout,
             }
         )
         return httpx.Response(200, json={"ok": True}, request=httpx.Request(method, url))
