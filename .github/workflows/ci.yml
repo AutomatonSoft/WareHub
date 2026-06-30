@@ -621,7 +621,7 @@ jobs:
       - name: Build gateway image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: infra/gateway
           file: infra/gateway/Dockerfile
           load: true
           tags: warehub-gateway:ci-validation

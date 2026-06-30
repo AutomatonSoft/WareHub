@@ -126,7 +126,7 @@ jobs:
             file: infra/Dockerfile
             target: prod
           - name: gateway
-            context: .
+            context: infra/gateway
             file: infra/gateway/Dockerfile
     env:
       IMAGE_REF: ghcr.io/${{ needs.prepare.outputs.image_owner }}/${{ needs.prepare.outputs.image_repo }}/${{ matrix.name }}
