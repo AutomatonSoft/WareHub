@@ -622,7 +622,13 @@ def _ftp_store_file(
             try:
                 ftp.cwd(part)
             except FTP_ERRORS:
-                ftp.mkd(part)
+                # Creating a fresh gallery folder (named after the artikelnr) races
+                # against the other concurrent gallery uploads. If a sibling upload
+                # created it first, mkd fails — fall back to cwd instead of erroring.
+                try:
+                    ftp.mkd(part)
+                except FTP_ERRORS:
+                    pass
                 ftp.cwd(part)
 
         ftp.storbinary(f"STOR {filename}", BytesIO(upload_bytes))
@@ -636,6 +642,13 @@ def _ftp_store_file(
                 pass
 
 
+def _safe_jv_folder_name(value: str) -> str:
+    # cosmoshop serves the gallery from a folder named after the article media key
+    # (the artikelnr). Keep it filesystem-safe but otherwise verbatim so it matches
+    # what cosmoshop requests.
+    return "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in ("-", "_"))
+
+
 def upload_jv_product_file_for_site(
     uploaded_file,
     *,
@@ -644,12 +657,16 @@ def upload_jv_product_file_for_site(
     extra_index: int = 0,
     kind: str = "extra",
     prefix: str = "jv",
+    folder_key: str = "",
 ) -> dict:
     """
     Upload JV image to cosmoshop tree.
     kind:
       - "main": write into g/n/v/flashzoom
       - "extra": write into z/zg
+    ``folder_key`` overrides the gallery sub-folder name (default: EAN digits).
+    cosmoshop reads the gallery from a folder named after the article media key
+    (the artikelnr), so the caller passes the artikelnr here.
     Returns DB path and uploaded public URLs.
     """
     host, port, user, password, remote_parts, public_base, image_dir, use_tls, passive, timeout = _ensure_config_for_site_key(
@@ -678,7 +695,7 @@ def upload_jv_product_file_for_site(
         db_nested_suffix = []
     else:
         db_dir = "z"
-        ean_folder = ean_digits or "misc"
+        ean_folder = _safe_jv_folder_name(folder_key) or ean_digits or "misc"
         upload_targets = [
             ("z", [ean_folder, "g"]),
             ("z", [ean_folder]),

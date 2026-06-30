@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
@@ -21,7 +22,7 @@ import json
 import requests
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
@@ -295,6 +296,37 @@ def _extract_bearer_header(request) -> str | None:
     if not auth_header.lower().startswith("bearer "):
         return None
     return auth_header
+
+
+def _normalize_remote_source_urls(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return [text]
+        if isinstance(parsed, list):
+            return [str(item or "").strip() for item in parsed if str(item or "").strip()]
+    return []
+
+
+def _simple_uploaded_file_from_remote_url(source_url: str, index: int):
+    response = requests.get(
+        source_url,
+        timeout=20,
+        headers={
+            "User-Agent": "WareHub/1.0 image-relay",
+            "Accept": "image/*,*/*;q=0.8",
+        },
+    )
+    response.raise_for_status()
+    raw_name = unquote(urlparse(source_url).path.split("/")[-1] or "").strip() or f"remote-image-{index + 1}.jpg"
+    content_type = str(response.headers.get("Content-Type") or "").strip() or "application/octet-stream"
+    return SimpleUploadedFile(raw_name, response.content, content_type=content_type)
 
 
 def _is_backend_session_bridge_enabled(request) -> bool:
@@ -719,28 +751,27 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         if ean_table not in existing_tables:
             return
 
-        placeholder = DEFAULT_EAN_PLACEHOLDER
-        defaults = {
-            "main_ean": placeholder,
-            "jv": placeholder,
-            "xl": placeholder,
-            "otto_jv": placeholder,
-            "otto_xl": placeholder,
-            "kaufland_jv": placeholder,
-            "kaufland_xl": placeholder,
-            "hood_jv": placeholder,
-            "hood_xl": placeholder,
-            "ebay_jv": placeholder,
-            "ebay_xl": placeholder,
-        }
+        ean_row, _ = Ean.objects.get_or_create(kid=kid)
 
-        ean_row, _ = Ean.objects.get_or_create(kid=kid, defaults=defaults)
+        nullable_fields = (
+            "main_ean",
+            "jv",
+            "xl",
+            "otto_jv",
+            "otto_xl",
+            "kaufland_jv",
+            "kaufland_xl",
+            "hood_jv",
+            "hood_xl",
+            "ebay_jv",
+            "ebay_xl",
+        )
 
         update_fields: list[str] = []
-        for field_name, fallback in defaults.items():
+        for field_name in nullable_fields:
             current_value = getattr(ean_row, field_name, None)
-            if current_value in (None, ""):
-                setattr(ean_row, field_name, fallback)
+            if current_value in ("", DEFAULT_EAN_PLACEHOLDER):
+                setattr(ean_row, field_name, None)
                 update_fields.append(field_name)
 
         if update_fields:
@@ -980,7 +1011,21 @@ class KidMarketplaceEansAPIView(APIView):
     def _normalize_ean(value: object) -> str:
         normalized = str(value or "").strip()
         if not normalized:
-            return "0000000000000"
+            return DEFAULT_EAN_PLACEHOLDER
+        return normalized
+
+    @staticmethod
+    def _normalize_optional_ean(value: object) -> str | None:
+        normalized = str(value or "").strip()
+        if not normalized or normalized == DEFAULT_EAN_PLACEHOLDER:
+            return None
+        return normalized
+
+    @staticmethod
+    def _normalize_ean_for_response(value: object) -> str:
+        normalized = str(value or "").strip()
+        if not normalized or normalized == DEFAULT_EAN_PLACEHOLDER:
+            return ""
         return normalized
 
     @staticmethod
@@ -990,22 +1035,21 @@ class KidMarketplaceEansAPIView(APIView):
 
     @classmethod
     def _build_ean_response(cls, kid: Kid, kid_number: str, ean_row: Ean | None) -> dict:
-        fallback = DEFAULT_EAN_PLACEHOLDER
         return {
             "kid_id": kid.id,
             "kid_number": kid_number,
-            "main_ean": cls._normalize_ean(getattr(ean_row, "main_ean", fallback)),
-            "database_ean": cls._normalize_ean(getattr(ean_row, "main_ean", fallback)),
-            "cosmoshop_ean": cls._normalize_ean(getattr(ean_row, "jv", fallback)),
-            "opencart_ean": cls._normalize_ean(getattr(ean_row, "xl", fallback)),
-            "otto_jv_ean": cls._normalize_ean(getattr(ean_row, "otto_jv", fallback)),
-            "otto_xl_ean": cls._normalize_ean(getattr(ean_row, "otto_xl", fallback)),
-            "ebay_jv_ean": cls._normalize_ean(getattr(ean_row, "ebay_jv", fallback)),
-            "ebay_xl_ean": cls._normalize_ean(getattr(ean_row, "ebay_xl", fallback)),
-            "kaufland_jv_ean": cls._normalize_ean(getattr(ean_row, "kaufland_jv", fallback)),
-            "kaufland_xl_ean": cls._normalize_ean(getattr(ean_row, "kaufland_xl", fallback)),
-            "hood_jv_ean": cls._normalize_ean(getattr(ean_row, "hood_jv", fallback)),
-            "hood_xl_ean": cls._normalize_ean(getattr(ean_row, "hood_xl", fallback)),
+            "main_ean": cls._normalize_ean_for_response(getattr(ean_row, "main_ean", None)),
+            "database_ean": cls._normalize_ean_for_response(getattr(ean_row, "main_ean", None)),
+            "cosmoshop_ean": cls._normalize_ean_for_response(getattr(ean_row, "jv", None)),
+            "opencart_ean": cls._normalize_ean_for_response(getattr(ean_row, "xl", None)),
+            "otto_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "otto_jv", None)),
+            "otto_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "otto_xl", None)),
+            "ebay_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "ebay_jv", None)),
+            "ebay_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "ebay_xl", None)),
+            "kaufland_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "kaufland_jv", None)),
+            "kaufland_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "kaufland_xl", None)),
+            "hood_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "hood_jv", None)),
+            "hood_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "hood_xl", None)),
         }
 
     def get(self, request, kid_id: int):
@@ -1037,51 +1081,56 @@ class KidMarketplaceEansAPIView(APIView):
             "hood_xl_ean",
         ]
 
-        updates: dict[str, str] = {}
+        updates: dict[str, str | None] = {}
         if "main_ean" in payload or "database_ean" in payload:
             raw_main = payload.get("main_ean", payload.get("database_ean"))
             raw_database = payload.get("database_ean", payload.get("main_ean"))
-            normalized_main = self._normalize_ean(raw_main)
-            normalized_database = self._normalize_ean(raw_database)
+            normalized_main = self._normalize_optional_ean(raw_main)
+            normalized_database = self._normalize_optional_ean(raw_database)
             if normalized_main != normalized_database:
                 return Response(
                     {"detail": "main_ean and database_ean must match when both are provided."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            self._validate_ean(normalized_main, "main_ean")
+            if normalized_main is not None:
+                self._validate_ean(normalized_main, "main_ean")
             updates["ean"] = normalized_main
 
         for field in fields:
             if field not in payload:
                 continue
-            normalized = self._normalize_ean(payload.get(field))
-            self._validate_ean(normalized, field)
+            normalized = self._normalize_optional_ean(payload.get(field))
+            if normalized is not None:
+                self._validate_ean(normalized, field)
             updates[field] = normalized
 
         if not updates:
             return Response({"detail": "No valid fields to update."}, status=status.HTTP_400_BAD_REQUEST)
 
-        ean_defaults = {
-            "main_ean": updates.get("ean", DEFAULT_EAN_PLACEHOLDER),
-            "jv": updates.get("cosmoshop_ean", DEFAULT_EAN_PLACEHOLDER),
-            "xl": updates.get("opencart_ean", DEFAULT_EAN_PLACEHOLDER),
-            "otto_jv": updates.get("otto_jv_ean", DEFAULT_EAN_PLACEHOLDER),
-            "otto_xl": updates.get("otto_xl_ean", DEFAULT_EAN_PLACEHOLDER),
-            "ebay_jv": updates.get("ebay_jv_ean", DEFAULT_EAN_PLACEHOLDER),
-            "ebay_xl": updates.get("ebay_xl_ean", DEFAULT_EAN_PLACEHOLDER),
-            "kaufland_jv": updates.get("kaufland_jv_ean", DEFAULT_EAN_PLACEHOLDER),
-            "kaufland_xl": updates.get("kaufland_xl_ean", DEFAULT_EAN_PLACEHOLDER),
-            "hood_jv": updates.get("hood_jv_ean", DEFAULT_EAN_PLACEHOLDER),
-            "hood_xl": updates.get("hood_xl_ean", DEFAULT_EAN_PLACEHOLDER),
+        field_map = {
+            "ean": "main_ean",
+            "cosmoshop_ean": "jv",
+            "opencart_ean": "xl",
+            "otto_jv_ean": "otto_jv",
+            "otto_xl_ean": "otto_xl",
+            "ebay_jv_ean": "ebay_jv",
+            "ebay_xl_ean": "ebay_xl",
+            "kaufland_jv_ean": "kaufland_jv",
+            "kaufland_xl_ean": "kaufland_xl",
+            "hood_jv_ean": "hood_jv",
+            "hood_xl_ean": "hood_xl",
         }
 
         with transaction.atomic():
-            ean_row, _ = Ean.objects.get_or_create(kid=kid, defaults=ean_defaults)
+            ean_row, _ = Ean.objects.get_or_create(kid=kid)
             ean_update_fields: list[str] = []
-            for field_name, field_value in ean_defaults.items():
-                if getattr(ean_row, field_name) != field_value:
-                    setattr(ean_row, field_name, field_value)
-                    ean_update_fields.append(field_name)
+            for request_field, model_field in field_map.items():
+                if request_field not in updates:
+                    continue
+                field_value = updates[request_field]
+                if getattr(ean_row, model_field) != field_value:
+                    setattr(ean_row, model_field, field_value)
+                    ean_update_fields.append(model_field)
             if ean_update_fields:
                 ean_row.save(update_fields=ean_update_fields)
 
@@ -1850,11 +1899,24 @@ class UploadImagesToFtpAPIView(APIView):
 
     def post(self, request):
         uploaded_files = collect_uploaded_files(request, field_names=("images", "files", "image", "photo_files"))
+        source_urls = _normalize_remote_source_urls(request.data.get("source_urls") if hasattr(request, "data") else None)
+        if not uploaded_files and source_urls:
+            try:
+                uploaded_files = [
+                    _simple_uploaded_file_from_remote_url(source_url, index)
+                    for index, source_url in enumerate(source_urls)
+                ]
+            except requests.RequestException as exc:
+                return Response(
+                    {"code": "upload_remote_fetch_failed", "detail": f"Failed to download remote source image: {exc}"},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
         if not uploaded_files:
             return Response({"detail": "No image files provided."}, status=status.HTTP_400_BAD_REQUEST)
         site_key = str(request.query_params.get("site_key") or request.data.get("site_key") or "").strip().upper()
         site = str(request.query_params.get("site") or request.data.get("site") or "").strip().upper()
         ean = str(request.query_params.get("ean") or request.data.get("ean") or "").strip()
+        artikelnr = str(request.query_params.get("artikelnr") or request.data.get("artikelnr") or "").strip()
         image_role = str(request.query_params.get("image_role") or request.data.get("image_role") or "main").strip().lower()
         additional_only = image_role in {"additional", "extra", "gallery"}
         prefix = f"{site.lower()}_{site_key.lower()}".strip("_") if site_key else (site.lower() or "jv")
@@ -1872,6 +1934,7 @@ class UploadImagesToFtpAPIView(APIView):
                         extra_index=idx,
                         kind=kind,
                         prefix=prefix or "jv",
+                        folder_key=artikelnr,
                     )
                     uploaded_paths.append(str(payload.get("db_path") or "").strip())
                     uploaded_public_urls.extend([str(x) for x in (payload.get("public_urls") or []) if str(x or "").strip()])

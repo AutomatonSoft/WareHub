@@ -66,6 +66,7 @@ from jv_services.split_views import (
     JVLocalProductByEANAPIView,
     JVProductByEANAPIView,
     JVProductCreateAndPushAPIView,
+    JVProductCreateJobEnqueueAPIView,
     JVProductSyncByEANAPIView,
     JVProductUpdateByEANAPIView,
     JVRubricsTreeAPIView,
@@ -279,6 +280,11 @@ api_v1_patterns = [
         "api/v1/jv/batch/jobs/<int:job_id>/",
         JVBatchJobStatusAPIView.as_view(),
         name="jv-batch-job-status-v1",
+    ),
+    path(
+        "api/v1/jv/products/create-job/",
+        JVProductCreateJobEnqueueAPIView.as_view(),
+        name="jv-product-create-job-v1",
     ),
 ]
 

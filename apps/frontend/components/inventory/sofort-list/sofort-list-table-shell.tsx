@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ImageIcon, ImagePlus, Loader2, Package2, Palette, Plus, Upload, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -374,18 +375,18 @@ export function SofortListTableShell(props: {
         ]
       });
 
-      const normalizedEan = editDraft.ean.trim() || props.placeholderEan;
+      const normalizedEan = editDraft.ean.trim();
       const normalizedSiteEans = {
-        jv: editDraft.jv.trim() || props.placeholderEan,
-        xl: editDraft.xl.trim() || props.placeholderEan,
-        ottoJv: editDraft.ottoJv.trim() || props.placeholderEan,
-        ottoXl: editDraft.ottoXl.trim() || props.placeholderEan,
-        ebayJv: editDraft.ebayJv.trim() || props.placeholderEan,
-        ebayXl: editDraft.ebayXl.trim() || props.placeholderEan,
-        kauflandJv: editDraft.kauflandJv.trim() || props.placeholderEan,
-        kauflandXl: editDraft.kauflandXl.trim() || props.placeholderEan,
-        hoodJv: editDraft.hoodJv.trim() || props.placeholderEan,
-        hoodXl: editDraft.hoodXl.trim() || props.placeholderEan
+        jv: editDraft.jv.trim(),
+        xl: editDraft.xl.trim(),
+        ottoJv: editDraft.ottoJv.trim(),
+        ottoXl: editDraft.ottoXl.trim(),
+        ebayJv: editDraft.ebayJv.trim(),
+        ebayXl: editDraft.ebayXl.trim(),
+        kauflandJv: editDraft.kauflandJv.trim(),
+        kauflandXl: editDraft.kauflandXl.trim(),
+        hoodJv: editDraft.hoodJv.trim(),
+        hoodXl: editDraft.hoodXl.trim()
       };
 
       await patchKidMarketplaceEans({
@@ -463,7 +464,7 @@ export function SofortListTableShell(props: {
                 <th scope="col" className="ui-listing-head-cell w-[260px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">MARKETPLACE EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head w-[116px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head w-[188px] px-2 py-3 text-center">
                   <span className="ui-table-head-label">ACTIONS</span>
                 </th>
                 <th scope="col" className="hidden w-20">
@@ -550,6 +551,12 @@ export function SofortListTableShell(props: {
                   </td>
                   <td className="wh-sofort-actions-cell px-3 py-3 align-middle">
                     <div className="wh-sofort-row-actions">
+                      <Link
+                        href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
+                        className={buttonVariants({ variant: "default", size: "sm", className: "min-w-[68px]" })}
+                      >
+                        Create
+                      </Link>
                       <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>Edit</Button>
                       <Button type="button" variant="outline" size="sm">Delete</Button>
                     </div>

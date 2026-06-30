@@ -139,12 +139,17 @@ def resolve_jv_lieferzeit_id(cur, jv_overrides: dict, default: int = 11) -> int:
     source_site_key = str(jv_overrides.get("_delivery_mapping_source_site_key") or "").strip().upper()
     target_site_key = str(jv_overrides.get("_delivery_mapping_target_site_key") or "").strip().upper()
     site_key_for_resolution = target_site_key or source_site_key or None
-    selected_id = resolve_jv_delivery_ui_id(raw_value, site_key=site_key_for_resolution, default=default) or default
-    source_delivery_id = resolve_jv_delivery_ui_id(
+    # NOTE: delivery UI id 0 ("Lieferzeit: 2-5 Tage") is a valid selection. Use an explicit
+    # `is not None` check instead of `or default`/`or selected_id`, otherwise a chosen id 0 is
+    # treated as falsy and silently replaced by the default (11 = "3-6 Wochen").
+    _resolved_selected = resolve_jv_delivery_ui_id(raw_value, site_key=site_key_for_resolution, default=default)
+    selected_id = _resolved_selected if _resolved_selected is not None else default
+    _resolved_source = resolve_jv_delivery_ui_id(
         jv_overrides.get("_delivery_mapping_source_id"),
         site_key=source_site_key,
         default=selected_id,
-    ) or selected_id
+    )
+    source_delivery_id = _resolved_source if _resolved_source is not None else selected_id
     mapped_target_id = _delivery_override_target_id(
         source_site_key=source_site_key,
         target_site_key=target_site_key,
@@ -340,13 +345,19 @@ def extract_jv_content_overrides(jv_overrides: dict) -> dict:
     # Primary path: explicit DE row inside content_by_language.
     rows = jv_overrides.get("content_by_language")
     if isinstance(rows, list):
+        fallback_row = None
         for row in rows:
             if not isinstance(row, dict):
                 continue
+            if fallback_row is None:
+                fallback_row = row
             lang = str(row.get("language_code") or "").strip().lower()
             if lang and lang != "de":
                 continue
-            normalized = dict(row)
+            fallback_row = row
+            break
+        if isinstance(fallback_row, dict):
+            normalized = dict(fallback_row)
             # Backward compatibility: accept legacy uppercase field names.
             if normalized.get("description") in (None, ""):
                 normalized["description"] = (

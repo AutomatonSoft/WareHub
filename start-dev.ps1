@@ -10,7 +10,8 @@ param(
   [switch]$ReinstallDeps,
   [switch]$SkipDependencyInstall,
   [switch]$WithMigrations,
-  [switch]$NoNewWindows
+  [switch]$NoNewWindows,
+  [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,13 @@ $script:PythonSearchFindings = @()
 $npmExecutable = $null
 $script:StartedLogPaths = @{}
 $script:LoadedRootEnvKeys = @()
+$appPidFiles = @(
+  "frontend.pid",
+  "backend.pid",
+  "database-service.pid",
+  "database-service-jv-worker.pid",
+  "orchestrator.pid"
+)
 
 $appPlans = @(
   @{
@@ -1114,6 +1122,81 @@ function Print-StartupSummary {
   }
 }
 
+# --- Full-restart helpers (folded in from the former stop-dev.ps1) ---
+function Stop-BackgroundPidProcesses {
+  foreach ($pidFileName in $appPidFiles) {
+    $pidPath = Join-Path $localDevLogDirectory $pidFileName
+    if (-not (Test-Path -LiteralPath $pidPath)) {
+      continue
+    }
+    try {
+      $rawPid = (Get-Content -LiteralPath $pidPath -ErrorAction Stop | Select-Object -First 1).ToString().Trim()
+      $processId = 0
+      if ([int]::TryParse($rawPid, [ref]$processId) -and $processId -gt 0) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($process) {
+          Write-Host "Killing $($process.ProcessName) (PID $processId) from $pidFileName."
+          Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        }
+      }
+    } finally {
+      Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Stop-JvWorkerProcesses {
+  # The JV batch worker has no listening port, and its PID file holds the
+  # PowerShell *wrapper* PID, not the python process. Killing the wrapper leaves
+  # an orphaned `python manage.py run_jv_batch_worker` alive on the OLD code,
+  # which then grabs jobs. Match and kill it by command line so restarts are clean.
+  $workers = @(
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^python' -and $_.CommandLine -and $_.CommandLine -match 'run_jv_batch_worker' }
+  )
+  foreach ($worker in $workers) {
+    Write-Host "Killing orphaned JV worker (PID $($worker.ProcessId))."
+    Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Invoke-FullDown {
+  Write-Host "docker compose down ($composeFile)"
+  Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "down") | Out-Null
+}
+
+function Invoke-DependencyBuild {
+  Write-Host "docker compose build ($composeFile)"
+  Invoke-DockerCommand -ArgumentList @("compose", "-f", $composeFile, "build") | ForEach-Object { Write-Host $_ }
+}
+
+# --- Progress bar across the restart phases ---
+$script:StartPhaseTotal = 0
+$script:StartPhaseIndex = 0
+function Set-StartPhaseTotal([int]$total) {
+  $script:StartPhaseTotal = $total
+  $script:StartPhaseIndex = 0
+}
+function Write-StartPhase([string]$title) {
+  $script:StartPhaseIndex++
+  $total = [math]::Max(1, $script:StartPhaseTotal)
+  $percent = [int]((($script:StartPhaseIndex - 1) / $total) * 100)
+  Write-Progress -Activity "WareHub start-dev" -Status "[$($script:StartPhaseIndex)/$total] $title" -PercentComplete $percent
+  $line = "  [$($script:StartPhaseIndex)/$total] $title"
+  $bar = "=" * ($line.Length + 2)
+  Write-Host ""
+  Write-Host $bar -ForegroundColor Cyan
+  Write-Host $line -ForegroundColor Cyan
+  Write-Host $bar -ForegroundColor Cyan
+}
+function Complete-StartPhases {
+  Write-Progress -Activity "WareHub start-dev" -Status "Done" -PercentComplete 100
+  Write-Progress -Activity "WareHub start-dev" -Completed
+}
+
+# --- Main flow: down + kill -> build -> up ---
+$restartWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
 Assert-RepoRoot
 Assert-Docker
 Assert-DockerDaemonReady
@@ -1129,8 +1212,25 @@ Initialize-LocalRuntimeEnv
 Assert-ComposeConfig
 Ensure-LocalDevLogDirectory
 Ensure-LocalDependencyCacheDirectory
-Write-Host "Cleaning previous WareHub local app processes..."
+
+$startAppsRequested = -not ($DepsOnly -or $NoApps)
+$phaseTotal = 2  # down+kill, bring-up
+if (-not $SkipBuild) { $phaseTotal++ }
+if ($startAppsRequested) { $phaseTotal++ }
+Set-StartPhaseTotal $phaseTotal
+
+Write-StartPhase "Down + kill (stop processes, docker compose down)"
 Stop-WareHubLocalAppProcesses
+Stop-BackgroundPidProcesses
+Stop-JvWorkerProcesses
+Invoke-FullDown
+
+if (-not $SkipBuild) {
+  Write-StartPhase "Build dependency images"
+  Invoke-DependencyBuild
+}
+
+Write-StartPhase "Bring up dependencies & install packages"
 Start-LocalDependencies
 if (Test-AppSelectedForStartup -AppName "frontend") {
   Ensure-FrontendDependencies
@@ -1142,8 +1242,13 @@ foreach ($pythonServicePlan in $pythonServicePlans) {
   }
 }
 
-if (-not ($DepsOnly -or $NoApps)) {
+if ($startAppsRequested) {
+  Write-StartPhase "Start applications"
   Start-LocalApps -PowerShellExecutable $powerShellExecutable
 }
 
+Complete-StartPhases
+$restartWatch.Stop()
 Print-StartupSummary
+Write-Host ""
+Write-Host ("All done in {0:N1}s." -f $restartWatch.Elapsed.TotalSeconds) -ForegroundColor Green

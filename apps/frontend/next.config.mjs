@@ -43,9 +43,23 @@ loadMonorepoEnv();
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Keep the trailing slash so it reaches the rewrite intact. Otherwise Next 308-redirects
+  // `/api/v1/services/...rows/` to the slashless form before rewriting, the proxied request
+  // hits the Django backend without a trailing slash, and APPEND_SLASH 301s to a Location that
+  // drops the `/services` proxy prefix — landing on the wrong backend with a 404.
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     const backendOrigin = process.env.BACKEND_ORIGIN ?? "http://localhost:8932";
+    const servicesOrigin = process.env.SERVICES_ORIGIN ?? "http://localhost:8934";
     return [
+      {
+        // Append the trailing slash: Next strips it from `:path*`, and the Django services
+        // backend (APPEND_SLASH=True) would otherwise 301 to a Location without the `/services`
+        // proxy prefix, landing the request on the wrong backend. All services routes are
+        // slash-terminated, so forcing the slash here is safe.
+        source: "/api/v1/services/:path*",
+        destination: `${servicesOrigin}/api/v1/:path*/`
+      },
       {
         source: "/api/v1/:path((?!services(?:/|$)|orchestrator(?:/|$)|jv(?:/|$)|xl(?:/|$)|hood(?:/|$)|uploads(?:/|$)|docs(?:/|$)|backend(?:/|$)).*)",
         destination: `${backendOrigin}/api/v1/:path`

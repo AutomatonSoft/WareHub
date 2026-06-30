@@ -168,8 +168,8 @@ export function SofortListTable() {
       const rawItem = item as Record<string, unknown>;
       const photos = normalizePhotoList(item.photo);
       const skuFallback = firstSkuEan(rawItem);
-      const eanFallback = skuFallback ?? placeholderEan;
-      const siteEans = extractSiteEans(rawItem, placeholderEan);
+      const eanFallback = skuFallback ?? "";
+      const siteEans = extractSiteEans(rawItem, "");
       const normalizedRowEan =
         typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
           ? (item as { database_ean?: string }).database_ean!.trim()
@@ -182,16 +182,16 @@ export function SofortListTable() {
             : eanFallback;
 
       const normalizedSiteEans = {
-        jv: siteEans.jv === placeholderEan ? normalizedRowEan : siteEans.jv,
-        xl: siteEans.xl === placeholderEan ? normalizedRowEan : siteEans.xl,
-        ottoJv: siteEans.ottoJv === placeholderEan ? normalizedRowEan : siteEans.ottoJv,
-        ottoXl: siteEans.ottoXl === placeholderEan ? normalizedRowEan : siteEans.ottoXl,
-        ebayJv: siteEans.ebayJv === placeholderEan ? normalizedRowEan : siteEans.ebayJv,
-        ebayXl: siteEans.ebayXl === placeholderEan ? normalizedRowEan : siteEans.ebayXl,
-        kauflandJv: siteEans.kauflandJv === placeholderEan ? normalizedRowEan : siteEans.kauflandJv,
-        kauflandXl: siteEans.kauflandXl === placeholderEan ? normalizedRowEan : siteEans.kauflandXl,
-        hoodJv: siteEans.hoodJv === placeholderEan ? normalizedRowEan : siteEans.hoodJv,
-        hoodXl: siteEans.hoodXl === placeholderEan ? normalizedRowEan : siteEans.hoodXl
+        jv: siteEans.jv,
+        xl: siteEans.xl,
+        ottoJv: siteEans.ottoJv,
+        ottoXl: siteEans.ottoXl,
+        ebayJv: siteEans.ebayJv,
+        ebayXl: siteEans.ebayXl,
+        kauflandJv: siteEans.kauflandJv,
+        kauflandXl: siteEans.kauflandXl,
+        hoodJv: siteEans.hoodJv,
+        hoodXl: siteEans.hoodXl
       };
 
       return {

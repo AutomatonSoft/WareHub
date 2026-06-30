@@ -41,7 +41,7 @@ export function AppSidebar({
       <div className={cn("mb-5 flex items-center px-2", collapsed ? "justify-center" : "justify-between")}>
         <div className="wh-sidebar__brand flex items-center gap-3">
           <div className="wh-sidebar__brand-icon flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm">
-            <Image src="/brand/logo.png" alt="WareHub logo" width={40} height={40} className="h-[40px] w-[40px] object-contain" priority />
+            <Image src="/brand/logo.png" alt="WareHub logo" width={40} height={40} className="h-[40px] w-auto object-contain" priority />
           </div>
           {!collapsed ? (
             <div>

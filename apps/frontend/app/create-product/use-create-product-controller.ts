@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { allMarketplaceSites } from "../../lib/marketplace-sites";
 import {
   createOrchestratorJob,
@@ -23,6 +24,14 @@ import {
   mapValidationErrorCodeToLabel
 } from "./create-product-controller-model";
 import { normalizeCreateProductRuntimeError } from "./create-product-api-errors";
+import {
+  fetchCreateProductJvSitesByMainEan,
+  fetchCreateProductJvSourceSnapshot,
+  fetchCreateProductKidContext,
+  type CreateProductJvSourceSite,
+  type CreateProductJvSourceSnapshot,
+  type CreateProductKidContext,
+} from "./create-product-source-api";
 
 type Labels = Record<string, string>;
 
@@ -35,8 +44,9 @@ type UseCreateProductControllerInput = {
 
 export function useCreateProductController(input: UseCreateProductControllerInput) {
   const { t, showToast } = input;
+  const searchParams = useSearchParams();
 
-  const [selectedSites, setSelectedSites] = useState<string[]>([]);
+  const [selectedSites, setSelectedSites] = useState<string[]>(() => allMarketplaceSites.map((site) => site.id));
   const [sitesQuery, setSitesQuery] = useState("");
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [ean, setEan] = useState("");
@@ -53,8 +63,147 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [reconciliationReportId, setReconciliationReportId] = useState("");
   const [reconciliationReportsJson, setReconciliationReportsJson] = useState("");
   const [reconciliationReportJson, setReconciliationReportJson] = useState("");
+  const [kidContext, setKidContext] = useState<CreateProductKidContext | null>(null);
+  const [kidContextLoading, setKidContextLoading] = useState(false);
+  const [kidContextError, setKidContextError] = useState<string | null>(null);
+  const [sourceSites, setSourceSites] = useState<CreateProductJvSourceSite[]>([]);
+  const [sourceSitesLoading, setSourceSitesLoading] = useState(false);
+  const [sourceSitesError, setSourceSitesError] = useState<string | null>(null);
+  const [selectedSourceSiteKey, setSelectedSourceSiteKey] = useState("");
+  const [sourceSnapshot, setSourceSnapshot] = useState<CreateProductJvSourceSnapshot | null>(null);
+  const [sourceSnapshotLoading, setSourceSnapshotLoading] = useState(false);
+  const [sourceSnapshotError, setSourceSnapshotError] = useState<string | null>(null);
+  const [prefillSnapshot, setPrefillSnapshot] = useState<{
+    ean: string;
+    price: string;
+    productName: string;
+    imagesText: string;
+  } | null>(null);
 
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
+  const sourceKidParam = searchParams.get("kid") ?? "";
+  const sourceKidId = Number.parseInt(sourceKidParam, 10);
+
+  useEffect(() => {
+    if (!Number.isFinite(sourceKidId) || sourceKidId <= 0) {
+      setKidContext(null);
+      setKidContextError(null);
+      setKidContextLoading(false);
+      setSourceSites([]);
+      setSourceSitesError(null);
+      setSourceSitesLoading(false);
+      setSelectedSourceSiteKey("");
+      setSourceSnapshot(null);
+      setSourceSnapshotError(null);
+      setSourceSnapshotLoading(false);
+      setPrefillSnapshot(null);
+      return;
+    }
+
+    let active = true;
+    setKidContextLoading(true);
+    setKidContextError(null);
+
+    void fetchCreateProductKidContext(sourceKidId)
+      .then((context) => {
+        if (!active) return;
+        setKidContext(context);
+      })
+      .catch((error) => {
+        if (!active) return;
+        const message = normalizeCreateProductRuntimeError(error, "Failed to load kid context.");
+        setKidContext(null);
+        setKidContextError(message);
+        showToast(message, "error");
+      })
+      .finally(() => {
+        if (active) setKidContextLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showToast, sourceKidId]);
+
+  useEffect(() => {
+    if (!kidContext?.mainEan) {
+      setSourceSites([]);
+      setSourceSitesError(null);
+      setSourceSitesLoading(false);
+      setSelectedSourceSiteKey("");
+      return;
+    }
+
+    let active = true;
+    setSourceSitesLoading(true);
+    setSourceSitesError(null);
+
+    void fetchCreateProductJvSitesByMainEan(kidContext.mainEan)
+      .then((sites) => {
+        if (!active) return;
+        setSourceSites(sites);
+        setSelectedSourceSiteKey((current) => {
+          if (current && sites.some((site) => site.siteKey === current)) return current;
+          return sites[0]?.siteKey ?? "";
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSourceSites([]);
+        setSourceSitesError(normalizeCreateProductRuntimeError(error, "Failed to load JV source sites."));
+      })
+      .finally(() => {
+        if (active) setSourceSitesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [kidContext?.mainEan]);
+
+  useEffect(() => {
+    if (!kidContext?.mainEan || !selectedSourceSiteKey) {
+      setSourceSnapshot(null);
+      setSourceSnapshotError(null);
+      setSourceSnapshotLoading(false);
+      return;
+    }
+
+    let active = true;
+    setSourceSnapshotLoading(true);
+    setSourceSnapshotError(null);
+
+    void fetchCreateProductJvSourceSnapshot({
+      mainEan: kidContext.mainEan,
+      siteKey: selectedSourceSiteKey,
+    })
+      .then((snapshot) => {
+        if (!active) return;
+        setSourceSnapshot(snapshot);
+        setEan(kidContext.mainEan);
+        setPrice(snapshot.price);
+        setProductName(snapshot.productName);
+        setImagesText(snapshot.imagesText);
+        setPrefillSnapshot({
+          ean: kidContext.mainEan,
+          price: snapshot.price,
+          productName: snapshot.productName,
+          imagesText: snapshot.imagesText,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSourceSnapshot(null);
+        setSourceSnapshotError(normalizeCreateProductRuntimeError(error, "Failed to load JV source product."));
+      })
+      .finally(() => {
+        if (active) setSourceSnapshotLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [kidContext?.mainEan, selectedSourceSiteKey]);
 
   function toggleSite(siteId: string) {
     setSelectedSites((prev) =>
@@ -67,14 +216,21 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   }
 
   function clearAllSites() {
-    setSelectedSites([]);
+    setSelectedSites(allMarketplaceSites.map((site) => site.id));
   }
 
   function resetFields() {
-    setEan("");
-    setPrice("");
-    setProductName("");
-    setImagesText("");
+    if (prefillSnapshot) {
+      setEan(prefillSnapshot.ean);
+      setPrice(prefillSnapshot.price);
+      setProductName(prefillSnapshot.productName);
+      setImagesText(prefillSnapshot.imagesText);
+    } else {
+      setEan("");
+      setPrice("");
+      setProductName("");
+      setImagesText("");
+    }
     setFieldErrors({});
     showToast(t.fieldsReset, "info");
   }
@@ -95,8 +251,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return validation.isValid;
   }
 
-  async function handleCreateProduct() {
-    if (selectedSites.length === 0) {
+  async function submitCreateProduct(siteIdsOverride?: string[]) {
+    const targetSiteIds = Array.isArray(siteIdsOverride) ? siteIdsOverride : selectedSites;
+    if (targetSiteIds.length === 0) {
       showToast(t.selectAtLeastOneMarketplaceSite, "error");
       return;
     }
@@ -115,7 +272,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           price: normalized.price,
           productName: normalized.productName,
           imageUrls: normalized.imageUrls,
-          selectedSiteIds: selectedSites
+          selectedSiteIds: targetSiteIds
         });
         setLatestJobId(created.jobId);
         showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
@@ -127,7 +284,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         price: normalized.price,
         productName: normalized.productName,
         imageUrls: normalized.imageUrls,
-        selectedSiteIds: selectedSites
+        selectedSiteIds: targetSiteIds
       });
 
       const failedCount = result.results.filter((item) => item.status === "failed").length;
@@ -146,6 +303,14 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleCreateProduct() {
+    await submitCreateProduct();
+  }
+
+  async function handleCreateProductForSiteIds(siteIds: string[]) {
+    await submitCreateProduct(siteIds);
   }
 
   async function loadJobStatus() {
@@ -256,6 +421,16 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     reconciliationReportJson,
     jobStatusDetails,
     reconciliationSummary,
+    kidContext,
+    kidContextLoading,
+    kidContextError,
+    sourceSites,
+    sourceSitesLoading,
+    sourceSitesError,
+    selectedSourceSiteKey,
+    sourceSnapshot,
+    sourceSnapshotLoading,
+    sourceSnapshotError,
     visibleSites,
     setSitesQuery,
     setShowSelectedOnly,
@@ -267,11 +442,13 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setUseControlledJob,
     setLatestJobId,
     setReconciliationReportId,
+    setSelectedSourceSiteKey,
     toggleSite,
     selectAllSites,
     clearAllSites,
     resetFields,
     handleCreateProduct,
+    handleCreateProductForSiteIds,
     loadJobStatus,
     loadReconciliationReports,
     loadReconciliationReportById

@@ -57,7 +57,7 @@ class Kid(Model):
 class Ean(Model):
     kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean_site")
     main_ean = CharField(max_length=16, null=True, blank=True)
-    jv = CharField(max_length=16, null=True, blank=True)
+    jv = CharField(max_length=64, null=True, blank=True)
     xl = CharField(max_length=16, null=True, blank=True)
     otto_jv = CharField(max_length=16, null=True, blank=True)
     otto_xl = CharField(max_length=16, null=True, blank=True)

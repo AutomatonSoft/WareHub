@@ -4,7 +4,7 @@ import { Badge } from "../shared/badge";
 import { Card } from "../shared/card";
 import { useLabels } from "../../app/use-labels";
 import type { KidImageGalleryModel } from "./image-gallery-model";
-import { normalizeEanOrFallback } from "./ean-utils";
+import { isMeaningfulEan } from "./ean-utils";
 
 type LinkedProductsByEan = {
   xljv_services?: Record<string, unknown[]>;
@@ -65,7 +65,10 @@ function toText(value: unknown, fallback = "-"): string {
 export function KidDetailsSummary({ meta }: { meta: KidSummaryMeta }) {
   const t = useLabels();
   const listingTone = meta.listingStatus === "listed" ? "success" : "warning";
-  const eans = meta.skuEans.length > 0 ? meta.skuEans.map((value) => normalizeEanOrFallback(value)) : [];
+  const eans =
+    meta.skuEans.length > 0
+      ? Array.from(new Set(meta.skuEans.map((value) => value.trim()).filter(isMeaningfulEan)))
+      : [];
   const completenessChecks = [
     { label: t.readinessPlace, ok: normalizeLabel(meta.place) !== "-" },
     { label: t.readinessRoom, ok: normalizeLabel(meta.room) !== "-" },

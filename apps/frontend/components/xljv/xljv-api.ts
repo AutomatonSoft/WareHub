@@ -118,9 +118,27 @@ export async function xljvUploadImages(params: {
   site: Site;
   siteKey?: string;
   ean?: string;
+  artikelnr?: string;
   files: File[];
+  sourceUrls?: string[];
   imageRole?: "main" | "additional";
 }): Promise<{ response: Response; payload: Record<string, unknown> }> {
+  const normalizedSourceUrls = Array.isArray(params.sourceUrls)
+    ? params.sourceUrls.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (params.files.length === 0 && normalizedSourceUrls.length > 0) {
+    return postJsonWithFallback(
+      ["/api/v1/uploads/images"],
+      {
+        source_urls: normalizedSourceUrls,
+        ...(params.site ? { site: params.site } : {}),
+        ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {}),
+        ...(params.ean?.trim() ? { ean: params.ean.trim() } : {}),
+        ...(params.artikelnr?.trim() ? { artikelnr: params.artikelnr.trim() } : {}),
+        ...(params.imageRole ? { image_role: params.imageRole } : {}),
+      }
+    );
+  }
   const formData = new FormData();
   for (const file of params.files) formData.append("images", file);
   return postFormDataWithFallback(
@@ -130,6 +148,7 @@ export async function xljvUploadImages(params: {
       ...(params.site ? { site: params.site } : {}),
       ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {}),
       ...(params.ean?.trim() ? { ean: params.ean.trim() } : {}),
+      ...(params.artikelnr?.trim() ? { artikelnr: params.artikelnr.trim() } : {}),
       ...(params.imageRole ? { image_role: params.imageRole } : {})
     }
   );
@@ -150,6 +169,51 @@ export async function xljvCreateAndPush(params: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params.payload)
     }
+  );
+  const payload = await parseJsonSafe(response);
+  return { response, payload };
+}
+
+export type JvBatchJobItemStatus = {
+  id: number;
+  site: string;
+  site_key: string;
+  status: string;
+  error_code?: string;
+  error_text?: string;
+  source_product_id?: number | null;
+  details?: Record<string, unknown>;
+};
+
+export type JvBatchJobStatus = {
+  id: number;
+  status: string;
+  operation?: string;
+  ean?: string;
+  result_summary?: Record<string, unknown>;
+  items?: JvBatchJobItemStatus[];
+};
+
+export async function xljvEnqueueCreateJob(params: {
+  ean: string;
+  name?: string;
+  sites: Array<{ site: string; site_key: string; domain?: string; payload: CreateAndPushBody }>;
+}): Promise<{ response: Response; payload: Record<string, unknown> }> {
+  const response = await apiFetch(`/api/v1/jv/products/create-job/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ean: params.ean, name: params.name ?? "", sites: params.sites })
+  });
+  const payload = await parseJsonSafe(response);
+  return { response, payload };
+}
+
+export async function xljvGetBatchJob(
+  jobId: number | string
+): Promise<{ response: Response; payload: Record<string, unknown> }> {
+  const response = await apiFetch(
+    `/api/v1/jv/batch/jobs/${encodeURIComponent(String(jobId))}/`,
+    {}
   );
   const payload = await parseJsonSafe(response);
   return { response, payload };

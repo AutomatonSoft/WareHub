@@ -20,8 +20,18 @@ class JVBatchJob(models.Model):
         APPLIED = "applied", "Applied"
         FAILED = "failed", "Failed"
 
+    class Operation(models.TextChoices):
+        UPDATE = "update", "Update"
+        CREATE = "create", "Create"
+
     ean = models.CharField(max_length=64, db_index=True)
     site_family = models.CharField(max_length=8, choices=SiteFamily.choices, db_index=True)
+    operation = models.CharField(
+        max_length=16,
+        choices=Operation.choices,
+        default=Operation.UPDATE,
+        db_index=True,
+    )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
     initiated_by = models.CharField(max_length=150, default="system")
     idempotency_key = models.CharField(max_length=255, blank=True, default="", db_index=True)

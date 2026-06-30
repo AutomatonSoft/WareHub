@@ -50,6 +50,14 @@ def fetch_jv_media_from_shopmedia(cur, *, media_key: str, ean: str) -> tuple[str
             None,
         )
 
+    # cosmoshop serves the gallery from a folder named after the media key
+    # (the artikelnr), not the EAN. For main products the key equals the EAN, so
+    # this stays backward compatible; for Sofort products (key = JVM<ean>) it
+    # resolves to the correct folder.
+    gallery_folder = "".join(ch for ch in str(media_key or "") if ch.isalnum() or ch in ("-", "_"))
+    if not gallery_folder:
+        gallery_folder = "".join(ch for ch in str(ean or "") if ch.isdigit()) or "misc"
+
     def _build_path(row, *, is_main: bool) -> str:
         stem = str(_row_get(row, "dateiname", 1) or "").strip()
         ext = str(_row_get(row, "endung", 2) or "").strip().lower() or "jpg"
@@ -57,8 +65,7 @@ def fetch_jv_media_from_shopmedia(cur, *, media_key: str, ean: str) -> tuple[str
             return ""
         if is_main:
             return f"cosmoshop/default/pix/a/v/{stem}.{ext}"
-        ean_folder = "".join(ch for ch in str(ean or "") if ch.isdigit()) or "misc"
-        return f"cosmoshop/default/pix/a/z/{ean_folder}/g/{stem}.{ext}"
+        return f"cosmoshop/default/pix/a/z/{gallery_folder}/g/{stem}.{ext}"
 
     main_image = _build_path(main_row, is_main=True) if main_row else ""
     extra_rows: list[dict] = []

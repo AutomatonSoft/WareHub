@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'jv_services',
     'xl_services',
     'kaufland',
+    'create_products',
 ]
 
 MIDDLEWARE = [

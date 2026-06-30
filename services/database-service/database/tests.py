@@ -58,17 +58,17 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(Kid.objects.filter(kid_number__contains=["900900"]).count(), 1)
         kid = Kid.objects.get(kid_number__contains=["900900"])
         ean_row = Ean.objects.get(kid=kid)
-        self.assertEqual(ean_row.main_ean, "0000000000000")
-        self.assertEqual(ean_row.jv, "0000000000000")
-        self.assertEqual(ean_row.xl, "0000000000000")
-        self.assertEqual(ean_row.otto_jv, "0000000000000")
-        self.assertEqual(ean_row.otto_xl, "0000000000000")
-        self.assertEqual(ean_row.kaufland_jv, "0000000000000")
-        self.assertEqual(ean_row.kaufland_xl, "0000000000000")
-        self.assertEqual(ean_row.hood_jv, "0000000000000")
-        self.assertEqual(ean_row.hood_xl, "0000000000000")
-        self.assertEqual(ean_row.ebay_jv, "0000000000000")
-        self.assertEqual(ean_row.ebay_xl, "0000000000000")
+        self.assertIsNone(ean_row.main_ean)
+        self.assertIsNone(ean_row.jv)
+        self.assertIsNone(ean_row.xl)
+        self.assertIsNone(ean_row.otto_jv)
+        self.assertIsNone(ean_row.otto_xl)
+        self.assertIsNone(ean_row.kaufland_jv)
+        self.assertIsNone(ean_row.kaufland_xl)
+        self.assertIsNone(ean_row.hood_jv)
+        self.assertIsNone(ean_row.hood_xl)
+        self.assertIsNone(ean_row.ebay_jv)
+        self.assertIsNone(ean_row.ebay_xl)
         self.assertFalse(kid.store)
         self.assertIn("sync", response.data)
         self.assertIsNone(response.data["sync"]["error"])
@@ -454,8 +454,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kid_snapshot"]["room"], "ROOM-1")
         self.assertEqual(response.data["kid_snapshot"]["furniture_type"], "chair")
         self.assertEqual(response.data["kid_snapshot"]["listing_status"], "listed")
-        self.assertEqual(response.data["kid_snapshot"]["main_ean"], "0000000000000")
-        self.assertEqual(response.data["kid_snapshot"]["database_ean"], "0000000000000")
+        self.assertEqual(response.data["kid_snapshot"]["main_ean"], "")
+        self.assertEqual(response.data["kid_snapshot"]["database_ean"], "")
         self.assertEqual(
             response.data["kid_snapshot"]["main_photo"],
             "https://cdn.example.com/photo-main.jpg",
@@ -509,6 +509,38 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["main_ean"], "4444444444444")
         self.assertEqual(response.data["database_ean"], "4444444444444")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
+
+    def test_marketplace_eans_get_hides_placeholder_values(self):
+        Ean.objects.create(
+            kid=self.kid,
+            main_ean="0000000000000",
+            jv="0000000000000",
+            xl="0000000000000",
+            otto_jv="0000000000000",
+            otto_xl="0000000000000",
+            kaufland_jv="0000000000000",
+            kaufland_xl="0000000000000",
+            hood_jv="0000000000000",
+            hood_xl="0000000000000",
+            ebay_jv="0000000000000",
+            ebay_xl="0000000000000",
+        )
+
+        response = self.client.get(f"/api/v1/kids/{self.kid.id}/marketplace-eans/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["main_ean"], "")
+        self.assertEqual(response.data["database_ean"], "")
+        self.assertEqual(response.data["cosmoshop_ean"], "")
+        self.assertEqual(response.data["opencart_ean"], "")
+        self.assertEqual(response.data["otto_jv_ean"], "")
+        self.assertEqual(response.data["otto_xl_ean"], "")
+        self.assertEqual(response.data["ebay_jv_ean"], "")
+        self.assertEqual(response.data["ebay_xl_ean"], "")
+        self.assertEqual(response.data["kaufland_jv_ean"], "")
+        self.assertEqual(response.data["kaufland_xl_ean"], "")
+        self.assertEqual(response.data["hood_jv_ean"], "")
+        self.assertEqual(response.data["hood_xl_ean"], "")
 
     def test_get_kid_ean_summary_not_found(self):
         response = self.client.get("/api/v1/kids/999999/ean-summary/")

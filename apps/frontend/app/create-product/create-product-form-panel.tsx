@@ -14,14 +14,12 @@ type Props = {
   imagesText: string;
   fieldErrors: Partial<Record<CreateProductFieldKey, string>>;
   submitting: boolean;
-  useControlledJob: boolean;
   onEanChange: (value: string) => void;
   onPriceChange: (value: string) => void;
   onProductNameChange: (value: string) => void;
   onImagesTextChange: (value: string) => void;
   onSubmit: () => void;
   onReset: () => void;
-  onToggleControlledMode: () => void;
 };
 
 export function CreateProductFormPanel(props: Props) {
@@ -33,14 +31,12 @@ export function CreateProductFormPanel(props: Props) {
     imagesText,
     fieldErrors,
     submitting,
-    useControlledJob,
     onEanChange,
     onPriceChange,
     onProductNameChange,
     onImagesTextChange,
     onSubmit,
-    onReset,
-    onToggleControlledMode
+    onReset
   } = props;
 
   return (
@@ -78,13 +74,10 @@ export function CreateProductFormPanel(props: Props) {
       </div>
       <div className="wh-secondary-toolbar mt-4 flex flex-wrap gap-2">
         <Button className="min-w-[170px]" onClick={onSubmit} disabled={submitting}>
-          {useControlledJob ? t.createUpdateJob : t.createProduct}
+          {t.createProduct}
         </Button>
         <Button className="min-w-[170px]" variant="secondary" onClick={onReset}>
           {t.resetFields}
-        </Button>
-        <Button className="min-w-[210px]" variant="outline" onClick={onToggleControlledMode}>
-          {useControlledJob ? t.controlledModeOn : t.controlledModeOff}
         </Button>
       </div>
     </>

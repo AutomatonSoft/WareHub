@@ -98,6 +98,8 @@ _CATEGORY_TOKEN_ALIASES = {
 def normalize_jv_categories(rows):
     normalized = []
     seen = set()
+    any_explicit_main = False
+    priorities: list[int | None] = []
     for item in rows or []:
         try:
             # Accept both source-style rows (rubid/priority) and local payload rows.
@@ -111,20 +113,29 @@ def normalize_jv_categories(rows):
         if rubid in seen:
             continue
         seen.add(rubid)
-        main_category = False
+        explicit_main = None
         if raw.get("main_category") is not None:
-            main_category = _as_category_bool(raw.get("main_category"))
-        else:
-            try:
-                main_category = int(raw.get("priority") or 0) > 0
-            except (TypeError, ValueError):
-                main_category = False
+            explicit_main = _as_category_bool(raw.get("main_category"))
+            any_explicit_main = True
+        try:
+            prio = int(raw.get("priority")) if raw.get("priority") not in (None, "") else None
+        except (TypeError, ValueError):
+            prio = None
         normalized.append(
             {
                 "category_id": rubid,
-                "main_category": main_category,
+                "main_category": bool(explicit_main),
             }
         )
+        priorities.append(prio)
+
+    if not any_explicit_main and normalized:
+        # cosmoshop encodes the Hauptrubrik as the row with the SMALLEST priority
+        # value (main = 0). Derive the main flag from that, not from priority > 0.
+        ranked = [(p if p is not None else 0, idx) for idx, p in enumerate(priorities)]
+        _, main_idx = min(ranked, key=lambda pair: (pair[0], pair[1]))
+        normalized[main_idx]["main_category"] = True
+
     if normalized and not any(bool(x.get("main_category")) for x in normalized):
         normalized[0]["main_category"] = True
     return normalized
@@ -653,6 +664,11 @@ def sync_jv_rubrikartikel(cur, artikelid: int, categories_rows):
             if categories_for_table and not main_in_valid:
                 categories_for_table[0]["main_category"] = True
 
+        # cosmoshop renders the Hauptrubrik as the row with the SMALLEST priority
+        # value (main = 0, the rest 1, 2, 3 ...). Put the main rubric first so it
+        # gets priority 0 below; everything else keeps its relative order.
+        categories_for_table.sort(key=lambda item: 0 if _as_category_bool(item.get("main_category")) else 1)
+
         cur.execute(f"DELETE FROM `{table_name}` WHERE `{artikel_col}` = %s", (artikelid,))
         if not categories_for_table:
             continue
@@ -675,7 +691,8 @@ def sync_jv_rubrikartikel(cur, artikelid: int, categories_rows):
             if has_ordnum:
                 row_values.append(idx)
             if has_priority:
-                row_values.append(1 if _as_category_bool(item.get("main_category")) else 0)
+                # main (sorted first) -> priority 0; others -> 1, 2, 3 ...
+                row_values.append(idx - 1)
             cur.execute(
                 f"INSERT INTO `{table_name}` ({cols_sql}) VALUES ({vals_sql})",
                 tuple(row_values),

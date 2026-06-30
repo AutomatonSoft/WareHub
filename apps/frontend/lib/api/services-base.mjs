@@ -1,6 +1,6 @@
 const LOCAL_SERVICES_PROXY_BASE = "/api/v1/services";
 
-function ensureServicesNamespace(value: string): string {
+function ensureServicesNamespace(value) {
   const normalized = value.replace(/\/+$/, "");
   if (!normalized) {
     return LOCAL_SERVICES_PROXY_BASE;
@@ -20,7 +20,7 @@ function ensureServicesNamespace(value: string): string {
   return normalized;
 }
 
-function normalizeLocalServicesPath(value: string): string | null {
+function normalizeLocalServicesPath(value) {
   const normalized = value.replace(/\/+$/, "");
   if (!normalized) {
     return null;
@@ -37,7 +37,7 @@ function normalizeLocalServicesPath(value: string): string | null {
   return null;
 }
 
-function normalizeLocalServicesHost(value: string): string | null {
+function normalizeLocalServicesHost(value) {
   const normalized = value.replace(/\/+$/, "");
   if (
     normalized === "http://localhost:8931" ||
@@ -56,14 +56,9 @@ function normalizeLocalServicesHost(value: string): string | null {
   return null;
 }
 
-export function resolveServicesApiBase(rawValue: string | undefined): string {
+export function resolveServicesApiBase(rawValue) {
   const raw = rawValue?.trim() || LOCAL_SERVICES_PROXY_BASE;
   const normalized = raw.replace(/\/+$/, "");
 
-  return ensureServicesNamespace(
-    normalizeLocalServicesPath(normalized) ??
-    normalizeLocalServicesHost(normalized) ??
-    normalized
-  );
+  return ensureServicesNamespace(normalizeLocalServicesPath(normalized) ?? normalizeLocalServicesHost(normalized) ?? normalized);
 }
-

@@ -8,7 +8,7 @@ from .kid_number_utils import primary_kid_number
 from .models import Ean, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
-DEFAULT_EAN = "0000000000000"
+DEFAULT_EAN = ""
 
 def _norm_ean(value: object) -> str:
     normalized = str(value or "").strip()
@@ -391,8 +391,8 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "furniture_type": "",
         "listing_status": "unlisted",
         "store": False,
-        "main_ean": DEFAULT_EAN,
-        "database_ean": DEFAULT_EAN,
+        "main_ean": "",
+        "database_ean": "",
         "main_photo": None,
         "photo_count": 0,
         "last_update": None,
