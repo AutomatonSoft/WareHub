@@ -86,9 +86,13 @@ $jvPerSiteFtpKeys = @(
   'FTP_CO_UK_HOST','FTP_CO_UK_USER','FTP_CO_UK_PASS','FTP_CO_UK_PORT','FTP_CO_UK_URL','FTP_CO_UK_DOMIN'
 )
 
+# OpenAI translation (JV CO_UK English translation). Optional/empty: forwarded with
+# ${VAR:-} so a deploy without the key stays valid; translation no-ops until set.
+$openAiTranslationKeys = @('OPENAI_API_KEY','OPENAI_TRANSLATION_MODEL')
+
 $optionalEmptyKeysByEnvironment = @{
-  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX') + $jvPerSiteFtpKeys
-  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL') + $jvPerSiteFtpKeys
+  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX') + $jvPerSiteFtpKeys + $openAiTranslationKeys
+  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL') + $jvPerSiteFtpKeys + $openAiTranslationKeys
 }
 
 $sampleRateKeysByEnvironment = @{
