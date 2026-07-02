@@ -25,6 +25,14 @@ function setCommonTelemetryScope(scope: Sentry.Scope) {
   }
 }
 
+function buildCommonTelemetryAttributes(): Record<string, string> {
+  return {
+    app_env: appEnv,
+    app_release: appRelease,
+    route: typeof window !== "undefined" ? window.location.pathname || "/" : "/"
+  };
+}
+
 export function trackUiEvent(name: string, payload?: TelemetryPayload) {
   const data = normalizePayload(payload);
   Sentry.withScope((scope) => {
@@ -50,11 +58,16 @@ export function trackUiError(name: string, error: unknown, payload?: TelemetryPa
 
 export function trackLatency(name: string, durationMs: number, payload?: TelemetryPayload) {
   const data = normalizePayload(payload);
-  Sentry.withScope((scope) => {
-    setCommonTelemetryScope(scope);
-    scope.setTag("telemetry_type", "latency");
-    scope.setTag("latency_name", name);
-    scope.setContext("latency_payload", { ...data, duration_ms: Math.round(durationMs) });
-    Sentry.captureMessage(`latency:${name}:${Math.round(durationMs)}ms`);
+  const duration = Math.max(0, Math.round(durationMs));
+
+  // Successful latency samples belong in metrics, not message events that create Sentry issues.
+  Sentry.metrics.distribution("frontend_ui_latency", duration, {
+    unit: "millisecond",
+    attributes: {
+      ...buildCommonTelemetryAttributes(),
+      telemetry_type: "latency",
+      latency_name: name,
+      ...data
+    }
   });
 }

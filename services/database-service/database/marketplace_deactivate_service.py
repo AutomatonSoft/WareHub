@@ -100,11 +100,11 @@ def _normalized_kid_place_value(value) -> str:
     return str(value or "").strip()
 
 
-def _resolve_marketplace_place_target(*, kid: Kid, inactive: bool, place: str | None) -> str:
+def _resolve_marketplace_place_target(*, kid: Kid, inactive: bool, place: str | None) -> str | None:
     if inactive:
         current_place = _normalized_kid_place_value(kid.place)
         if not re.fullmatch(r"-?\d+", current_place):
-            raise ValueError("Current place must be a whole number to deactivate.")
+            return None
         return f"-{abs(int(current_place))}"
 
     normalized_place = str(place or "").strip()
@@ -115,6 +115,8 @@ def _resolve_marketplace_place_target(*, kid: Kid, inactive: bool, place: str | 
 
 def _update_kid_place_after_marketplace_toggle(*, kid: Kid, inactive: bool, place: str | None) -> None:
     next_place = _resolve_marketplace_place_target(kid=kid, inactive=inactive, place=place)
+    if next_place is None:
+        return
     if kid.place == next_place:
         return
     kid.place = next_place
@@ -140,7 +142,7 @@ def _is_truthy_sofort(value) -> bool:
 def _resolve_kid_marketplace_targets(kid: Kid) -> tuple[list[dict], list[dict]]:
     ean_row = getattr(kid, "ean", None)
     status_row = getattr(kid, "status", None)
-    if ean_row is None or status_row is None:
+    if ean_row is None:
         return [], [
             {
                 "ok": False,
@@ -158,10 +160,10 @@ def _resolve_kid_marketplace_targets(kid: Kid) -> tuple[list[dict], list[dict]]:
     issues: list[dict] = []
 
     for field_name in DEACTIVATE_TARGET_ORDER:
-        if not bool(getattr(status_row, field_name, False)):
-            continue
-
         ean_value = str(getattr(ean_row, field_name, "") or "").strip()
+        status_active = bool(getattr(status_row, field_name, False)) if status_row is not None else False
+        if not status_active and not ean_value:
+            continue
         if not ean_value:
             issues.append(
                 {
@@ -1207,6 +1209,18 @@ def _build_success_response(*, entity_name: str, entity_value: str, inactive: bo
     }
 
 
+def _all_issue_codes(results: list[dict]) -> set[str]:
+    codes: set[str] = set()
+    for row in results:
+        details = row.get("details")
+        if not isinstance(details, dict):
+            continue
+        code = details.get("code")
+        if isinstance(code, str) and code.strip():
+            codes.add(code.strip())
+    return codes
+
+
 def deactivate_marketplaces_by_explicit_sites(*, ean: str, site_keys: list[str], inactive: bool, actor: str, payloads_by_site_key: dict | None = None):
     payloads_by_site_key = {
         _normalize_target_site_key(key): value
@@ -1306,6 +1320,27 @@ def deactivate_marketplaces_by_kid_number(
     results = list(issues)
 
     if not targets and results:
+        if inactive and _all_issue_codes(results) == {"marketplace_deactivate_kid_mapping_missing"}:
+            payload = _build_success_response(
+                entity_name="kid_number",
+                entity_value=_primary_kid_number_value(kid),
+                inactive=inactive,
+                results=[
+                    {
+                        "ok": True,
+                        "site_key": "MARKETPLACE",
+                        "channel": "LOCAL",
+                        "status_code": status.HTTP_200_OK,
+                        "details": {
+                            "code": "marketplace_deactivate_no_mapping_noop",
+                            "detail": "Marketplace deactivate skipped because the kid has no marketplace mapping yet.",
+                        },
+                    }
+                ],
+                response_status=status.HTTP_200_OK,
+            )
+            payload["payload"]["kid_id"] = kid.id
+            return payload
         return _build_success_response(
             entity_name="kid_number",
             entity_value=_primary_kid_number_value(kid),

@@ -56,7 +56,7 @@ Auth/session:
 - `NEXT_PUBLIC_ANDROID_APK_URL=https://.../warehub.apk` (generic fallback)
 - `NEXT_PUBLIC_ANDROID_APK_URL_STAGE=https://.../warehub-stage.apk`
 - `NEXT_PUBLIC_ANDROID_APK_URL_PROD=https://.../warehub.apk`
-- `NEXT_PUBLIC_APP_ENV=stage|production`
+- `NEXT_PUBLIC_APP_ENV=dev|stage|prod`
 - `NEXT_PUBLIC_APP_VERSION=vX.Y.Z`
 
 ### Sentry (browser)
@@ -68,7 +68,7 @@ Auth/session:
 ### Sentry (server/edge)
 - `SENTRY_DSN`
 - `SENTRY_TRACES_SAMPLE_RATE=0.1`
-- `APP_ENV=stage|production`
+- `APP_ENV=dev|stage|prod`
 - `APP_VERSION=vX.Y.Z`
 
 ### Sourcemaps in CI

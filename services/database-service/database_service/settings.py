@@ -61,6 +61,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'database_service.observability.RequestLogContextMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -232,6 +233,8 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_trusted_origins_env.split(',') 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.openapi.AutoSchema',
 }
+
+LOGGING_CONFIG = None
 
 BACKEND_AUTH_BASE_URL = (os.getenv("BACKEND_AUTH_BASE_URL") or "http://127.0.0.1:8932/api/v1").rstrip("/")
 BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS = [

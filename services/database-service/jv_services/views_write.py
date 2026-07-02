@@ -232,6 +232,11 @@ def _apply_sofort_content_transforms(*, payload: dict, site: str, site_key: str)
     payload["jv_fields"] = next_jv_fields
 
 
+def _should_recreate_missing_jv_source_article(exc: Exception) -> bool:
+    message = str(exc or "")
+    return message == "invalid JV source_product_id" or message.startswith("JV article not found for artikelid=")
+
+
 class JVProductUpdateByEANAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -451,7 +456,7 @@ def update_and_push_jv_product_by_ean(
             changed_relations=changed_relations,
         )
     except Exception as exc:
-        if site == ImportedProduct.Site.JV and str(exc).startswith("JV article not found for artikelid="):
+        if site == ImportedProduct.Site.JV and _should_recreate_missing_jv_source_article(exc):
             try:
                 recreated_source_product_id = int(create_product_in_source(db_config, product))
                 ImportedProduct.all_objects.filter(pk=product.pk).update(source_product_id=recreated_source_product_id)
