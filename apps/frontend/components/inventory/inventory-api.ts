@@ -26,6 +26,7 @@ type PatchOrderBody =
     ? T
     : Record<string, unknown>;
 
+<<<<<<< HEAD
 export type CreateKidFieldErrors = Partial<
   Record<
     | "kid_number"
@@ -194,6 +195,10 @@ function formatInventoryRowsRequestError(
   }
 
   return new Error(`Services inventory request failed: HTTP ${response.status}`);
+=======
+export function getServicesApiBase(): string {
+  return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
+>>>>>>> origin/main
 }
 
 function buildServicesUrl(path: string, params: URLSearchParams): string {

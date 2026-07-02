@@ -37,7 +37,11 @@ from .infra.settings import settings
 from .observability import capture_exception, configure_observability, reset_request_id, set_request_id
 
 logger = logging.getLogger("sofort_orchestrator")
+<<<<<<< HEAD
 configure_observability(service_name=settings.service_name, log_level=settings.log_level)
+=======
+logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO), format="%(message)s")
+>>>>>>> origin/main
 _shared_http_client: HttpClient | None = None
 _ORCHESTRATOR_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
@@ -149,6 +153,7 @@ def close_runtime_dependencies() -> None:
         _shared_http_client = None
 
     Deps.service = None
+<<<<<<< HEAD
     MarketplaceJobDeps.service = None
     MarketplaceJobDeps.store = None
     ProductEditorDeps.service = None
@@ -167,6 +172,11 @@ async def _run_background_worker(worker_name: str, worker_coro):
         raise
 
 
+=======
+    ProductEditorDeps.service = None
+
+
+>>>>>>> origin/main
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None

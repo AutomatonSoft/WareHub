@@ -1,8 +1,13 @@
 services:
   gateway:
     build:
+<<<<<<< HEAD
       context: ..
       dockerfile: Dockerfile
+=======
+      context: ../../..
+      dockerfile: infra/gateway/Dockerfile
+>>>>>>> origin/main
     read_only: true
     extra_hosts:
       - "host.docker.internal:host-gateway"

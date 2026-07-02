@@ -18,5 +18,9 @@
 /.env.example @RavilkaDev0
 /start-dev.ps1 @RavilkaDev0
 /start-dev-mac.sh @RavilkaDev0
+<<<<<<< HEAD
+=======
+/stop-dev.ps1 @RavilkaDev0
+>>>>>>> origin/main
 /stop-dev-mac.sh @RavilkaDev0
 /scripts/ @RavilkaDev0

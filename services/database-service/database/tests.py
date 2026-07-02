@@ -57,7 +57,10 @@ class DatabaseApiTests(APITestCase):
     def test_create_kid(self):
         payload = {"kid_number": "900900"}
         response = self.client.post("/api/v1/kids/", payload, format="json")
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Kid.objects.filter(kid_number__contains=["900900"]).count(), 1)
         kid = Kid.objects.get(kid_number__contains=["900900"])
@@ -1368,17 +1371,23 @@ class DatabaseApiTests(APITestCase):
 
     def test_get_order_ids_by_kid_id(self):
         response = self.client.get(f"/api/v1/kids/{self.kid.id}/order-ids/")
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data, {"kid_id": self.kid.id, "order_ids": ["ORDER-001"]})
 
     def test_get_kid_ean_summary(self):
         self.kid.place = "A-01"
         self.kid.room = "ROOM-1"
-        self.kid.furniture_type = "chair"
         self.kid.listing_status = "listed"
         self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
-        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "photo"])
+        self.kid.save(update_fields=["place", "room", "listing_status", "photo"])
+        ProductAttributes.objects.update_or_create(
+            kid=self.kid,
+            defaults={"furniture_type": "chair"},
+        )
 
         self.order.additional_items = [
             {"sku": "extra sku 4006381333931"},
@@ -1966,3 +1975,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["code"], "INVENTORY_ROWS_SCHEMA_ERROR")
         self.assertEqual(response.data["request_id"], "req-test-500")
         self.assertIn("hint", response.data["details"])
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/main

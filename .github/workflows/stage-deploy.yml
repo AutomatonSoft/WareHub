@@ -7,6 +7,7 @@ on:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
+<<<<<<< HEAD
       - ".gitignore"
       - ".gitattributes"
       - ".editorconfig"
@@ -17,6 +18,8 @@ on:
       - ".github/CODEOWNERS"
       - ".github/ISSUE_TEMPLATE/**"
       - ".github/PULL_REQUEST_TEMPLATE/**"
+=======
+>>>>>>> origin/main
   workflow_dispatch:
     inputs:
       confirm_stage_deploy:
@@ -32,6 +35,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+<<<<<<< HEAD
   prepare:
     name: prepare
     runs-on: ubuntu-latest
@@ -42,11 +46,35 @@ jobs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     env:
       DEPLOY_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_stage_deploy || '' }}
+=======
+  stage-deploy:
+    name: stage-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: stage
+    env:
+      STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
+      STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
+      STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
+      STAGE_DEPLOY_PATH: ${{ vars.STAGE_DEPLOY_PATH }}
+      STAGE_SSH_KNOWN_HOSTS: ${{ secrets.STAGE_SSH_KNOWN_HOSTS }}
+      STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
+      STAGE_PROJECT_NAME: warehub-stage
+      STAGE_EXPECTED_GATEWAY_PORT: "8940"
+      STAGE_EXPECTED_SERVICE_COUNT: "7"
+      STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
+      DEPLOY_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_stage_deploy || '' }}
+
+>>>>>>> origin/main
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+<<<<<<< HEAD
       - name: Validate deploy input and branch
+=======
+      - name: Validate deploy input and stage settings
+>>>>>>> origin/main
         shell: bash
         run: |
           set -euo pipefail
@@ -77,6 +105,7 @@ jobs:
             exit 1
           fi
 
+<<<<<<< HEAD
       - name: Compute image metadata
         id: meta
         shell: bash
@@ -183,6 +212,8 @@ jobs:
         run: |
           set -euo pipefail
 
+=======
+>>>>>>> origin/main
           required_vars=(
             STAGE_SSH_HOST
             STAGE_SSH_USER
@@ -236,6 +267,93 @@ jobs:
             echo "GATEWAY_IMAGE=ghcr.io/$owner_lower/$repo_name/gateway"
           } >> "$GITHUB_ENV"
 
+<<<<<<< HEAD
+=======
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-backend
+          cache-to: type=gha,mode=max,scope=ghcr-backend
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          file: apps/frontend/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-frontend
+          cache-to: type=gha,mode=max,scope=ghcr-frontend
+
+      - name: Build and push mobile image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/mobile
+          file: apps/mobile/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.MOBILE_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-mobile
+          cache-to: type=gha,mode=max,scope=ghcr-mobile
+
+      - name: Build and push services image
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/database-service/Dockerfile
+          push: true
+          tags: ${{ env.SERVICES_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-services
+          cache-to: type=gha,mode=max,scope=ghcr-services
+
+      - name: Build and push orchestrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/orchestrator
+          file: services/orchestrator/Dockerfile
+          push: true
+          tags: ${{ env.ORCHESTRATOR_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-orchestrator
+          cache-to: type=gha,mode=max,scope=ghcr-orchestrator
+
+      - name: Build and push infra image
+        uses: docker/build-push-action@v6
+        with:
+          context: infra
+          file: infra/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.INFRA_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-infra
+          cache-to: type=gha,mode=max,scope=ghcr-infra
+
+      - name: Build and push gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/gateway/Dockerfile
+          push: true
+          tags: ${{ env.GATEWAY_IMAGE }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=ghcr-gateway
+          cache-to: type=gha,mode=max,scope=ghcr-gateway
+
+>>>>>>> origin/main
       - name: Configure pinned SSH known_hosts
         shell: bash
         env:
@@ -266,7 +384,10 @@ jobs:
         id: candidate
         shell: bash
         env:
+<<<<<<< HEAD
           SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
+=======
+>>>>>>> origin/main
           STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
         run: |
           set -euo pipefail
@@ -279,6 +400,7 @@ jobs:
           echo "temp_dir=$temp_dir" >> "$GITHUB_OUTPUT"
           echo "candidate_dir=$candidate_dir" >> "$GITHUB_OUTPUT"
 
+<<<<<<< HEAD
           # Runtime env layering: committed template -> shared repo secrets -> per-env override.
           # Cross-env shared third-party creds (e.g. JV FTP) live once in SHARED_ENV_FILE;
           # env-specific values in STAGE_ENV_FILE win because they are appended last.
@@ -290,6 +412,14 @@ jobs:
             --template infra/deploy/stage/env.stage.sanitized.template \
             --override "$candidate_dir/.env.override" \
             --output "$candidate_dir/.env"
+=======
+          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
+            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
+            exit 1
+          fi
+
+          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
+>>>>>>> origin/main
           cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
 
           tag_keys=(
@@ -320,7 +450,11 @@ jobs:
             printf 'ORCHESTRATOR_REF=%s:%s\n' "$ORCHESTRATOR_IMAGE" "$IMAGE_TAG"
           } > "$candidate_dir/metadata.env"
 
+<<<<<<< HEAD
           chmod 600 "$candidate_dir/.env.override" "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
+=======
+          chmod 600 "$candidate_dir/.env" "$candidate_dir/docker-compose.yml" "$candidate_dir/metadata.env"
+>>>>>>> origin/main
 
           (
             cd "$candidate_dir"
@@ -360,10 +494,13 @@ jobs:
             -Environment stage \
             -InputKind Runtime
 
+<<<<<<< HEAD
           pwsh ./infra/scripts/verify-compose-service-env-mappings.ps1 \
             -ComposePath "$candidate_dir/docker-compose.yml" \
             -Environment stage
 
+=======
+>>>>>>> origin/main
           docker compose \
             --project-name "$STAGE_PROJECT_NAME" \
             --env-file "$candidate_dir/.env" \
@@ -543,6 +680,7 @@ jobs:
           echo "=== PULL IMAGES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
 
+<<<<<<< HEAD
           echo "=== APPLY STAGE MIGRATIONS ==="
           for attempt in $(seq 1 10); do
             if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate; then
@@ -561,6 +699,8 @@ jobs:
           echo "=== VERIFY STAGE MIGRATION PLAN ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan
 
+=======
+>>>>>>> origin/main
           echo "=== UP APP SERVICES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
 

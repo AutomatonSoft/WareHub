@@ -16,6 +16,7 @@ if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
   exit 1
 }
 
+<<<<<<< HEAD
 $requiredKeysByEnvironment = @{
   stage = @(
     'BACKEND_IMAGE','BACKEND_STAGE_TAG','FRONTEND_IMAGE','FRONTEND_STAGE_TAG','GATEWAY_IMAGE','GATEWAY_STAGE_TAG',
@@ -147,11 +148,185 @@ $portKeys = $portKeysByEnvironment[$Environment]
 $booleanKeys = $booleanKeysByEnvironment[$Environment]
 $integerKeys = $integerKeysByEnvironment[$Environment]
 $containsRequirements = $containsRequirementsByEnvironment[$Environment]
+=======
+if ($Environment -ne 'stage') {
+  Write-Error 'Required env validation is currently defined for stage only.'
+  exit 1
+}
+
+$stageRequiredKeys = @(
+  'BACKEND_IMAGE',
+  'BACKEND_STAGE_TAG',
+  'FRONTEND_IMAGE',
+  'FRONTEND_STAGE_TAG',
+  'GATEWAY_IMAGE',
+  'GATEWAY_STAGE_TAG',
+  'MOBILE_IMAGE',
+  'MOBILE_STAGE_TAG',
+  'SERVICES_IMAGE',
+  'SERVICES_STAGE_TAG',
+  'ORCHESTRATOR_IMAGE',
+  'ORCHESTRATOR_STAGE_TAG',
+  'STAGE_DOMAIN',
+  'STAGE_GATEWAY_PORT',
+  'STAGE_PUBLIC_API_BASE_URL',
+  'STAGE_PUBLIC_SERVICES_API_BASE_URL',
+  'STAGE_PUBLIC_ORCHESTRATOR_API_BASE_URL',
+  'STAGE_POSTGRES_DB',
+  'STAGE_POSTGRES_USER',
+  'STAGE_POSTGRES_PASSWORD',
+  'STAGE_SMTP_HOST',
+  'STAGE_SMTP_PORT',
+  'STAGE_SMTP_USERNAME',
+  'STAGE_SMTP_PASSWORD',
+  'STAGE_SMTP_FROM',
+  'STAGE_SMTP_INSECURE',
+  'STAGE_PASSWORD_RESET_CODE_TTL_MINUTES',
+  'STAGE_PASSWORD_RESET_LOG_CODES',
+  'SERVICES_SECRET_KEY',
+  'STAGE_RUN_MIGRATIONS_ON_STARTUP',
+  'STAGE_SERVICES_ALLOWED_HOSTS',
+  'STAGE_BACKEND_AUTH_BASE_URL',
+  'STAGE_BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS',
+  'STAGE_ORCHESTRATOR_SERVICE_AUTH_TOKEN',
+  'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS',
+  'STAGE_ORCHESTRATOR_DATABASE_SERVICE_BASE_URL',
+  'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS',
+  'ORCHESTRATOR_HTTP_RETRIES',
+  'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS',
+  'ORCHESTRATOR_SERVICE_NAME',
+  'ORCHESTRATOR_LOG_LEVEL',
+  'JV_SOURCE_DB_HOST',
+  'JV_SOURCE_DB_USER',
+  'JV_SOURCE_DB_PASSWORD',
+  'JV_SOURCE_DB_NAME',
+  'JV_SOURCE_DB_PORT',
+  'JV_SOURCE_DB_CONNECT_RETRIES',
+  'JV_SOURCE_DB_PUSH_RETRIES',
+  'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC',
+  'JV_SOURCE_DB_READ_TIMEOUT_SEC',
+  'JV_SOURCE_DB_WRITE_TIMEOUT_SEC',
+  'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC',
+  'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC',
+  'JV_SOURCE_JV_DE_DB_HOST',
+  'JV_SOURCE_JV_DE_DB_USER',
+  'JV_SOURCE_JV_DE_DB_PASSWORD',
+  'JV_SOURCE_JV_DE_DB_NAME',
+  'JV_SOURCE_JV_DE_DB_PORT',
+  'JV_SOURCE_JV_AT_DB_HOST',
+  'JV_SOURCE_JV_AT_DB_USER',
+  'JV_SOURCE_JV_AT_DB_PASSWORD',
+  'JV_SOURCE_JV_AT_DB_NAME',
+  'JV_SOURCE_JV_AT_DB_PORT',
+  'JV_SOURCE_JV_CH_DB_HOST',
+  'JV_SOURCE_JV_CH_DB_USER',
+  'JV_SOURCE_JV_CH_DB_PASSWORD',
+  'JV_SOURCE_JV_CH_DB_NAME',
+  'JV_SOURCE_JV_CH_DB_PORT',
+  'JV_SOURCE_JV_CO_UK_DB_HOST',
+  'JV_SOURCE_JV_CO_UK_DB_USER',
+  'JV_SOURCE_JV_CO_UK_DB_PASSWORD',
+  'JV_SOURCE_JV_CO_UK_DB_NAME',
+  'JV_SOURCE_JV_CO_UK_DB_PORT',
+  'AFTERBUY_JV_LOGIN',
+  'AFTERBUY_JV_PASS',
+  'AFTERBUY_XL_LOGIN',
+  'AFTERBUY_XL_PASS',
+  'AFTERBUY_JV_LOGIN_URL',
+  'AFTERBUY_XL_LOGIN_URL',
+  'AFTERBUY_JV_COOKIE_CACHE_FILE',
+  'AFTERBUY_XL_COOKIE_CACHE_FILE',
+  'BACKEND_UPLOAD_STORAGE_BACKEND'
+)
+
+$optionalPresentKeys = @(
+  'BACKEND_STAGE_SENTRY_DSN',
+  'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE'
+)
+
+$optionalEmptyKeys = @(
+  'MOBILE_STAGE_APP_VERSION',
+  'MOBILE_STAGE_APK_URL',
+  'JV_SOURCE_JV_DE_DB_PREFIX',
+  'JV_SOURCE_JV_AT_DB_PREFIX',
+  'JV_SOURCE_JV_CH_DB_PREFIX',
+  'JV_SOURCE_JV_CO_UK_DB_PREFIX'
+)
+
+$conditionallyRequiredKeySets = @(
+  @{
+    TriggerKey = 'BACKEND_UPLOAD_STORAGE_BACKEND'
+    TriggerValues = @('ftp')
+    RequiredKeys = @(
+      'BACKEND_UPLOAD_FTP_HOST',
+      'BACKEND_UPLOAD_FTP_USER',
+      'BACKEND_UPLOAD_FTP_PASS',
+      'BACKEND_UPLOAD_FTP_PORT',
+      'BACKEND_UPLOAD_FTP_ROOT_DIR',
+      'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR',
+      'BACKEND_UPLOAD_FTP_AVATAR_DIR',
+      'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL'
+    )
+  }
+)
+
+$sampleRateKeys = @(
+  'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE',
+  'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE'
+)
+
+$portKeys = @(
+  'STAGE_GATEWAY_PORT',
+  'STAGE_SMTP_PORT',
+  'BACKEND_UPLOAD_FTP_PORT',
+  'JV_SOURCE_DB_PORT',
+  'JV_SOURCE_JV_DE_DB_PORT',
+  'JV_SOURCE_JV_AT_DB_PORT',
+  'JV_SOURCE_JV_CH_DB_PORT',
+  'JV_SOURCE_JV_CO_UK_DB_PORT'
+)
+
+$booleanKeys = @(
+  'STAGE_SMTP_INSECURE',
+  'STAGE_PASSWORD_RESET_LOG_CODES',
+  'STAGE_RUN_MIGRATIONS_ON_STARTUP'
+)
+
+$integerKeys = @(
+  'STAGE_PASSWORD_RESET_CODE_TTL_MINUTES',
+  'ORCHESTRATOR_HTTP_TIMEOUT_SECONDS',
+  'ORCHESTRATOR_HTTP_RETRIES',
+  'ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS',
+  'JV_SOURCE_DB_CONNECT_RETRIES',
+  'JV_SOURCE_DB_PUSH_RETRIES',
+  'JV_SOURCE_DB_CONNECT_TIMEOUT_SEC',
+  'JV_SOURCE_DB_READ_TIMEOUT_SEC',
+  'JV_SOURCE_DB_WRITE_TIMEOUT_SEC',
+  'JV_SOURCE_DB_CONNECT_RETRY_SLEEP_SEC',
+  'JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC'
+)
+
+$containsRequirements = @(
+  @{ Key = 'STAGE_SERVICES_ALLOWED_HOSTS'; RequiredValue = 'services' },
+  @{ Key = 'STAGE_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS'; RequiredValue = 'services' }
+)
+
+$stageComposeExternalKeys = @(
+)
+>>>>>>> origin/main
 
 $runtimePlaceholderMarkers = @(
   'CHANGE_ME',
   '__SET_OUTSIDE_GIT__',
+<<<<<<< HEAD
   '__SET_IN_GITHUB_ENVIRONMENT__',
+=======
+>>>>>>> origin/main
   '**SET_OUTSIDE_GIT**',
   'TODO',
   'TODO_UNKNOWN',
@@ -271,11 +446,19 @@ $values = $parsedEnv.Values
 $lineNumbers = $parsedEnv.LineNumbers
 
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+<<<<<<< HEAD
 $composePath = $composePathByEnvironment[$Environment]
 $composeReferencedKeys = Get-StageComposeReferencedKeys -ComposePath $composePath
 
 $validatorCoveredKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 foreach ($key in $requiredKeysForEnvironment + $optionalPresentKeys + $optionalEmptyKeys) {
+=======
+$stageComposePath = Join-Path $scriptDirectory '..\deploy\stage\docker-compose.yml'
+$composeReferencedKeys = Get-StageComposeReferencedKeys -ComposePath $stageComposePath
+
+$validatorCoveredKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($key in $stageRequiredKeys + $optionalPresentKeys + $optionalEmptyKeys) {
+>>>>>>> origin/main
   [void]$validatorCoveredKeys.Add($key)
 }
 foreach ($conditionalSet in $conditionallyRequiredKeySets) {
@@ -290,7 +473,11 @@ foreach ($key in $composeReferencedKeys) {
   }
 
   if (-not $validatorCoveredKeys.Contains($key)) {
+<<<<<<< HEAD
     Add-Finding $findings "$Environment compose references env key $key, but verify-required-env.ps1 does not classify it."
+=======
+    Add-Finding $findings "Stage compose references env key $key, but verify-required-env.ps1 does not classify it."
+>>>>>>> origin/main
   }
 }
 
@@ -301,13 +488,21 @@ if ($InputKind -eq 'Template') {
     }
 
     if (-not $values.ContainsKey($key)) {
+<<<<<<< HEAD
       Add-Finding $findings "$Environment compose references env key $key, but the template does not define it."
+=======
+      Add-Finding $findings "Stage compose references env key $key, but the template does not define it."
+>>>>>>> origin/main
     }
   }
 }
 
 $requiredKeys = [System.Collections.Generic.List[string]]::new()
+<<<<<<< HEAD
 foreach ($key in $requiredKeysForEnvironment) {
+=======
+foreach ($key in $stageRequiredKeys) {
+>>>>>>> origin/main
   [void]$requiredKeys.Add($key)
 }
 

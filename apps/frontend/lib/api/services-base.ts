@@ -1,5 +1,6 @@
 const LOCAL_SERVICES_PROXY_BASE = "/api/v1/services";
 
+<<<<<<< HEAD
 function ensureServicesNamespace(value: string): string {
   const normalized = value.replace(/\/+$/, "");
   if (!normalized) {
@@ -20,6 +21,8 @@ function ensureServicesNamespace(value: string): string {
   return normalized;
 }
 
+=======
+>>>>>>> origin/main
 function normalizeLocalServicesPath(value: string): string | null {
   const normalized = value.replace(/\/+$/, "");
   if (!normalized) {
@@ -28,9 +31,12 @@ function normalizeLocalServicesPath(value: string): string | null {
   if (normalized === "/api/v1/services") {
     return LOCAL_SERVICES_PROXY_BASE;
   }
+<<<<<<< HEAD
   if (normalized === "/api/v1") {
     return LOCAL_SERVICES_PROXY_BASE;
   }
+=======
+>>>>>>> origin/main
   if (normalized === "/services") {
     return LOCAL_SERVICES_PROXY_BASE;
   }
@@ -40,6 +46,7 @@ function normalizeLocalServicesPath(value: string): string | null {
 function normalizeLocalServicesHost(value: string): string | null {
   const normalized = value.replace(/\/+$/, "");
   if (
+<<<<<<< HEAD
     normalized === "http://localhost:8931" ||
     normalized === "http://127.0.0.1:8931" ||
     normalized === "http://localhost:8934" ||
@@ -48,6 +55,10 @@ function normalizeLocalServicesHost(value: string): string | null {
     normalized.startsWith("http://127.0.0.1:8931/api/v1") ||
     normalized.startsWith("http://localhost:8932/api/v1") ||
     normalized.startsWith("http://127.0.0.1:8932/api/v1") ||
+=======
+    normalized === "http://localhost:8934" ||
+    normalized === "http://127.0.0.1:8934" ||
+>>>>>>> origin/main
     normalized.startsWith("http://localhost:8934/api/v1") ||
     normalized.startsWith("http://127.0.0.1:8934/api/v1")
   ) {
@@ -60,7 +71,11 @@ export function resolveServicesApiBase(rawValue: string | undefined): string {
   const raw = rawValue?.trim() || LOCAL_SERVICES_PROXY_BASE;
   const normalized = raw.replace(/\/+$/, "");
 
+<<<<<<< HEAD
   return ensureServicesNamespace(
+=======
+  return (
+>>>>>>> origin/main
     normalizeLocalServicesPath(normalized) ??
     normalizeLocalServicesHost(normalized) ??
     normalized

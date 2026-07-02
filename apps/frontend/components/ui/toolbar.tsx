@@ -6,7 +6,11 @@ export function Toolbar({ className, children }: { className?: string; children:
   return (
     <div
       className={cn(
+<<<<<<< HEAD
         "wh-toolbar flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-border bg-card p-3 shadow-[var(--wh-shadow-card)] sm:p-4 [&_button]:h-10 [&_input]:h-10",
+=======
+        "wh-toolbar flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-border bg-card p-3 shadow-[var(--wh-shadow-card)] [&_button]:h-10 [&_input]:h-10",
+>>>>>>> origin/main
         className
       )}
     >

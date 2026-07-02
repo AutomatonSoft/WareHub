@@ -15,10 +15,17 @@ RUN mkdir -p /tmp/nginx/client-body \
   && find /etc/nginx -type d -exec chmod 755 {} \; \
   && find /etc/nginx -type f -exec chmod 444 {} \;
 
+<<<<<<< HEAD
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY conf.d/default.conf.template /etc/nginx/templates/default.conf.template
 COPY docker-entrypoint.d/05-runtime-dirs.sh /docker-entrypoint.d/05-runtime-dirs.sh
 COPY docker-entrypoint.d/06-trusted-proxy.sh /docker-entrypoint.d/06-trusted-proxy.sh
+=======
+COPY infra/gateway/nginx.conf /etc/nginx/nginx.conf
+COPY infra/gateway/conf.d/default.conf.template /etc/nginx/templates/default.conf.template
+COPY infra/gateway/docker-entrypoint.d/05-runtime-dirs.sh /docker-entrypoint.d/05-runtime-dirs.sh
+COPY infra/gateway/docker-entrypoint.d/06-trusted-proxy.sh /docker-entrypoint.d/06-trusted-proxy.sh
+>>>>>>> origin/main
 
 RUN chown -R 101:101 /etc/nginx /var/cache/nginx /tmp/nginx \
   && chmod 444 /etc/nginx/nginx.conf /etc/nginx/templates/default.conf.template \

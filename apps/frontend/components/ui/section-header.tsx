@@ -15,7 +15,11 @@ export function SectionHeader({
 }) {
   return (
     <div className={cn("flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between", className)}>
+<<<<<<< HEAD
       <div className="min-w-0 flex flex-col gap-1">
+=======
+      <div className="min-w-0 space-y-1">
+>>>>>>> origin/main
         <h2 className="text-base font-semibold leading-tight text-foreground">{title}</h2>
         {description ? <p className="text-sm leading-5 text-muted-foreground">{description}</p> : null}
       </div>

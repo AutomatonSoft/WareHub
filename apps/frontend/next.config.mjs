@@ -53,9 +53,9 @@ const nextConfig = {
   skipTrailingSlashRedirect: true,
   async rewrites() {
     const backendOrigin = process.env.BACKEND_ORIGIN ?? "http://localhost:8932";
-    const servicesOrigin = process.env.SERVICES_ORIGIN ?? "http://localhost:8934";
     return [
       {
+<<<<<<< HEAD
         // Append the trailing slash: Next strips it from `:path*`, and the Django services
         // backend (APPEND_SLASH=True) would otherwise 301 to a Location without the `/services`
         // proxy prefix, landing the request on the wrong backend. All services routes are
@@ -64,6 +64,8 @@ const nextConfig = {
         destination: `${servicesOrigin}/api/v1/:path*/`
       },
       {
+=======
+>>>>>>> origin/main
         source: "/api/v1/:path((?!services(?:/|$)|orchestrator(?:/|$)|jv(?:/|$)|xl(?:/|$)|hood(?:/|$)|uploads(?:/|$)|docs(?:/|$)|backend(?:/|$)).*)",
         destination: `${backendOrigin}/api/v1/:path`
       }

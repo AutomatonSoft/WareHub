@@ -1,6 +1,11 @@
 import re
 import logging
 
+<<<<<<< HEAD
+=======
+from django.conf import settings
+from django.db import connections
+>>>>>>> origin/main
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
@@ -14,6 +19,73 @@ def _norm_ean(value: object) -> str:
     normalized = str(value or "").strip()
     return normalized or DEFAULT_EAN
 
+<<<<<<< HEAD
+=======
+
+def load_kid_ean_map() -> dict[str, dict[str, str]]:
+    if "ean_map" not in settings.DATABASES:
+        return {}
+
+    try:
+        with connections["ean_map"].cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    kid_number,
+                    COALESCE(NULLIF(cosmoshop_ean, ''), ean, %s) AS cosmoshop_ean,
+                    COALESCE(NULLIF(opencart_ean, ''), ean, %s) AS opencart_ean,
+                    COALESCE(NULLIF(otto_jv_ean, ''), ean, %s) AS otto_jv_ean,
+                    COALESCE(NULLIF(otto_xl_ean, ''), ean, %s) AS otto_xl_ean,
+                    COALESCE(NULLIF(ebay_jv_ean, ''), ean, %s) AS ebay_jv_ean,
+                    COALESCE(NULLIF(ebay_xl_ean, ''), ean, %s) AS ebay_xl_ean,
+                    COALESCE(NULLIF(kaufland_jv_ean, ''), ean, %s) AS kaufland_jv_ean,
+                    COALESCE(NULLIF(kaufland_xl_ean, ''), ean, %s) AS kaufland_xl_ean,
+                    COALESCE(NULLIF(hood_jv_ean, ''), ean, %s) AS hood_jv_ean,
+                    COALESCE(NULLIF(hood_xl_ean, ''), ean, %s) AS hood_xl_ean
+                FROM kid_ean_map
+                WHERE kid_number IS NOT NULL
+                  AND btrim(kid_number) <> ''
+                """
+                ,
+                [DEFAULT_EAN] * 10
+            )
+            rows = cursor.fetchall()
+    except Exception:
+        logger.warning("INVENTORY_EAN_MAP_LOAD_FAILED code=inventory_ean_map_load_failed", exc_info=True)
+        return {}
+
+    ean_map: dict[str, dict[str, str]] = {}
+    for (
+        kid_number,
+        cosmoshop_ean,
+        opencart_ean,
+        otto_jv_ean,
+        otto_xl_ean,
+        ebay_jv_ean,
+        ebay_xl_ean,
+        kaufland_jv_ean,
+        kaufland_xl_ean,
+        hood_jv_ean,
+        hood_xl_ean,
+    ) in rows:
+        normalized_kid = str(kid_number or "").strip()
+        if not normalized_kid:
+            continue
+        ean_map[normalized_kid] = {
+            "cosmoshop_ean": _norm_ean(cosmoshop_ean),
+            "opencart_ean": _norm_ean(opencart_ean),
+            "otto_jv_ean": _norm_ean(otto_jv_ean),
+            "otto_xl_ean": _norm_ean(otto_xl_ean),
+            "ebay_jv_ean": _norm_ean(ebay_jv_ean),
+            "ebay_xl_ean": _norm_ean(ebay_xl_ean),
+            "kaufland_jv_ean": _norm_ean(kaufland_jv_ean),
+            "kaufland_xl_ean": _norm_ean(kaufland_xl_ean),
+            "hood_jv_ean": _norm_ean(hood_jv_ean),
+            "hood_xl_ean": _norm_ean(hood_xl_ean),
+        }
+    return ean_map
+
+>>>>>>> origin/main
 def split_order_ids(raw_order_id: str) -> list[str]:
     raw = str(raw_order_id or "").strip()
     if not raw:
