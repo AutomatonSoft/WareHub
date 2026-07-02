@@ -15,6 +15,7 @@ class AppSettings extends ChangeNotifier {
     this._biometricEnabled,
     this._biometricAccountLogin,
     this._authToken,
+    this._refreshToken,
     this._login,
     this._email,
     this._avatarUrl,
@@ -27,6 +28,7 @@ class AppSettings extends ChangeNotifier {
   static const String _biometricAccountKey =
       'sofortbot_mobile_biometric_account_login';
   static const String _authTokenKey = 'sofortbot_mobile_auth_token';
+  static const String _refreshTokenKey = 'sofortbot_mobile_refresh_token';
   static const String _loginKey = 'sofortbot_mobile_login';
   static const String _emailKey = 'sofortbot_mobile_email';
   static const String _avatarUrlKey = 'sofortbot_mobile_avatar_url';
@@ -41,6 +43,7 @@ class AppSettings extends ChangeNotifier {
   bool _biometricEnabled;
   String _biometricAccountLogin;
   String _authToken;
+  String _refreshToken;
   String _login;
   String _email;
   String _avatarUrl;
@@ -51,6 +54,7 @@ class AppSettings extends ChangeNotifier {
   bool get biometricEnabled => _biometricEnabled;
   String get biometricAccountLogin => _biometricAccountLogin;
   String get authToken => _authToken;
+  String get refreshToken => _refreshToken;
   String get login => _login;
   String get email => _email;
   String get avatarUrl => _avatarUrl;
@@ -81,6 +85,27 @@ class AppSettings extends ChangeNotifier {
         }
       }
     }
+    String refreshToken = '';
+    try {
+      refreshToken = await _secureStorage.read(key: _refreshTokenKey) ?? '';
+    } catch (_) {
+      refreshToken = '';
+    }
+    if (refreshToken.isEmpty) {
+      final String legacyRefreshToken = prefs.getString(_refreshTokenKey) ?? '';
+      if (legacyRefreshToken.isNotEmpty) {
+        refreshToken = legacyRefreshToken;
+        try {
+          await _secureStorage.write(
+            key: _refreshTokenKey,
+            value: refreshToken,
+          );
+          await prefs.remove(_refreshTokenKey);
+        } catch (_) {
+          // Keep legacy token fallback if secure storage is unavailable.
+        }
+      }
+    }
     final String login = prefs.getString(_loginKey) ?? '';
     final String email = prefs.getString(_emailKey) ?? '';
     final String avatarUrl = prefs.getString(_avatarUrlKey) ?? '';
@@ -101,6 +126,7 @@ class AppSettings extends ChangeNotifier {
       biometrics,
       biometricAccount,
       token,
+      refreshToken,
       login,
       email,
       avatarUrl,
@@ -145,31 +171,46 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> saveSession({
     required String token,
+    String? refreshToken,
     required String login,
     String? email,
     String? avatarUrl,
     String? role,
   }) async {
     _authToken = token.trim();
+    if (refreshToken != null) {
+      _refreshToken = refreshToken.trim();
+    }
     _login = login.trim();
     _email = (email ?? '').trim();
     _avatarUrl = (avatarUrl ?? '').trim();
     _role = (role ?? '').trim();
-    if (_biometricEnabled && _login.isNotEmpty) {
-      _biometricAccountLogin = _login;
-    }
-    notifyListeners();
-    await _prefs.setString(_authTokenKey, _authToken);
     await _prefs.setString(_loginKey, _login);
     await _prefs.setString(_emailKey, _email);
     await _prefs.setString(_avatarUrlKey, _avatarUrl);
     await _prefs.setString(_roleKey, _role);
-    await _prefs.remove(_authTokenKey);
+    if (_biometricEnabled && _login.isNotEmpty) {
+      _biometricAccountLogin = _login;
+    }
+    notifyListeners();
+
     try {
       await _secureStorage.write(key: _authTokenKey, value: _authToken);
+      if (refreshToken != null) {
+        await _secureStorage.write(
+          key: _refreshTokenKey,
+          value: _refreshToken,
+        );
+      }
+      // Remove from plain prefs ONLY if secure storage succeeded.
+      await _prefs.remove(_authTokenKey);
+      await _prefs.remove(_refreshTokenKey);
     } catch (_) {
       // Fallback for environments where secure storage is unavailable.
       await _prefs.setString(_authTokenKey, _authToken);
+      if (refreshToken != null) {
+        await _prefs.setString(_refreshTokenKey, _refreshToken);
+      }
     }
     if (_biometricEnabled && _biometricAccountLogin.isNotEmpty) {
       await _prefs.setString(_biometricAccountKey, _biometricAccountLogin);
@@ -205,6 +246,7 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> clearSession() async {
     _authToken = '';
+    _refreshToken = '';
     _login = '';
     _email = '';
     _avatarUrl = '';
@@ -212,10 +254,12 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
     try {
       await _secureStorage.delete(key: _authTokenKey);
+      await _secureStorage.delete(key: _refreshTokenKey);
     } catch (_) {
       // ignore secure storage delete failures
     }
     await _prefs.remove(_authTokenKey);
+    await _prefs.remove(_refreshTokenKey);
     await _prefs.remove(_loginKey);
     await _prefs.remove(_emailKey);
     await _prefs.remove(_avatarUrlKey);

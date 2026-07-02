@@ -93,6 +93,7 @@ const Map<String, String> appLabelsEn = <String, String>{
   'connect_printer': 'Connect printer',
   'more': 'More',
   'loading': 'Loading...',
+  'opening_app': 'Opening app...',
   'sort': 'Sort',
   'newest_first': 'Newest first',
   'oldest_first': 'Oldest first',
@@ -139,6 +140,14 @@ const Map<String, String> appLabelsEn = <String, String>{
   'load_list_failed_http': 'Load list failed: HTTP {code}',
   'load_list_invalid': 'Load list failed: invalid response.',
   'load_list_error': 'Load list error: {error}',
+  'network_unavailable':
+      'No internet connection. The server is unavailable right now.',
+  'network_unavailable_load':
+      'No internet connection. The list cannot be loaded right now.',
+  'network_unavailable_login':
+      'No internet connection. Login is unavailable right now.',
+  'action_failed_error': 'Action failed: {error}',
+  'login_failed_error': 'Login failed: {error}',
   'latest_version': 'You already have the latest version ({version}).',
   'failed_check_updates': 'Failed to check updates.',
   'update_link_missing': 'Update link is not configured.',
@@ -206,6 +215,7 @@ const Map<String, String> appLabelsEn = <String, String>{
   'parts_label': 'Parts',
   'quantity_min_error': 'Quantity must be greater than 0.',
   'enter_number_min': 'Enter a number >= {min}',
+  'enter_number_range': 'Enter a number from {min} to {max}.',
   'item_added': 'Item added: {location}, boxes: {boxes}.',
   'error_kid_missing': 'KID is missing in QR payload.',
   'error_qr_required': 'QR code is required.',

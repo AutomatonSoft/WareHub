@@ -30,10 +30,13 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
   Future<void> _syncLabelLayoutFromServer() async {
     try {
       final Uri url = Uri.parse('${_effectiveApiBase()}/label-layout');
-      final http.Response response =
-          await http.get(url, headers: _authHeaders());
+      final http.Response response = await _authorizedRequest('GET', url);
       if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        final MobileAuthRefreshStatus status =
+            await _handleUnauthorizedAfterRefresh();
+        if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+          throw const MobileAuthRefreshUnavailableException();
+        }
         return;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -83,13 +86,18 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
 
   Future<void> _pushLabelLayoutToServer() async {
     final Uri url = Uri.parse('${_effectiveApiBase()}/label-layout');
-    final http.Response response = await http.put(
+    final http.Response response = await _authorizedRequest(
+      'PUT',
       url,
       headers: _authHeaders(json: true),
       body: jsonEncode(_labelLayoutPayload()),
     );
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw Exception('Unauthorized');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

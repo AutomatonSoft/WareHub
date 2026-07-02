@@ -2,6 +2,8 @@
 
 part of 'qr_home_page.dart';
 
+const int _maxIntakeBoxTotal = 20;
+
 extension _QrHomePageScanAddHandlers on _QrHomePageState {
   Future<void> _onAddItem() async {
     final String? source = await _askAddSource();
@@ -56,6 +58,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         label: strings.text('number_of_boxes'),
         initialValue: '1',
         minValue: 1,
+        maxValue: _maxIntakeBoxTotal,
       );
       if (boxTotal == null) {
         return;
@@ -119,7 +122,10 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       );
       await _finalizeAddedIntake(created, addFlow.photos);
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -174,6 +180,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         label: strings.text('number_of_boxes'),
         initialValue: '1',
         minValue: 1,
+        maxValue: _maxIntakeBoxTotal,
       );
       if (boxTotal == null) {
         return;
@@ -236,7 +243,10 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       );
       await _finalizeAddedIntake(created, addFlow.photos);
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -265,6 +275,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         label: strings.text('number_of_boxes'),
         initialValue: '1',
         minValue: 1,
+        maxValue: _maxIntakeBoxTotal,
       );
       if (boxTotal == null) {
         return;
@@ -332,7 +343,10 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       );
       await _finalizeAddedIntake(created, addFlow.photos);
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {

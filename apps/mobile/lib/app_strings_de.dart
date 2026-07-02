@@ -78,6 +78,7 @@ const Map<String, String> appLabelsDe = <String, String>{
   'connect_printer': 'Drucker verbinden',
   'more': 'Mehr',
   'loading': 'Laden...',
+  'opening_app': 'App wird geöffnet...',
   'sort': 'Sortierung',
   'newest_first': 'Neueste zuerst',
   'oldest_first': 'Älteste zuerst',
@@ -124,6 +125,14 @@ const Map<String, String> appLabelsDe = <String, String>{
   'load_list_failed_http': 'Liste laden fehlgeschlagen: HTTP {code}',
   'load_list_invalid': 'Liste laden fehlgeschlagen: ungültige Antwort.',
   'load_list_error': 'Liste laden Fehler: {error}',
+  'network_unavailable':
+      'Keine Internetverbindung. Der Server ist derzeit nicht erreichbar.',
+  'network_unavailable_load':
+      'Keine Internetverbindung. Die Liste kann derzeit nicht geladen werden.',
+  'network_unavailable_login':
+      'Keine Internetverbindung. Anmeldung ist derzeit nicht möglich.',
+  'action_failed_error': 'Aktion fehlgeschlagen: {error}',
+  'login_failed_error': 'Anmeldung fehlgeschlagen: {error}',
   'latest_version': 'Sie haben die neueste Version ({version}).',
   'failed_check_updates': 'Updates konnten nicht geprüft werden.',
   'update_link_missing': 'Update-Link ist nicht konfiguriert.',
@@ -182,6 +191,7 @@ const Map<String, String> appLabelsDe = <String, String>{
   'parts_label': 'Teile',
   'quantity_min_error': 'Die Anzahl muss größer als 0 sein.',
   'enter_number_min': 'Zahl eingeben >= {min}',
+  'enter_number_range': 'Zahl von {min} bis {max} eingeben.',
   'item_added': 'Artikel hinzugefügt: {location}, Boxen: {boxes}.',
   'error_kid_missing': 'KID fehlt im QR-Payload.',
   'error_qr_required': 'QR-Code ist erforderlich.',

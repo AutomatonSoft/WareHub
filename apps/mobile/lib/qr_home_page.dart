@@ -20,6 +20,7 @@ import 'app_theme.dart';
 import 'app_update.dart';
 import 'intake_error_messages.dart';
 import 'intake_photo_folder.dart';
+import 'mobile_auth.dart';
 import 'mobile_logging.dart';
 import 'models.dart';
 import 'pages.dart';
@@ -100,16 +101,40 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _refreshPrinterConnectionStatus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_authToken().isEmpty) {
+      unawaited(_startAuthenticatedHome());
+    });
+  }
+
+  Future<void> _startAuthenticatedHome() async {
+    final AppSettings settings = AppSettingsScope.of(context);
+    final bool hasAccessToken = _authToken().isNotEmpty;
+    final bool hasRefreshToken = settings.refreshToken.trim().isNotEmpty;
+    if (!hasAccessToken && !hasRefreshToken) {
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+      return;
+    }
+    if (!hasAccessToken && hasRefreshToken) {
+      final MobileAuthRefreshResult refresh =
+          await _refreshAuthSessionDetailed();
+      if (refresh.shouldLogout) {
+        if (!mounted) {
+          return;
+        }
         Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
         return;
       }
-      unawaited(_loadPrintSettings());
-      _connectEvents();
-      _loadInitialIntakes();
-      _checkForUpdates(silentIfLatest: true);
-      unawaited(_runStartupPermissionFlow());
-    });
+    }
+    if (!mounted) {
+      return;
+    }
+    unawaited(_loadPrintSettings());
+    unawaited(_connectEvents());
+    _loadInitialIntakes();
+    _checkForUpdates(silentIfLatest: true);
+    unawaited(_runStartupPermissionFlow());
   }
 
   @override

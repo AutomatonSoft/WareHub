@@ -43,6 +43,58 @@ extension _QrHomePageCore on _QrHomePageState {
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
+  Future<bool> _refreshAuthSession() async {
+    final MobileAuthRefreshResult result = await _refreshAuthSessionDetailed();
+    return result.refreshed;
+  }
+
+  Future<MobileAuthRefreshResult> _refreshAuthSessionDetailed() async {
+    final AppSettings settings = AppSettingsScope.of(context);
+    return refreshMobileAuthSessionDetailed(
+      settings,
+      apiBase: _effectiveApiBase(),
+    );
+  }
+
+  Future<MobileAuthRefreshStatus> _handleUnauthorizedAfterRefresh() async {
+    final MobileAuthRefreshResult refresh = await _refreshAuthSessionDetailed();
+    if (refresh.refreshed) {
+      return refresh.status;
+    }
+    if (refresh.isTemporarilyUnavailable) {
+      _showMessage(_strings.text('network_unavailable'), error: true);
+      return refresh.status;
+    }
+    await _handleUnauthorized();
+    return refresh.status;
+  }
+
+  String _messageForError(Object error, {required String fallbackKey}) {
+    if (isNetworkUnavailableError(error)) {
+      return _strings.text('network_unavailable');
+    }
+    if (error is UserFacingError) {
+      return error.message;
+    }
+    return _strings.format(fallbackKey, <String, String>{'error': '$error'});
+  }
+
+  Future<http.Response> _authorizedRequest(
+    String method,
+    Uri url, {
+    Map<String, String>? headers,
+    String? body,
+  }) {
+    final AppSettings settings = AppSettingsScope.of(context);
+    return mobileAuthorizedRequest(
+      settings,
+      method,
+      url,
+      headers: headers,
+      body: body,
+    );
+  }
+
   List<GroupedIntakeData> _groupedItems() {
     final Map<String, List<IntakeData>> buckets = <String, List<IntakeData>>{};
     for (final IntakeData item in _items) {
@@ -173,12 +225,16 @@ extension _QrHomePageCore on _QrHomePageState {
 
     try {
       final Uri url = Uri.parse('${_effectiveApiBase()}/intakes?limit=200');
-      final http.Response response = await http.get(
+      final http.Response response = await _authorizedRequest(
+        'GET',
         url,
-        headers: _authHeaders(),
       );
       if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        final MobileAuthRefreshStatus status =
+            await _handleUnauthorizedAfterRefresh();
+        if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+          throw const MobileAuthRefreshUnavailableException();
+        }
         return;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -213,9 +269,11 @@ extension _QrHomePageCore on _QrHomePageState {
       _prefetchOrderMemosForItems(loaded);
     } catch (error) {
       _showMessage(
-        _strings.format('load_list_error', <String, String>{
-          'error': '$error',
-        }),
+        isNetworkUnavailableError(error)
+            ? _strings.text('network_unavailable_load')
+            : _strings.format('load_list_error', <String, String>{
+                'error': '$error',
+              }),
         error: true,
       );
     } finally {
@@ -227,8 +285,25 @@ extension _QrHomePageCore on _QrHomePageState {
     }
   }
 
-  void _connectEvents() {
-    if (!_eventsReconnectEnabled || _authToken().isEmpty) {
+  Future<void> _connectEvents({bool refreshBeforeConnect = false}) async {
+    if (!_eventsReconnectEnabled) {
+      return;
+    }
+    if (_authToken().isEmpty) {
+      final MobileAuthRefreshResult refresh =
+          await _refreshAuthSessionDetailed();
+      if (!refresh.refreshed) {
+        return;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    final AppSettings settings = AppSettingsScope.of(context);
+    if (refreshBeforeConnect && settings.refreshToken.trim().isNotEmpty) {
+      await _refreshAuthSession();
+    }
+    if (!mounted) {
       return;
     }
     _eventsReconnectTimer?.cancel();
@@ -268,16 +343,16 @@ extension _QrHomePageCore on _QrHomePageState {
         }
       },
       onError: (_) {
-        _scheduleEventsReconnect();
+        _scheduleEventsReconnect(refreshBeforeConnect: true);
       },
       onDone: () {
-        _scheduleEventsReconnect();
+        _scheduleEventsReconnect(refreshBeforeConnect: true);
       },
       cancelOnError: false,
     );
   }
 
-  void _scheduleEventsReconnect() {
+  void _scheduleEventsReconnect({bool refreshBeforeConnect = false}) {
     if (!_eventsReconnectEnabled) {
       return;
     }
@@ -286,7 +361,7 @@ extension _QrHomePageCore on _QrHomePageState {
       if (!mounted || !_eventsReconnectEnabled) {
         return;
       }
-      _connectEvents();
+      unawaited(_connectEvents(refreshBeforeConnect: refreshBeforeConnect));
     });
   }
 
@@ -369,14 +444,19 @@ extension _QrHomePageCore on _QrHomePageState {
       body['photo_url'] = normalizedPhotoUrl;
     }
 
-    final http.Response response = await http.post(
+    final http.Response response = await _authorizedRequest(
+      'POST',
       url,
       headers: _authHeaders(json: true),
       body: jsonEncode(body),
     );
 
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw UserFacingError(_strings.text('create_intake_failed_unauthorized'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -421,14 +501,19 @@ extension _QrHomePageCore on _QrHomePageState {
       body['photo_url'] = null;
     }
 
-    final http.Response response = await http.patch(
+    final http.Response response = await _authorizedRequest(
+      'PATCH',
       url,
       headers: _authHeaders(json: true),
       body: jsonEncode(body),
     );
 
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw UserFacingError(_strings.text('create_intake_failed_unauthorized'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

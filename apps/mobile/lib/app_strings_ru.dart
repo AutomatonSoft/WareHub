@@ -74,6 +74,7 @@ const Map<String, String> appLabelsRu = <String, String>{
   'connect_printer': 'Подключить принтер',
   'more': 'Ещё',
   'loading': 'Загрузка...',
+  'opening_app': 'Открываем приложение...',
   'sort': 'Сортировка',
   'newest_first': 'Сначала новые',
   'oldest_first': 'Сначала старые',
@@ -120,6 +121,14 @@ const Map<String, String> appLabelsRu = <String, String>{
   'load_list_failed_http': 'Ошибка загрузки списка: HTTP {code}',
   'load_list_invalid': 'Ошибка загрузки списка: некорректный ответ.',
   'load_list_error': 'Ошибка загрузки списка: {error}',
+  'network_unavailable':
+      'Нет подключения к интернету. Сервер сейчас недоступен.',
+  'network_unavailable_load':
+      'Нет подключения к интернету. Сейчас невозможно загрузить список.',
+  'network_unavailable_login':
+      'Нет подключения к интернету. Сейчас невозможно выполнить вход.',
+  'action_failed_error': 'Действие не выполнено: {error}',
+  'login_failed_error': 'Ошибка входа: {error}',
   'latest_version': 'У вас уже последняя версия ({version}).',
   'failed_check_updates': 'Не удалось проверить обновления.',
   'update_link_missing': 'Ссылка на обновление не настроена.',
@@ -178,6 +187,7 @@ const Map<String, String> appLabelsRu = <String, String>{
   'parts_label': 'Части',
   'quantity_min_error': 'Количество должно быть больше 0.',
   'enter_number_min': 'Введите число >= {min}',
+  'enter_number_range': 'Введите число от {min} до {max}.',
   'item_added': 'Товар добавлен: {location}, коробок: {boxes}.',
   'error_kid_missing': 'KID отсутствует в QR-данных.',
   'error_qr_required': 'QR-код обязателен.',

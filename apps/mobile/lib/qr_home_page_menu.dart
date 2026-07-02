@@ -21,10 +21,13 @@ extension _QrHomePageMenu on _QrHomePageState {
   Future<void> _syncPrinterSetupFromServer() async {
     try {
       final Uri url = Uri.parse('${_effectiveApiBase()}/printer-setup');
-      final http.Response response =
-          await http.get(url, headers: _authHeaders());
+      final http.Response response = await _authorizedRequest('GET', url);
       if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        final MobileAuthRefreshStatus status =
+            await _handleUnauthorizedAfterRefresh();
+        if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+          throw const MobileAuthRefreshUnavailableException();
+        }
         return;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -64,7 +67,8 @@ extension _QrHomePageMenu on _QrHomePageState {
 
   Future<void> _pushPrinterSetupToServer() async {
     final Uri url = Uri.parse('${_effectiveApiBase()}/printer-setup');
-    final http.Response response = await http.put(
+    final http.Response response = await _authorizedRequest(
+      'PUT',
       url,
       headers: _authHeaders(json: true),
       body: jsonEncode(<String, dynamic>{
@@ -77,7 +81,11 @@ extension _QrHomePageMenu on _QrHomePageState {
       }),
     );
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw Exception('Unauthorized');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -95,7 +103,12 @@ extension _QrHomePageMenu on _QrHomePageState {
     return fallback;
   }
 
-  void _onLogoutTap() {
+  Future<void> _onLogoutTap() async {
+    final AppSettings settings = AppSettingsScope.of(context);
+    await logoutMobileAuthSession(settings, apiBase: _effectiveApiBase());
+    if (!mounted) {
+      return;
+    }
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
@@ -208,7 +221,7 @@ extension _QrHomePageMenu on _QrHomePageState {
   Future<void> _handleAppBarMenuAction(String value) async {
     switch (value) {
       case 'account':
-        _onLogoutTap();
+        await _onLogoutTap();
         break;
       case 'language':
         await _openLanguageDialog();

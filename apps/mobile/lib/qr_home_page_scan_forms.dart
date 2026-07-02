@@ -11,6 +11,7 @@ extension _QrHomePageScanForms on _QrHomePageState {
     required String label,
     String initialValue = '',
     int minValue = 1,
+    int? maxValue,
   }) async {
     final AppStrings strings = _strings;
     String currentValue = initialValue;
@@ -48,6 +49,18 @@ extension _QrHomePageScanForms on _QrHomePageState {
                       errorText = strings.format(
                         'enter_number_min',
                         <String, String>{'min': '$minValue'},
+                      );
+                    });
+                    return;
+                  }
+                  if (maxValue != null && parsed > maxValue) {
+                    setStateDialog(() {
+                      errorText = strings.format(
+                        'enter_number_range',
+                        <String, String>{
+                          'min': '$minValue',
+                          'max': '$maxValue',
+                        },
                       );
                     });
                     return;

@@ -5,22 +5,38 @@ part of 'auth_screen.dart';
 extension _AuthScreenBiometrics on _AuthScreenState {
   Future<bool> _hasValidStoredSession() async {
     final AppSettings settings = AppSettingsScope.of(context);
-    final String token = settings.authToken.trim();
     final String boundLogin = settings.biometricAccountLogin.trim();
     final String fallbackLogin = settings.login.trim();
-    if (token.isEmpty) {
+    if (settings.authToken.trim().isEmpty &&
+        settings.refreshToken.trim().isEmpty) {
       return false;
     }
 
     final String apiBase = normalizeApiBase(settings.apiBaseUrl);
 
     try {
-      final http.Response response = await http.get(
+      http.Response response = await http.get(
         Uri.parse('$apiBase/auth/me'),
         headers: <String, String>{
-          'Authorization': 'Bearer $token',
+          'Authorization': 'Bearer ${settings.authToken.trim()}',
         },
       );
+      if (response.statusCode == 401) {
+        final MobileAuthRefreshResult refresh =
+            await refreshMobileAuthSessionDetailed(settings, apiBase: apiBase);
+        if (refresh.refreshed) {
+          response = await http.get(
+            Uri.parse('$apiBase/auth/me'),
+            headers: <String, String>{
+              'Authorization': 'Bearer ${settings.authToken.trim()}',
+            },
+          );
+        } else if (refresh.isTemporarilyUnavailable &&
+            settings.authToken.trim().isNotEmpty) {
+          configureMobileLogAuthToken(settings.authToken);
+          return true;
+        }
+      }
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final dynamic decoded = jsonDecode(response.body);
         if (decoded is! Map<String, dynamic>) {
@@ -45,11 +61,19 @@ extension _AuthScreenBiometrics on _AuthScreenState {
           avatarUrl: '${decoded['avatar_url'] ?? ''}',
           role: '${decoded['role'] ?? ''}',
         );
-        configureMobileLogAuthToken(token);
+        configureMobileLogAuthToken(settings.authToken);
         return true;
       }
+      if (response.statusCode == 401) {
+        return false;
+      }
     } catch (_) {
-      // Keep manual login as fallback.
+      // Network can be unavailable during warehouse work. Keep the local
+      // session usable; API calls still force login later on explicit 401.
+      if (settings.authToken.trim().isNotEmpty) {
+        configureMobileLogAuthToken(settings.authToken);
+        return true;
+      }
     }
     return false;
   }
@@ -67,8 +91,8 @@ extension _AuthScreenBiometrics on _AuthScreenState {
 
     if (!available && settings.biometricEnabled) {
       await settings.setBiometricEnabled(false);
-      return;
     }
+
     if (available &&
         settings.biometricEnabled &&
         settings.biometricAccountLogin.trim().isEmpty &&
@@ -76,9 +100,22 @@ extension _AuthScreenBiometrics on _AuthScreenState {
       await settings.bindBiometricAccount(settings.login.trim());
     }
 
-    if (available && settings.biometricEnabled && !_autoPrompted) {
-      _autoPrompted = true;
-      await _authenticateWithBiometrics();
+    if (available && settings.biometricEnabled) {
+      if (!_autoPrompted) {
+        _autoPrompted = true;
+        await _authenticateWithBiometrics();
+      }
+      return;
+    }
+
+    // Auto-login check for non-biometric case or when biometrics are unavailable.
+    // If we have any token, try to validate the session and proceed if successful.
+    if (settings.authToken.trim().isNotEmpty ||
+        settings.refreshToken.trim().isNotEmpty) {
+      final bool valid = await _hasValidStoredSession();
+      if (valid && mounted) {
+        await _continueToApp();
+      }
     }
   }
 

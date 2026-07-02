@@ -76,13 +76,21 @@ extension _QrHomePageScanData on _QrHomePageState {
     }
     final Uri url = Uri.parse('${_effectiveApiBase()}/uploads')
         .replace(queryParameters: params);
-    final http.MultipartRequest request = http.MultipartRequest('POST', url);
-    final String token = _authToken();
-    if (token.isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $token';
+    Future<http.StreamedResponse> sendUploadOnce() async {
+      final http.MultipartRequest request = http.MultipartRequest('POST', url);
+      final String token = _authToken();
+      if (token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+      return request.send();
     }
-    request.files.add(await http.MultipartFile.fromPath('file', file.path));
-    final http.StreamedResponse streamed = await request.send();
+
+    http.StreamedResponse streamed = await sendUploadOnce();
+    if (streamed.statusCode == 401 && await _refreshAuthSession()) {
+      await streamed.stream.drain<void>();
+      streamed = await sendUploadOnce();
+    }
     final String body = await streamed.stream.bytesToString();
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       return null;
@@ -253,9 +261,9 @@ extension _QrHomePageScanData on _QrHomePageState {
     final Uri url = Uri.parse(
       '${_effectiveApiBase()}/afterbuy/orders/${Uri.encodeComponent(orderId)}',
     );
-    final http.Response response = await http.get(
+    final http.Response response = await _authorizedRequest(
+      'GET',
       url,
-      headers: _authHeaders(),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return null;

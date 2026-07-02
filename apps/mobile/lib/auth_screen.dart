@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:local_auth/local_auth.dart';
 import 'app_settings.dart';
-import 'app_theme.dart';
+import 'auth_design_tokens.dart';
 import 'auth_widgets.dart';
+import 'mobile_auth.dart';
 import 'mobile_logging.dart';
+import 'user_facing_error.dart';
 
 part 'auth_screen_biometrics.dart';
 
@@ -59,7 +61,7 @@ class _AuthScreenState extends State<AuthScreen> {
       ..showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: uiCardSoft,
+          backgroundColor: AuthColors.muted,
         ),
       );
   }
@@ -76,6 +78,7 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     final AppSettings settings = AppSettingsScope.of(context);
+    final AppStrings strings = AppStrings.of(context);
     final String apiBase = normalizeApiBase(settings.apiBaseUrl);
     final String login = _loginController.text.trim();
     final String password = _loginPasswordController.text;
@@ -100,7 +103,10 @@ class _AuthScreenState extends State<AuthScreen> {
       final http.Response response = await http
           .post(
             Uri.parse('$apiBase/auth/login'),
-            headers: const <String, String>{'Content-Type': 'application/json'},
+            headers: const <String, String>{
+              'Content-Type': 'application/json',
+              'x-warehub-client': 'mobile',
+            },
             body: jsonEncode(<String, String>{
               'login': login,
               'password': password,
@@ -140,37 +146,32 @@ class _AuthScreenState extends State<AuthScreen> {
         _showMessage('Login failed: invalid response');
         return;
       }
-      final String token = '${decoded['token'] ?? ''}'.trim();
-      final dynamic rawUser = decoded['user'];
-      String nextLogin = login;
-      String nextEmail = '';
-      String nextAvatarUrl = '';
-      if (rawUser is Map<String, dynamic>) {
-        nextLogin = '${rawUser['login'] ?? login}'.trim();
-        nextEmail = '${rawUser['email'] ?? ''}'.trim();
-        nextAvatarUrl = '${rawUser['avatar_url'] ?? ''}'.trim();
-      }
-      final String nextRole = rawUser is Map<String, dynamic>
-          ? '${rawUser['role'] ?? ''}'.trim()
-          : '';
-
-      if (token.isEmpty) {
+      final MobileAuthPayload? authPayload = parseMobileAuthPayload(
+        decoded,
+        fallbackLogin: login,
+      );
+      if (authPayload == null) {
         _showMessage('Login failed: token missing');
+        return;
+      }
+      if (authPayload.refreshToken.isEmpty) {
+        _showMessage('Login failed: refresh token missing');
         return;
       }
 
       await settings.saveSession(
-        token: token,
-        login: nextLogin,
-        email: nextEmail,
-        avatarUrl: nextAvatarUrl,
-        role: nextRole,
+        token: authPayload.accessToken,
+        refreshToken: authPayload.refreshToken,
+        login: authPayload.login,
+        email: authPayload.email,
+        avatarUrl: authPayload.avatarUrl,
+        role: authPayload.role,
       );
-      configureMobileLogAuthToken(token);
-      await _refreshProfile(token, apiBase);
+      configureMobileLogAuthToken(authPayload.accessToken);
+      await _refreshProfile(authPayload.accessToken, apiBase);
     } on TimeoutException {
       debugPrint('Auth login timeout apiBase=$apiBase');
-      _showMessage('Login failed: backend timeout at $apiBase');
+      _showMessage(strings.text('network_unavailable_login'));
       return;
     } catch (error) {
       debugPrint('Auth login error apiBase=$apiBase error=$error');
@@ -181,7 +182,14 @@ class _AuthScreenState extends State<AuthScreen> {
           context: 'apiBase=$apiBase error=$error',
         ),
       );
-      _showMessage('Login failed: $error');
+      _showMessage(
+        isNetworkUnavailableError(error)
+            ? strings.text('network_unavailable_login')
+            : strings.format(
+                'login_failed_error',
+                <String, String>{'error': '$error'},
+              ),
+      );
       return;
     } finally {
       if (mounted) {
@@ -230,181 +238,104 @@ class _AuthScreenState extends State<AuthScreen> {
     final AppSettings settings = AppSettingsScope.of(context);
     final AppStrings strings = AppStrings.of(context);
     return Theme(
-      data: buildAppTheme(),
+      data: buildAuthTheme(),
       child: Scaffold(
         body: Container(
-          decoration: const BoxDecoration(gradient: appBackgroundGradient),
-          child: Stack(
-            children: <Widget>[
-              Positioned(
-                top: -120,
-                right: -80,
-                child: AuthGlowOrb(
-                  size: 260,
-                  colors: <Color>[
-                    uiGreen.withValues(alpha: 0.4),
-                    Colors.transparent,
-                  ],
+          decoration: const BoxDecoration(gradient: authBackgroundGradient),
+          child: SafeArea(
+            child: Stack(
+              children: <Widget>[
+                Positioned(
+                  top: AuthSpacing.sm,
+                  right: AuthSpacing.screenHorizontal,
+                  child: AuthLanguagePicker(
+                    label: strings.language,
+                    value: settings.language,
+                    onChanged: (AppLang lang) {
+                      settings.setLanguage(lang);
+                    },
+                  ),
                 ),
-              ),
-              Positioned(
-                bottom: -140,
-                left: -90,
-                child: AuthGlowOrb(
-                  size: 320,
-                  colors: <Color>[
-                    uiOrange.withValues(alpha: 0.35),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              SafeArea(
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    return Center(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 460),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: AuthLanguagePicker(
-                                    label: strings.language,
-                                    value: settings.language,
-                                    onChanged: (AppLang lang) {
-                                      settings.setLanguage(lang);
-                                    },
+                Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AuthSpacing.screenHorizontal,
+                      AuthSpacing.xxl,
+                      AuthSpacing.screenHorizontal,
+                      AuthSpacing.xxl,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 430),
+                      child: AuthGlassCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            AuthBrandHeader(
+                              title: strings.loginTitle,
+                              subtitle: strings.loginSubtitle,
+                            ),
+                            const SizedBox(height: AuthSpacing.xl),
+                            AuthLoginForm(
+                              strings: strings,
+                              loginController: _loginController,
+                              passwordController: _loginPasswordController,
+                              passwordHidden: _loginHidden,
+                              isBusy: _loginBusy,
+                              onSubmit: _onLoginSubmitted,
+                              onTogglePassword: () => setState(() {
+                                _loginHidden = !_loginHidden;
+                              }),
+                            ),
+                            const SizedBox(height: AuthSpacing.md),
+                            if (!_biometricAvailable)
+                              Text(
+                                strings.fingerprintUnavailable,
+                                style: AuthTextStyles.helper,
+                              ),
+                            if (_biometricAvailable &&
+                                settings.biometricEnabled) ...<Widget>[
+                              const SizedBox(height: AuthSpacing.sm),
+                              FilledButton.tonalIcon(
+                                onPressed: _biometricBusy
+                                    ? null
+                                    : _authenticateWithBiometrics,
+                                icon: _biometricBusy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.fingerprint,
+                                        size: 20,
+                                      ),
+                                label: Text(
+                                  strings.fingerprintLogin,
+                                  style: AuthTextStyles.label,
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AuthColors.muted,
+                                  foregroundColor: AuthColors.foreground,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AuthSpacing.md,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(AuthRadii.md),
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              AuthGlassCard(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: <Widget>[
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: <Widget>[
-                                        ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          child: Image.asset(
-                                            'assets/images/logo.png',
-                                            width: 44,
-                                            height: 44,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        const Text(
-                                          'Warehub',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.8,
-                                            color: uiNavy,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      strings.loginTitle,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.w800,
-                                        color: uiText,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      strings.loginSubtitle,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: uiMuted,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 18),
-                                    AuthLoginForm(
-                                      strings: strings,
-                                      loginController: _loginController,
-                                      passwordController:
-                                          _loginPasswordController,
-                                      passwordHidden: _loginHidden,
-                                      isBusy: _loginBusy,
-                                      onSubmit: _onLoginSubmitted,
-                                      onTogglePassword: () => setState(() {
-                                        _loginHidden = !_loginHidden;
-                                      }),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    if (!_biometricAvailable) ...<Widget>[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        strings.fingerprintUnavailable,
-                                        style: const TextStyle(
-                                          color: uiMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                    if (_biometricAvailable &&
-                                        settings.biometricEnabled) ...<Widget>[
-                                      const SizedBox(height: 10),
-                                      FilledButton.tonalIcon(
-                                        onPressed: _biometricBusy
-                                            ? null
-                                            : _authenticateWithBiometrics,
-                                        icon: _biometricBusy
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : const Icon(
-                                                Icons.fingerprint,
-                                                size: 20,
-                                              ),
-                                        label: Text(strings.fingerprintLogin),
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: uiCardSoft,
-                                          foregroundColor: uiText,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
                             ],
-                          ),
+                          ],
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
