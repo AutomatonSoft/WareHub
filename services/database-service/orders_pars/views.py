@@ -3,6 +3,7 @@ import requests
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from database.kid_number_utils import primary_kid_number
 from database.models import Orders, Kid
 from database.permissions import SessionRolePermission
 from database.serializers import OrderModelSerializer
@@ -170,7 +171,7 @@ class CreateItemOrders(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        kid = Kid.objects.filter(kid_number=kundennummer).first()
+        kid = Kid.objects.filter(kid_number__contains=[kundennummer]).first()
         if kid is None:
             return Response(
                 {"kundennummer": [f"Kid с kid_number='{kundennummer}' не найден в БД."]},
@@ -247,6 +248,7 @@ class CreateItemOrders(APIView):
                     "requested_order_id": order_id,
                     "saved_order_id": order_id_to_save,
                     "kid_account": kid.account,
+                    "kid_number": primary_kid_number(kid.kid_number),
                     "source_order_ids": selected_item.get("source_order_ids") or [],
                     "order": serializer.data,
                 },
@@ -267,7 +269,7 @@ class CreateItemOrders(APIView):
             memo=((selected_item.get("memo") or "").strip() or None),
             date=parse_order_date(verkaufsdatum),
             status=status_by_amounts(zahlungssumme, rechnungssumme),
-            global_price=rechnungssumme or None
+            payment_status=rechnungssumme or None
         )
         serializer = OrderModelSerializer(order)
         return Response(

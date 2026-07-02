@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../layout/app-shell";
 import { Card, CardContent } from "../ui/card";
 import { useToast } from "../shared/toast-provider";
@@ -86,6 +86,7 @@ function ProductEditorContent() {
   const [applyResponse, setApplyResponse] = useState<ProductEditorApplyResponse | null>(null);
   const [jobResponse, setJobResponse] = useState<ProductEditorJobResponse | null>(null);
   const [applyConfirmed, setApplyConfirmed] = useState(false);
+  const skipNextAutoJvLoadKeyRef = useRef<string | null>(null);
 
   const activeTabEanInput = tabEanInputs[activeTabKey] ?? "";
   const effectiveTabEanInput = activeTabEanInput.trim() || eanInput.trim();
@@ -126,6 +127,11 @@ function ProductEditorContent() {
       void loadHoodDraft(discover, preferredTargetId ?? discover.recommended_baseline_target_id);
     }
     if (activeGroupId === "JV" && hasActionableJvTarget(findGroup(discover, "JV")) && !isLoadedJvDraft(jvDraft, discover.ean)) {
+      const autoLoadKey = buildJvAutoLoadKey(discover.ean, discover.recommended_baseline_target_id);
+      if (skipNextAutoJvLoadKeyRef.current === autoLoadKey) {
+        skipNextAutoJvLoadKeyRef.current = null;
+        return;
+      }
       void loadJvDraft(discover, discover.recommended_baseline_target_id);
     }
   }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft]);
@@ -266,6 +272,7 @@ function ProductEditorContent() {
     setJvLoading(true);
     try {
       const discovered = await discoverProductEditor(ean, "JV");
+      skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(ean, discovered.recommended_baseline_target_id);
       setDiscover(limitDiscoverToActiveGroup(discovered, "JV"));
       const response = await loadProductEditorGroup({
         ean,
@@ -803,6 +810,10 @@ function findFirstFoundTarget(group: ReturnType<typeof findGroup>): ProductEdito
 
 function isLoadedJvDraft(draft: ProductEditorJvDraft, ean: string): boolean {
   return draft.ean === ean && Boolean(draft.target_id);
+}
+
+function buildJvAutoLoadKey(ean: string, baselineTargetId?: string | null): string {
+  return `${ean.trim()}::${String(baselineTargetId ?? "").trim()}`;
 }
 
 function getPlanEan(activeDraft: ProductEditorHoodDraft | ProductEditorJvDraft): string {

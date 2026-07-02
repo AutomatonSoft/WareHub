@@ -111,6 +111,18 @@ class Command(BaseCommand):
                     "runtime": _runtime_debug_context(),
                 },
             )
+        if job.operation == JVBatchJob.Operation.CREATE:
+            # "create JV sofort" job: reuse the same worker but a different
+            # handler (create-and-push per site instead of plan + update).
+            from jv_services.create_service import run_create_job
+
+            summary = run_create_job(job)
+            logger.info(
+                "JV_CREATE_WORKER_DONE code=jv_create_worker_done job_id=%s summary=%s", job_id, summary
+            )
+            self.stdout.write(self.style.SUCCESS(f"JV create job {job_id} done"))
+            return
+
         update_job_progress(job, phase="building_plan", message="Worker is building the site plan.")
 
         if not job.items.exists():

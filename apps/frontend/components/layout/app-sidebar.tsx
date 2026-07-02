@@ -38,14 +38,14 @@ export function AppSidebar({
   }, [currentUser?.role]);
   return (
     <aside className={cn("wh-sidebar sticky top-0 flex h-screen flex-col !pb-1 text-[var(--wh-color-text)]", className)}>
-      <div className={cn("mb-6 flex items-center px-2", collapsed ? "justify-center" : "justify-between")}>
+      <div className={cn("mb-5 flex items-center px-2", collapsed ? "justify-center" : "justify-between")}>
         <div className="wh-sidebar__brand flex items-center gap-3">
           <div className="wh-sidebar__brand-icon flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm">
-            <Image src="/brand/logo.png" alt="WareHub logo" width={40} height={40} className="h-[40px] w-[40px] object-contain" priority />
+            <Image src="/brand/logo.png" alt="WareHub logo" width={40} height={40} className="h-[40px] w-auto object-contain" priority />
           </div>
           {!collapsed ? (
             <div>
-              <p className="wh-sidebar__brand-title text-[26px] font-semibold leading-none">{t.brandName}</p>
+              <p className="wh-sidebar__brand-title text-[24px] font-semibold leading-none tracking-[-0.03em]">{t.brandName}</p>
             </div>
           ) : null}
         </div>
@@ -107,7 +107,7 @@ export function AppSidebar({
       <div className="mt-auto flex flex-col gap-2">
         <div
           className={cn(
-            "rounded-2xl border border-white/55 bg-[linear-gradient(145deg,rgba(255,255,255,0.86),rgba(247,252,250,0.68))] p-1.5 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.55),inset_0_1px_0_rgba(255,255,255,0.65)] backdrop-blur-2xl dark:border-white/20 dark:bg-[linear-gradient(145deg,rgba(255,255,255,0.11),rgba(255,255,255,0.06))]",
+            "rounded-[var(--radius-card)] border border-border bg-card p-1.5 shadow-[var(--wh-shadow-card)]",
             collapsed ? "flex flex-col items-center gap-1" : "flex items-center gap-1"
           )}
           aria-label="Language switcher"
@@ -126,7 +126,7 @@ export function AppSidebar({
                   collapsed ? "w-full" : "flex-1",
                   active
                     ? "pointer-events-none bg-[var(--wh-color-primary)] text-white shadow-none"
-                    : "text-[color:var(--text-secondary)] hover:bg-white hover:text-[color:var(--foreground)]"
+                    : "text-[color:var(--text-secondary)] hover:bg-muted hover:text-[color:var(--foreground)]"
                 )}
                 aria-pressed={active}
               >

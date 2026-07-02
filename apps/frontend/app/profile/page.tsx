@@ -98,7 +98,7 @@ function ProfileField({
   type?: React.HTMLInputTypeAttribute;
 }) {
   return (
-    <label className="space-y-2">
+    <label className="flex flex-col gap-2">
       <span className="text-sm font-medium text-foreground">{label}</span>
       <Input
         type={type}
@@ -123,7 +123,7 @@ function mapProfileValidationError(errorCode: string): string {
 
 function ProfileHistoryPanel() {
   return (
-    <section className="w-full rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--wh-shadow-card)] sm:p-8">
+    <section className="wh-content-card w-full">
       <div className="flex flex-col gap-2">
         <h2 className="text-2xl font-semibold tracking-tight text-foreground">Change History</h2>
         <p className="text-sm text-muted-foreground">
@@ -131,14 +131,14 @@ function ProfileHistoryPanel() {
         </p>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-[var(--radius-card)] border border-border">
-        <div className="grid grid-cols-[140px_120px_minmax(180px,1fr)_minmax(260px,1.4fr)] gap-4 border-b border-border bg-muted/20 px-5 py-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="mt-6 overflow-x-auto rounded-[var(--radius-card)] border border-border">
+        <div className="grid min-w-[720px] grid-cols-[140px_120px_minmax(180px,1fr)_minmax(260px,1.4fr)] gap-4 border-b border-border bg-muted/20 px-5 py-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
           <div>Date</div>
           <div>Time</div>
           <div>Changed</div>
           <div>Details</div>
         </div>
-        <div className="grid min-h-36 place-items-center px-6 py-10 text-center">
+        <div className="grid min-h-36 min-w-[720px] place-items-center px-6 py-10 text-center">
           <div className="max-w-xl">
             <p className="text-sm font-medium text-foreground">No profile history available yet.</p>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -413,8 +413,8 @@ export default function ProfilePage() {
 
   return (
     <AppShell title="Profile" subtitle="Account settings workspace">
-      <div className="min-h-[calc(100vh-24px)] w-full rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--wh-shadow-card)] sm:p-8">
-        <div className="flex flex-col gap-5">
+      <div className="wh-page-stack w-full">
+        <section className="wh-content-card">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <ProfileAvatar
               user={user}
@@ -424,19 +424,20 @@ export default function ProfilePage() {
             />
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
             <div className="min-w-0">
-              <h1 className="truncate text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+              <h2 className="truncate text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 {displayName || user?.username || "Profile"}
-              </h1>
+              </h2>
               <p className="mt-2 text-base text-muted-foreground">
                 Manage your account settings and preferences
               </p>
             </div>
           </div>
+        </section>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
             <form
               onSubmit={(event) => void handleProfileSave(event)}
-              className="w-full rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--wh-shadow-card)] sm:p-8"
+              className="wh-content-card w-full"
             >
               <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div>
@@ -478,7 +479,7 @@ export default function ProfilePage() {
 
             <form
               onSubmit={(event) => void handleSecuritySave(event)}
-              className="w-full rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--wh-shadow-card)] sm:p-8"
+              className="wh-content-card w-full"
             >
               <div className="flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
@@ -511,7 +512,6 @@ export default function ProfilePage() {
           </div>
 
           <ProfileHistoryPanel />
-        </div>
 
         <ProfileAvatarCropDialog
           open={avatarEditorOpen}
@@ -539,8 +539,8 @@ export default function ProfilePage() {
                 Enter the 6-digit code sent to your email address to confirm your new password.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={(event) => void handlePasswordCodeConfirm(event)} className="space-y-4">
-              <label className="space-y-2">
+            <form onSubmit={(event) => void handlePasswordCodeConfirm(event)} className="flex flex-col gap-4">
+              <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium text-foreground">Verification code</span>
                 <Input
                   value={passwordCode}

@@ -53,6 +53,7 @@ def test_load_local_env_reads_only_repo_root_dotenv_without_overriding_existing_
 
     monkeypatch.setenv("DATABASE_SERVICE_BASE_URL", "http://already-set:9000")
     monkeypatch.delenv("ORCHESTRATOR_HTTP_RETRIES", raising=False)
+    monkeypatch.delenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN", raising=False)
 
     module = _load_settings_module(module_path, "test_settings_root_dotenv")
 
@@ -72,3 +73,4 @@ def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):
     module = _load_settings_module(module_path, "test_settings_missing_dotenv")
 
     assert module.settings.timeout_seconds == 8.0
+    assert module.settings.marketplace_toggle_timeout_seconds == 60.0

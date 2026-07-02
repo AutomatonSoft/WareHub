@@ -66,7 +66,7 @@ class ProductEditorService:
         if selected_group_id is ProductEditorGroupId.HOOD:
             recommended_baseline = hood_found_target_ids[0] if hood_found_target_ids else None
         else:
-            recommended_baseline = self.jv_flow.recommended_baseline(ean=ean, request_id=request_id) or "JV_DE"
+            recommended_baseline = self.jv_flow.recommended_baseline_from_results(jv_results) or "JV_DE"
         return ProductEditorDiscoverResponse(
             request_id=request_id,
             ean=ean,

@@ -5,6 +5,8 @@ import { readAuth } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
 import { AppSidebar } from "./app-sidebar";
 import { MobileNavigation } from "./mobile-navigation";
+import { PageHeader } from "../ui/page-header";
+import { PageShell } from "../ui/page-shell";
 
 function applySidebarPreference(collapsed: boolean) {
   if (typeof document === "undefined") return;
@@ -74,7 +76,12 @@ export function AppShell({
         : <aside className="wh-sidebar hidden xl:flex" aria-hidden="true" />}
       <main className="wh-main">
         <div className="wh-page-content">
-          <div className="wh-page-content__inner">{children}</div>
+          <div className="wh-page-content__inner">
+            <PageShell>
+              <PageHeader title={title} subtitle={subtitle} />
+              {children}
+            </PageShell>
+          </div>
         </div>
       </main>
       <MobileNavigation

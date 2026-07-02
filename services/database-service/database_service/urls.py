@@ -30,6 +30,8 @@ from database.views import (
     EANPoolTakeNextFreeAPIView,
     EANPoolUsageByEANAPIView,
     InventoryRowsAPIView,
+    KidGreenImportAPIView,
+    KidGreenImportJobStatusAPIView,
     KidsBulkUpdateAPIView,
     KidListCreateAPIView,
     KidEanSummaryAPIView,
@@ -44,6 +46,12 @@ from database.views import (
     OrderListCreateAPIView,
     OrderRetrieveUpdateAPIView,
     UploadImagesToFtpAPIView,
+)
+from database.views_dectivate import (
+    MarketplaceDeactivateByKidAPIView,
+    MarketplaceHoodDeactivateByKidAPIView,
+    MarketplaceJVDeactivateSofortByKidAPIView,
+    MarketplaceLocalStatusesByKidAPIView,
 )
 from orders_pars.views import (
     AfterbuyItemSearchAPIView,
@@ -64,6 +72,7 @@ from jv_services.split_views import (
     JVLocalProductByEANAPIView,
     JVProductByEANAPIView,
     JVProductCreateAndPushAPIView,
+    JVProductCreateJobEnqueueAPIView,
     JVProductSyncByEANAPIView,
     JVProductUpdateByEANAPIView,
     JVRubricsTreeAPIView,
@@ -100,7 +109,13 @@ api_v1_patterns = [
     path("api/v1/kids/bulk-update/", KidsBulkUpdateAPIView.as_view(), name="kids-bulk-update-v1"),
     path("api/v1/orders/", OrderListCreateAPIView.as_view(), name="order-list-create-v1"),
     path("api/v1/orders/<int:pk>/", OrderRetrieveUpdateAPIView.as_view(), name="order-detail-v1"),
+    path("api/v1/marketplace/deactivate-by-kid/", MarketplaceDeactivateByKidAPIView.as_view(), name="marketplace-deactivate-by-kid-v1"),
+    path("api/v1/marketplace/jv/deactivate-sofort-by-kid/", MarketplaceJVDeactivateSofortByKidAPIView.as_view(), name="marketplace-jv-deactivate-sofort-by-kid-v1"),
+    path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
+    path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
+    path("api/v1/kids/import-kid-green/", KidGreenImportAPIView.as_view(), name="kid-green-import-v1"),
+    path("api/v1/kids/import-kid-green/jobs/<str:job_id>/", KidGreenImportJobStatusAPIView.as_view(), name="kid-green-import-job-status-v1"),
     path("api/v1/ean-pool/import/", EANPoolImportAPIView.as_view(), name="ean-pool-import-v1"),
     path("api/v1/ean-pool/stats/", EANPoolStatsAPIView.as_view(), name="ean-pool-stats-v1"),
     path("api/v1/ean-pool/take-next-free/", EANPoolTakeNextFreeAPIView.as_view(), name="ean-pool-take-next-free-v1"),
@@ -275,6 +290,11 @@ api_v1_patterns = [
         "api/v1/jv/batch/jobs/<int:job_id>/",
         JVBatchJobStatusAPIView.as_view(),
         name="jv-batch-job-status-v1",
+    ),
+    path(
+        "api/v1/jv/products/create-job/",
+        JVProductCreateJobEnqueueAPIView.as_view(),
+        name="jv-product-create-job-v1",
     ),
 ]
 

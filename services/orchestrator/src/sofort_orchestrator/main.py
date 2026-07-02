@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid
@@ -12,8 +11,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .api.marketplace_job_routes import MarketplaceJobDeps
 from .api.product_editor_routes import ProductEditorDeps
 from .api.routes import Deps, router
+from .application.marketplace_job_service import MarketplaceJobService
+from .application.marketplace_job_worker import run_marketplace_job_worker
 from .application.product_editor_service import ProductEditorService
 from .application.job_worker import run_job_worker
 from .application.reconciliation_scheduler import run_reconciliation_scheduler
@@ -25,14 +27,17 @@ from .infra.http_client import HttpClient
 from .infra.idempotency import SqliteIdempotencyStore
 from .infra.job_store import SqliteJobStore
 from .infra.marketplace_adapters import MarketplaceAdapters
+from .infra.marketplace_job_gateway import MarketplaceJobGateway
+from .infra.marketplace_job_store import SqliteMarketplaceJobStore
 from .infra.metrics import InMemoryMetrics
 from .infra.product_editor_gateway import ProductEditorGateway
 from .infra.product_editor_store import SqliteProductEditorStore
 from .openapi_schema import install_custom_openapi
 from .infra.settings import settings
+from .observability import capture_exception, configure_observability, reset_request_id, set_request_id
 
 logger = logging.getLogger("sofort_orchestrator")
-logging.basicConfig(level=getattr(logging, settings.log_level, logging.INFO), format="%(message)s")
+configure_observability(service_name=settings.service_name, log_level=settings.log_level)
 _shared_http_client: HttpClient | None = None
 _ORCHESTRATOR_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,6 +75,22 @@ def _build_service() -> OrchestratorService:
         enabled=settings.enable_channel_limiter,
     )
     return OrchestratorService(adapters=adapters, circuit_breaker=circuit_breaker, channel_limiter=channel_limiter)
+
+
+def _build_marketplace_job_store() -> SqliteMarketplaceJobStore:
+    store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_marketplace.sqlite3")
+    return SqliteMarketplaceJobStore(db_path=_ensure_sqlite_parent_dir(store_path))
+
+
+def _build_marketplace_job_service() -> MarketplaceJobService:
+    http_client = _build_http_client()
+    gateway = MarketplaceJobGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+        timeout_seconds=settings.marketplace_toggle_timeout_seconds,
+    )
+    return MarketplaceJobService(gateway=gateway)
 
 
 def _build_idempotency_store() -> SqliteIdempotencyStore:
@@ -112,6 +133,10 @@ def configure_runtime_dependencies() -> None:
         Deps.job_store = _build_job_store()
     if Deps.metrics is None:
         Deps.metrics = _build_metrics()
+    if MarketplaceJobDeps.store is None:
+        MarketplaceJobDeps.store = _build_marketplace_job_store()
+    if MarketplaceJobDeps.service is None:
+        MarketplaceJobDeps.service = _build_marketplace_job_service()
     if ProductEditorDeps.service is None:
         ProductEditorDeps.service = _build_product_editor_service(job_store=Deps.job_store)
 
@@ -124,12 +149,28 @@ def close_runtime_dependencies() -> None:
         _shared_http_client = None
 
     Deps.service = None
+    MarketplaceJobDeps.service = None
+    MarketplaceJobDeps.store = None
     ProductEditorDeps.service = None
+
+
+async def _run_background_worker(worker_name: str, worker_coro):
+    logger.info("background_worker_started", extra={"worker": worker_name})
+    try:
+        await worker_coro
+    except asyncio.CancelledError:
+        logger.info("background_worker_cancelled", extra={"worker": worker_name})
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("background_worker_crashed", extra={"worker": worker_name})
+        capture_exception(exc)
+        raise
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
+    marketplace_job_worker_task: asyncio.Task | None = None
     reconciliation_scheduler_task: asyncio.Task | None = None
     configure_runtime_dependencies()
     if settings.enable_job_worker:
@@ -138,10 +179,27 @@ async def lifespan(_app: FastAPI):
         if service is None or job_store is None:
             raise RuntimeError("Worker dependencies are not configured")
         job_worker_task = asyncio.create_task(
-            run_job_worker(
-                service=service,
-                job_store=job_store,
-                poll_interval_seconds=settings.job_worker_poll_interval_seconds,
+            _run_background_worker(
+                "job_worker",
+                run_job_worker(
+                    service=service,
+                    job_store=job_store,
+                    poll_interval_seconds=settings.job_worker_poll_interval_seconds,
+                ),
+            )
+        )
+        marketplace_service = MarketplaceJobDeps.service
+        marketplace_store = MarketplaceJobDeps.store
+        if marketplace_service is None or marketplace_store is None:
+            raise RuntimeError("Marketplace worker dependencies are not configured")
+        marketplace_job_worker_task = asyncio.create_task(
+            _run_background_worker(
+                "marketplace_job_worker",
+                run_marketplace_job_worker(
+                    service=marketplace_service,
+                    job_store=marketplace_store,
+                    poll_interval_seconds=settings.job_worker_poll_interval_seconds,
+                ),
             )
         )
     if settings.enable_reconciliation_scheduler:
@@ -149,11 +207,14 @@ async def lifespan(_app: FastAPI):
         if job_store is None:
             raise RuntimeError("Reconciliation scheduler dependencies are not configured")
         reconciliation_scheduler_task = asyncio.create_task(
-            run_reconciliation_scheduler(
-                job_store=job_store,
-                poll_interval_seconds=settings.reconciliation_scheduler_poll_interval_seconds,
-                reports_ttl_seconds=settings.reconciliation_reports_ttl_seconds,
-                reports_max_per_ean=settings.reconciliation_reports_max_per_ean,
+            _run_background_worker(
+                "reconciliation_scheduler",
+                run_reconciliation_scheduler(
+                    job_store=job_store,
+                    poll_interval_seconds=settings.reconciliation_scheduler_poll_interval_seconds,
+                    reports_ttl_seconds=settings.reconciliation_reports_ttl_seconds,
+                    reports_max_per_ean=settings.reconciliation_reports_max_per_ean,
+                ),
             )
         )
     try:
@@ -163,6 +224,12 @@ async def lifespan(_app: FastAPI):
             job_worker_task.cancel()
             try:
                 await job_worker_task
+            except asyncio.CancelledError:
+                pass
+        if marketplace_job_worker_task is not None:
+            marketplace_job_worker_task.cancel()
+            try:
+                await marketplace_job_worker_task
             except asyncio.CancelledError:
                 pass
         if reconciliation_scheduler_task is not None:
@@ -191,23 +258,29 @@ async def request_logging_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
     request.state.request_id = request_id
     started = time.perf_counter()
+    token = set_request_id(request_id)
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:  # noqa: BLE001
+        latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        logger.exception(
+            "request_failed",
+            extra={"route": request.url.path, "status": 500, "latency_ms": latency_ms},
+        )
+        capture_exception(exc)
+        reset_request_id(token)
+        raise
 
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
-    payload = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "level": "INFO",
-        "service": settings.service_name,
-        "request_id": request_id,
-        "route": request.url.path,
-        "status": response.status_code,
-        "latency_ms": latency_ms,
-    }
-    logger.info(json.dumps(payload, ensure_ascii=False))
+    logger.info(
+        "request_finished",
+        extra={"route": request.url.path, "status": response.status_code, "latency_ms": latency_ms},
+    )
     if Deps.metrics is not None:
         Deps.metrics.record_request(status_code=response.status_code, latency_ms=latency_ms)
     response.headers["X-Request-Id"] = request_id
+    reset_request_id(token)
     return response
 
 

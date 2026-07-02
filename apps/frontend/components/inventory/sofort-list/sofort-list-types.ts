@@ -21,15 +21,19 @@ export type SofortListRow = {
   photo: string;
   photoCount: number;
   place: string;
+  store: boolean;
   quantity: number;
   room: string | null;
   furnitureType: string | null;
+  company: string | null;
+  commentary: string | null;
   color: string | null;
   size: string | null;
   material: string | null;
   price: string | null;
   priceCurrency: string | null;
   listingStatus: "listed" | "unlisted";
+  marketplaceActive: boolean | null;
 };
 
 export type HighlightText = (value: string, query: string) => string | ReactNode[];

@@ -56,6 +56,7 @@ if (dsn) {
     dsn,
     environment,
     release,
+    enableMetrics: true,
     tracesSampleRate: parseRate(tracesSampleRateRaw, 0.1),
     replaysOnErrorSampleRate: parseRate(replayOnErrorSampleRateRaw, 1.0),
     replaysSessionSampleRate: parseRate(replaySessionSampleRateRaw, 0.0)

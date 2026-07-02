@@ -1,16 +1,16 @@
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package*.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; else echo 'No package.json yet'; fi
 
-FROM node:20-alpine AS dev
+FROM node:24-alpine AS dev
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
 EXPOSE 8931
 CMD ["sh", "-c", "if [ -f package.json ]; then npm run dev -- --port 8931; else echo 'Frontend scaffold not initialized.' && tail -f /dev/null; fi"]
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_ANDROID_APK_URL=
 ARG NEXT_PUBLIC_ANDROID_APK_URL_STAGE=
@@ -24,18 +24,28 @@ COPY --from=deps /app /app
 COPY . .
 RUN if [ -f package.json ]; then npm run build; else echo 'No package.json, skip build'; fi
 
-FROM node:20-alpine AS stage
+FROM node:24-alpine AS stage
 WORKDIR /app
 ENV NODE_ENV=production
 ENV APP_ENV=stage
-COPY --from=builder /app /app
+ENV PORT=8931
+ENV HOSTNAME=0.0.0.0
+# Next.js standalone output: minimal traced server + static assets only.
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 8931
-CMD ["sh", "-c", "if [ -f package.json ]; then npm run start -- --port 8931; else echo 'No frontend code to run'; tail -f /dev/null; fi"]
+CMD ["node", "server.js"]
 
-FROM node:20-alpine AS prod
+FROM node:24-alpine AS prod
 WORKDIR /app
 ENV NODE_ENV=production
 ENV APP_ENV=prod
-COPY --from=builder /app /app
+ENV PORT=8931
+ENV HOSTNAME=0.0.0.0
+# Next.js standalone output: minimal traced server + static assets only.
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 8931
-CMD ["sh", "-c", "if [ -f package.json ]; then npm run start -- --port 8931; else echo 'No frontend code to run'; tail -f /dev/null; fi"]
+CMD ["node", "server.js"]

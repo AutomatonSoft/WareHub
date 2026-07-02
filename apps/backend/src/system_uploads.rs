@@ -11,9 +11,14 @@ use suppaftp::{types::FileType, FtpStream};
 use uuid::Uuid;
 
 use crate::{
-    auth::require_approved_user, internal_error, validation_error, AppState, ErrorResponse,
+    auth::require_approved_user, delete_uploaded_photo_by_url, internal_error, validation_error, AppState, ErrorResponse,
     UploadResponse,
 };
+
+#[derive(Debug, sqlx::FromRow)]
+struct UserAvatarRow {
+    avatar_url: Option<String>,
+}
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct UploadPhotoQuery {
@@ -56,11 +61,18 @@ pub(crate) async fn upload_photo(
     Query(query): Query<UploadPhotoQuery>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<UploadResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let _user = require_approved_user(&state, &headers).await?;
+    let user = require_approved_user(&state, &headers).await?;
     let kind = parse_upload_kind(query.kind.as_deref())?;
     let config = load_upload_storage_config();
     let folder = normalize_folder_path(query.folder.as_deref());
-    let target = build_upload_target(&state.app_env, kind, &config.ftp_avatar_dir, folder.as_deref());
+    let target = build_upload_target(
+        &state.app_env,
+        kind,
+        &config.ftp_avatar_dir,
+        folder.as_deref(),
+        root_includes_env_dir(&config.ftp_storage_root_dir, &state.app_env),
+        public_base_includes_env_dir(config.ftp_public_base_url.as_deref(), &state.app_env),
+    );
     let custom_name = normalize_filename_part(query.name.as_deref());
 
     while let Some(field) = multipart
@@ -83,11 +95,19 @@ pub(crate) async fn upload_photo(
             .map_err(|error| internal_error(format!("failed to read image bytes: {error}")))?;
         validate_image_size(bytes.len())?;
 
+        if kind == UploadKind::Avatar {
+            let current_avatar = load_current_avatar_url(&state, user.id).await?;
+            if let Some(existing_avatar_url) = current_avatar
+                .filter(|value| !value.trim().is_empty())
+            {
+                delete_uploaded_photo_by_url(&existing_avatar_url)
+                    .await
+                    .map_err(|error| internal_error(format!("failed to delete previous avatar: {error}")))?;
+            }
+        }
+
         let extension = detect_extension(&source_name, &content_type);
-        let filename = match custom_name.as_deref() {
-            Some(prefix) if !prefix.is_empty() => format!("{prefix}.{extension}"),
-            _ => format!("{}.{}", Uuid::new_v4(), extension),
-        };
+        let filename = build_upload_filename(kind, &user.login, custom_name.as_deref(), extension);
         let public_url = store_upload(&config, &target, &filename, bytes.to_vec()).await?;
 
         return Ok((StatusCode::CREATED, Json(UploadResponse { url: public_url })));
@@ -97,6 +117,25 @@ pub(crate) async fn upload_photo(
         "invalid_file",
         "no image file found in multipart payload",
     ))
+}
+
+async fn load_current_avatar_url(
+    state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    let current = sqlx::query_as::<_, UserAvatarRow>(
+        r#"
+        SELECT avatar_url
+        FROM users
+        WHERE id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|error| internal_error(format!("failed to load current avatar url: {error}")))?;
+
+    Ok(current.and_then(|row| row.avatar_url))
 }
 
 fn parse_upload_kind(value: Option<&str>) -> Result<UploadKind, (StatusCode, Json<ErrorResponse>)> {
@@ -173,6 +212,8 @@ fn build_upload_target(
     kind: UploadKind,
     ftp_avatar_dir: &str,
     folder: Option<&str>,
+    ftp_root_includes_env: bool,
+    public_root_includes_env: bool,
 ) -> UploadTarget {
     let env_dir = match app_env.to_ascii_lowercase().as_str() {
         "prod" => "prod",
@@ -189,17 +230,54 @@ fn build_upload_target(
     let base = match kind {
         UploadKind::Product => UploadTarget {
             local_dir: "uploads".to_string(),
-            ftp_dir: env_dir.to_string(),
-            public_dir: env_dir.to_string(),
+            ftp_dir: prefixed_dir(ftp_root_includes_env, env_dir, ""),
+            public_dir: prefixed_dir(public_root_includes_env, env_dir, ""),
         },
         UploadKind::Avatar => UploadTarget {
             local_dir: format!("uploads/{avatar_dir}"),
-            ftp_dir: format!("{env_dir}/{avatar_dir}"),
-            public_dir: format!("{env_dir}/{avatar_dir}"),
+            ftp_dir: prefixed_dir(ftp_root_includes_env, env_dir, avatar_dir),
+            public_dir: prefixed_dir(public_root_includes_env, env_dir, avatar_dir),
         },
     };
 
     append_folder_to_target(base, folder)
+}
+
+fn prefixed_dir(root_includes_env: bool, env_dir: &str, leaf: &str) -> String {
+    match (root_includes_env, leaf.trim_matches('/')) {
+        (true, "") => String::new(),
+        (true, leaf) => leaf.to_string(),
+        (false, "") => env_dir.to_string(),
+        (false, leaf) => format!("{env_dir}/{leaf}"),
+    }
+}
+
+fn root_includes_env_dir(root: &str, app_env: &str) -> bool {
+    let env_dir = normalized_env_dir(app_env);
+    root.trim_matches('/')
+        .rsplit('/')
+        .next()
+        .map(|segment| segment.eq_ignore_ascii_case(env_dir))
+        .unwrap_or(false)
+}
+
+fn public_base_includes_env_dir(public_base: Option<&str>, app_env: &str) -> bool {
+    let env_dir = normalized_env_dir(app_env);
+    public_base
+        .and_then(|base| {
+            let trimmed = base.trim().trim_end_matches('/');
+            trimmed.rsplit('/').next()
+        })
+        .map(|segment| segment.eq_ignore_ascii_case(env_dir))
+        .unwrap_or(false)
+}
+
+fn normalized_env_dir(app_env: &str) -> &'static str {
+    match app_env.to_ascii_lowercase().as_str() {
+        "prod" => "prod",
+        "dev" => "dev",
+        _ => "stage",
+    }
 }
 
 fn is_supported_image(source_name: &str, content_type: &str) -> bool {
@@ -394,16 +472,50 @@ async fn upload_via_ftp(
     }
 
     if let Some(base) = config.ftp_public_base_url {
-        return Ok(format!("{}/{}/{}", base, target.public_dir, filename));
+        let base = base.trim_end_matches('/');
+        if target.public_dir.trim_matches('/').is_empty() {
+            return Ok(format!("{base}/{filename}"));
+        }
+        return Ok(format!(
+            "{}/{}/{}",
+            base,
+            target.public_dir.trim_matches('/'),
+            filename
+        ));
     }
+    let root_dir = config.ftp_root_dir.trim_matches('/');
+    let public_dir = target.public_dir.trim_matches('/');
+    let ftp_path = if public_dir.is_empty() {
+        format!("{root_dir}/{filename}")
+    } else {
+        format!("{root_dir}/{public_dir}/{filename}")
+    };
     Ok(format!(
-        "ftp://{}:{}/{}/{}/{}",
+        "ftp://{}:{}/{}",
         config.ftp_host.unwrap_or_default(),
         config.ftp_port,
-        config.ftp_root_dir,
-        target.public_dir,
-        filename
+        ftp_path
     ))
+}
+
+fn build_upload_filename(
+    kind: UploadKind,
+    user_login: &str,
+    custom_name: Option<&str>,
+    extension: &'static str,
+) -> String {
+    match kind {
+        UploadKind::Avatar => {
+            let base = normalize_filename_part(Some(user_login))
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "avatar".to_string());
+            format!("{base}.{extension}")
+        }
+        UploadKind::Product => match custom_name {
+            Some(prefix) if !prefix.is_empty() => format!("{prefix}.{extension}"),
+            _ => format!("{}.{}", Uuid::new_v4(), extension),
+        },
+    }
 }
 
 fn ensure_ftp_path(ftp: &mut FtpStream, dir: &str) -> Result<(), String> {
@@ -428,26 +540,27 @@ fn ensure_ftp_path(ftp: &mut FtpStream, dir: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_upload_target, normalize_filename_part, normalize_folder_path, UploadKind,
+        build_upload_filename, build_upload_target, normalize_filename_part, normalize_folder_path,
+        prefixed_dir, public_base_includes_env_dir, root_includes_env_dir, UploadKind,
     };
 
     #[test]
     fn build_upload_target_uses_dev_for_dev_env() {
-        let target = build_upload_target("dev", UploadKind::Product, "avatar", None);
+        let target = build_upload_target("dev", UploadKind::Product, "avatar", None, false, false);
         assert_eq!(target.ftp_dir, "dev");
         assert_eq!(target.public_dir, "dev");
     }
 
     #[test]
     fn build_upload_target_uses_stage_for_unknown_env() {
-        let target = build_upload_target("qa", UploadKind::Product, "avatar", None);
+        let target = build_upload_target("qa", UploadKind::Product, "avatar", None, false, false);
         assert_eq!(target.ftp_dir, "stage");
         assert_eq!(target.public_dir, "stage");
     }
 
     #[test]
     fn build_upload_target_uses_avatar_subdir() {
-        let target = build_upload_target("prod", UploadKind::Avatar, "avatar", None);
+        let target = build_upload_target("prod", UploadKind::Avatar, "avatar", None, false, false);
         assert_eq!(target.ftp_dir, "prod/avatar");
         assert_eq!(target.local_dir, "uploads/avatar");
     }
@@ -459,10 +572,35 @@ mod tests {
             UploadKind::Product,
             "avatar",
             Some("A1/KID_123-1"),
+            false,
+            false,
         );
         assert_eq!(target.ftp_dir, "stage/A1/KID_123-1");
         assert_eq!(target.public_dir, "stage/A1/KID_123-1");
         assert_eq!(target.local_dir, "uploads/A1/KID_123-1");
+    }
+
+    #[test]
+    fn build_upload_target_skips_env_prefix_when_roots_already_include_env() {
+        let target = build_upload_target("dev", UploadKind::Avatar, "avatar", None, true, true);
+        assert_eq!(target.ftp_dir, "avatar");
+        assert_eq!(target.public_dir, "avatar");
+    }
+
+    #[test]
+    fn build_upload_filename_uses_login_for_avatar() {
+        let filename = build_upload_filename(UploadKind::Avatar, "Ravil Raykhanov", Some("ignored"), "jpg");
+        assert_eq!(filename, "Ravil_Raykhanov.jpg");
+    }
+
+    #[test]
+    fn root_detection_matches_env_suffix() {
+        assert!(root_includes_env_dir("mediawarehub.veloxdesk.com/warehub/dev", "dev"));
+        assert!(public_base_includes_env_dir(
+            Some("https://mediawarehub.veloxdesk.com/warehub/prod"),
+            "prod"
+        ));
+        assert_eq!(prefixed_dir(true, "stage", "avatar"), "avatar");
     }
 
     #[test]

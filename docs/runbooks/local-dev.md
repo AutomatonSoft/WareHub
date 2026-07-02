@@ -16,7 +16,7 @@ The recommended mode is root-driven local development:
 - `start-dev.ps1` loads repo-root `.env` as the local source of truth
 - `start-dev.ps1` can launch frontend, backend, database-service, and orchestrator
 - `start-dev.ps1 -NoNewWindows` runs local apps as hidden background processes and writes logs to `logs/local-dev/`
-- `stop-dev.ps1` is the explicit local dev shutdown command
+- `start-dev.ps1` is the single command for local dev: each run does a full down + kill -> build -> up cycle (no separate stop/restart script)
 
 ## 2. Prerequisites
 
@@ -102,7 +102,7 @@ This now does all of the following:
   - `logs/local-dev/orchestrator.log`
 - prints local URLs and manual smoke commands
 
-You no longer need to run `.\stop-dev.ps1` manually before `.\start-dev.ps1`. The start script now reuses healthy local dependencies and restarts only the app processes by default.
+`.\start-dev.ps1` already tears everything down (processes + `docker compose down`), rebuilds, and brings it back up on every run — there is no separate stop step.
 
 Dependency-only mode:
 
@@ -130,7 +130,7 @@ Set-Location I:\WareHub
 ```
 
 This mode performs the same cache-aware startup and launches the app processes in hidden background windows.
-Use `.\stop-dev.ps1` when you want to shut the local environment down explicitly.
+Each `.\start-dev.ps1` run shuts the previous local environment down first, so you do not need a separate stop command.
 
 Selective app skipping:
 
@@ -165,21 +165,15 @@ Explicit dependency/cache flags:
 - `-ReinstallDeps` forces frontend and Python dependency reinstalls without resetting Docker dependencies.
 - `-SkipDependencyInstall` skips dependency install checks entirely and expects existing `node_modules` and Python virtual environments to already exist.
 
-Stop local dev explicitly:
+`start-dev.ps1` is now the single entry point. Every run performs a full
+**down + kill -> build -> up** cycle (with a progress bar):
 
-```powershell
-Set-Location I:\WareHub
-.\stop-dev.ps1
-```
-
-`start-dev.ps1` = cache-aware startup for local dev.
-
-`stop-dev.ps1` = shutdown local dev.
-
-`stop-dev.ps1` runs:
-
-- safe port-based stop for WareHub local app listeners on `8931`, `8932`, `8934`, and `8935`
+- safe stop of WareHub local app listeners + kill by PID files (frontend, backend, database-service, JV worker, orchestrator)
 - `docker compose -f infra/local/docker-compose.dev.yml down`
+- `docker compose -f infra/local/docker-compose.dev.yml build` (skip with `-SkipBuild`)
+- bring dependencies + apps back up
+
+There is no separate `stop-dev.ps1` / `restart-dev.ps1` anymore — their logic is folded into `start-dev.ps1`.
 
 It does not:
 
@@ -349,7 +343,6 @@ docker compose -f infra/local/docker-compose.dev.yml config
 .\start-dev.ps1 -NoNewWindows
 @'
 [void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\start-dev.ps1',[ref]$null,[ref]$null)
-[void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\stop-dev.ps1',[ref]$null,[ref]$null)
 [void][System.Management.Automation.Language.Parser]::ParseFile('I:\WareHub\tools\local\start-local-apps.ps1',[ref]$null,[ref]$null)
 '@ | powershell -NoProfile -
 Get-ChildItem -Recurse -Force -File | Where-Object { $_.Name -match '^\.env(\..*)?$' } | Select-Object FullName

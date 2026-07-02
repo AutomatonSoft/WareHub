@@ -10,9 +10,10 @@ import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
-import { exportRowsToCsv, exportRowsToExcelXml } from "../shared/table/export-utils";
+import { AddProductButton } from "./add-item-button";
 import { fetchInventoryRows } from "./inventory-api";
-import { getPrimaryPhoto, normalizePhotoList } from "./inventory-table-utils";
+import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
+import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
 import { SofortListErrorState } from "./sofort-list/sofort-list-error-state";
 import { SofortListLoadingState } from "./sofort-list/sofort-list-loading-state";
@@ -21,26 +22,9 @@ import { SofortListTableShell } from "./sofort-list/sofort-list-table-shell";
 import { SofortListToolbar } from "./sofort-list/sofort-list-toolbar";
 import type { SofortListRow } from "./sofort-list/sofort-list-types";
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function highlightText(value: string, query: string) {
-  const normalized = query.trim();
-  if (!normalized) return value;
-  const normalizedLower = normalized.toLowerCase();
-  const regex = new RegExp(`(${escapeRegex(normalized)})`, "ig");
-  const parts = value.split(regex);
-  if (parts.length === 1) return value;
-  return parts.map((part, index) =>
-    part.toLowerCase() === normalizedLower ? (
-      <mark key={`${part}-${index}`} className="rounded bg-muted px-0.5 text-foreground">
-        {part}
-      </mark>
-    ) : (
-      <span key={`${part}-${index}`}>{part}</span>
-    )
-  );
+  void query;
+  return value;
 }
 
 function normalizeEanValue(value: unknown, fallback: string): string {
@@ -75,58 +59,10 @@ function firstSkuEan(item: Record<string, unknown>): string | null {
   return null;
 }
 
-const EXPORT_HEADERS = [
-  "place",
-  "quantity",
-  "room",
-  "type",
-  "color",
-  "size",
-  "material",
-  "price",
-  "price_currency",
-  "ean",
-  "ean_jv",
-  "ean_xl",
-  "ean_otto_jv",
-  "ean_otto_xl",
-  "ean_ebay_jv",
-  "ean_ebay_xl",
-  "ean_kaufland_jv",
-  "ean_kaufland_xl",
-  "ean_hood_jv",
-  "ean_hood_xl",
-  "kid_number",
-  "kid_id",
-  "listing_status"
-];
-
-function toExportRow(row: SofortListRow): string[] {
-  return [
-    row.place,
-    String(row.quantity),
-    row.room ?? "null",
-    row.furnitureType ?? "null",
-    row.color ?? "null",
-    row.size ?? "null",
-    row.material ?? "null",
-    row.price ?? "null",
-    row.priceCurrency ?? "null",
-    row.ean,
-    row.siteEans.jv,
-    row.siteEans.xl,
-    row.siteEans.ottoJv,
-    row.siteEans.ottoXl,
-    row.siteEans.ebayJv,
-    row.siteEans.ebayXl,
-    row.siteEans.kauflandJv,
-    row.siteEans.kauflandXl,
-    row.siteEans.hoodJv,
-    row.siteEans.hoodXl,
-    row.kidNumber,
-    String(row.kidId),
-    row.listingStatus
-  ];
+function displayNullable(value: string | null): string {
+  if (value === null) return "null";
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : "null";
 }
 
 export function SofortListTable() {
@@ -143,8 +79,6 @@ export function SofortListTable() {
   const [roomFilter, setRoomFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [listingFilter, setListingFilter] = useState("all");
-  const [sortField, setSortField] = useState<"place" | "quantity" | "price" | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [backendPage, setBackendPage] = useState(1);
   const [backendPageSize] = useState(16);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -161,10 +95,6 @@ export function SofortListTable() {
     setRoomFilter(searchParams.get("room") ?? "all");
     setTypeFilter(searchParams.get("type") ?? "all");
     setListingFilter(searchParams.get("listing") ?? "all");
-    const sortFieldParam = searchParams.get("sort");
-    const sortDirParam = searchParams.get("dir");
-    if (sortFieldParam === "place" || sortFieldParam === "quantity" || sortFieldParam === "price") setSortField(sortFieldParam);
-    if (sortDirParam === "asc" || sortDirParam === "desc") setSortDirection(sortDirParam);
     setBackendPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
     setUrlHydrated(true);
   }, [searchParams, urlHydrated]);
@@ -181,27 +111,24 @@ export function SofortListTable() {
     else params.delete("type");
     if (listingFilter !== "all") params.set("listing", listingFilter);
     else params.delete("listing");
-    if (sortField) params.set("sort", sortField);
-    else params.delete("sort");
-    if (sortDirection !== "asc") params.set("dir", sortDirection);
-    else params.delete("dir");
+    params.delete("sort");
+    params.delete("dir");
     if (backendPage > 1) params.set("page", String(backendPage));
     else params.delete("page");
     const nextQuery = params.toString();
     const next = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     const current = searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname;
     if (next !== current) router.replace(next, { scroll: false });
-  }, [backendPage, listingFilter, pathname, query, roomFilter, router, searchParams, sortDirection, sortField, typeFilter, urlHydrated]);
+  }, [backendPage, listingFilter, pathname, query, roomFilter, router, searchParams, typeFilter, urlHydrated]);
 
   const normalizedServerQuery = query.trim();
-  const serverPlaceSort = sortField === "place" ? sortDirection : undefined;
+  const serverPlaceSort: "asc" | "desc" = "asc";
   const serverRoom = roomFilter !== "all" ? roomFilter : undefined;
   const serverType = typeFilter !== "all" ? typeFilter : undefined;
   const serverListing = listingFilter === "listed" || listingFilter === "unlisted" ? listingFilter : undefined;
-  const serverSort = sortField === "place" || sortField === "quantity" ? sortField : undefined;
 
   const sofortListQuery = useQuery({
-    queryKey: ["sofort-list-rows", backendPage, backendPageSize, normalizedServerQuery, serverPlaceSort, serverRoom, serverType, serverListing, serverSort, sortDirection],
+    queryKey: ["sofort-list-rows", backendPage, backendPageSize, normalizedServerQuery, serverPlaceSort, serverRoom, serverType, serverListing],
     queryFn: () =>
       fetchInventoryRows({
         page: backendPage,
@@ -210,9 +137,7 @@ export function SofortListTable() {
         placeSort: serverPlaceSort,
         room: serverRoom,
         type: serverType,
-        listing: serverListing,
-        sort: serverSort,
-        dir: sortDirection
+        listing: serverListing
       })
   });
 
@@ -244,27 +169,32 @@ export function SofortListTable() {
       const rawItem = item as Record<string, unknown>;
       const photos = normalizePhotoList(item.photo);
       const skuFallback = firstSkuEan(rawItem);
-      const eanFallback = skuFallback ?? placeholderEan;
-      const siteEans = extractSiteEans(rawItem, placeholderEan);
+      const eanFallback = skuFallback ?? "";
+      const siteEans = extractSiteEans(rawItem, "");
       const normalizedRowEan =
-        typeof (item as { ean?: unknown }).ean === "string" && (item as { ean?: string }).ean?.trim()
+        typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
+          ? (item as { database_ean?: string }).database_ean!.trim()
+          : typeof (item as { main_ean?: unknown }).main_ean === "string" && (item as { main_ean?: string }).main_ean?.trim()
+            ? (item as { main_ean?: string }).main_ean!.trim()
+            : typeof (item as { ean?: unknown }).ean === "string" && (item as { ean?: string }).ean?.trim()
           ? (item as { ean?: string }).ean!.trim()
           : typeof (item as { product_ean?: unknown }).product_ean === "string" && (item as { product_ean?: string }).product_ean?.trim()
             ? (item as { product_ean?: string }).product_ean!.trim()
             : eanFallback;
 
       const normalizedSiteEans = {
-        jv: siteEans.jv === placeholderEan ? normalizedRowEan : siteEans.jv,
-        xl: siteEans.xl === placeholderEan ? normalizedRowEan : siteEans.xl,
-        ottoJv: siteEans.ottoJv === placeholderEan ? normalizedRowEan : siteEans.ottoJv,
-        ottoXl: siteEans.ottoXl === placeholderEan ? normalizedRowEan : siteEans.ottoXl,
-        ebayJv: siteEans.ebayJv === placeholderEan ? normalizedRowEan : siteEans.ebayJv,
-        ebayXl: siteEans.ebayXl === placeholderEan ? normalizedRowEan : siteEans.ebayXl,
-        kauflandJv: siteEans.kauflandJv === placeholderEan ? normalizedRowEan : siteEans.kauflandJv,
-        kauflandXl: siteEans.kauflandXl === placeholderEan ? normalizedRowEan : siteEans.kauflandXl,
-        hoodJv: siteEans.hoodJv === placeholderEan ? normalizedRowEan : siteEans.hoodJv,
-        hoodXl: siteEans.hoodXl === placeholderEan ? normalizedRowEan : siteEans.hoodXl
+        jv: siteEans.jv,
+        xl: siteEans.xl,
+        ottoJv: siteEans.ottoJv,
+        ottoXl: siteEans.ottoXl,
+        ebayJv: siteEans.ebayJv,
+        ebayXl: siteEans.ebayXl,
+        kauflandJv: siteEans.kauflandJv,
+        kauflandXl: siteEans.kauflandXl,
+        hoodJv: siteEans.hoodJv,
+        hoodXl: siteEans.hoodXl
       };
+      const marketplaceActive = resolveMarketplaceActive(rawItem);
 
       return {
         id: item.id,
@@ -275,16 +205,20 @@ export function SofortListTable() {
         siteEans: normalizedSiteEans,
         photo: getPrimaryPhoto(item.photo),
         photoCount: item.photo_count ?? photos.length,
-        place: item.place?.trim() || "-",
+        place: normalizePlaceValue(item.place),
+        store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
         furnitureType: typeof item.type === "string" && item.type.trim().length > 0 ? item.type.trim() : null,
+        company: typeof rawItem.company === "string" && rawItem.company.trim().length > 0 ? rawItem.company.trim() : null,
+        commentary: typeof rawItem.commentary === "string" && rawItem.commentary.trim().length > 0 ? rawItem.commentary.trim() : null,
         color: typeof rawItem.color === "string" && rawItem.color.trim().length > 0 ? rawItem.color.trim() : null,
         size: typeof rawItem.size === "string" && rawItem.size.trim().length > 0 ? rawItem.size.trim() : null,
         material: typeof rawItem.material === "string" && rawItem.material.trim().length > 0 ? rawItem.material.trim() : null,
         price: typeof rawItem.price === "string" && rawItem.price.trim().length > 0 ? rawItem.price.trim() : null,
         priceCurrency: typeof rawItem.price_currency === "string" && rawItem.price_currency.trim().length > 0 ? rawItem.price_currency.trim() : null,
-        listingStatus: item.listing_status === "listed" ? "listed" : "unlisted"
+        listingStatus: item.listing_status === "listed" ? "listed" : "unlisted",
+        marketplaceActive,
       } satisfies SofortListRow;
     });
 
@@ -301,86 +235,10 @@ export function SofortListTable() {
   const roomOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.room ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const typeOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.furnitureType ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
 
-  const filteredRows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const tokens = normalized
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0);
-    return rows.filter((row) => {
-      const matchesRoom = roomFilter === "all" || row.room === roomFilter;
-      const matchesType = typeFilter === "all" || row.furnitureType === typeFilter;
-      const matchesListing = listingFilter === "all" || (listingFilter === "listed" ? row.listingStatus === "listed" : row.listingStatus === "unlisted");
-      if (!matchesRoom || !matchesType || !matchesListing) return false;
-      if (!normalized) return true;
-      const searchable = [
-        // PRODUCT
-        row.kidNumber,
-        String(row.kidId),
-        // ATTRIBUTES
-        row.room ?? "",
-        row.furnitureType ?? "",
-        row.color ?? "",
-        row.size ?? "",
-        row.material ?? "",
-        // PRICE
-        row.price ?? "",
-        row.priceCurrency ?? "",
-        // EAN
-        row.ean,
-        // MARKETPLACE EAN
-        row.siteEans.jv,
-        row.siteEans.xl,
-        row.siteEans.ottoJv,
-        row.siteEans.ottoXl,
-        row.siteEans.ebayJv,
-        row.siteEans.ebayXl,
-        row.siteEans.kauflandJv,
-        row.siteEans.kauflandXl,
-        row.siteEans.hoodJv,
-        row.siteEans.hoodXl
-      ]
-        .join(" ")
-        .toLowerCase();
-      return tokens.every((token) => searchable.includes(token));
-    });
-  }, [listingFilter, query, roomFilter, rows, typeFilter]);
-
-  const sortedRows = useMemo(() => {
-    if (!sortField) return filteredRows;
-    const next = [...filteredRows];
-    if (sortField === "quantity") {
-      next.sort((a, b) => (sortDirection === "asc" ? a.quantity - b.quantity : b.quantity - a.quantity));
-      return next;
-    }
-    if (sortField === "price") {
-      next.sort((a, b) => {
-        const left = Number.parseFloat((a.price ?? "").replace(",", "."));
-        const right = Number.parseFloat((b.price ?? "").replace(",", "."));
-        if (Number.isFinite(left) && Number.isFinite(right)) return sortDirection === "asc" ? left - right : right - left;
-        return sortDirection === "asc"
-          ? (a.price ?? "").localeCompare(b.price ?? "", undefined, { numeric: true, sensitivity: "base" })
-          : (b.price ?? "").localeCompare(a.price ?? "", undefined, { numeric: true, sensitivity: "base" });
-      });
-      return next;
-    }
-    next.sort((a, b) => {
-      const left = Number(a.place);
-      const right = Number(b.place);
-      if (Number.isFinite(left) && Number.isFinite(right)) return sortDirection === "asc" ? left - right : right - left;
-      return sortDirection === "asc" ? a.place.localeCompare(b.place, undefined, { numeric: true, sensitivity: "base" }) : b.place.localeCompare(a.place, undefined, { numeric: true, sensitivity: "base" });
-    });
-    return next;
-  }, [filteredRows, sortDirection, sortField]);
+  const sortedRows = rows;
 
   const allVisibleSelected = useMemo(() => sortedRows.length > 0 && sortedRows.every((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const hasActiveFilters = roomFilter !== "all" || typeFilter !== "all" || listingFilter !== "all";
-
-  function toggleSort(field: "place" | "quantity" | "price") {
-    if (sortField === field) return setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-    setSortField(field);
-    setSortDirection("asc");
-  }
 
   function toggleRowSelection(rowId: string) {
     setSelectedRowIds((current) => {
@@ -405,17 +263,7 @@ export function SofortListTable() {
     setRoomFilter("all");
     setTypeFilter("all");
     setListingFilter("all");
-    setSortField(null);
-    setSortDirection("asc");
     setBackendPage(1);
-  }
-
-  function exportFilteredCsv() {
-    exportRowsToCsv(EXPORT_HEADERS, sortedRows.map(toExportRow), "sofort-list-filtered.csv");
-  }
-
-  function exportFilteredExcel() {
-    exportRowsToExcelXml(EXPORT_HEADERS, sortedRows.map(toExportRow), "sofort-list-filtered.xls");
   }
 
   function updateRowDraft(nextRow: SofortListRow) {
@@ -430,6 +278,7 @@ export function SofortListTable() {
           <SofortListToolbar
             query={query}
             searchPlaceholder={t.searchSofortPlaceholder}
+            primaryAction={<AddProductButton onCreated={() => sofortListQuery.refetch()} />}
             showFilters={showFilters}
             hasActiveFilters={hasActiveFilters}
             roomFilter={roomFilter}
@@ -437,14 +286,12 @@ export function SofortListTable() {
             listingFilter={listingFilter}
             roomOptions={roomOptions}
             typeOptions={typeOptions}
-            statusText={loading ? t.loadingRows : `${t.rows}: ${filteredRows.length}`}
+            statusText={loading ? t.loadingRows : `${t.rows}: ${rows.length}`}
             onQueryChange={setQuery}
             onToggleFilters={() => setShowFilters((current) => !current)}
             onRoomFilterChange={setRoomFilter}
             onTypeFilterChange={setTypeFilter}
             onListingFilterChange={setListingFilter}
-            onExportCsv={exportFilteredCsv}
-            onExportExcel={exportFilteredExcel}
             onReset={resetFiltersAndSearch}
             labels={{ allRooms: t.allRooms, allTypes: t.allTypes, allListingStatuses: t.allListingStatuses, listed: t.listed, unlisted: t.unlisted, clear: t.clear }}
           />
@@ -476,15 +323,43 @@ export function SofortListTable() {
                 query={query}
                 selectedRowIds={selectedRowIds}
                 allVisibleSelected={allVisibleSelected}
-                sortField={sortField}
-                sortDirection={sortDirection}
                 placeholderEan={placeholderEan}
                 onToggleSelectVisible={toggleSelectVisible}
                 onToggleRowSelection={toggleRowSelection}
-                onToggleSort={toggleSort}
                 onUpdateRow={updateRowDraft}
+                onRefresh={() => void sofortListQuery.refetch()}
                 highlightText={highlightText}
-                labels={{ place: t.place, quantity: t.quantity, room: t.room, type: t.type }}
+                labels={{
+                  place: t.place,
+                  quantity: t.quantity,
+                  room: t.room,
+                  type: t.type,
+                  active: t.active,
+                  inactive: t.inactive,
+                  activate: t.activate,
+                  delete: t.delete,
+                  deactivate: t.deactivate,
+                  deleteFailed: t.deleteFailed,
+                  markedActive: t.markedActive,
+                  markedInactive: t.markedInactive,
+                  resultSuccessSites: t.resultSuccessSites,
+                  resultFailedSites: t.resultFailedSites,
+                  resultNoSiteData: t.resultNoSiteData,
+                  resultDialogTitle: t.resultDialogTitle,
+                  confirmActionTitle: t.confirmActionTitle,
+                  confirmActionMessage: t.confirmActionMessage,
+                  confirmActionCancel: t.cancel,
+                  confirmActionConfirm: t.confirm,
+                  confirmActionDetails: t.confirmActionDetails,
+                  confirmActionLive: t.confirmActionLive,
+                  confirmActionPending: t.confirmActionPending,
+                  confirmActionCurrentPlace: t.confirmActionCurrentPlace,
+                  confirmActionNewPlace: t.confirmActionNewPlace,
+                  confirmActionPlacePlaceholder: t.confirmActionPlacePlaceholder,
+                  confirmActionPlaceRequired: t.confirmActionPlaceRequired,
+                  confirmActionFootnoteDeactivate: t.confirmActionFootnoteDeactivate,
+                  confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
+                }}
               />
               {!error && rows.length > 0 ? (
                 <SofortListPagination
@@ -502,4 +377,3 @@ export function SofortListTable() {
     </div>
   );
 }
-

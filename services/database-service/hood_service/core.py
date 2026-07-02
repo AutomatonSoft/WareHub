@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime
 from ftplib import FTP, FTP_TLS, all_errors as FTP_ERRORS
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 from uuid import uuid4
 
 from .models import HoodApiResponseJV, HoodApiResponseXL, HoodItemJV, HoodItemXL
@@ -20,6 +20,10 @@ HOOD_API_CONNECT_TIMEOUT = int(os.getenv("HOOD_API_CONNECT_TIMEOUT", "8"))
 HOOD_API_READ_TIMEOUT = int(os.getenv("HOOD_API_READ_TIMEOUT", "30"))
 HOOD_API_TIMEOUT = (HOOD_API_CONNECT_TIMEOUT, HOOD_API_READ_TIMEOUT)
 HOOD_API_PATCH_ENDPOINT = os.getenv("HOOD_API_PATCH_ENDPOINT", "/api/items/by-ean")
+HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT = os.getenv(
+    "HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT",
+    "/items/delete/by-item-number/{item_number}",
+)
 HOOD_LOGIN = os.getenv("HOOD_LOGIN", "").strip()
 HOOD_PASSWORD = os.getenv("HOOD_PASSWORD", "").strip()
 HOOD_FTP_HOST = os.getenv("HOOD_FTP_HOST", "").strip()
@@ -85,6 +89,33 @@ def build_patch_urls(ean: str) -> list[str]:
     _add(without_ean.rstrip("/"))
     _add(f"{without_ean.rstrip('/')}/")
 
+    return candidates
+
+
+def build_delete_by_item_number_urls(item_number: str) -> list[str]:
+    endpoint = (HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT or "/items/delete/by-item-number/{item_number}").strip()
+    if not endpoint.startswith("/"):
+        endpoint = f"/{endpoint}"
+
+    encoded_item_number = quote(str(item_number or "").strip(), safe="")
+    candidates: list[str] = []
+
+    def _add(url: str):
+        normalized = url.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    if "{item_number}" in endpoint:
+        with_item_number = f"{HOOD_API_BASE_URL}{endpoint.format(item_number=encoded_item_number)}"
+        _add(with_item_number)
+        _add(with_item_number.rstrip("/"))
+        _add(f"{with_item_number.rstrip('/')}/")
+        return candidates
+
+    with_item_number = f"{HOOD_API_BASE_URL}{endpoint.rstrip('/')}/{encoded_item_number}"
+    _add(with_item_number)
+    _add(with_item_number.rstrip("/"))
+    _add(f"{with_item_number.rstrip('/')}/")
     return candidates
 
 

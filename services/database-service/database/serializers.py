@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from .kid_number_utils import normalize_kid_numbers, primary_kid_number
 from .models import EANPool, EANUsage, Kid, Orders
 
 
@@ -11,10 +13,10 @@ class KidModelSerializer(serializers.ModelSerializer):
         }
 
     def validate_kid_number(self, value):
-        value = (value or "").strip()
-        if not value:
+        normalized = normalize_kid_numbers(value)
+        if not normalized:
             raise serializers.ValidationError("kid_number не может быть пустым.")
-        return value
+        return normalized
 
     def validate_account(self, value):
         if value in (None, ""):
@@ -28,10 +30,21 @@ class KidModelSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["kid_number"] = primary_kid_number(instance.kid_number)
+        return data
+
+
 class KidUserReadSerializer(serializers.ModelSerializer):
+    kid_number = serializers.SerializerMethodField()
+
     class Meta:
         model = Kid
         fields = ("kid_number",)
+
+    def get_kid_number(self, obj):
+        return primary_kid_number(obj.kid_number)
 
 
 class OrderModelSerializer(serializers.ModelSerializer):
@@ -59,8 +72,7 @@ class OrderModelSerializer(serializers.ModelSerializer):
     def validate_sku(self, value):
         if value in (None, ""):
             return value
-        value = value.strip()
-        return value
+        return value.strip()
 
     def validate_status(self, value):
         value = (value or "").strip().lower()
@@ -81,16 +93,18 @@ class OrderModelSerializer(serializers.ModelSerializer):
     def validate_memo(self, value):
         if value in (None, ""):
             return value
-        value = value.strip()
-        return value
+        return value.strip()
 
 
 class OrderUserReadSerializer(serializers.ModelSerializer):
-    kid_number = serializers.CharField(source="kid.kid_number", read_only=True)
+    kid_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Orders
         fields = ("order_id", "kid_number")
+
+    def get_kid_number(self, obj):
+        return primary_kid_number(obj.kid.kid_number)
 
 
 class EANPoolSerializer(serializers.ModelSerializer):
@@ -122,6 +136,98 @@ class EANPoolImportSerializer(serializers.Serializer):
 class EANPoolReserveSerializer(serializers.Serializer):
     ean = serializers.CharField(max_length=64)
     reserved_by = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+
+class MarketplaceDeactivateByEANSerializer(serializers.Serializer):
+    ean = serializers.CharField(max_length=64)
+    site_keys = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        allow_empty=False,
+    )
+    inactive = serializers.BooleanField(required=False, default=True)
+    payloads = serializers.DictField(required=False, default=dict)
+
+    def validate_ean(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("ean не может быть пустым.")
+        return normalized
+
+    def validate_site_keys(self, value):
+        normalized = []
+        for item in value:
+            site_key = str(item or "").strip().upper()
+            if not site_key:
+                raise serializers.ValidationError("site_keys не должен содержать пустые значения.")
+            normalized.append(site_key)
+        return normalized
+
+    def validate_payloads(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("payloads должен быть объектом вида {SITE_KEY: {...}}.")
+        normalized = {}
+        for key, payload in value.items():
+            site_key = str(key or "").strip().upper()
+            if not site_key:
+                raise serializers.ValidationError("payloads содержит пустой ключ.")
+            if not isinstance(payload, dict):
+                raise serializers.ValidationError(f"payloads['{site_key}'] должен быть объектом.")
+            normalized[site_key] = payload
+        return normalized
+
+
+class MarketplaceDeactivateByKidSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=255)
+    inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    payloads = serializers.DictField(required=False, default=dict)
+
+    def validate_kid_number(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("kid_number не может быть пустым.")
+        return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
+
+
+class MarketplaceJVDeactivateByKidSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=255)
+    inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+
+    def validate_kid_number(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("kid_number не может быть пустым.")
+        return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
+
+
+class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=255)
+    inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+
+    def validate_kid_number(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("kid_number не может быть пустым.")
+        return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
 
 
 class EANPoolTakeNextSerializer(serializers.Serializer):

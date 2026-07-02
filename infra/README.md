@@ -121,7 +121,7 @@ Mobile update metadata:
 - `MOBILE_PROD_APP_VERSION`
 - `MOBILE_PROD_APK_URL`
 
-FTP media config for backend:
+FTP media config for backend and services:
 - `BACKEND_UPLOAD_STORAGE_BACKEND=ftp`
 - `BACKEND_UPLOAD_FTP_HOST`
 - `BACKEND_UPLOAD_FTP_USER`
@@ -132,6 +132,21 @@ FTP media config for backend:
 - `BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar`
 - `BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL`
 - `BACKEND_PROD_UPLOAD_FTP_PUBLIC_BASE_URL`
+
+Critical deploy guardrails:
+- CI validates that committed stage/prod compose files pass required FTP/media env into both `backend` and `services`.
+- Stage/prod deploy workflows re-run the same compose env mapping validation against the generated candidate bundle before copying it to the server.
+
+Runtime env source of truth:
+- committed sanitized env templates are the runtime base:
+  - `infra/deploy/stage/env.stage.sanitized.template`
+  - `infra/deploy/prod/env.prod.sanitized.template`
+- stage deploy builds the runtime `.env` from the committed template plus the secret overlay in `STAGE_ENV_FILE`, then copies only the merged runtime file to the server.
+- production deploy builds the runtime `.env` from the committed template plus the secret overlay in `PROD_ENV_FILE`, then copies only the merged runtime file to the server.
+- `STAGE_ENV_FILE` is therefore an override layer for secrets and environment-specific deviations, not a git-tracked full env file.
+- `PROD_ENV_FILE` is the corresponding production override layer.
+- if a runtime capability is expected on stage, its required env must be present either in the committed template defaults or in the secret overlay; otherwise deploy validation should fail before release.
+- local workstation `.env` can be used as the operator source for those overlays via `infra/scripts/sync-runtime-env-to-github.ps1`; this uploads only the stage/prod subset to GitHub Environment secrets and still keeps real secrets out of git.
 
 Sentry backend:
 - `BACKEND_STAGE_SENTRY_DSN`
@@ -195,6 +210,12 @@ docker compose -f deploy/stage/docker-compose.yml --env-file .env ps
 docker compose -f deploy/prod/docker-compose.yml --env-file .env ps
 ```
 
+Stage deploy behavior:
+
+- `stage-deploy.yml` applies Django migrations automatically during the `stage` pipeline after pulling images and before the application services are promoted.
+- `RUN_MIGRATIONS_ON_STARTUP` remains gated to avoid implicit migrations on ordinary container restarts.
+- Production migrations remain manual and require explicit approval.
+
 Remote migration-plan verification (stage+prod on server):
 
 ```powershell
@@ -245,6 +266,19 @@ Run infra ops preflight (env + migration checks):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/ops-preflight.ps1 -RepoPath .
+```
+
+Sync local root `.env` into GitHub Environment secret overlays:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment prod
+```
+
+Dry-run the same sync without uploading:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage -DryRun
 ```
 
 Run infra ops preflight in remote mode (server-hosted stage/prod):

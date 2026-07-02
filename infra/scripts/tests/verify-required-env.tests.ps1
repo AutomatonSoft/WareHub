@@ -94,26 +94,64 @@ function New-ValidStageEnvLines {
     'AFTERBUY_JV_PASS=placeholder-secret',
     'AFTERBUY_XL_LOGIN=placeholder-user',
     'AFTERBUY_XL_PASS=placeholder-secret',
+    'AFTERBUY_CH_LOGIN=placeholder-user',
+    'AFTERBUY_CH_PASS=placeholder-secret',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
+    'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
     'AFTERBUY_JV_COOKIE_CACHE_FILE=/tmp/afterbuy-jv-cookie-cache.json',
     'AFTERBUY_XL_COOKIE_CACHE_FILE=/tmp/afterbuy-xl-cookie-cache.json',
+    'AFTERBUY_CH_COOKIE_CACHE_FILE=/tmp/afterbuy-ch-cookie-cache.json',
     'BACKEND_UPLOAD_STORAGE_BACKEND=ftp',
     'BACKEND_UPLOAD_FTP_HOST=ftp.example.test',
     'BACKEND_UPLOAD_FTP_USER=placeholder-user',
     'BACKEND_UPLOAD_FTP_PASS=placeholder-secret',
     'BACKEND_UPLOAD_FTP_PORT=21',
-    'BACKEND_UPLOAD_FTP_ROOT_DIR=warehub',
-    'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR=storage',
-    'BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR=warehub/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR=storage/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR=images',
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
+    'FTP_DE_HOST=',
+    'FTP_DE_USER=',
+    'FTP_DE_PASS=',
+    'FTP_DE_PORT=',
+    'FTP_DE_URL=',
+    'FTP_DE_DOMIN=',
+    'FTP_AT_HOST=',
+    'FTP_AT_USER=',
+    'FTP_AT_PASS=',
+    'FTP_AT_PORT=',
+    'FTP_AT_URL=',
+    'FTP_AT_DOMIN=',
+    'FTP_CH_HOST=',
+    'FTP_CH_USER=',
+    'FTP_CH_PASS=',
+    'FTP_CH_PORT=',
+    'FTP_CH_URL=',
+    'FTP_CH_DOMIN=',
+    'FTP_CO_UK_HOST=',
+    'FTP_CO_UK_USER=',
+    'FTP_CO_UK_PASS=',
+    'FTP_CO_UK_PORT=',
+    'FTP_CO_UK_URL=',
+    'FTP_CO_UK_DOMIN=',
+    'OPENAI_API_KEY=',
+    'OPENAI_TRANSLATION_MODEL=',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'MOBILE_STAGE_APP_VERSION=',
     'MOBILE_STAGE_APK_URL=',
+    'NEXT_PUBLIC_SENTRY_DSN=',
     'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0',
-    'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0'
+    'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0',
+    'SERVICES_STAGE_SENTRY_DSN=',
+    'SERVICES_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'ORCHESTRATOR_STAGE_SENTRY_DSN=',
+    'ORCHESTRATOR_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'SERVICES_LOG_LEVEL=INFO',
+    'SERVICES_SERVICE_NAME=warehub-database-service'
   )
 }
 
@@ -201,26 +239,64 @@ function New-TemplateStageEnvLines {
     'AFTERBUY_JV_PASS=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_LOGIN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_LOGIN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_PASS=**SET_OUTSIDE_GIT**',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
+    'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
     'AFTERBUY_JV_COOKIE_CACHE_FILE=/tmp/afterbuy-jv-cookie-cache.json',
     'AFTERBUY_XL_COOKIE_CACHE_FILE=/tmp/afterbuy-xl-cookie-cache.json',
+    'AFTERBUY_CH_COOKIE_CACHE_FILE=/tmp/afterbuy-ch-cookie-cache.json',
     'BACKEND_UPLOAD_STORAGE_BACKEND=ftp',
     'BACKEND_UPLOAD_FTP_HOST=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_USER=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_PASS=**SET_OUTSIDE_GIT**',
     'BACKEND_UPLOAD_FTP_PORT=21',
-    'BACKEND_UPLOAD_FTP_ROOT_DIR=warehub',
-    'BACKEND_UPLOAD_FTP_STORAGE_ROOT_DIR=storage',
-    'BACKEND_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_ROOT_DIR=warehub/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_STORAGE_ROOT_DIR=storage/stage',
+    'BACKEND_STAGE_UPLOAD_FTP_AVATAR_DIR=avatar',
+    'BACKEND_STAGE_UPLOAD_FTP_IMAGE_DIR=images',
     'BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=https://stage.example.test/uploads',
+    'FTP_DE_HOST=',
+    'FTP_DE_USER=',
+    'FTP_DE_PASS=',
+    'FTP_DE_PORT=',
+    'FTP_DE_URL=',
+    'FTP_DE_DOMIN=',
+    'FTP_AT_HOST=',
+    'FTP_AT_USER=',
+    'FTP_AT_PASS=',
+    'FTP_AT_PORT=',
+    'FTP_AT_URL=',
+    'FTP_AT_DOMIN=',
+    'FTP_CH_HOST=',
+    'FTP_CH_USER=',
+    'FTP_CH_PASS=',
+    'FTP_CH_PORT=',
+    'FTP_CH_URL=',
+    'FTP_CH_DOMIN=',
+    'FTP_CO_UK_HOST=',
+    'FTP_CO_UK_USER=',
+    'FTP_CO_UK_PASS=',
+    'FTP_CO_UK_PORT=',
+    'FTP_CO_UK_URL=',
+    'FTP_CO_UK_DOMIN=',
+    'OPENAI_API_KEY=',
+    'OPENAI_TRANSLATION_MODEL=',
     'BACKEND_STAGE_SENTRY_DSN=',
     'BACKEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'MOBILE_STAGE_APP_VERSION=',
     'MOBILE_STAGE_APK_URL=',
+    'NEXT_PUBLIC_SENTRY_DSN=',
     'FRONTEND_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
     'FRONTEND_STAGE_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0',
-    'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0'
+    'FRONTEND_STAGE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0',
+    'SERVICES_STAGE_SENTRY_DSN=',
+    'SERVICES_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'ORCHESTRATOR_STAGE_SENTRY_DSN=',
+    'ORCHESTRATOR_STAGE_SENTRY_TRACES_SAMPLE_RATE=0.1',
+    'SERVICES_LOG_LEVEL=INFO',
+    'SERVICES_SERVICE_NAME=warehub-database-service'
   )
 }
 
@@ -361,15 +437,15 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'malformed.env' $lines)) 1
   }
 
-  Test-Case 'FTP conditional requirements' {
+  Test-Case 'FTP runtime requirements' {
     $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_HOST=' }
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'ftp-missing.env' $lines)) 1
 
-    $nonFtpLines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_' -and $_ -notmatch '^BACKEND_STAGE_UPLOAD_FTP_PUBLIC_BASE_URL=' }
+    $nonFtpLines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^BACKEND_UPLOAD_FTP_' -and $_ -notmatch '^BACKEND_STAGE_UPLOAD_FTP_' }
     $nonFtpLines = $nonFtpLines | ForEach-Object {
       if ($_ -match '^BACKEND_UPLOAD_STORAGE_BACKEND=') { 'BACKEND_UPLOAD_STORAGE_BACKEND=local' } else { $_ }
     }
-    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 0
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'non-ftp.env' $nonFtpLines)) 1
   }
 
   Test-Case 'secret value is not printed' {

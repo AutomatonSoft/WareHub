@@ -14,6 +14,7 @@ from django.db.models import (
     OneToOneField,
     BooleanField
 )
+from .kid_number_utils import normalize_kid_numbers
 
 class Paymant:
     STATUS_CHOICES = [
@@ -29,7 +30,7 @@ class KidAccount:
     ]
 
 class Kid(Model):
-    kid_number = CharField(max_length=255)
+    kid_number = JSONField(default=list)
     account = CharField(
         max_length=8,
         choices=KidAccount.ACCOUNT_CHOICES,
@@ -38,27 +39,47 @@ class Kid(Model):
         db_index=True,
     )
     place = CharField(max_length=255, null=True, blank=True)
+    store = BooleanField(default=False)
     photo = JSONField(default=list, blank=True)
     room = CharField(max_length=128, null=True, blank=True)
+    furniture_type = CharField(max_length=128, null=True, blank=True)
     listing_status = CharField(max_length=16, default="unlisted", db_index=True)
     b_ware = BooleanField(default=False)
+    store = BooleanField(default=False)
     commentary = TextField(null=True, blank=True)
     in_transit = BooleanField(default=False)
 
+    def save(self, *args, **kwargs):
+        self.kid_number = normalize_kid_numbers(self.kid_number)
+        return super().save(*args, **kwargs)
+
 
 class Ean(Model):
-    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean_site")
-    jv = CharField(max_length=13, null=True, blank=True)
-    xl = CharField(max_length=13, null=True, blank=True)
-    otto_jv = CharField(max_length=13, null=True, blank=True)
-    otto_xl = CharField(max_length=13, null=True, blank=True)
-    kaufland_jv = CharField(max_length=13, null=True, blank=True)
-    kaufland_xl = CharField(max_length=13, null=True, blank=True)
-    hood_jv = CharField(max_length=13, null=True, blank=True)
-    hood_xl = CharField(max_length=13, null=True, blank=True)
-    ebay_jv = CharField(max_length=13, null=True, blank=True)
-    ebay_xl = CharField(max_length=13, null=True, blank=True)
+    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean")
+    main_ean = CharField(max_length=16, null=True, blank=True)
+    jv = CharField(max_length=64, null=True, blank=True)
+    xl = CharField(max_length=16, null=True, blank=True)
+    otto_jv = CharField(max_length=16, null=True, blank=True)
+    otto_xl = CharField(max_length=16, null=True, blank=True)
+    kaufland_jv = CharField(max_length=16, null=True, blank=True)
+    kaufland_xl = CharField(max_length=16, null=True, blank=True)
+    hood_jv = CharField(max_length=16, null=True, blank=True)
+    hood_xl = CharField(max_length=16, null=True, blank=True)
+    ebay_jv = CharField(max_length=16, null=True, blank=True)
+    ebay_xl = CharField(max_length=16, null=True, blank=True)
 
+class EanStatus(Model):
+    ean = OneToOneField(Kid, on_delete=CASCADE, related_name="status")
+    jv = BooleanField(default=False)
+    xl = BooleanField(default=False)
+    otto_jv = BooleanField(default=False)
+    otto_xl = BooleanField(default=False)
+    kaufland_jv = BooleanField(default=False)
+    kaufland_xl = BooleanField(default=False)
+    hood_jv = BooleanField(default=False)
+    hood_xl = BooleanField(default=False)
+    ebay_jv = BooleanField(default=False)
+    ebay_xl = BooleanField(default=False)
 
 
 class Orders(Model):
@@ -72,7 +93,6 @@ class Orders(Model):
     status = CharField(max_length=10, choices=Paymant.STATUS_CHOICES, default="no_paid")
     date = DateTimeField(null=True, blank=True)
     payment_status = CharField(max_length=255, null=True, blank=True)
-    quantity = IntegerField(default=1)
     additional_items = JSONField(default=list, blank=True)
 
     class Meta:
@@ -137,8 +157,8 @@ class EANUsage(Model):
 
 class ProductAttributes(Model):
     kid = OneToOneField(Kid, on_delete=CASCADE, related_name="product_attributes")
-    room = CharField(max_length=128, null=True, blank=True)
-    furniture_type = CharField(max_length=128, null=True, blank=True)
+    quantity = IntegerField(null=True, blank=True)
+    company = CharField(max_length=128, null=True, blank=True)
     color = CharField(max_length=128, null=True, blank=True)
     size = CharField(max_length=128, null=True, blank=True)
     material = CharField(max_length=128, null=True, blank=True)

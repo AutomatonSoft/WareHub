@@ -47,9 +47,11 @@ from .source_values import (
 )
 from .source_reader import (
     _fetch_jv_product_brief_by_ean,
+    _fetch_jv_product_snapshot_by_artikelnr,
     _fetch_jv_product_snapshot_by_ean,
     _fetch_jv_product_snapshot_by_product_id,
     _fetch_oc_snapshot_by_product_id,
+    fetch_source_product_snapshot_by_artikelnr,
     fetch_source_product_brief_by_ean,
     fetch_source_product_snapshot_by_ean,
     fetch_source_product_snapshot_by_product_id,

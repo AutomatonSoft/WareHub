@@ -303,14 +303,15 @@ class JVRoutesSmokeTest(SimpleTestCase):
         ]
 
         normalized = normalize_jv_categories(rows)
+        # Hauptrubrik = smallest priority: rubid 10 (priority 0) is the main category.
         self.assertEqual(
             normalized,
             [
-                {"category_id": 10, "main_category": False},
-                {"category_id": 11, "main_category": True},
+                {"category_id": 10, "main_category": True},
+                {"category_id": 11, "main_category": False},
             ],
         )
-        self.assertEqual(extract_main_category_id(rows), 11)
+        self.assertEqual(extract_main_category_id(rows), 10)
         self.assertEqual(extract_main_category_id([{"category_id": "22"}]), 22)
         self.assertEqual(
             normalize_jv_categories(
@@ -503,8 +504,9 @@ class JVRoutesSmokeTest(SimpleTestCase):
             if "INSERT INTO `shoprubrikartikel`" in call_args.args[0]
         ]
         self.assertEqual(len(insert_calls), 2)
-        self.assertEqual(insert_calls[0].args[1], (66969, 930, "valid-930", 1, 0))
-        self.assertEqual(insert_calls[1].args[1], (66969, 934, "valid-934", 2, 1))
+        # Main category (934) is written first with priority 0 (Hauptrubrik = smallest priority).
+        self.assertEqual(insert_calls[0].args[1], (66969, 934, "valid-934", 1, 0))
+        self.assertEqual(insert_calls[1].args[1], (66969, 930, "valid-930", 2, 1))
 
     def test_jv_batch_payload_helpers(self):
         from jv_services.batch_payload import ensure_main_category, extract_scalar_updates

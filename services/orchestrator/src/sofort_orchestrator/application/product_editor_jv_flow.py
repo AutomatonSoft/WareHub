@@ -115,6 +115,9 @@ class ProductEditorJvFlow:
 
     def recommended_baseline(self, *, ean: str, request_id: str) -> str | None:
         results = self.discover_targets(ean=ean, request_id=request_id)
+        return self.recommended_baseline_from_results(results)
+
+    def recommended_baseline_from_results(self, results: dict[str, dict]) -> str | None:
         for site_key in _JV_PRIORITY:
             if site_key == "JV_CO_UK":
                 continue
@@ -125,7 +128,12 @@ class ProductEditorJvFlow:
         return None
 
     def load(self, *, ean: str, request_id: str, baseline_target_id: str | None) -> ProductEditorLoadResponse:
-        baseline_site_key = self._resolve_baseline_site_key(ean=ean, request_id=request_id, preferred_target_id=baseline_target_id)
+        baseline_site_key = self._resolve_baseline_site_key(
+            ean=ean,
+            request_id=request_id,
+            preferred_target_id=baseline_target_id,
+            available_target_ids=[baseline_target_id] if baseline_target_id else None,
+        )
         if baseline_site_key is None:
             return ProductEditorLoadResponse(
                 request_id=request_id,
@@ -192,12 +200,18 @@ class ProductEditorJvFlow:
                 details={"unknown_fields": unknown},
             )
 
-        found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
-        target_ids = [target_id for target_id in selected_target_ids if target_id in found_target_ids] if selected_target_ids else found_target_ids
+        target_ids = _normalize_target_ids(selected_target_ids)
+        if not target_ids:
+            target_ids = self._found_target_ids(ean=ean, request_id=request_id)
         if not target_ids:
             raise ProductEditorJvFlowError("product_editor_no_found_targets", "No found JV targets are available for this EAN.", 409)
 
-        baseline_site_key = self._resolve_baseline_site_key(ean=ean, request_id=request_id, preferred_target_id=str(draft.get("target_id") or "").strip() or None)
+        baseline_site_key = self._resolve_baseline_site_key(
+            ean=ean,
+            request_id=request_id,
+            preferred_target_id=str(draft.get("target_id") or "").strip() or None,
+            available_target_ids=target_ids,
+        )
         if baseline_site_key is None:
             raise ProductEditorJvFlowError("product_editor_jv_baseline_missing", "JV baseline target could not be resolved.", 409)
 
@@ -297,8 +311,17 @@ class ProductEditorJvFlow:
             error=error,
         )
 
-    def _resolve_baseline_site_key(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
-        found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
+    def _resolve_baseline_site_key(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        preferred_target_id: str | None,
+        available_target_ids: list[str] | None = None,
+    ) -> str | None:
+        found_target_ids = _normalize_target_ids(available_target_ids)
+        if not found_target_ids:
+            found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
         if preferred_target_id and preferred_target_id in found_target_ids:
             return preferred_target_id
         for site_key in _JV_PRIORITY:
@@ -342,6 +365,18 @@ def _normalize_jv_draft(payload: dict, baseline_site_key: str) -> dict:
         "images": images,
         "jv_fields": jv_fields,
     }
+
+
+def _normalize_target_ids(target_ids: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for target_id in target_ids or []:
+        value = str(target_id or "").strip().upper()
+        if not value or value not in _JV_PRIORITY or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
 
 
 def _first_jv_description_source(draft: dict) -> dict[str, str]:

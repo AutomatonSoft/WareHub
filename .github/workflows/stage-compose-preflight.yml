@@ -110,16 +110,16 @@ jobs:
 
           candidate_dir="${{ steps.tempdir.outputs.candidate_dir }}"
 
-          if [ -z "${STAGE_ENV_FILE_SECRET:-}" ]; then
-            echo "Missing required stage secret: STAGE_ENV_FILE" >&2
-            exit 1
-          fi
-
-          printf '%s' "$STAGE_ENV_FILE_SECRET" > "$candidate_dir/.env"
+          printf '%s' "${STAGE_ENV_FILE_SECRET:-}" > "$candidate_dir/.env.override"
+          python3 infra/scripts/build-runtime-env.py \
+            --template infra/deploy/stage/env.stage.sanitized.template \
+            --override "$candidate_dir/.env.override" \
+            --output "$candidate_dir/.env"
           cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
           cp infra/scripts/verify-gateway-only-ports.py "$candidate_dir/verify-gateway-only-ports.py"
           cp infra/scripts/run-isolated-compose-preflight.sh "$candidate_dir/run-isolated-compose-preflight.sh"
 
+          chmod 600 "$candidate_dir/.env.override"
           chmod 600 "$candidate_dir/.env"
           chmod 600 "$candidate_dir/docker-compose.yml"
           chmod 600 "$candidate_dir/verify-gateway-only-ports.py"
@@ -136,6 +136,7 @@ jobs:
         run: |
           $envFile = "${{ steps.tempdir.outputs.candidate_dir }}/.env"
           ./infra/scripts/verify-required-env.ps1 -EnvFile $envFile -Environment stage -InputKind Runtime
+          ./infra/scripts/verify-compose-service-env-mappings.ps1 -ComposePath "${{ steps.tempdir.outputs.candidate_dir }}/docker-compose.yml" -Environment stage
 
       - name: Run isolated remote compose preflight
         shell: bash
