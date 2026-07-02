@@ -1,11 +1,16 @@
 use std::env;
 
 pub(crate) fn init_sentry(app_env: &str) -> Option<sentry::ClientInitGuard> {
-    let dsn = env::var("SENTRY_DSN")
+    let dsn = env::var("BACKEND_SENTRY_DSN")
         .ok()
+        .or_else(|| env::var("SENTRY_DSN").ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())?;
-    let traces_sample_rate = parse_sentry_traces_sample_rate(env::var("SENTRY_TRACES_SAMPLE_RATE").ok());
+    let traces_sample_rate = parse_sentry_traces_sample_rate(
+        env::var("BACKEND_SENTRY_TRACES_SAMPLE_RATE")
+            .ok()
+            .or_else(|| env::var("SENTRY_TRACES_SAMPLE_RATE").ok()),
+    );
 
     Some(sentry::init((
         dsn,

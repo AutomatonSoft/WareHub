@@ -7,6 +7,9 @@ import sys
 def main():
     """Run administrative tasks."""
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'database_service.settings')
+    from database_service.observability import configure_observability
+
+    configure_observability()
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

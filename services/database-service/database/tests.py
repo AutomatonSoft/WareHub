@@ -6,6 +6,7 @@ from unittest.mock import patch
 import requests
 
 from catalog_core.models import ImportedProduct
+from jv_services.source_push import push_product_to_source
 from .kid_green_import_service import (
     FetchResult,
     KidGreenImportResult,
@@ -652,6 +653,94 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.kaufland_jv)
         kid.refresh_from_db()
         self.assertEqual(kid.place, "-4")
+
+    def test_marketplace_deactivate_by_kid_without_mapping_is_noop_success(self):
+        kid = Kid.objects.create(kid_number=["KID-NO-MAPPING"], place="4")
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-NO-MAPPING", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 1)
+        self.assertEqual(response.data["summary"]["failed"], 0)
+        self.assertEqual(response.data["results"][0]["site_key"], "MARKETPLACE")
+        self.assertEqual(response.data["results"][0]["details"]["code"], "marketplace_deactivate_no_mapping_noop")
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "4")
+
+    @patch("database.marketplace_deactivate_service._apply_jv_deactivate")
+    def test_marketplace_deactivate_by_kid_without_status_uses_present_jv_ean(self, mocked_apply_jv):
+        kid = Kid.objects.create(kid_number=["KID-JV-NO-STATUS"], place="4")
+        Ean.objects.create(
+            kid=kid,
+            main_ean="4062292001215",
+            jv="JVM4062292001215",
+        )
+
+        def _fake_apply(*, ean, site_key, inactive, actor):
+            return {
+                "ok": True,
+                "site_key": site_key,
+                "channel": "JV",
+                "status_code": status.HTTP_200_OK,
+                "details": {
+                    "ean": ean,
+                    "inactive": inactive,
+                    "actor": actor,
+                },
+            }
+
+        mocked_apply_jv.side_effect = _fake_apply
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-JV-NO-STATUS", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["summary"]["success"], 4)
+        self.assertEqual(mocked_apply_jv.call_count, 4)
+        site_keys = {row["site_key"] for row in response.data["results"]}
+        self.assertEqual(site_keys, {"JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"})
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service._apply_jv_deactivate")
+    def test_marketplace_deactivate_by_kid_with_empty_place_does_not_fail(self, mocked_apply_jv):
+        kid = Kid.objects.create(kid_number=["KID-JV-NO-PLACE"], place=None)
+        Ean.objects.create(
+            kid=kid,
+            main_ean="4062292001215",
+            jv="JVM4062292001215",
+        )
+
+        mocked_apply_jv.side_effect = lambda **kwargs: {
+            "ok": True,
+            "site_key": kwargs["site_key"],
+            "channel": "JV",
+            "status_code": status.HTTP_200_OK,
+            "details": {"ean": kwargs["ean"]},
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-JV-NO-PLACE", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(mocked_apply_jv.call_count, 4)
+        kid.refresh_from_db()
+        self.assertIsNone(kid.place)
 
     def test_marketplace_local_statuses_by_kid_updates_unsupported_channels_on_activate(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
@@ -1412,6 +1501,78 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kaufland_xl_ean"], "")
         self.assertEqual(response.data["hood_jv_ean"], "")
         self.assertEqual(response.data["hood_xl_ean"], "")
+
+    @patch("jv_services.views_write.record_ean_usage")
+    @patch("jv_services.views_write.create_product_in_source", return_value=777)
+    @patch("jv_services.views_write.push_product_to_source")
+    @patch("jv_services.views_write.source_db_config_for_site", return_value={"host": "test", "user": "test", "password": "test", "database": "test", "port": 3306})
+    def test_jv_update_by_ean_recreates_when_source_product_id_is_invalid(
+        self,
+        mocked_db_config,
+        mocked_push,
+        mocked_create_source,
+        mocked_record_usage,
+    ):
+        product = ImportedProduct.objects.create(
+            site="JV",
+            site_key="JV_DE",
+            source_product_id=0,
+            ean="4062292001215",
+            source_model="JVM4062292001215",
+            price="12.3400",
+            quantity=1,
+            status=True,
+        )
+        mocked_push.side_effect = [RuntimeError("invalid JV source_product_id"), None]
+
+        response = self.client.patch(
+            "/api/v1/jv/products/update-by-ean/4062292001215/?site=JV&site_key=JV_DE",
+            {"source_model": "JVM4062292001215", "price": "99.9900"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        product.refresh_from_db()
+        self.assertEqual(product.source_product_id, 777)
+        self.assertEqual(str(product.price), "99.9900")
+        self.assertEqual(mocked_push.call_count, 2)
+        mocked_create_source.assert_called_once()
+        mocked_record_usage.assert_called_once()
+        mocked_db_config.assert_called()
+
+    @patch("jv_services.source_push._push_product_to_source_once")
+    @patch("jv_services.source_push.create_product_in_source", return_value=888)
+    @patch("jv_services.views_write_children.record_ean_usage")
+    def test_jv_source_push_recreates_missing_article_in_shared_push_path(
+        self,
+        mocked_record_usage,
+        mocked_create_source,
+        mocked_push_once,
+    ):
+        product = ImportedProduct.objects.create(
+            site="JV",
+            site_key="JV_CO_UK",
+            source_product_id=465915,
+            ean="4062292001215",
+            source_model="JVM4062292001215",
+            price="12.3400",
+            quantity=1,
+            status=True,
+        )
+        mocked_push_once.side_effect = [RuntimeError("JV article not found for artikelid=465915"), None]
+
+        push_product_to_source(
+            {"host": "test", "user": "test", "password": "test", "database": "test", "port": 3306},
+            product,
+            changed_scalar_fields={"price"},
+            changed_relations={"specials"},
+        )
+
+        product.refresh_from_db()
+        self.assertEqual(product.source_product_id, 888)
+        self.assertEqual(mocked_push_once.call_count, 2)
+        mocked_create_source.assert_called_once()
+        mocked_record_usage.assert_called_once()
 
     def test_get_kid_ean_summary_not_found(self):
         response = self.client.get("/api/v1/kids/999999/ean-summary/")

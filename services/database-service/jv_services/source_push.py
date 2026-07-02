@@ -23,6 +23,42 @@ from .source_writer_jv import (
 logger = logging.getLogger(__name__)
 
 
+def _should_recreate_missing_jv_source_article(exc: Exception) -> bool:
+    message = str(exc or "")
+    return message == "invalid JV source_product_id" or message.startswith("JV article not found for artikelid=")
+
+
+def _recreate_missing_jv_source_article(config: dict, product: ImportedProduct) -> None:
+    recreated_source_product_id = int(create_product_in_source(config, product))
+    ImportedProduct.all_objects.filter(pk=product.pk).update(source_product_id=recreated_source_product_id)
+
+    # Keep EAN usage in sync for flows that bypass HTTP views and push directly.
+    try:
+        from .views_write_children import record_ean_usage
+
+        record_ean_usage(
+            ean=product.ean,
+            site=product.site,
+            site_key=product.site_key,
+            product=product,
+            source_product_id=recreated_source_product_id,
+        )
+    except Exception:
+        logger.warning(
+            "JV_SOURCE_RECREATE_EAN_USAGE_SYNC_FAILED code=jv_source_recreate_ean_usage_sync_failed local_id=%s source_product_id=%s",
+            product.pk,
+            recreated_source_product_id,
+            exc_info=True,
+        )
+
+    product.refresh_from_db()
+    logger.warning(
+        "JV_SOURCE_ID_NOT_FOUND_INSERTED_NEW code=jv_source_id_not_found_inserted_new local_id=%s new_source_product_id=%s",
+        product.pk,
+        product.source_product_id,
+    )
+
+
 def _push_product_to_source_once(
     config: dict,
     product: ImportedProduct,
@@ -216,8 +252,16 @@ def _push_product_to_source_once(
                 )
 
         conn.commit()
-    except Exception:
-        logger.exception("JV_SOURCE_PUSH_TRANSACTION_FAILED code=jv_source_push_transaction_failed")
+    except Exception as exc:
+        if _should_recreate_missing_jv_source_article(exc):
+            logger.warning(
+                "JV_SOURCE_PUSH_TRANSACTION_RECOVERABLE code=jv_source_push_transaction_recoverable local_id=%s source_product_id=%s error=%s",
+                product.pk,
+                product.source_product_id,
+                str(exc),
+            )
+        else:
+            logger.exception("JV_SOURCE_PUSH_TRANSACTION_FAILED code=jv_source_push_transaction_failed")
         conn.rollback()
         raise
     finally:
@@ -235,6 +279,7 @@ def push_product_to_source(
     retries = max(1, int(os.getenv("JV_SOURCE_DB_PUSH_RETRIES", "3")))
     retry_sleep_sec = max(0.0, float(os.getenv("JV_SOURCE_DB_PUSH_RETRY_SLEEP_SEC", "1.5")))
     last_error = None
+    recreate_attempted = False
     for attempt in range(1, retries + 1):
         try:
             return _push_product_to_source_once(
@@ -244,6 +289,15 @@ def push_product_to_source(
                 changed_relations=changed_relations,
             )
         except mysql.connector.Error as exc:
+            if not recreate_attempted and _should_recreate_missing_jv_source_article(exc):
+                recreate_attempted = True
+                _recreate_missing_jv_source_article(config, product)
+                return _push_product_to_source_once(
+                    config,
+                    product,
+                    changed_scalar_fields=None,
+                    changed_relations=None,
+                )
             # Duplicate-key conflicts are deterministic data errors, not transient.
             # Retrying them only makes UI waits longer.
             if getattr(exc, "errno", None) == 1062:
@@ -261,6 +315,17 @@ def push_product_to_source(
                 str(exc),
             )
             time.sleep(retry_sleep_sec)
+        except Exception as exc:
+            if not recreate_attempted and _should_recreate_missing_jv_source_article(exc):
+                recreate_attempted = True
+                _recreate_missing_jv_source_article(config, product)
+                return _push_product_to_source_once(
+                    config,
+                    product,
+                    changed_scalar_fields=None,
+                    changed_relations=None,
+                )
+            raise
     raise last_error
 
 

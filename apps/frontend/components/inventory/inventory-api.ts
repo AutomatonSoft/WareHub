@@ -152,6 +152,50 @@ type KidGreenImportRequestOptions = {
 export function getServicesApiBase(): string {
   return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
+
+function readErrorTextField(payload: Record<string, unknown> | null, key: string): string {
+  const raw = payload?.[key];
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function readNestedErrorText(payload: Record<string, unknown> | null, key: string): string {
+  const details = payload?.details;
+  if (!details || typeof details !== "object") {
+    return "";
+  }
+  const raw = (details as Record<string, unknown>)[key];
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function formatInventoryRowsRequestError(
+  response: Response,
+  payload: { code?: string; message?: string; detail?: string; request_id?: string; details?: Record<string, unknown> } | null,
+): Error {
+  const backendMessage = readErrorTextField(payload as Record<string, unknown> | null, "message");
+  const backendDetail = readErrorTextField(payload as Record<string, unknown> | null, "detail");
+  const backendCode = readErrorTextField(payload as Record<string, unknown> | null, "code");
+  const requestId = readErrorTextField(payload as Record<string, unknown> | null, "request_id");
+  const hint = readNestedErrorText(payload as Record<string, unknown> | null, "hint");
+  const nestedError = readNestedErrorText(payload as Record<string, unknown> | null, "error");
+  const primaryMessage = backendMessage || backendDetail || nestedError;
+
+  if (response.status === 403) {
+    return new Error("Database service session required. Login again and retry.");
+  }
+
+  if (primaryMessage) {
+    const suffix = [backendCode, requestId].filter(Boolean).join(", ");
+    const hintPart = hint ? ` Hint: ${hint}` : "";
+    return new Error(`${primaryMessage}${suffix ? ` (${suffix})` : ""}.${hintPart}`);
+  }
+
+  if (response.status === 502 || response.status === 503) {
+    return new Error("Inventory service is unavailable. Check database-service local dev process and retry.");
+  }
+
+  return new Error(`Services inventory request failed: HTTP ${response.status}`);
+}
+
 function buildServicesUrl(path: string, params: URLSearchParams): string {
   const query = params.toString();
   return `${getServicesApiBase()}${path}${query ? `?${query}` : ""}`;
@@ -227,22 +271,7 @@ export async function fetchInventoryRows(params: {
     const payload = (await response.json().catch(() => null)) as
       | { code?: string; message?: string; request_id?: string; details?: Record<string, unknown> }
       | null;
-    const backendMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
-    const backendCode = typeof payload?.code === "string" ? payload.code.trim() : "";
-    const requestId = typeof payload?.request_id === "string" ? payload.request_id.trim() : "";
-    const hint =
-      payload?.details && typeof payload.details === "object" && typeof payload.details.hint === "string"
-        ? payload.details.hint.trim()
-        : "";
-    if (response.status === 403) {
-      throw new Error("Database service session required. Login again and retry.");
-    }
-    if (backendMessage) {
-      const suffix = [backendCode, requestId].filter(Boolean).join(", ");
-      const hintPart = hint ? ` Hint: ${hint}` : "";
-      throw new Error(`${backendMessage}${suffix ? ` (${suffix})` : ""}.${hintPart}`);
-    }
-    throw new Error(`Services inventory request failed: HTTP ${response.status}`);
+    throw formatInventoryRowsRequestError(response, payload);
   }
 
   return (await response.json()) as InventoryRowsApiResponse & InventoryRowsFallbackResponse;

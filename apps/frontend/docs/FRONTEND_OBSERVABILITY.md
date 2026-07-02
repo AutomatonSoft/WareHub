@@ -57,15 +57,15 @@
 
 1. `Spike in UI Errors`
 - Condition: `count(telemetry_type:ui_error)` > baseline x2 (15m window)
-- Scope: `app_env:production`
+- Scope: `app_env:prod`
 
 2. `Inventory Latency Degradation`
 - Condition: `p95(latency_payload.duration_ms)` for `latency_name:inventory_table_fetch` > 2500ms
-- Scope: `app_env:production`
+- Scope: `app_env:prod`
 
 3. `Sofort List Latency Degradation`
 - Condition: `p95(latency_payload.duration_ms)` for `latency_name:sofort_list_fetch` > 2500ms
-- Scope: `app_env:production`
+- Scope: `app_env:prod`
 
 ## Operational Notes
 - Для корректной группировки релизов должен быть задан `NEXT_PUBLIC_APP_VERSION`.

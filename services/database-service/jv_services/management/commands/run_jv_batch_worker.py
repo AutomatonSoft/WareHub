@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction, close_old_connections
 
 from jv_services.models import JVBatchJob
+from database_service.observability import capture_exception, set_request_id, reset_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +28,24 @@ class Command(BaseCommand):
                 time.sleep(poll_interval)
                 continue
 
+            token = set_request_id(f"jv-batch-worker-{job_id}")
             try:
-                print("JV_BATCH_WORKER_LOOP_CLAIMED", {"job_id": job_id})
+                logger.info(
+                    "JV_BATCH_WORKER_LOOP_CLAIMED code=jv_batch_worker_loop_claimed job_id=%s",
+                    job_id,
+                    extra={"job_id": job_id},
+                )
                 call_command("run_jv_batch_job", str(job_id), already_claimed=True)
-            except Exception:
-                logger.exception("JV_BATCH_WORKER_LOOP_JOB_FAILED code=jv_batch_worker_loop_job_failed job_id=%s", job_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "JV_BATCH_WORKER_LOOP_JOB_FAILED code=jv_batch_worker_loop_job_failed job_id=%s",
+                    job_id,
+                    extra={"job_id": job_id},
+                )
+                capture_exception(exc)
                 JVBatchJob.objects.filter(pk=job_id).update(status=JVBatchJob.Status.FAILED)
+            finally:
+                reset_request_id(token)
 
     @staticmethod
     def _claim_next_job_id() -> int | None:
