@@ -24,7 +24,6 @@ export default function ApiDocsPage() {
     </style>
   </head>
   <body>
-<<<<<<< HEAD
     <script>
       (async function bootstrapScalarDocs() {
         const baseConfig = JSON.parse('${configuration}');
@@ -105,14 +104,6 @@ export default function ApiDocsPage() {
         document.body.appendChild(scalarScript);
       })();
     </script>
-=======
-    <script
-      id="api-reference"
-      data-url="/api/v1/docs/openapi"
-      data-configuration='{"theme":"purple","layout":"modern","showSidebar":true}'
-    ></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
->>>>>>> origin/main
   </body>
 </html>`;
 

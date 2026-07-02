@@ -50,7 +50,6 @@ $appPlans = @(
     Url = "http://localhost:8931"
     LogFileName = "frontend.log"
     PidFileName = "frontend.pid"
-    PidFileName = "frontend.pid"
   },
   @{
     Name = "backend"
@@ -59,10 +58,7 @@ $appPlans = @(
     Label = "Backend"
     HealthUrl = "http://localhost:8932/api/v1/healthz"
     Url = "http://localhost:8932/api/v1/healthz"
-    HealthUrl = "http://localhost:8932/api/v1/healthz"
-    Url = "http://localhost:8932/api/v1/healthz"
     LogFileName = "backend.log"
-    PidFileName = "backend.pid"
     PidFileName = "backend.pid"
   },
   @{
@@ -72,20 +68,7 @@ $appPlans = @(
     Label = "Database-service"
     HealthUrl = "http://localhost:8934/api/v1/healthz"
     Url = "http://localhost:8934/api/v1/healthz"
-    HealthUrl = "http://localhost:8934/api/v1/healthz"
-    Url = "http://localhost:8934/api/v1/healthz"
     LogFileName = "database-service.log"
-    PidFileName = "database-service.pid"
-  },
-  @{
-    Name = "services-jv-worker"
-    Skip = $SkipServices
-    WorkingDirectory = Join-Path $repoRoot "services\database-service"
-    Label = "Database-service JV worker"
-    HealthUrl = $null
-    Url = "background worker"
-    LogFileName = "database-service-jv-worker.log"
-    PidFileName = "database-service-jv-worker.pid"
     PidFileName = "database-service.pid"
   },
   @{
@@ -105,10 +88,7 @@ $appPlans = @(
     Label = "Orchestrator"
     HealthUrl = "http://localhost:8935/api/v1/healthz"
     Url = "http://localhost:8935/api/v1/healthz"
-    HealthUrl = "http://localhost:8935/api/v1/healthz"
-    Url = "http://localhost:8935/api/v1/healthz"
     LogFileName = "orchestrator.log"
-    PidFileName = "orchestrator.pid"
     PidFileName = "orchestrator.pid"
   }
 )
@@ -575,15 +555,11 @@ function Initialize-LocalRuntimeEnv {
   Set-ProcessEnvValue -Name "BACKEND_INTERNAL_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
   Set-ProcessEnvValue -Name "BACKEND_API_BASE_URL" -Value "$backendOrigin/api/v1"
   Set-ProcessEnvValue -Name "NEXT_PUBLIC_SERVICES_API_BASE_URL" -Value "$servicesOrigin/api/v1"
-  Set-ProcessEnvValue -Name "NEXT_PUBLIC_SERVICES_API_BASE_URL" -Value "$servicesOrigin/api/v1"
   Set-ProcessEnvValue -Name "SERVICES_API_BASE_URL" -Value $servicesOrigin
-  Set-ProcessEnvValue -Name "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" -Value "$orchestratorOrigin/api/v1"
   Set-ProcessEnvValue -Name "NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL" -Value "$orchestratorOrigin/api/v1"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_API_BASE_URL" -Value $orchestratorOrigin
   Set-ProcessEnvValue -Name "MOBILE_DEV_API_BASE_URL" -Value "http://127.0.0.1:$backendPort/api/v1"
   Set-ProcessEnvValue -Name "DATABASE_SERVICE_BASE_URL" -Value $servicesOrigin
-  Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_AUTH_TOKEN" -Value "warehub-local-orchestrator"
-  Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_ALLOWED_HOSTS" -Value "localhost,127.0.0.1"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_AUTH_TOKEN" -Value "warehub-local-orchestrator"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_SERVICE_ALLOWED_HOSTS" -Value "localhost,127.0.0.1"
   Set-ProcessEnvValue -Name "ORCHESTRATOR_HOST" -Value "0.0.0.0"
@@ -1034,10 +1010,6 @@ function Start-LocalApps {
       if (Test-Path -LiteralPath $pidPath) {
         Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
       }
-      $pidPath = Join-Path $localDevLogDirectory $app.PidFileName
-      if (Test-Path -LiteralPath $pidPath) {
-        Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
-      }
 
       $arguments = @(
         "-NoLogo"
@@ -1060,8 +1032,6 @@ function Start-LocalApps {
 
       $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -WindowStyle Hidden -PassThru
       Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
-      $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -WindowStyle Hidden -PassThru
-      Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
       Write-Host "Started $($app.Label) in background. Log: $logPath"
     }
     return
@@ -1070,10 +1040,6 @@ function Start-LocalApps {
   Write-Host "Starting local apps..."
   foreach ($app in $enabledApps) {
     $script:StartedLogPaths[$app.Name] = $null
-    $pidPath = Join-Path $localDevLogDirectory $app.PidFileName
-    if (Test-Path -LiteralPath $pidPath) {
-      Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
-    }
     $pidPath = Join-Path $localDevLogDirectory $app.PidFileName
     if (Test-Path -LiteralPath $pidPath) {
       Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
@@ -1094,8 +1060,6 @@ function Start-LocalApps {
       $arguments += "-WithMigrations"
     }
 
-    $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -PassThru
-    Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
     $process = Start-Process -FilePath $PowerShellExecutable -ArgumentList $arguments -WorkingDirectory $app.WorkingDirectory -PassThru
     Set-Content -LiteralPath $pidPath -Value $process.Id -NoNewline
     Write-Host "Started $($app.Label) in a new PowerShell window."
@@ -1134,12 +1098,9 @@ function Print-StartupSummary {
   Write-Host "  Backend:            http://localhost:8932"
   Write-Host "  Backend API:        http://localhost:8932/api/v1"
   Write-Host "  Backend health:     http://localhost:8932/api/v1/healthz"
-  Write-Host "  Backend health:     http://localhost:8932/api/v1/healthz"
   Write-Host "  Database-service:   http://localhost:8934"
   Write-Host "  Services health:    http://localhost:8934/api/v1/healthz"
-  Write-Host "  Services health:    http://localhost:8934/api/v1/healthz"
   Write-Host "  Orchestrator:       http://localhost:8935"
-  Write-Host "  Orchestrator health:http://localhost:8935/api/v1/healthz"
   Write-Host "  Orchestrator health:http://localhost:8935/api/v1/healthz"
   Write-Host "  Postgres:           localhost:8933"
   Write-Host "  Redis:              localhost:8936"
@@ -1149,9 +1110,6 @@ function Print-StartupSummary {
   Write-Host "  MinIO Console:      http://localhost:9001"
   Write-Host ""
   Write-Host "Manual smoke checks:"
-  Write-Host "  Invoke-WebRequest http://localhost:8932/api/v1/healthz -UseBasicParsing"
-  Write-Host "  Invoke-WebRequest http://localhost:8934/api/v1/healthz -UseBasicParsing"
-  Write-Host "  Invoke-WebRequest http://localhost:8935/api/v1/healthz -UseBasicParsing"
   Write-Host "  Invoke-WebRequest http://localhost:8932/api/v1/healthz -UseBasicParsing"
   Write-Host "  Invoke-WebRequest http://localhost:8934/api/v1/healthz -UseBasicParsing"
   Write-Host "  Invoke-WebRequest http://localhost:8935/api/v1/healthz -UseBasicParsing"

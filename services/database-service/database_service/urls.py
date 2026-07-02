@@ -291,14 +291,11 @@ api_v1_patterns = [
         JVBatchJobStatusAPIView.as_view(),
         name="jv-batch-job-status-v1",
     ),
-<<<<<<< HEAD
     path(
         "api/v1/jv/products/create-job/",
         JVProductCreateJobEnqueueAPIView.as_view(),
         name="jv-product-create-job-v1",
     ),
-=======
->>>>>>> origin/main
 ]
 
 class OpenApiSchemaView(APIView):

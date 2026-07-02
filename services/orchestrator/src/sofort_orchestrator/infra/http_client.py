@@ -18,24 +18,6 @@ class HttpClient:
         self._retries = retries
         self._limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
         self._client: httpx.Client | None = None
-<<<<<<< HEAD
-=======
-
-    def _get_client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(
-                timeout=self._timeout,
-                trust_env=False,
-                limits=self._limits,
-            )
-        return self._client
-
-    def close(self) -> None:
-        if self._client is None:
-            return
-        self._client.close()
-        self._client = None
->>>>>>> origin/main
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -66,7 +48,6 @@ class HttpClient:
         last_kind = "network"
         for attempt in range(self._retries + 1):
             try:
-<<<<<<< HEAD
                 request_timeout = timeout_seconds if timeout_seconds is not None and timeout_seconds > 0 else None
                 response = self._get_client().request(
                     method,
@@ -76,9 +57,6 @@ class HttpClient:
                     json=json,
                     timeout=request_timeout,
                 )
-=======
-                response = self._get_client().request(method, url, headers=headers, params=params, json=json)
->>>>>>> origin/main
                 if response.status_code >= 500 and attempt < self._retries:
                     time.sleep(0.2 * (attempt + 1))
                     continue

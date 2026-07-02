@@ -30,11 +30,7 @@ class KidAccount:
     ]
 
 class Kid(Model):
-<<<<<<< HEAD
     kid_number = JSONField(default=list)
-=======
-    kid_number = CharField(max_length=255)
->>>>>>> origin/main
     account = CharField(
         max_length=8,
         choices=KidAccount.ACCOUNT_CHOICES,
@@ -161,13 +157,8 @@ class EANUsage(Model):
 
 class ProductAttributes(Model):
     kid = OneToOneField(Kid, on_delete=CASCADE, related_name="product_attributes")
-<<<<<<< HEAD
     quantity = IntegerField(null=True, blank=True)
     company = CharField(max_length=128, null=True, blank=True)
-=======
-    room = CharField(max_length=128, null=True, blank=True)
-    furniture_type = CharField(max_length=128, null=True, blank=True)
->>>>>>> origin/main
     color = CharField(max_length=128, null=True, blank=True)
     size = CharField(max_length=128, null=True, blank=True)
     material = CharField(max_length=128, null=True, blank=True)

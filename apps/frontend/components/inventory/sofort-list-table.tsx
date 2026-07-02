@@ -10,11 +10,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
-<<<<<<< HEAD
 import { AddProductButton } from "./add-item-button";
-=======
-import { exportRowsToCsv, exportRowsToExcelXml } from "../shared/table/export-utils";
->>>>>>> origin/main
 import { fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";

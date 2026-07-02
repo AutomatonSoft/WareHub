@@ -39,11 +39,7 @@ export function SofortListToolbar(props: {
 
   return (
     <Toolbar className="wh-sofort-toolbar">
-<<<<<<< HEAD
       <ToolbarGroup className="wh-sofort-toolbar__search" role="search">
-=======
-      <ToolbarGroup className="wh-sofort-toolbar__search flex-1">
->>>>>>> origin/main
         <Input
           value={props.query}
           onChange={(event) => props.onQueryChange(event.target.value)}
@@ -53,10 +49,7 @@ export function SofortListToolbar(props: {
         />
       </ToolbarGroup>
       <ToolbarGroup className="wh-sofort-toolbar__actions" role="group" aria-label="Sofort list actions">
-<<<<<<< HEAD
         {props.primaryAction ? <div className="wh-sofort-toolbar__primary-action">{props.primaryAction}</div> : null}
-=======
->>>>>>> origin/main
         <Button type="button" variant="outline" onClick={props.onToggleFilters} className="wh-sofort-toolbar__button">
           <Filter />
           {props.showFilters ? "Hide filters" : "Filters"}
@@ -65,13 +58,9 @@ export function SofortListToolbar(props: {
           <Trash2 />
           {clearLabel}
         </Button>
-<<<<<<< HEAD
         <Badge variant="outline" className="wh-sofort-toolbar__status">
           {props.statusText}
         </Badge>
-=======
-        <Badge variant="outline" className="wh-sofort-toolbar__status">{props.statusText}</Badge>
->>>>>>> origin/main
       </ToolbarGroup>
       {props.showFilters ? (
         <ToolbarGroup className="wh-sofort-toolbar__filters basis-full" role="group" aria-label="Sofort list filters">
