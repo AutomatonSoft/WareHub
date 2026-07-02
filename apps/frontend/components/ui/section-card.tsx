@@ -16,11 +16,7 @@ export function SectionCard(props: {
       {props.title || props.subtitle || props.actions ? (
         <CardHeader className="wh-section-card__header wh-card-header-divider pb-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
-<<<<<<< HEAD
             <div className="min-w-0 flex-1">
-=======
-            <div>
->>>>>>> origin/main
               {props.title ? <CardTitle className="wh-section-card__title text-base font-semibold text-foreground">{props.title}</CardTitle> : null}
               {props.subtitle ? <CardDescription className="wh-section-card__subtitle text-sm text-muted-foreground">{props.subtitle}</CardDescription> : null}
             </div>
