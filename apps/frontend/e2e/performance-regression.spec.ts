@@ -35,33 +35,6 @@ test("login page performance budget", async ({ page }) => {
   expect(metrics.loadEventMs, `Load event too high for ${metrics.url}`).toBeLessThan(6000);
 });
 
-test("inventory page performance budget", async ({ page }) => {
-  await login(page);
-  await page.goto("/inventory");
-  await expect(page).toHaveURL(/\/inventory/);
-  const metrics = await getNavigationMetrics(page);
-
-  expect(metrics.firstByteMs, `TTFB too high for ${metrics.url}`).toBeLessThan(1500);
-  expect(metrics.domContentLoadedMs, `DCL too high for ${metrics.url}`).toBeLessThan(4500);
-  expect(metrics.loadEventMs, `Load event too high for ${metrics.url}`).toBeLessThan(8000);
-});
-
-test("inventory search interaction budget", async ({ page }) => {
-  await login(page);
-  await page.goto("/inventory");
-  await expect(page).toHaveURL(/\/inventory/);
-
-  const searchInput = page.getByLabel("Search in table").first();
-  await expect(searchInput).toBeVisible();
-
-  const startedAt = Date.now();
-  await searchInput.fill("2");
-  await expect(page).toHaveURL(/\/inventory\?q=2/, { timeout: 5000 });
-  const interactionMs = Date.now() - startedAt;
-
-  expect(interactionMs, "Inventory search interaction is too slow").toBeLessThan(2000);
-});
-
 test("sofort-list filter interaction budget", async ({ page }) => {
   await login(page);
   await page.goto("/sofort-list");

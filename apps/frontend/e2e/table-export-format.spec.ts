@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { login, requireAuthEnv } from "./helpers/auth";
-import { exportCsv, exportXls, gotoInventory, gotoSofortList } from "./helpers/table-pages";
+import { exportCsv, exportXls, gotoSofortList } from "./helpers/table-pages";
 
 requireAuthEnv(test);
 test.describe.configure({ mode: "serial" });
@@ -52,18 +52,3 @@ test("sofort-list XLS export is Spreadsheet XML with expected headers", async ({
   expect(xml).toContain("<Data ss:Type=\"String\">kid_number</Data>");
 });
 
-test("inventory CSV export contains expected headers", async ({ page }) => {
-  await login(page);
-  await gotoInventory(page);
-
-  const downloadPromise = exportCsv(page);
-  const download = await downloadPromise;
-
-  const stream = await download.createReadStream();
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream!) {
-    chunks.push(Buffer.from(chunk));
-  }
-  const text = bufferToUtf8(Buffer.concat(chunks));
-  expect(text).toContain('"kid_id","kid_number","place","platform","quantity","status","date","title","global_price"');
-});

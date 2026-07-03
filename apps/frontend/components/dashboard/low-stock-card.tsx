@@ -1,5 +1,4 @@
 import { AlertTriangle, Boxes } from "lucide-react";
-import Link from "next/link";
 import { Badge } from "../ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
@@ -89,9 +88,6 @@ export function LowStockCard({
           <p className="wh-card-footer__text">
             {displayAlerts.length} of {resolvedTotalAlerts} shown
           </p>
-          <Link href="/inventory" className="wh-card-footer__action">
-            Open inventory
-          </Link>
         </div>
       ) : null}
       </CardContent>

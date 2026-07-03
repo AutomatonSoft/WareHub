@@ -25,13 +25,6 @@ test("dashboard page has no serious/critical axe violations", async ({ page }) =
   await expectNoSeriousA11yViolations(page);
 });
 
-test("inventory page has no serious/critical axe violations", async ({ page }) => {
-  await login(page);
-  await page.goto("/inventory");
-  await expect(page).toHaveURL(/\/inventory/);
-  await expectNoSeriousA11yViolations(page);
-});
-
 test("marketplace page has no serious/critical axe violations", async ({ page }) => {
   await login(page);
   await page.goto("/marketplace");

@@ -11,7 +11,7 @@ import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
-import { fetchInventoryRows } from "./inventory-api";
+import { fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
@@ -76,11 +76,18 @@ export function SofortListTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [roomFilter, setRoomFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [placeFilter, setPlaceFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [quantityFilter, setQuantityFilter] = useState("");
+  const [roomFilter, setRoomFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [colorFilter, setColorFilter] = useState("");
+  const [materialFilter, setMaterialFilter] = useState("");
   const [listingFilter, setListingFilter] = useState("all");
   const [backendPage, setBackendPage] = useState(1);
-  const [backendPageSize] = useState(16);
+  const [backendPageSize, setBackendPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [urlHydrated, setUrlHydrated] = useState(false);
@@ -91,11 +98,19 @@ export function SofortListTable() {
   useEffect(() => {
     if (urlHydrated) return;
     const pageParam = Number.parseInt(searchParams.get("page") ?? "1", 10);
+    const pageSizeParam = Number.parseInt(searchParams.get("page_size") ?? "20", 10);
     setQuery(searchParams.get("q") ?? "");
-    setRoomFilter(searchParams.get("room") ?? "all");
-    setTypeFilter(searchParams.get("type") ?? "all");
+    setPlaceFilter(searchParams.get("place") ?? "");
+    setLocationFilter(searchParams.get("location") ?? "all");
+    setQuantityFilter(searchParams.get("quantity") ?? "");
+    setRoomFilter(searchParams.get("room") ?? "");
+    setTypeFilter(searchParams.get("type") ?? "");
+    setCompanyFilter(searchParams.get("company") ?? "");
+    setColorFilter(searchParams.get("color") ?? "");
+    setMaterialFilter(searchParams.get("material") ?? "");
     setListingFilter(searchParams.get("listing") ?? "all");
     setBackendPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
+    setBackendPageSize(Number.isFinite(pageSizeParam) && pageSizeParam > 0 ? pageSizeParam : 20);
     setUrlHydrated(true);
   }, [searchParams, urlHydrated]);
 
@@ -105,40 +120,104 @@ export function SofortListTable() {
     const normalizedQuery = query.trim();
     if (normalizedQuery) params.set("q", normalizedQuery);
     else params.delete("q");
-    if (roomFilter !== "all") params.set("room", roomFilter);
+    if (placeFilter.trim()) params.set("place", placeFilter.trim());
+    else params.delete("place");
+    if (locationFilter !== "all") params.set("location", locationFilter);
+    else params.delete("location");
+    if (quantityFilter.trim()) params.set("quantity", quantityFilter.trim());
+    else params.delete("quantity");
+    if (roomFilter.trim()) params.set("room", roomFilter.trim());
     else params.delete("room");
-    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (typeFilter.trim()) params.set("type", typeFilter.trim());
     else params.delete("type");
+    if (companyFilter.trim()) params.set("company", companyFilter.trim());
+    else params.delete("company");
+    if (colorFilter.trim()) params.set("color", colorFilter.trim());
+    else params.delete("color");
+    if (materialFilter.trim()) params.set("material", materialFilter.trim());
+    else params.delete("material");
     if (listingFilter !== "all") params.set("listing", listingFilter);
     else params.delete("listing");
     params.delete("sort");
     params.delete("dir");
     if (backendPage > 1) params.set("page", String(backendPage));
     else params.delete("page");
+    if (backendPageSize !== 20) params.set("page_size", String(backendPageSize));
+    else params.delete("page_size");
     const nextQuery = params.toString();
     const next = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     const current = searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname;
     if (next !== current) router.replace(next, { scroll: false });
-  }, [backendPage, listingFilter, pathname, query, roomFilter, router, searchParams, typeFilter, urlHydrated]);
+  }, [
+    backendPage,
+    backendPageSize,
+    colorFilter,
+    companyFilter,
+    listingFilter,
+    locationFilter,
+    materialFilter,
+    pathname,
+    placeFilter,
+    query,
+    quantityFilter,
+    roomFilter,
+    router,
+    searchParams,
+    typeFilter,
+    urlHydrated,
+  ]);
 
   const normalizedServerQuery = query.trim();
   const serverPlaceSort: "asc" | "desc" = "asc";
-  const serverRoom = roomFilter !== "all" ? roomFilter : undefined;
-  const serverType = typeFilter !== "all" ? typeFilter : undefined;
+  const serverPlace = placeFilter.trim() || undefined;
+  const serverLocation = locationFilter === "warehouse" || locationFilter === "store" ? locationFilter : undefined;
+  const serverQuantity = quantityFilter.trim() || undefined;
+  const serverRoom = roomFilter.trim() || undefined;
+  const serverType = typeFilter.trim() || undefined;
+  const serverCompany = companyFilter.trim() || undefined;
+  const serverColor = colorFilter.trim() || undefined;
+  const serverMaterial = materialFilter.trim() || undefined;
   const serverListing = listingFilter === "listed" || listingFilter === "unlisted" ? listingFilter : undefined;
 
   const sofortListQuery = useQuery({
-    queryKey: ["sofort-list-rows", backendPage, backendPageSize, normalizedServerQuery, serverPlaceSort, serverRoom, serverType, serverListing],
+    queryKey: [
+      "sofort-list-rows",
+      backendPage,
+      backendPageSize,
+      normalizedServerQuery,
+      serverPlaceSort,
+      serverPlace,
+      serverLocation,
+      serverQuantity,
+      serverRoom,
+      serverType,
+      serverCompany,
+      serverColor,
+      serverMaterial,
+      serverListing,
+    ],
     queryFn: () =>
       fetchInventoryRows({
         page: backendPage,
         pageSize: backendPageSize,
         q: normalizedServerQuery || undefined,
+        place: serverPlace,
+        location: serverLocation,
+        quantity: serverQuantity,
         placeSort: serverPlaceSort,
         room: serverRoom,
         type: serverType,
+        company: serverCompany,
+        color: serverColor,
+        material: serverMaterial,
         listing: serverListing
       })
+  });
+
+  const filterOptionsQuery = useQuery({
+    queryKey: ["sofort-list-filter-options"],
+    queryFn: fetchInventoryFilterOptions,
+    staleTime: 60_000,
   });
 
   useEffect(() => {
@@ -153,7 +232,7 @@ export function SofortListTable() {
     }
   }, [backendPage, backendPageSize, sofortListQuery.isFetching]);
 
-  useEffect(() => setLoading(sofortListQuery.isPending), [sofortListQuery.isPending]);
+  useEffect(() => setLoading(sofortListQuery.isPending || sofortListQuery.isFetching), [sofortListQuery.isFetching, sofortListQuery.isPending]);
 
   useEffect(() => {
     if (!sofortListQuery.error) return setError(null);
@@ -167,20 +246,17 @@ export function SofortListTable() {
     const items = Array.isArray(payload) ? payload : Array.isArray(payload.results) ? payload.results : [];
     const mappedRows = items.map((item) => {
       const rawItem = item as Record<string, unknown>;
+      const rawStatus = typeof rawItem.ean_status === "object" && rawItem.ean_status !== null
+        ? (rawItem.ean_status as Record<string, unknown>)
+        : {};
       const photos = normalizePhotoList(item.photo);
-      const skuFallback = firstSkuEan(rawItem);
-      const eanFallback = skuFallback ?? "";
       const siteEans = extractSiteEans(rawItem, "");
       const normalizedRowEan =
         typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
           ? (item as { database_ean?: string }).database_ean!.trim()
           : typeof (item as { main_ean?: unknown }).main_ean === "string" && (item as { main_ean?: string }).main_ean?.trim()
             ? (item as { main_ean?: string }).main_ean!.trim()
-            : typeof (item as { ean?: unknown }).ean === "string" && (item as { ean?: string }).ean?.trim()
-          ? (item as { ean?: string }).ean!.trim()
-          : typeof (item as { product_ean?: unknown }).product_ean === "string" && (item as { product_ean?: string }).product_ean?.trim()
-            ? (item as { product_ean?: string }).product_ean!.trim()
-            : eanFallback;
+            : "";
 
       const normalizedSiteEans = {
         jv: siteEans.jv,
@@ -194,6 +270,18 @@ export function SofortListTable() {
         hoodJv: siteEans.hoodJv,
         hoodXl: siteEans.hoodXl
       };
+      const normalizedSiteEanStatuses = {
+        jv: typeof rawStatus.jv === "boolean" ? rawStatus.jv : null,
+        xl: typeof rawStatus.xl === "boolean" ? rawStatus.xl : null,
+        ottoJv: typeof rawStatus.otto_jv === "boolean" ? rawStatus.otto_jv : null,
+        ottoXl: typeof rawStatus.otto_xl === "boolean" ? rawStatus.otto_xl : null,
+        ebayJv: typeof rawStatus.ebay_jv === "boolean" ? rawStatus.ebay_jv : null,
+        ebayXl: typeof rawStatus.ebay_xl === "boolean" ? rawStatus.ebay_xl : null,
+        kauflandJv: typeof rawStatus.kaufland_jv === "boolean" ? rawStatus.kaufland_jv : null,
+        kauflandXl: typeof rawStatus.kaufland_xl === "boolean" ? rawStatus.kaufland_xl : null,
+        hoodJv: typeof rawStatus.hood_jv === "boolean" ? rawStatus.hood_jv : null,
+        hoodXl: typeof rawStatus.hood_xl === "boolean" ? rawStatus.hood_xl : null
+      };
       const marketplaceActive = resolveMarketplaceActive(rawItem);
 
       return {
@@ -203,6 +291,7 @@ export function SofortListTable() {
         kidNumber: item.kid_number ?? "-",
         ean: normalizedRowEan,
         siteEans: normalizedSiteEans,
+        siteEanStatuses: normalizedSiteEanStatuses,
         photo: getPrimaryPhoto(item.photo),
         photoCount: item.photo_count ?? photos.length,
         place: normalizePlaceValue(item.place),
@@ -224,21 +313,93 @@ export function SofortListTable() {
 
     setRows(mappedRows);
     if (Array.isArray(payload)) {
+      setTotalCount(mappedRows.length);
       setHasNextPage(false);
       setHasPrevPage(backendPage > 1);
     } else {
+      setTotalCount(typeof payload.count === "number" && Number.isFinite(payload.count) ? payload.count : mappedRows.length);
       setHasNextPage(Boolean(payload.next));
       setHasPrevPage(Boolean(payload.previous));
     }
   }, [backendPage, placeholderEan, sofortListQuery.data]);
 
-  const roomOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.room ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
-  const typeOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.furnitureType ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
-
   const sortedRows = rows;
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / backendPageSize)), [backendPageSize, totalCount]);
+  const fallbackPlaceOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.place.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackQuantityOptions = useMemo(() => Array.from(new Set(rows.map((row) => String(row.quantity)).filter(Boolean))).sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10)), [rows]);
+  const fallbackRoomOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.room?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackTypeOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.furnitureType?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackCompanyOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.company?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackColorOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.color?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackMaterialOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.material?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const placeOptions = filterOptionsQuery.data?.places ?? fallbackPlaceOptions;
+  const quantityOptions = filterOptionsQuery.data?.quantities ?? fallbackQuantityOptions;
+  const roomOptions = filterOptionsQuery.data?.rooms ?? fallbackRoomOptions;
+  const typeOptions = filterOptionsQuery.data?.types ?? fallbackTypeOptions;
+  const companyOptions = filterOptionsQuery.data?.companies ?? fallbackCompanyOptions;
+  const colorOptions = filterOptionsQuery.data?.colors ?? fallbackColorOptions;
+  const materialOptions = filterOptionsQuery.data?.materials ?? fallbackMaterialOptions;
+  const activeFilters = useMemo(
+    () =>
+      [
+        placeFilter.trim() ? { key: "place", label: t.place, value: placeFilter.trim() } : null,
+        locationFilter !== "all"
+          ? { key: "location", label: t.location, value: locationFilter === "warehouse" ? t.warehouse : t.store }
+          : null,
+        quantityFilter.trim() ? { key: "quantity", label: t.quantity, value: quantityFilter.trim() } : null,
+        roomFilter.trim() ? { key: "room", label: t.room, value: roomFilter.trim() } : null,
+        typeFilter.trim() ? { key: "type", label: t.type, value: typeFilter.trim() } : null,
+        companyFilter.trim() ? { key: "company", label: t.company, value: companyFilter.trim() } : null,
+        colorFilter.trim() ? { key: "color", label: t.color, value: colorFilter.trim() } : null,
+        materialFilter.trim() ? { key: "material", label: t.material, value: materialFilter.trim() } : null,
+        listingFilter === "listed" || listingFilter === "unlisted"
+          ? { key: "listing", label: t.status, value: listingFilter === "listed" ? t.listed : t.unlisted }
+          : null,
+      ].filter((item): item is { key: string; label: string; value: string } => item !== null),
+    [
+      colorFilter,
+      companyFilter,
+      listingFilter,
+      locationFilter,
+      materialFilter,
+      placeFilter,
+      quantityFilter,
+      roomFilter,
+      t.color,
+      t.company,
+      t.listed,
+      t.location,
+      t.material,
+      t.place,
+      t.quantity,
+      t.room,
+      t.status,
+      t.store,
+      t.type,
+      t.unlisted,
+      t.warehouse,
+      typeFilter,
+    ]
+  );
 
   const allVisibleSelected = useMemo(() => sortedRows.length > 0 && sortedRows.every((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
-  const hasActiveFilters = roomFilter !== "all" || typeFilter !== "all" || listingFilter !== "all";
+  const hasActiveFilters =
+    query.trim().length > 0 ||
+    placeFilter.trim().length > 0 ||
+    locationFilter !== "all" ||
+    quantityFilter.trim().length > 0 ||
+    roomFilter.trim().length > 0 ||
+    typeFilter.trim().length > 0 ||
+    companyFilter.trim().length > 0 ||
+    colorFilter.trim().length > 0 ||
+    materialFilter.trim().length > 0 ||
+    listingFilter !== "all";
+
+  useEffect(() => {
+    if (backendPage > totalPages) {
+      setBackendPage(totalPages);
+    }
+  }, [backendPage, totalPages]);
 
   function toggleRowSelection(rowId: string) {
     setSelectedRowIds((current) => {
@@ -260,9 +421,69 @@ export function SofortListTable() {
 
   function resetFiltersAndSearch() {
     setQuery("");
-    setRoomFilter("all");
-    setTypeFilter("all");
+    setPlaceFilter("");
+    setLocationFilter("all");
+    setQuantityFilter("");
+    setRoomFilter("");
+    setTypeFilter("");
+    setCompanyFilter("");
+    setColorFilter("");
+    setMaterialFilter("");
     setListingFilter("all");
+    setBackendPage(1);
+  }
+
+  function updateQuery(nextValue: string) {
+    setQuery(nextValue);
+    setBackendPage(1);
+  }
+
+  function updateSelectFilter(setter: (value: string) => void, value: string) {
+    setter(value);
+    setBackendPage(1);
+  }
+
+  function normalizeSelectValue(value: string) {
+    return value === "all" ? "" : value;
+  }
+
+  function updatePageSize(nextPageSize: number) {
+    setBackendPageSize(nextPageSize);
+    setBackendPage(1);
+  }
+
+  function clearSingleFilter(key: string) {
+    switch (key) {
+      case "place":
+        setPlaceFilter("");
+        break;
+      case "location":
+        setLocationFilter("all");
+        break;
+      case "quantity":
+        setQuantityFilter("");
+        break;
+      case "room":
+        setRoomFilter("");
+        break;
+      case "type":
+        setTypeFilter("");
+        break;
+      case "company":
+        setCompanyFilter("");
+        break;
+      case "color":
+        setColorFilter("");
+        break;
+      case "material":
+        setMaterialFilter("");
+        break;
+      case "listing":
+        setListingFilter("all");
+        break;
+      default:
+        break;
+    }
     setBackendPage(1);
   }
 
@@ -277,23 +498,67 @@ export function SofortListTable() {
         <CardContent className="wh-section-card__body">
           <SofortListToolbar
             query={query}
+            queryLabel={t.search}
             searchPlaceholder={t.searchSofortPlaceholder}
             primaryAction={<AddProductButton onCreated={() => sofortListQuery.refetch()} />}
             showFilters={showFilters}
             hasActiveFilters={hasActiveFilters}
+            placeFilter={placeFilter}
+            locationFilter={locationFilter}
+            quantityFilter={quantityFilter}
             roomFilter={roomFilter}
             typeFilter={typeFilter}
+            companyFilter={companyFilter}
+            colorFilter={colorFilter}
+            materialFilter={materialFilter}
             listingFilter={listingFilter}
+            placeOptions={placeOptions}
+            quantityOptions={quantityOptions}
             roomOptions={roomOptions}
             typeOptions={typeOptions}
-            statusText={loading ? t.loadingRows : `${t.rows}: ${rows.length}`}
-            onQueryChange={setQuery}
+            companyOptions={companyOptions}
+            colorOptions={colorOptions}
+            materialOptions={materialOptions}
+            activeFilters={activeFilters}
+            statusText={loading ? t.loadingRows : `${t.rowsOnPage}: ${rows.length} • ${t.total}: ${totalCount}`}
+            onQueryChange={updateQuery}
             onToggleFilters={() => setShowFilters((current) => !current)}
-            onRoomFilterChange={setRoomFilter}
-            onTypeFilterChange={setTypeFilter}
-            onListingFilterChange={setListingFilter}
+            onPlaceFilterChange={(value) => updateSelectFilter(setPlaceFilter, normalizeSelectValue(value))}
+            onLocationFilterChange={(value) => updateSelectFilter(setLocationFilter, value)}
+            onQuantityFilterChange={(value) => updateSelectFilter(setQuantityFilter, normalizeSelectValue(value))}
+            onRoomFilterChange={(value) => updateSelectFilter(setRoomFilter, normalizeSelectValue(value))}
+            onTypeFilterChange={(value) => updateSelectFilter(setTypeFilter, normalizeSelectValue(value))}
+            onCompanyFilterChange={(value) => updateSelectFilter(setCompanyFilter, normalizeSelectValue(value))}
+            onColorFilterChange={(value) => updateSelectFilter(setColorFilter, normalizeSelectValue(value))}
+            onMaterialFilterChange={(value) => updateSelectFilter(setMaterialFilter, normalizeSelectValue(value))}
+            onListingFilterChange={(value) => updateSelectFilter(setListingFilter, value)}
+            onClearSingleFilter={clearSingleFilter}
             onReset={resetFiltersAndSearch}
-            labels={{ allRooms: t.allRooms, allTypes: t.allTypes, allListingStatuses: t.allListingStatuses, listed: t.listed, unlisted: t.unlisted, clear: t.clear }}
+            labels={{
+              allPlaces: t.allPlaces,
+              allLocations: t.allLocations,
+              allQuantities: t.allQuantities,
+              allRooms: t.allRooms,
+              allTypes: t.allTypes,
+              allCompanies: t.allCompanies,
+              allColors: t.allColors,
+              allMaterials: t.allMaterials,
+              allListingStatuses: t.allListingStatuses,
+              listed: t.listed,
+              unlisted: t.unlisted,
+              place: t.place,
+              location: t.location,
+              quantity: t.quantity,
+              room: t.room,
+              type: t.type,
+              company: t.company,
+              color: t.color,
+              material: t.material,
+              listing: t.status,
+              warehouse: t.warehouse,
+              store: t.store,
+              clear: t.clear,
+            }}
           />
         </CardContent>
       </Card>
@@ -364,10 +629,21 @@ export function SofortListTable() {
               {!error && rows.length > 0 ? (
                 <SofortListPagination
                   page={backendPage}
+                  totalPages={totalPages}
+                  totalCount={totalCount}
+                  pageSize={backendPageSize}
+                  pageSizeOptions={[10, 20, 50, 100]}
                   hasPrevPage={hasPrevPage}
                   hasNextPage={hasNextPage}
-                  onPrev={() => setBackendPage((page) => Math.max(1, page - 1))}
-                  onNext={() => setBackendPage((page) => page + 1)}
+                  labels={{
+                    rowsOnPage: t.rowsOnPage,
+                    total: t.total,
+                    previous: t.previous,
+                    next: t.next,
+                    page: t.page,
+                  }}
+                  onPageChange={setBackendPage}
+                  onPageSizeChange={updatePageSize}
                 />
               ) : null}
             </>
