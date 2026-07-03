@@ -10,6 +10,7 @@ from queue import Queue
 import logging
 import ast
 from decimal import Decimal, InvalidOperation
+import re
 import threading
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -213,6 +214,70 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
     }
     field_map["global"] = " ".join(value for value in field_map.values() if value)
     return field_map
+
+
+def _inventory_row_text_filter_value(row: dict, field_name: str) -> str:
+    haystacks = _inventory_row_search_haystacks(row)
+    return haystacks.get(field_name, "")
+
+
+def _inventory_row_matches_text_filter(row: dict, field_name: str, raw_value: str) -> bool:
+    normalized = _normalize_search_text(raw_value)
+    if not normalized:
+        return True
+    return normalized in _inventory_row_text_filter_value(row, field_name)
+
+
+def _inventory_row_matches_exact_text_filter(row: dict, field_name: str, raw_value: str) -> bool:
+    normalized = _normalize_search_text(raw_value)
+    if not normalized:
+        return True
+    return _inventory_row_text_filter_value(row, field_name) == normalized
+
+
+def _inventory_filter_option_values(rows: list[dict], field_name: str) -> list[str]:
+    values = {
+        str(row.get(field_name) or "").strip()
+        for row in rows
+        if str(row.get(field_name) or "").strip()
+    }
+    if field_name == "place":
+        return sorted(values, key=_inventory_place_sort_key)
+    return sorted(values, key=lambda value: value.lower())
+
+
+def _inventory_filter_quantity_values(rows: list[dict]) -> list[str]:
+    values = {
+        str(int(row.get("quantity") or 0))
+        for row in rows
+        if row.get("quantity") not in (None, "")
+    }
+    return sorted(values, key=lambda value: int(value))
+
+
+def _inventory_place_sort_key(value: str) -> tuple[tuple[int, int | str], ...]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ((1, ""),)
+
+    chunks = re.findall(r"\d+|[^\d]+", normalized)
+    key: list[tuple[int, int | str]] = []
+    for chunk in chunks:
+        if chunk.isdigit():
+            key.append((0, int(chunk)))
+        else:
+            key.append((1, chunk.lower()))
+    return tuple(key)
+
+
+def _sort_inventory_rows_by_place(rows: list[dict], descending: bool = False) -> list[dict]:
+    populated_rows = [row for row in rows if str(row.get("place") or "").strip()]
+    empty_rows = [row for row in rows if not str(row.get("place") or "").strip()]
+    populated_rows.sort(
+        key=lambda row: _inventory_place_sort_key(str(row.get("place") or "").strip()),
+        reverse=descending,
+    )
+    return [*populated_rows, *empty_rows]
 
 
 INVENTORY_QUERY_PREFIXES: tuple[tuple[str, str], ...] = (
@@ -1421,15 +1486,39 @@ class InventoryRowsAPIView(APIView):
             rows = [row for row in rows if int(row.get("kid_id") or 0) == kid_id]
 
         query_raw = str(request.query_params.get("q") or "").strip().lower()
+        place_raw = str(request.query_params.get("place") or "").strip()
+        location_raw = str(request.query_params.get("location") or "").strip().lower()
+        quantity_raw = str(request.query_params.get("quantity") or "").strip()
         room_raw = str(request.query_params.get("room") or "").strip().lower()
         type_raw = str(request.query_params.get("type") or "").strip().lower()
+        company_raw = str(request.query_params.get("company") or "").strip()
+        color_raw = str(request.query_params.get("color") or "").strip()
+        material_raw = str(request.query_params.get("material") or "").strip()
         listing_raw = str(request.query_params.get("listing") or "").strip().lower()
 
+        if place_raw:
+            rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "place", place_raw)]
+
+        if location_raw in {"warehouse", "store"}:
+            rows = [row for row in rows if _inventory_row_text_filter_value(row, "location") == location_raw]
+
+        if quantity_raw:
+            rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "quantity", quantity_raw)]
+
         if room_raw:
-            rows = [row for row in rows if str(row.get("room") or "").strip().lower() == room_raw]
+            rows = [row for row in rows if _inventory_row_matches_text_filter(row, "room", room_raw)]
 
         if type_raw:
-            rows = [row for row in rows if str(row.get("type") or "").strip().lower() == type_raw]
+            rows = [row for row in rows if _inventory_row_matches_text_filter(row, "type", type_raw)]
+
+        if company_raw:
+            rows = [row for row in rows if _inventory_row_matches_text_filter(row, "company", company_raw)]
+
+        if color_raw:
+            rows = [row for row in rows if _inventory_row_matches_text_filter(row, "color", color_raw)]
+
+        if material_raw:
+            rows = [row for row in rows if _inventory_row_matches_text_filter(row, "material", material_raw)]
 
         if listing_raw in {"listed", "unlisted"}:
             rows = [
@@ -1465,15 +1554,63 @@ class InventoryRowsAPIView(APIView):
         if sort_raw == "quantity":
             rows = sorted(rows, key=lambda row: int(row.get("quantity") or 0), reverse=reverse)
         elif sort_raw == "place":
-            rows = sorted(rows, key=lambda row: str(row.get("place") or ""), reverse=reverse)
+            rows = _sort_inventory_rows_by_place(rows, descending=reverse)
 
         place_sort_raw = str(request.query_params.get("place_sort") or "").strip().lower()
         if place_sort_raw in {"asc", "desc"} and sort_raw != "place":
-            rows = sorted(rows, key=lambda row: str(row.get("place") or ""), reverse=place_sort_raw == "desc")
+            rows = _sort_inventory_rows_by_place(rows, descending=place_sort_raw == "desc")
+        elif not sort_raw:
+            rows = _sort_inventory_rows_by_place(rows, descending=False)
 
         paginator = InventoryRowsPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         return paginator.get_paginated_response(page)
+
+
+class InventoryFilterOptionsAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        request_id = _request_id_from_request(request)
+        try:
+            rows = build_inventory_rows()
+        except (ProgrammingError, OperationalError) as exc:
+            logger.exception("INVENTORY_FILTER_OPTIONS_SCHEMA_ERROR code=inventory_filter_options_schema_error request_id=%s", request_id)
+            return Response(
+                {
+                    "code": "INVENTORY_FILTER_OPTIONS_SCHEMA_ERROR",
+                    "message": "Inventory filter options query failed due to database schema mismatch.",
+                    "request_id": request_id,
+                    "details": {
+                        "hint": "Apply latest database migrations in services/database_service.",
+                        "error": str(exc),
+                    },
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("INVENTORY_FILTER_OPTIONS_INTERNAL_ERROR code=inventory_filter_options_internal_error request_id=%s", request_id)
+            return Response(
+                {
+                    "code": "INVENTORY_FILTER_OPTIONS_INTERNAL_ERROR",
+                    "message": "Failed to load inventory filter options.",
+                    "request_id": request_id,
+                    "details": {"error": str(exc)},
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        payload = {
+            "places": _inventory_filter_option_values(rows, "place"),
+            "locations": sorted({_inventory_row_text_filter_value(row, "location") for row in rows if _inventory_row_text_filter_value(row, "location")}),
+            "quantities": _inventory_filter_quantity_values(rows),
+            "rooms": _inventory_filter_option_values(rows, "room"),
+            "types": _inventory_filter_option_values(rows, "type"),
+            "companies": _inventory_filter_option_values(rows, "company"),
+            "colors": _inventory_filter_option_values(rows, "color"),
+            "materials": _inventory_filter_option_values(rows, "material"),
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class KidsBulkUpdateAPIView(APIView):

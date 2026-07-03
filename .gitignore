@@ -17,7 +17,9 @@ apps/backend/.env.bak*
 apps/frontend/.env.local
 services/database-service/.env
 services/orchestrator/.env
-
+start-dev.ps1
+start-dev-mac.sh
+stop-dev-mac.sh
 node_modules/
 .next/
 dist/

@@ -1807,6 +1807,241 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(all(row["type"] == RU_SOFA for row in rows))
         self.assertTrue(all(row["listing_status"] == "listed" for row in rows))
 
+    def test_inventory_rows_filter_by_place_location_quantity_and_attributes(self):
+        self.kid.place = "A-12-BLUE"
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Corner Sofa"
+        self.kid.listing_status = "listed"
+        self.kid.store = True
+        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "store"])
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=7,
+            company="Nordic House",
+            color="Ocean Blue",
+            material="Soft Velvet",
+        )
+
+        other_kid = Kid.objects.create(
+            kid_number="FILTER-OTHER-001",
+            place="B-99",
+            room="Bedroom",
+            furniture_type="Chair",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(
+            kid=other_kid,
+            quantity=3,
+            company="Other Brand",
+            color="White",
+            material="Wood",
+        )
+        similar_quantity_kid = Kid.objects.create(
+            kid_number="FILTER-OTHER-017",
+            place="C-17",
+            room="Office",
+            furniture_type="Desk",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(
+            kid=similar_quantity_kid,
+            quantity=17,
+            company="Seventeen Brand",
+            color="Green",
+            material="Metal",
+        )
+
+        response = self.client.get(
+            "/api/v1/inventory/rows/?"
+            "place=A-12-BLUE&location=store&quantity=7&room=wohn&type=corner"
+            "&company=nordic&color=ocean&material=velvet&listing=listed&page_size=100"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        self.assertTrue(rows)
+        self.assertTrue(all(row["place"] == "A-12-BLUE" for row in rows))
+        self.assertTrue(all(row["quantity"] == 7 for row in rows))
+        self.assertTrue(all(str(row["room"]).lower() == "wohnzimmer" for row in rows))
+        self.assertTrue(all(str(row["type"]).lower() == "corner sofa" for row in rows))
+        self.assertTrue(all(str(row["company"]).lower() == "nordic house" for row in rows))
+        self.assertTrue(all(str(row["color"]).lower() == "ocean blue" for row in rows))
+        self.assertTrue(all(str(row["material"]).lower() == "soft velvet" for row in rows))
+        self.assertTrue(all(row["listing_status"] == "listed" for row in rows))
+        self.assertTrue(all(bool(row["store"]) is True for row in rows))
+        self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in rows))
+
+        quantity_partial = self.client.get("/api/v1/inventory/rows/?quantity=7&page_size=100")
+        self.assertEqual(quantity_partial.status_code, status.HTTP_200_OK)
+        quantity_rows = quantity_partial.data["results"]
+        self.assertTrue(quantity_rows)
+        self.assertTrue(any(int(row["kid_id"]) == self.kid.id for row in quantity_rows))
+        self.assertFalse(any(int(row["kid_id"]) == similar_quantity_kid.id for row in quantity_rows))
+
+    def test_inventory_rows_default_place_sort_is_ascending_and_empty_places_last(self):
+        self.kid.place = "B-99"
+        self.kid.save(update_fields=["place"])
+        ProductAttributes.objects.create(kid=self.kid, quantity=1)
+
+        first_kid = Kid.objects.create(
+            kid_number="PLACE-SORT-001",
+            place="A-12",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=first_kid, quantity=1)
+
+        empty_place_kid = Kid.objects.create(
+            kid_number="PLACE-SORT-EMPTY",
+            place="",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=empty_place_kid, quantity=1)
+
+        response = self.client.get("/api/v1/inventory/rows/?page_size=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        self.assertGreaterEqual(len(rows), 3)
+
+        relevant_rows = [
+            row
+            for row in rows
+            if int(row["kid_id"]) in {self.kid.id, first_kid.id, empty_place_kid.id}
+        ]
+        self.assertEqual(
+            [int(row["kid_id"]) for row in relevant_rows],
+            [first_kid.id, self.kid.id, empty_place_kid.id],
+        )
+        self.assertEqual([row["place"] for row in relevant_rows], ["A-12", "B-99", ""])
+        self.assertTrue(all(int(row["quantity"]) == 7 for row in quantity_rows))
+
+    def test_inventory_rows_default_place_sort_uses_natural_order(self):
+        self.kid.place = "10"
+        self.kid.save(update_fields=["place"])
+        ProductAttributes.objects.create(kid=self.kid, quantity=1)
+
+        place_1 = Kid.objects.create(
+            kid_number="PLACE-NATURAL-001",
+            place="1",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=place_1, quantity=1)
+
+        place_1a = Kid.objects.create(
+            kid_number="PLACE-NATURAL-001A",
+            place="1A",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=place_1a, quantity=1)
+
+        place_1b = Kid.objects.create(
+            kid_number="PLACE-NATURAL-001B",
+            place="1B",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=place_1b, quantity=1)
+
+        place_2 = Kid.objects.create(
+            kid_number="PLACE-NATURAL-002",
+            place="2",
+            listing_status="listed",
+            store=False,
+        )
+        ProductAttributes.objects.create(kid=place_2, quantity=1)
+
+        response = self.client.get("/api/v1/inventory/rows/?page_size=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        relevant_rows = [
+            row
+            for row in rows
+            if int(row["kid_id"]) in {self.kid.id, place_1.id, place_1a.id, place_1b.id, place_2.id}
+        ]
+        self.assertEqual(
+            [row["place"] for row in relevant_rows],
+            ["1", "1A", "1B", "2", "10"],
+        )
+
+    def test_inventory_filter_options_return_distinct_values_from_all_rows(self):
+        self.kid.place = "A-12-BLUE"
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Corner Sofa"
+        self.kid.store = True
+        self.kid.save(update_fields=["place", "room", "furniture_type", "store"])
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=7,
+            company="Ganasy",
+            color="Ocean Blue",
+            material="Velvet",
+        )
+
+        other_kid = Kid.objects.create(
+            kid_number="FILTER-OPTIONS-002",
+            place="B-99",
+            room="Bedroom",
+            furniture_type="Chair",
+            store=False,
+        )
+        ProductAttributes.objects.create(
+            kid=other_kid,
+            quantity=3,
+            company="Other Brand",
+            color="White",
+            material="Wood",
+        )
+
+        response = self.client.get("/api/v1/inventory/filter-options/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["locations"], ["warehouse", "store"])
+        self.assertIn("A-12-BLUE", response.data["places"])
+        self.assertIn("B-99", response.data["places"])
+        self.assertIn("7", response.data["quantities"])
+        self.assertIn("3", response.data["quantities"])
+        self.assertIn("Wohnzimmer", response.data["rooms"])
+        self.assertIn("Bedroom", response.data["rooms"])
+        self.assertIn("Corner Sofa", response.data["types"])
+        self.assertIn("Chair", response.data["types"])
+        self.assertIn("Ganasy", response.data["companies"])
+        self.assertIn("Other Brand", response.data["companies"])
+        self.assertIn("Ocean Blue", response.data["colors"])
+        self.assertIn("White", response.data["colors"])
+        self.assertIn("Velvet", response.data["materials"])
+        self.assertIn("Wood", response.data["materials"])
+
+    def test_inventory_filter_options_return_places_in_natural_order(self):
+        self.kid.place = "10"
+        self.kid.save(update_fields=["place"])
+        ProductAttributes.objects.create(kid=self.kid, quantity=1)
+
+        for kid_number, place in (
+            ("FILTER-PLACE-001", "1"),
+            ("FILTER-PLACE-001A", "1A"),
+            ("FILTER-PLACE-001B", "1B"),
+            ("FILTER-PLACE-002", "2"),
+        ):
+            kid = Kid.objects.create(
+                kid_number=kid_number,
+                place=place,
+                listing_status="listed",
+                store=False,
+            )
+            ProductAttributes.objects.create(kid=kid, quantity=1)
+
+        response = self.client.get("/api/v1/inventory/filter-options/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["places"][:5], ["1", "1A", "1B", "2", "10"])
+
     def test_inventory_rows_query_searches_across_kid_order_attributes_and_ean_fields(self):
         self.kid.place = "Place 12"
         self.kid.room = "Wohnzimmer"

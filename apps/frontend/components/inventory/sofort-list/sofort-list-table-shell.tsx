@@ -565,37 +565,49 @@ export function SofortListTableShell(props: {
     <div className="wh-sofort-table-shell">
       <div className="wh-sofort-table-frame">
         <div className="wh-sofort-table-wrap ui-desktop-rhythm-table hidden max-w-full overflow-x-hidden overflow-y-visible px-0 pb-0 pt-0 md:block">
-          <table className="ui-listing-table wh-sofort-data-table w-full border-separate border-spacing-y-0 text-left text-sm">
+          <table className="ui-listing-table wh-sofort-data-table wh-sofort-table-grid w-full border-separate border-spacing-y-0 text-left text-sm">
+            <colgroup>
+              <col className="wh-sofort-col wh-sofort-col--select" />
+              <col className="wh-sofort-col wh-sofort-col--place" />
+              <col className="wh-sofort-col wh-sofort-col--image" />
+              <col className="wh-sofort-col wh-sofort-col--product" />
+              <col className="wh-sofort-col wh-sofort-col--attributes" />
+              <col className="wh-sofort-col wh-sofort-col--commentary" />
+              <col className="wh-sofort-col wh-sofort-col--price" />
+              <col className="wh-sofort-col wh-sofort-col--marketplace" />
+              <col className="wh-sofort-col wh-sofort-col--actions" />
+              <col className="wh-sofort-col wh-sofort-col--hidden" />
+            </colgroup>
             <thead>
               <tr className="ui-table-head-row sticky top-0 z-10">
-                <th scope="col" className="ui-listing-head-cell w-[44px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--select wh-sofort-cell wh-sofort-cell--narrow py-3 text-center">
                   <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label="Select visible rows" />
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[92px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--place wh-sofort-cell py-3 text-left">
+                  <span className="ui-table-head-label">{labels.place.toUpperCase()}</span>
+                </th>
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--image wh-sofort-cell py-3 text-center">
                   <span className="ui-table-head-label">IMAGE</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[190px] px-2 py-3 text-left">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--product wh-sofort-cell py-3 text-left">
                   <span className="ui-table-head-label">PRODUCT</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[220px] px-2 py-3 text-left">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--attributes wh-sofort-cell py-3 text-left">
                   <span className="ui-table-head-label">ATTRIBUTES</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[180px] px-2 py-3 text-left">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--commentary wh-sofort-cell py-3 text-left">
                   <span className="ui-table-head-label">COMMENTARY</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[148px] px-2 py-3 text-left">
-                  <span className="ui-table-head-label">PRICE / EAN</span>
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--price wh-sofort-cell py-3 text-left">
+                  <span className="ui-table-head-label">EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell w-[260px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--marketplace wh-sofort-cell py-3 text-center">
                   <span className="ui-table-head-label">MARKETPLACE EAN</span>
                 </th>
-                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head w-[188px] px-2 py-3 text-center">
+                <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head wh-sofort-head-cell wh-sofort-head-cell--actions wh-sofort-cell py-3 text-center">
                   <span className="ui-table-head-label">ACTIONS</span>
                 </th>
-                <th scope="col" className="hidden w-20">
-                  <span className="inline-flex items-center gap-1">{labels.place.toUpperCase()}</span>
-                </th>
-                <th scope="col" className="hidden w-24">
+                <th scope="col" className="hidden wh-sofort-head-cell wh-sofort-head-cell--hidden">
                   <span className="inline-flex items-center gap-1">{labels.quantity.toUpperCase()}</span>
                 </th>
               </tr>
@@ -603,17 +615,27 @@ export function SofortListTableShell(props: {
             <tbody>
               {props.rows.map((row, index) => (
                 <tr key={row.id} className={`ui-table-row wh-sofort-table-row ${index % 2 === 0 ? "ui-table-row-even" : "ui-table-row-odd"}`}>
-                  <td className="px-2 py-3 text-center align-middle">
+                  <td className="wh-sofort-cell wh-sofort-cell--narrow py-3 text-center align-middle">
                     <Checkbox
                       checked={props.selectedRowIds.has(row.id)}
                       onCheckedChange={() => props.onToggleRowSelection(row.id)}
                       aria-label={`Select row ${row.kidNumber}`}
                     />
                   </td>
-                  <td className="px-3 py-3 text-center align-middle">
+                  <td className="wh-sofort-cell py-3 align-middle">
+                    <div className="wh-sofort-place-cell">
+                      <span className="wh-sofort-place-cell__value" title={row.place}>
+                        {props.highlightText(row.place, props.query)}
+                      </span>
+                      <span className="wh-sofort-place-cell__location" title={`Location ${row.store ? "Store" : "Warehouse"}`}>
+                        {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="wh-sofort-image-cell wh-sofort-cell py-3 text-center align-middle">
                     {row.photo !== "-" ? (
                       <button type="button" className="wh-sofort-product-cell__image" onClick={() => setFullscreenPhoto(row.photo)}>
-                        <Image src={row.photo} alt={`Kid ${row.kidNumber}`} width={144} height={144} unoptimized className="wh-sofort-photo" />
+                        <Image src={row.photo} alt={`Kid ${row.kidNumber}`} width={240} height={240} unoptimized className="wh-sofort-photo" />
                       </button>
                     ) : (
                       <div className="wh-sofort-product-cell__image">
@@ -621,20 +643,26 @@ export function SofortListTableShell(props: {
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-3 align-middle">
+                  <td className="wh-sofort-product-cell-wrap wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-product-cell">
                       <div className="wh-sofort-product-cell__content">
                         <p className="wh-sofort-product-cell__title wh-inventory-title-text">
                           <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID: </span>
                           <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Place ${row.place}`}>Place: {props.highlightText(row.place, props.query)}</p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Location ${row.store ? "Store" : "Warehouse"}`}>Location: {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `Price ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `Price ${displayNullable(row.price)}`}>
+                          Price: {props.highlightText(
+                            row.price !== null
+                              ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
+                              : displayNullable(row.price),
+                            props.query
+                          )}
+                        </p>
                         <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Quantity ${row.quantity}`}>Quantity: {props.highlightText(String(row.quantity), props.query)}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3 align-middle">
+                  <td className="wh-sofort-attributes-cell wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-warehouse-cell">
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Room ${displayNullable(row.room)}`}><span>Room:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Type ${displayNullable(row.furnitureType)}`}><span>Type:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
@@ -644,37 +672,30 @@ export function SofortListTableShell(props: {
                       <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Material ${displayNullable(row.material)}`}><span>Material:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
                     </div>
                   </td>
-                  <td className="px-3 py-3 align-middle">
+                  <td className="wh-sofort-commentary-cell-wrap wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-commentary-cell">
                       <p className="wh-sofort-commentary-text ui-table-data-secondary" title={displayNullable(row.commentary)}>
                         {props.highlightText(displayNullable(row.commentary), props.query)}
                       </p>
                     </div>
                   </td>
-                  <td className="px-3 py-3 align-middle">
+                  <td className="wh-sofort-price-ean-cell-wrap wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-price-ean-cell">
-                      <div className="wh-inventory-price-cell wh-sofort-price-cell" title={row.price !== null ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : displayNullable(row.price)}>
-                        {props.highlightText(
-                          row.price !== null
-                            ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
-                            : displayNullable(row.price),
-                          props.query
-                        )}
-                      </div>
-                      <Link href={`/inventory/kid/${row.kidId}`} className="wh-sofort-kid-link inline-flex flex-col items-start text-primary hover:underline">
+                      <span className="wh-sofort-kid-link inline-flex flex-col items-start text-slate-950">
                         <span title={row.ean.trim() && row.ean !== props.placeholderEan ? row.ean : "—"}>{props.highlightText(row.ean.trim() && row.ean !== props.placeholderEan ? row.ean : "—", props.query) || "—"}</span>
-                      </Link>
+                      </span>
                     </div>
                   </td>
-                  <td className="px-3 py-3 align-middle">
+                  <td className="wh-sofort-marketplace-cell wh-sofort-cell py-3 align-middle">
                     <SofortListMarketplaceMatrix
                       siteEans={row.siteEans}
+                      siteEanStatuses={row.siteEanStatuses}
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
                     />
                   </td>
-                  <td className="wh-sofort-actions-cell px-3 py-3 align-middle">
+                  <td className="wh-sofort-actions-cell wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-row-actions">
                       <Link
                         href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
@@ -694,7 +715,6 @@ export function SofortListTableShell(props: {
                       </Button>
                     </div>
                   </td>
-                  <td className="hidden">{row.place}</td>
                   <td className="hidden">{row.quantity}</td>
                 </tr>
               ))}

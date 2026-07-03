@@ -5,7 +5,6 @@ import { readAuth } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
 import { AppSidebar } from "./app-sidebar";
 import { MobileNavigation } from "./mobile-navigation";
-import { PageHeader } from "../ui/page-header";
 import { PageShell } from "../ui/page-shell";
 
 function applySidebarPreference(collapsed: boolean) {
@@ -27,6 +26,9 @@ export function AppShell({
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  void title;
+  void subtitle;
 
   useEffect(() => {
     const collapsed = window.localStorage.getItem("wh:sidebar-collapsed") === "1";
@@ -78,7 +80,6 @@ export function AppShell({
         <div className="wh-page-content">
           <div className="wh-page-content__inner">
             <PageShell>
-              <PageHeader title={title} subtitle={subtitle} />
               {children}
             </PageShell>
           </div>

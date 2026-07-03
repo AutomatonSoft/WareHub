@@ -18,6 +18,18 @@ export type SofortListRow = {
     hoodJv: string;
     hoodXl: string;
   };
+  siteEanStatuses: {
+    jv: boolean | null;
+    xl: boolean | null;
+    ottoJv: boolean | null;
+    ottoXl: boolean | null;
+    ebayJv: boolean | null;
+    ebayXl: boolean | null;
+    kauflandJv: boolean | null;
+    kauflandXl: boolean | null;
+    hoodJv: boolean | null;
+    hoodXl: boolean | null;
+  };
   photo: string;
   photoCount: number;
   place: string;

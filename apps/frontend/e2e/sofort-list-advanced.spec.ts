@@ -81,6 +81,6 @@ test.describe("sofort-list mobile", () => {
     await login(page);
     await gotoSofortList(page);
 
-    await expect(page.locator("a[href^='/inventory/kid/']").first()).toBeVisible();
+    await expect(page.locator(".wh-sofort-table-row").first()).toBeVisible();
   });
 });

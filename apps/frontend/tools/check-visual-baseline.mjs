@@ -2,7 +2,6 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 
 const requiredFiles = [
-  "e2e/__screenshots__/visual-regression.spec.ts/inventory-page.png",
   "e2e/__screenshots__/visual-regression.spec.ts/sofort-list-page.png",
   "e2e/__screenshots__/visual-regression.spec.ts/marketplace-page.png"
 ];

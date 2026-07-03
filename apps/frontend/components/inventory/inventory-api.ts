@@ -7,6 +7,16 @@ import { readAuth } from "../../app/client-api-shared";
 import { syncDatabaseServiceSession } from "../../app/services-session";
 
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
+export type InventoryFilterOptions = {
+  places: string[];
+  locations: Array<"warehouse" | "store">;
+  quantities: string[];
+  rooms: string[];
+  types: string[];
+  companies: string[];
+  colors: string[];
+  materials: string[];
+};
 
 type InventoryRowsFallbackResponse =
   | KidDto[]
@@ -223,9 +233,15 @@ export async function fetchInventoryRows(params: {
   page: number;
   pageSize: number;
   q?: string;
+  place?: string;
+  location?: "warehouse" | "store";
+  quantity?: string;
   placeSort?: "asc" | "desc";
   room?: string;
   type?: string;
+  company?: string;
+  color?: string;
+  material?: string;
   listing?: "listed" | "unlisted";
   sort?: "place" | "quantity";
   dir?: "asc" | "desc";
@@ -236,6 +252,15 @@ export async function fetchInventoryRows(params: {
   if (params.q?.trim()) {
     searchParams.set("q", params.q.trim());
   }
+  if (params.place?.trim()) {
+    searchParams.set("place", params.place.trim());
+  }
+  if (params.location === "warehouse" || params.location === "store") {
+    searchParams.set("location", params.location);
+  }
+  if (params.quantity?.trim()) {
+    searchParams.set("quantity", params.quantity.trim());
+  }
   if (params.placeSort === "asc" || params.placeSort === "desc") {
     searchParams.set("place_sort", params.placeSort);
   }
@@ -244,6 +269,15 @@ export async function fetchInventoryRows(params: {
   }
   if (params.type?.trim()) {
     searchParams.set("type", params.type.trim());
+  }
+  if (params.company?.trim()) {
+    searchParams.set("company", params.company.trim());
+  }
+  if (params.color?.trim()) {
+    searchParams.set("color", params.color.trim());
+  }
+  if (params.material?.trim()) {
+    searchParams.set("material", params.material.trim());
   }
   if (params.listing === "listed" || params.listing === "unlisted") {
     searchParams.set("listing", params.listing);
@@ -275,6 +309,27 @@ export async function fetchInventoryRows(params: {
   }
 
   return (await response.json()) as InventoryRowsApiResponse & InventoryRowsFallbackResponse;
+}
+
+export async function fetchInventoryFilterOptions(): Promise<InventoryFilterOptions> {
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/filter-options/", new URLSearchParams()));
+  let response = await requestFactory();
+
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as
+      | { code?: string; message?: string; request_id?: string; details?: Record<string, unknown> }
+      | null;
+    throw formatInventoryRowsRequestError(response, payload);
+  }
+
+  return (await response.json()) as InventoryFilterOptions;
 }
 
 export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Promise<InventoryRowsApiResponse> {
