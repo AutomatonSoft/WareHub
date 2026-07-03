@@ -14,40 +14,31 @@ class MarketplaceJobService:
         self.gateway = gateway
 
     def execute(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> MarketplaceToggleExecutionResult:
-        if inactive:
-            results = self._call_channel(
-                fallback_site_key="MARKETPLACE",
-                fallback_channel="MARKETPLACE",
-                request_id=request_id,
-                call=lambda: self.gateway.toggle_all_by_kid(
-                    kid_number=kid_number,
-                    inactive=True,
-                    request_id=request_id,
-                    place=place,
-                ),
-            )
-            success = sum(1 for item in results if item.ok)
-            failed = len(results) - success
-            if success == len(results):
-                status = "ok"
-            elif success == 0:
-                status = "failed"
-            else:
-                status = "partial"
-            return MarketplaceToggleExecutionResult(
-                status=status,
-                inactive=inactive,
-                summary=MarketplaceToggleSummary(total=len(results), success=success, failed=failed),
-                results=results,
-            )
-
         results: list[MarketplaceToggleResultItem] = []
         results.extend(
             self._call_channel(
                 fallback_site_key="JV",
                 fallback_channel="JV",
                 request_id=request_id,
-                call=lambda: self.gateway.toggle_jv_by_kid(kid_number=kid_number, inactive=inactive, request_id=request_id, place=place),
+                call=lambda: self.gateway.toggle_jv_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                    place=place,
+                ),
+            )
+        )
+        results.extend(
+            self._call_channel(
+                fallback_site_key="HOOD",
+                fallback_channel="HOOD",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_hood_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                    place=place,
+                ),
             )
         )
         results.extend(
@@ -62,6 +53,7 @@ class MarketplaceJobService:
                 ),
             )
         )
+        results = self._deduplicate_results(results)
 
         success = sum(1 for item in results if item.ok)
         failed = len(results) - success
@@ -77,6 +69,31 @@ class MarketplaceJobService:
             summary=MarketplaceToggleSummary(total=len(results), success=success, failed=failed),
             results=results,
         )
+
+    def _deduplicate_results(self, results: list[MarketplaceToggleResultItem]) -> list[MarketplaceToggleResultItem]:
+        by_site_key: dict[str, MarketplaceToggleResultItem] = {}
+        ordered_site_keys: list[str] = []
+        for item in results:
+            site_key = item.site_key.strip() or item.channel.strip() or "UNKNOWN"
+            if site_key not in by_site_key:
+                by_site_key[site_key] = item
+                ordered_site_keys.append(site_key)
+                continue
+            if self._prefer_result(candidate=item, current=by_site_key[site_key]):
+                by_site_key[site_key] = item
+        return [by_site_key[site_key] for site_key in ordered_site_keys]
+
+    def _prefer_result(self, *, candidate: MarketplaceToggleResultItem, current: MarketplaceToggleResultItem) -> bool:
+        return self._result_rank(candidate) > self._result_rank(current)
+
+    def _result_rank(self, item: MarketplaceToggleResultItem) -> int:
+        details = item.details if isinstance(item.details, dict) else {}
+        code = str(details.get("code") or "").strip()
+        if code == "marketplace_local_status_updated":
+            return 1
+        if item.ok:
+            return 3
+        return 2
 
     def _call_channel(
         self,

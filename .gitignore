@@ -4,11 +4,13 @@
 .claude/settings.local.json
 .claude/skills/
 .mcp.json
+.claude*
 !.env.*.example
 .env.local
 *.local
 *.bak
 *.bak-*
+*.xlsx
 .env.bak*
 *.env.bak
 *.env.bak-*
@@ -60,6 +62,7 @@ logs/local-dev/
 *.generated.env
 *.stage.env
 warehub-env-review.txt
+.claude
 
 # Local orchestrator runtime data
 services/orchestrator/data/
@@ -78,3 +81,8 @@ data/*.sqlite3
 data/*.sqlite3-*
 data/*.db
 data/*.db-*
+
+start-dev-mac.sh
+start-dev.ps1
+stop-dev-mac.sh
+start-local-apps.ps1

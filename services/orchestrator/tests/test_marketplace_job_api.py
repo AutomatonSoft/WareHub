@@ -160,9 +160,6 @@ class FakeMarketplaceGateway:
 
 
 class TimeoutMarketplaceGateway(FakeMarketplaceGateway):
-    def toggle_all_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
-        raise RetryExhaustedError("timed out", kind="timeout")
-
     def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         raise RetryExhaustedError("timed out", kind="timeout")
 
@@ -202,13 +199,16 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)
     assert result.status == "ok"
-    assert result.summary.total == 3
-    assert result.summary.success == 3
+    assert result.summary.total == 6
+    assert result.summary.success == 6
     assert result.summary.failed == 0
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
+    assert site_keys["JV_AT"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
+    assert site_keys["EBAY_JV"].ok is True
+    assert site_keys["KAUFLAND_JV"].ok is True
 
 
 def test_marketplace_job_service_activate_combines_jv_and_local_channels():
@@ -217,6 +217,7 @@ def test_marketplace_job_service_activate_combines_jv_and_local_channels():
     assert result.status == "ok"
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
+    assert site_keys["JV_AT"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
     assert site_keys["EBAY_JV"].ok is True
@@ -226,11 +227,12 @@ def test_marketplace_job_service_activate_combines_jv_and_local_channels():
 def test_marketplace_job_service_returns_partial_result_when_jv_times_out():
     service = MarketplaceJobService(gateway=TimeoutMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-timeout", place=None)
-    assert result.status == "failed"
-    row = next(item for item in result.results if item.site_key == "MARKETPLACE")
+    assert result.status == "partial"
+    row = next(item for item in result.results if item.site_key == "JV")
     assert row.ok is False
     assert row.status_code == 504
     assert row.details["code"] == "orchestrator_marketplace_toggle_timeout"
+    assert any(item.site_key == "HOOD_JV" and item.ok for item in result.results)
 
 
 def test_marketplace_toggle_job_create_accepts_place(tmp_path):

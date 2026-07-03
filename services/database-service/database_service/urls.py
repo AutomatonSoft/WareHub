@@ -34,6 +34,7 @@ from database.views import (
     KidGreenImportAPIView,
     KidGreenImportJobStatusAPIView,
     KidsBulkUpdateAPIView,
+    KidCompositeUpdateAPIView,
     KidListCreateAPIView,
     KidEanSummaryAPIView,
     KidMarketplaceEansAPIView,
@@ -98,6 +99,28 @@ from kaufland.views import (
     GetProductAPIView
 )
 from database_service.openapi_schema import generate_openapi_document
+from telegram_service.config import load_telegram_runtime_config
+from telegram_service.views import TelegramWebhookAPIView
+
+
+_telegram_runtime_config = load_telegram_runtime_config()
+
+
+def _telegram_webhook_route_paths() -> list[str]:
+    canonical = "/api/v1/telegram/webhook/"
+    configured = _telegram_runtime_config.webhook_path
+    candidates = [canonical, configured]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_path in candidates:
+        trimmed = "/" + str(raw_path or "").strip().strip("/") + "/"
+        for variant in (trimmed, trimmed.rstrip("/")):
+            route_path = variant.lstrip("/")
+            if not route_path or route_path in seen:
+                continue
+            seen.add(route_path)
+            normalized.append(route_path)
+    return normalized
 
 api_v1_patterns = [
     path("api/v1/healthz", ServiceHealthAPIView.as_view(), name="service-health-v1-noslash"),
@@ -107,6 +130,7 @@ api_v1_patterns = [
     path("api/v1/dev/session/sync/", DevBackendSessionSyncAPIView.as_view(), name="dev-backend-session-sync-v1"),
     path("api/v1/kids/", KidListCreateAPIView.as_view(), name="kid-list-create-v1"),
     path("api/v1/kids/<int:pk>/", KidRetrieveUpdateAPIView.as_view(), name="kid-detail-v1"),
+    path("api/v1/kids/<int:pk>/composite-update/", KidCompositeUpdateAPIView.as_view(), name="kid-composite-update-v1"),
     path("api/v1/kids/bulk-update/", KidsBulkUpdateAPIView.as_view(), name="kids-bulk-update-v1"),
     path("api/v1/orders/", OrderListCreateAPIView.as_view(), name="order-list-create-v1"),
     path("api/v1/orders/<int:pk>/", OrderRetrieveUpdateAPIView.as_view(), name="order-detail-v1"),
@@ -299,6 +323,15 @@ api_v1_patterns = [
         name="jv-product-create-job-v1",
     ),
 ]
+
+for index, webhook_route_path in enumerate(_telegram_webhook_route_paths()):
+    api_v1_patterns.append(
+        path(
+            webhook_route_path,
+            TelegramWebhookAPIView.as_view(),
+            name="telegram-webhook-v1" if index == 0 else f"telegram-webhook-v1-alias-{index}",
+        )
+    )
 
 class OpenApiSchemaView(APIView):
     permission_classes = [AllowAny]

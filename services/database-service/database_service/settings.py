@@ -33,7 +33,14 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-s@#b7z^&ktmvmezo9%70rme!*b
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
+def _csv_env(name: str, default: str = "") -> list[str]:
+    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+
+
+ALLOWED_HOSTS = [
+    * _csv_env("ALLOWED_HOSTS", "127.0.0.1,localhost"),
+    * [host for host in _csv_env("ALLOWED_HOSTS_EXTRA") if host not in _csv_env("ALLOWED_HOSTS", "127.0.0.1,localhost")],
+]
 
 
 # Application definition
@@ -56,6 +63,7 @@ INSTALLED_APPS = [
     'xl_services',
     'kaufland',
     'create_products',
+    'telegram_service',
 ]
 
 MIDDLEWARE = [

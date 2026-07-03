@@ -156,6 +156,25 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(str(attrs.price), "349.99")
         self.assertEqual(attrs.currency, "EUR")
 
+    def test_create_kid_accepts_main_ean(self):
+        payload = {
+            "kid_number": "900906",
+            "place": "12",
+            "main_ean": "4062292028939",
+            "quantity": 3,
+            "price": "349.99",
+        }
+
+        response = self.client.post("/api/v1/kids/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        kid = Kid.objects.get(kid_number__contains=["900906"])
+        ean_row = Ean.objects.get(kid=kid)
+        attrs = ProductAttributes.objects.get(kid=kid)
+        self.assertEqual(ean_row.main_ean, "4062292028939")
+        self.assertEqual(attrs.quantity, 3)
+        self.assertEqual(str(attrs.price), "349.99")
+
     def test_create_kid_is_idempotent_by_kid_number(self):
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}
         response = self.client.post("/api/v1/kids/", payload, format="json")
@@ -210,6 +229,76 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.material, "Wood")
         self.assertEqual(str(attrs.price), "199.50")
         self.assertEqual(attrs.currency, "EUR")
+
+    def test_kid_composite_update_updates_kid_ean_product_attributes_and_order(self):
+        ean_row = Ean.objects.create(kid=self.kid, jv="1111111111111")
+        attrs_row = ProductAttributes.objects.create(kid=self.kid, quantity=1, company="Old Co")
+
+        payload = {
+            "kid": {
+                "place": "B-12",
+                "room": "Bedroom",
+                "listing_status": "listed",
+                "commentary": "Updated from composite endpoint",
+            },
+            "ean": {
+                "jv": "4062292028939",
+                "hood_jv": "4062292028939",
+            },
+            "product_attributes": {
+                "quantity": 7,
+                "company": "New Co",
+                "price": "499.90",
+                "currency": "USD",
+            },
+            "orders": [
+                {
+                    "id": self.order.id,
+                    "order_id": "ORDER-002",
+                    "title": "Updated order",
+                    "status": "paid",
+                }
+            ],
+        }
+
+        response = self.client.patch(f"/api/v1/kids/{self.kid.id}/composite-update/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.kid.refresh_from_db()
+        ean_row.refresh_from_db()
+        attrs_row.refresh_from_db()
+        self.order.refresh_from_db()
+
+        self.assertEqual(self.kid.place, "B-12")
+        self.assertEqual(self.kid.room, "Bedroom")
+        self.assertEqual(self.kid.listing_status, "listed")
+        self.assertEqual(self.kid.commentary, "Updated from composite endpoint")
+        self.assertEqual(ean_row.jv, "4062292028939")
+        self.assertEqual(ean_row.hood_jv, "4062292028939")
+        self.assertEqual(attrs_row.quantity, 7)
+        self.assertEqual(attrs_row.company, "New Co")
+        self.assertEqual(str(attrs_row.price), "499.90")
+        self.assertEqual(attrs_row.currency, "USD")
+        self.assertEqual(self.order.order_id, "ORDER-002")
+        self.assertEqual(self.order.title, "Updated order")
+        self.assertEqual(self.order.status, "paid")
+
+    def test_kid_composite_update_rejects_order_from_another_kid(self):
+        other_kid = Kid.objects.create(kid_number="99887766")
+        other_order = Orders.objects.create(
+            kid=other_kid,
+            order_id="ORDER-OTHER",
+            title="Other order",
+            status="no_paid",
+        )
+
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/composite-update/",
+            {"orders": [{"id": other_order.id, "title": "Should fail"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_kid_green_import_requires_file_or_body(self):
         response = self.client.post("/api/v1/kids/import-kid-green/", {}, format="multipart")

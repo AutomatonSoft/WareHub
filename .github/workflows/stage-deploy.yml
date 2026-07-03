@@ -268,6 +268,11 @@ jobs:
         env:
           SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
           STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
+          ALLOWED_HOSTS_EXTRA_VALUE: ${{ vars.ALLOWED_HOSTS_EXTRA }}
+          TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_WEBHOOK_SECRET_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
           umask 077
@@ -285,6 +290,11 @@ jobs:
           {
             printf '%s\n' "${SHARED_ENV_FILE_SECRET:-}"
             printf '%s\n' "${STAGE_ENV_FILE_SECRET:-}"
+            printf 'ALLOWED_HOSTS_EXTRA=%s\n' "${ALLOWED_HOSTS_EXTRA_VALUE:-}"
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "${TELEGRAM_BOT_TOKEN_SECRET:-}"
+            printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
+            printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "${TELEGRAM_WEBHOOK_SECRET_SECRET:-}"
+            printf 'TELEGRAM_WEBHOOK_PATH=%s\n' "${TELEGRAM_WEBHOOK_PATH_VALUE:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/stage/env.stage.sanitized.template \

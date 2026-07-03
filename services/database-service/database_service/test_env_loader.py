@@ -71,3 +71,34 @@ def test_settings_reads_only_repo_root_dotenv_without_overriding_process_values(
     assert module.DATABASES["default"]["USER"] == "root-user"
     assert module.DATABASES["default"]["HOST"] == "root-host"
     assert module.DATABASES["default"]["PORT"] == "6543"
+
+
+def test_settings_appends_allowed_hosts_extra_without_overriding_primary_value(tmp_path, monkeypatch):
+    monkeypatch.delenv("ALLOWED_HOSTS", raising=False)
+    monkeypatch.delenv("ALLOWED_HOSTS_EXTRA", raising=False)
+
+    module_path = tmp_path / "repo" / "services" / "database-service" / "database_service" / "settings.py"
+    module_path.parent.mkdir(parents=True)
+    source = Path(__file__).resolve().parent / "settings.py"
+    module_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    repo_root_env = module_path.parents[3] / ".env"
+    repo_root_env.write_text(
+        "\n".join(
+            (
+                "ALLOWED_HOSTS=127.0.0.1,localhost",
+                "ALLOWED_HOSTS_EXTRA=.trycloudflare.com,announce-wings-critical-oil.trycloudflare.com",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    module = _load_settings_module(module_path, "test_database_service_settings_allowed_hosts_extra")
+
+    assert module.ALLOWED_HOSTS == [
+        "127.0.0.1",
+        "localhost",
+        ".trycloudflare.com",
+        "announce-wings-critical-oil.trycloudflare.com",
+    ]
