@@ -96,9 +96,14 @@ $jvPerSiteFtpKeys = @(
 # ${VAR:-} so a deploy without the key stays valid; translation no-ops until set.
 $openAiTranslationKeys = @('OPENAI_API_KEY','OPENAI_TRANSLATION_MODEL')
 
+# Telegram bot/webhook integration. Optional/empty: forwarded with ${VAR:-}
+# so deploys stay valid when Telegram is disabled; webhook returns disabled until set.
+$telegramRuntimeKeys = @('TELEGRAM_BOT_TOKEN','TELEGRAM_CHAT_ID','TELEGRAM_WEBHOOK_SECRET','TELEGRAM_WEBHOOK_PATH')
+$servicesOptionalRuntimeKeys = @('ALLOWED_HOSTS_EXTRA') + $telegramRuntimeKeys
+
 $optionalEmptyKeysByEnvironment = @{
-  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX') + $jvPerSiteFtpKeys + $openAiTranslationKeys
-  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL') + $jvPerSiteFtpKeys + $openAiTranslationKeys
+  stage = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','JV_SOURCE_JV_DE_DB_PREFIX','JV_SOURCE_JV_AT_DB_PREFIX','JV_SOURCE_JV_CH_DB_PREFIX','JV_SOURCE_JV_CO_UK_DB_PREFIX') + $jvPerSiteFtpKeys + $openAiTranslationKeys + $servicesOptionalRuntimeKeys
+  prod = @('MOBILE_STAGE_APP_VERSION','MOBILE_STAGE_APK_URL','MOBILE_PROD_APP_VERSION','MOBILE_PROD_APK_URL') + $jvPerSiteFtpKeys + $openAiTranslationKeys + $servicesOptionalRuntimeKeys
 }
 
 $sampleRateKeysByEnvironment = @{

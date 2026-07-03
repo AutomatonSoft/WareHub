@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from typing import Any
+
+import requests
+
+from .config import TelegramRuntimeConfig
+
+
+class TelegramKidsClient:
+    def __init__(self, config: TelegramRuntimeConfig) -> None:
+        self.config = config
+
+    def create_kid(self, *, kid_number: str, place: str, main_ean: str, quantity: int, price: str) -> dict[str, Any]:
+        response = requests.post(
+            f"{self.config.services_base_url}/api/v1/kids/",
+            json={
+                "kid_number": str(kid_number).strip(),
+                "place": str(place).strip(),
+                "main_ean": str(main_ean).strip(),
+                "quantity": int(quantity),
+                "price": str(price).strip(),
+            },
+            headers={
+                "x-warehub-service-token": self.config.service_auth_token,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Kids create returned non-object payload.")
+        return {
+            "status_code": response.status_code,
+            "data": payload,
+        }

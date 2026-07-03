@@ -9,11 +9,12 @@ function displayEan(value: string, placeholder: string): string {
 
 export function SofortListMarketplaceMatrix(props: {
   siteEans: SofortListRow["siteEans"];
+  siteEanStatuses: SofortListRow["siteEanStatuses"];
   query: string;
   placeholderEan: string;
   highlightText: HighlightText;
 }) {
-  const rows = buildMarketplaceMatrixRows(props.siteEans, props.query, props.placeholderEan);
+  const rows = buildMarketplaceMatrixRows(props.siteEans, props.siteEanStatuses, props.query, props.placeholderEan);
 
   return (
     <div className="wh-sofort-marketplace-matrix" role="group" aria-label="Marketplace EAN matrix">
@@ -40,9 +41,9 @@ export function SofortListMarketplaceMatrix(props: {
                 className={`rounded-lg px-2 py-1 transition ${
                   cell.matches
                     ? "bg-amber-200 text-slate-950 ring-1 ring-amber-400 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.45)]"
-                    : cell.isEmpty
-                      ? "text-slate-400"
-                      : ""
+                    : cell.status === true
+                      ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                      : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
                 }`}
                 aria-label={`${row.market} ${cell.key} ${cell.matches ? "matched" : "value"}`}
                 title={displayValue === "—" ? undefined : displayValue}

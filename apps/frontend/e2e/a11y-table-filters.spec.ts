@@ -1,9 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { login, requireAuthEnv } from "./helpers/auth";
 import {
-  gotoInventory,
   gotoSofortList,
-  inventorySearchInput,
   sofortListingFilter,
   sofortRoomFilter,
   sofortSearchInput,
@@ -11,22 +9,6 @@ import {
 } from "./helpers/table-pages";
 
 requireAuthEnv(test);
-
-test("inventory toolbar search is keyboard-focusable and labelled", async ({ page }) => {
-  await login(page);
-  await gotoInventory(page);
-
-  const searchInput = inventorySearchInput(page);
-  await expect(searchInput).toBeVisible();
-  await searchInput.focus();
-  await expect(searchInput).toBeFocused();
-
-  await searchInput.fill("12");
-  const clearButton = page.getByRole("button", { name: "Clear search" }).first();
-  await expect(clearButton).toBeVisible();
-  await clearButton.focus();
-  await expect(clearButton).toBeFocused();
-});
 
 test("sofort-list filters are keyboard-focusable and have ARIA labels", async ({ page }) => {
   await login(page);

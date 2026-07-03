@@ -17,6 +17,7 @@ class ApiDocsTests(APITestCase):
         self.assertIn("/api/v1/afterbuy/items/search/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/items/search-web/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/orders/create/", response.data["paths"])
+        self.assertIn("/api/v1/telegram/webhook/", response.data["paths"])
         self.assertIn("tags", response.data)
         self.assertIn("x-tagGroups", response.data)
 
@@ -33,3 +34,14 @@ class ApiDocsTests(APITestCase):
         self.assertIn("security", session_sync)
         self.assertIn("401", session_sync["responses"])
         self.assertIn("502", session_sync["responses"])
+
+        telegram_webhook = response.data["paths"]["/api/v1/telegram/webhook/"]["post"]
+        self.assertEqual(telegram_webhook["summary"], "Handle Telegram webhook update")
+        self.assertEqual(telegram_webhook["tags"], ["Telegram"])
+        self.assertEqual(telegram_webhook["security"], [{"telegramWebhookSecret": []}])
+        self.assertEqual(
+            telegram_webhook["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/TelegramUpdate",
+        )
+        self.assertIn("200", telegram_webhook["responses"])
+        self.assertIn("503", telegram_webhook["responses"])

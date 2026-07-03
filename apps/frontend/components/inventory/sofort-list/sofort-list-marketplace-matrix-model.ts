@@ -5,6 +5,7 @@ type MarketplaceKey = keyof SofortListRow["siteEans"];
 export type MarketplaceMatrixCellState = {
   key: MarketplaceKey;
   value: string;
+  status: boolean | null;
   matches: boolean;
   isEmpty: boolean;
 };
@@ -32,6 +33,7 @@ function isMeaningfulValue(value: string, placeholderEan: string): boolean {
 function buildCellState(
   key: MarketplaceKey,
   value: string,
+  status: boolean | null,
   placeholderEan: string,
   tokens: string[]
 ): MarketplaceMatrixCellState {
@@ -39,11 +41,12 @@ function buildCellState(
   const isEmpty = !isMeaningfulValue(normalized, placeholderEan);
   const searchable = normalized.toLowerCase();
   const matches = !isEmpty && tokens.length > 0 && tokens.every((token) => searchable.includes(token));
-  return { key, value, matches, isEmpty };
+  return { key, value, status, matches, isEmpty };
 }
 
 export function buildMarketplaceMatrixRows(
   siteEans: SofortListRow["siteEans"],
+  siteEanStatuses: SofortListRow["siteEanStatuses"],
   query: string,
   placeholderEan: string
 ): MarketplaceMatrixRowState[] {
@@ -58,8 +61,8 @@ export function buildMarketplaceMatrixRows(
 
   return rows.map(({ market, keys }) => {
     const cells: [MarketplaceMatrixCellState, MarketplaceMatrixCellState] = [
-      buildCellState(keys[0], siteEans[keys[0]], placeholderEan, tokens),
-      buildCellState(keys[1], siteEans[keys[1]], placeholderEan, tokens)
+      buildCellState(keys[0], siteEans[keys[0]], siteEanStatuses[keys[0]], placeholderEan, tokens),
+      buildCellState(keys[1], siteEans[keys[1]], siteEanStatuses[keys[1]], placeholderEan, tokens)
     ];
     return {
       market,

@@ -1,10 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-export async function gotoInventory(page: Page, href = "/inventory") {
-  await page.goto(href);
-  await expect(page).toHaveURL(/\/inventory/);
-}
-
 export async function gotoSofortList(page: Page, href = "/sofort-list") {
   await page.goto(href);
   await expect(page).toHaveURL(/\/sofort-list/);
@@ -13,10 +8,6 @@ export async function gotoSofortList(page: Page, href = "/sofort-list") {
 export async function gotoProfile(page: Page) {
   await page.goto("/profile");
   await expect(page).toHaveURL(/\/profile/);
-}
-
-export function inventorySearchInput(page: Page): Locator {
-  return page.getByLabel("Search in table").first();
 }
 
 export function sofortSearchInput(page: Page): Locator {

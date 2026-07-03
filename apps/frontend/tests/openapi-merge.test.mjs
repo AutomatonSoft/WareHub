@@ -255,6 +255,7 @@ test("openapi remap: services canonicalization covers legacy and generic routes"
   assert.equal(remapPathForFrontendProxy("services", "/api/v1/jv/sites/"), "/api/v1/services/jv/sites/");
   assert.equal(remapPathForFrontendProxy("services", "/api/v1/xl/items/by-ean/123/"), "/api/v1/services/xl/items/by-ean/123/");
   assert.equal(remapPathForFrontendProxy("services", "/api/v1/hood/items/by-ean/123/"), "/api/v1/services/hood/items/by-ean/123/");
+  assert.equal(remapPathForFrontendProxy("services", "/api/v1/telegram/webhook/"), "/api/v1/services/telegram/webhook/");
   assert.equal(remapPathForFrontendProxy("services", "/api/v1/uploads/images/"), "/api/v1/services/uploads/images/");
   assert.equal(remapPathForFrontendProxy("services", "/api/v1/services/orders/"), "/api/v1/services/orders/");
   assert.equal(remapPathForFrontendProxy("services", "api/v1/orders/"), "/api/v1/services/orders/");

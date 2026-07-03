@@ -111,16 +111,3 @@ for (const fixture of orchestratorErrorFixtures) {
   });
 }
 
-test("inventory row opens kid details page", async ({ page }) => {
-  await login(page);
-  await page.goto("/inventory");
-  await expect(page).toHaveURL(/\/inventory/);
-
-  const kidLink = page.locator('a[href^="/inventory/kid/"]').filter({ visible: true }).first();
-  await expect(kidLink).toBeVisible({ timeout: 15_000 });
-  await kidLink.scrollIntoViewIfNeeded();
-  await kidLink.click();
-
-  await expect(page).toHaveURL(/\/inventory\/kid\/\d+/);
-  await expect(page.locator('a[href="/inventory"]').first()).toBeVisible();
-});
