@@ -83,3 +83,4 @@ data/*.db-*
 start-dev-mac.sh
 start-dev.ps1
 stop-dev-mac.sh
+start-local-apps.ps1
