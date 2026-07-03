@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
-from .models import EANPool, EANUsage, Kid, Orders
+from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
 
 
 class KidModelSerializer(serializers.ModelSerializer):
@@ -45,6 +45,24 @@ class KidUserReadSerializer(serializers.ModelSerializer):
 
     def get_kid_number(self, obj):
         return primary_kid_number(obj.kid_number)
+
+
+class KidCompositePatchSerializer(KidModelSerializer):
+    class Meta(KidModelSerializer.Meta):
+        model = Kid
+        fields = (
+            "kid_number",
+            "account",
+            "place",
+            "store",
+            "photo",
+            "room",
+            "furniture_type",
+            "listing_status",
+            "b_ware",
+            "commentary",
+            "in_transit",
+        )
 
 
 class OrderModelSerializer(serializers.ModelSerializer):
@@ -105,6 +123,49 @@ class OrderUserReadSerializer(serializers.ModelSerializer):
 
     def get_kid_number(self, obj):
         return primary_kid_number(obj.kid.kid_number)
+
+
+class EanPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ean
+        exclude = ("kid",)
+
+
+class ProductAttributesPatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductAttributes
+        exclude = ("kid", "created_at", "updated_at")
+
+
+class OrderCompositePatchItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    order_id = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    platform = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    buyer = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    title = serializers.CharField(required=False, allow_blank=False)
+    memo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    status = serializers.CharField(required=False, allow_blank=False, max_length=10)
+    date = serializers.DateTimeField(required=False, allow_null=True)
+    payment_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    additional_items = serializers.JSONField(required=False)
+
+    def validate(self, attrs):
+        if len(attrs) == 1 and "id" in attrs:
+            raise serializers.ValidationError("Order update must include at least one field besides id.")
+        return attrs
+
+
+class KidCompositeUpdateRequestSerializer(serializers.Serializer):
+    kid = KidCompositePatchSerializer(required=False)
+    ean = EanPatchSerializer(required=False)
+    product_attributes = ProductAttributesPatchSerializer(required=False)
+    orders = OrderCompositePatchItemSerializer(many=True, required=False)
+
+    def validate(self, attrs):
+        if not any(key in attrs for key in ("kid", "ean", "product_attributes", "orders")):
+            raise serializers.ValidationError("At least one of kid, ean, product_attributes, orders is required.")
+        return attrs
 
 
 class EANPoolSerializer(serializers.ModelSerializer):

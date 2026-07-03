@@ -10,6 +10,7 @@ app_pid_filenames=(
   "backend.pid"
   "database-service.pid"
   "database-service-jv-worker.pid"
+  "database-service-telegram-notifier.pid"
   "orchestrator.pid"
 )
 

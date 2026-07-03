@@ -51,10 +51,14 @@ from .serializers import (
     EANPoolSerializer,
     EANUsageMarkSerializer,
     EANUsageSerializer,
+    EanPatchSerializer,
+    KidCompositePatchSerializer,
+    KidCompositeUpdateRequestSerializer,
     KidModelSerializer,
     KidUserReadSerializer,
     OrderModelSerializer,
     OrderUserReadSerializer,
+    ProductAttributesPatchSerializer,
 )
 from orders_pars.service import (
     collapse_items_to_orders,
@@ -732,6 +736,25 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         return attrs
 
+    @classmethod
+    def _extract_create_main_ean(cls, data, query):
+        raw_main = cls._coalesce_value(data, query, "main_ean")
+        if raw_main in (None, ""):
+            raw_main = cls._coalesce_value(data, query, "database_ean")
+        normalized = KidMarketplaceEanAPIView._normalize_optional_ean(raw_main)
+        if normalized is not None:
+            cls._validate_ean(normalized, "main_ean")
+        return normalized
+
+    @staticmethod
+    def _upsert_main_ean(kid, main_ean: str | None):
+        if main_ean is None:
+            return
+        ean_row, _ = Ean.objects.get_or_create(kid=kid)
+        if getattr(ean_row, "main_ean", None) != main_ean:
+            ean_row.main_ean = main_ean
+            ean_row.save(update_fields=["main_ean"])
+
     @staticmethod
     def _upsert_product_attributes(kid, attrs: dict):
         if not attrs:
@@ -794,13 +817,14 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             payload["account"] = str(account).strip().upper()
         furniture_type = self._extract_furniture_type(payload, query)
         product_attrs = self._extract_product_attributes(payload, query)
+        main_ean = self._extract_create_main_ean(payload, query)
         if furniture_type is not None:
             payload["furniture_type"] = furniture_type
         try:
             payload.pop("type")
         except Exception:
             pass
-        for attr_key in ("company", "color", "size", "material", "price", "quantity", "currency"):
+        for attr_key in ("company", "color", "size", "material", "price", "quantity", "currency", "main_ean", "database_ean"):
             try:
                 payload.pop(attr_key)
             except Exception:
@@ -851,6 +875,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
                 kid, sync_summary = self.perform_create(serializer)
                 self._upsert_product_attributes(kid, product_attrs)
                 self._ensure_database_ean_defaults(kid)
+                self._upsert_main_ean(kid, main_ean)
             output = self.get_serializer(kid)
             headers = self.get_success_headers(output.data)
             response_data = dict(output.data)
@@ -870,6 +895,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         self._upsert_product_attributes(existing, product_attrs)
         self._ensure_database_ean_defaults(existing)
+        self._upsert_main_ean(existing, main_ean)
         sync_summary = self._sync_orders_for_kid(existing)
         output = self.get_serializer(existing)
         response_data = dict(output.data)
@@ -981,6 +1007,75 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class KidCompositeUpdateAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def patch(self, request, pk: int):
+        kid = get_object_or_404(Kid, pk=pk)
+        request_serializer = KidCompositeUpdateRequestSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        payload = request_serializer.validated_data
+
+        old_photos = _normalize_photo_list(kid.photo)
+        removed_photos: list[str] = []
+        updated_orders: list[Orders] = []
+
+        with transaction.atomic():
+            kid_payload = payload.get("kid")
+            if isinstance(kid_payload, dict):
+                kid_serializer = KidCompositePatchSerializer(kid, data=kid_payload, partial=True)
+                kid_serializer.is_valid(raise_exception=True)
+                if "photo" in kid_serializer.validated_data:
+                    next_photos = _normalize_photo_list(kid_serializer.validated_data.get("photo"))
+                    removed_photos = [url for url in old_photos if url not in next_photos]
+                kid_serializer.save()
+
+            ean_payload = payload.get("ean")
+            if isinstance(ean_payload, dict):
+                ean_row, _ = Ean.objects.get_or_create(kid=kid)
+                ean_serializer = EanPatchSerializer(ean_row, data=ean_payload, partial=True)
+                ean_serializer.is_valid(raise_exception=True)
+                ean_serializer.save()
+
+            attrs_payload = payload.get("product_attributes")
+            if isinstance(attrs_payload, dict):
+                attrs_row, _ = ProductAttributes.objects.get_or_create(kid=kid)
+                attrs_serializer = ProductAttributesPatchSerializer(attrs_row, data=attrs_payload, partial=True)
+                attrs_serializer.is_valid(raise_exception=True)
+                attrs_serializer.save()
+
+            for order_payload in payload.get("orders") or []:
+                order_pk = int(order_payload["id"])
+                order = Orders.objects.filter(pk=order_pk, kid=kid).first()
+                if order is None:
+                    return Response(
+                        {"detail": f"Order id={order_pk} was not found for kid id={kid.id}."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                partial_payload = dict(order_payload)
+                partial_payload.pop("id", None)
+                order_serializer = OrderModelSerializer(order, data=partial_payload, partial=True)
+                order_serializer.is_valid(raise_exception=True)
+                updated_orders.append(order_serializer.save())
+
+            if removed_photos:
+                delete_uploaded_photo_urls(removed_photos)
+
+        kid.refresh_from_db()
+        response_orders = list(Orders.objects.filter(kid=kid, pk__in=[order.id for order in updated_orders]).order_by("id"))
+        ean_row = Ean.objects.filter(kid=kid).first()
+        attrs_row = ProductAttributes.objects.filter(kid=kid).first()
+        return Response(
+            {
+                "kid": KidModelSerializer(kid).data,
+                "ean": EanPatchSerializer(ean_row).data if ean_row is not None else None,
+                "product_attributes": ProductAttributesPatchSerializer(attrs_row).data if attrs_row is not None else None,
+                "orders": OrderModelSerializer(response_orders, many=True).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class KidOrderIDsAPIView(APIView):

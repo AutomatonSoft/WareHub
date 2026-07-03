@@ -17,11 +17,12 @@ compose_file="$repo_root/infra/local/docker-compose.dev.yml"
 local_dev_log_directory="$repo_root/logs/local-dev"
 local_dependency_cache_directory="$repo_root/.venv/local-dev"
 
-app_names=("frontend" "backend" "services" "services-jv-worker" "orchestrator")
-app_labels=("Frontend" "Backend" "Database-service" "Database-service JV worker" "Orchestrator")
+app_names=("frontend" "backend" "services" "services-jv-worker" "services-telegram-notifier" "orchestrator")
+app_labels=("Frontend" "Backend" "Database-service" "Database-service JV worker" "Database-service Telegram notifier" "Orchestrator")
 app_workdirs=(
   "$repo_root/apps/frontend"
   "$repo_root/apps/backend"
+  "$repo_root/services/database-service"
   "$repo_root/services/database-service"
   "$repo_root/services/database-service"
   "$repo_root/services/orchestrator"
@@ -31,6 +32,7 @@ app_urls=(
   "http://127.0.0.1:8932/api/v1/healthz"
   "http://127.0.0.1:8934/api/v1/healthz"
   "background worker"
+  "background worker"
   "http://127.0.0.1:8935/api/v1/healthz"
 )
 app_log_filenames=(
@@ -38,6 +40,7 @@ app_log_filenames=(
   "backend.log"
   "database-service.log"
   "database-service-jv-worker.log"
+  "database-service-telegram-notifier.log"
   "orchestrator.log"
 )
 app_pid_filenames=(
@@ -45,9 +48,10 @@ app_pid_filenames=(
   "backend.pid"
   "database-service.pid"
   "database-service-jv-worker.pid"
+  "database-service-telegram-notifier.pid"
   "orchestrator.pid"
 )
-started_log_paths=("" "" "" "" "")
+started_log_paths=("" "" "" "" "" "")
 
 required_python_version="3.13.2"
 python_search_targets=()
@@ -684,6 +688,9 @@ get_command_for_app() {
       ;;
     services-jv-worker)
       printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py run_jv_batch_worker"
+      ;;
+    services-telegram-notifier)
+      printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py run_telegram_marketplace_notifier"
       ;;
     orchestrator)
       printf '%s\n' "\"$ORCHESTRATOR_PYTHON_EXE\" -m uvicorn src.sofort_orchestrator.main:app --host 0.0.0.0 --port 8935 --reload --reload-dir src --reload-exclude 'data/*'"
