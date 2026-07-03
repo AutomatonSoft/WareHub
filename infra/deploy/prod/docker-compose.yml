@@ -18,6 +18,8 @@ services:
   backend:
     image: ${BACKEND_IMAGE}:${BACKEND_APP_VERSION}
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,6 +67,8 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE}:${FRONTEND_APP_VERSION}
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       APP_ENV: prod
@@ -115,6 +119,8 @@ services:
   services:
     image: ${SERVICES_IMAGE}:${SERVICES_APP_VERSION}
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -202,6 +208,8 @@ services:
   orchestrator:
     image: ${ORCHESTRATOR_IMAGE}:${ORCHESTRATOR_APP_VERSION}
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       services:
         condition: service_started
