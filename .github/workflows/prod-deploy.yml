@@ -6,6 +6,9 @@ on:
       confirm_prod_deploy:
         description: "Type DEPLOY_PRODUCTION_RUNTIME to build images and deploy production"
         required: true
+      confirm_prod_migrations:
+        description: "Optional: type APPLY_PRODUCTION_MIGRATIONS to allow approved production migrations during deploy"
+        required: false
       release_version:
         description: "Immutable release tag, for example v1.2.3 or v1.2.3-rc.1"
         required: true
@@ -36,6 +39,7 @@ jobs:
       PROD_EXPECTED_SERVICE_COUNT: "7"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
+      MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
       RELEASE_VERSION: ${{ inputs.release_version }}
 
     steps:
@@ -49,6 +53,11 @@ jobs:
 
           if [ "${DEPLOY_CONFIRMATION:-}" != "DEPLOY_PRODUCTION_RUNTIME" ]; then
             echo "confirm_prod_deploy must equal DEPLOY_PRODUCTION_RUNTIME" >&2
+            exit 1
+          fi
+
+          if [ -n "${MIGRATION_CONFIRMATION:-}" ] && [ "${MIGRATION_CONFIRMATION:-}" != "APPLY_PRODUCTION_MIGRATIONS" ]; then
+            echo "confirm_prod_migrations must equal APPLY_PRODUCTION_MIGRATIONS when provided" >&2
             exit 1
           fi
 
@@ -361,6 +370,7 @@ jobs:
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
           EXPECTED_SERVICE_COUNT="7"
+          MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           candidate_dir="$(mktemp -d /tmp/warehub-prod-deploy.XXXXXXXX)"
           cleanup() {
@@ -401,12 +411,18 @@ jobs:
 
           STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           BACKUP_DIR="$BACKUP_ROOT/prod-deploy-${STAMP}-${IMAGE_TAG}"
+          migration_window_started=0
 
           rollback() {
             rc="$?"
             trap - ERR
             if [ "$rc" -eq 0 ]; then
               return 0
+            fi
+            if [ "$migration_window_started" -eq 1 ]; then
+              echo "Production migration window started; automatic rollback is intentionally disabled." >&2
+              echo "Manual recovery required. Backup: $BACKUP_DIR" >&2
+              exit "$rc"
             fi
             set +e
             if [ -f "$BACKUP_DIR/live.env" ]; then cp -a "$BACKUP_DIR/live.env" .env; fi
@@ -434,9 +450,31 @@ jobs:
           echo "=== VERIFY PROD MIGRATION PLAN ==="
           plan_output="$(docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan)"
           printf "%s\n" "$plan_output"
-          if ! printf "%s\n" "$plan_output" | grep -q "No planned migration operations"; then
-            echo "Pending production migrations detected. Apply them through an approved manual migration window before production deploy." >&2
-            exit 1
+          if printf "%s\n" "$plan_output" | grep -q "No planned migration operations"; then
+            echo "No pending production migrations."
+          else
+            if [ "${MIGRATION_CONFIRMATION_VALUE:-}" != "APPLY_PRODUCTION_MIGRATIONS" ]; then
+              echo "Pending production migrations detected. Re-run Prod Deploy with confirm_prod_migrations=APPLY_PRODUCTION_MIGRATIONS during an approved migration window." >&2
+              exit 1
+            fi
+
+            migration_window_started=1
+
+            echo "=== BACKUP POSTGRES BEFORE MIGRATE ==="
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml exec -T postgres sh -lc "pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Fc" > "$BACKUP_DIR/postgres-before-migrate.dump"
+            chmod 600 "$BACKUP_DIR/postgres-before-migrate.dump"
+            cat "$BACKUP_DIR/postgres-before-migrate.dump" | docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml exec -T postgres sh -lc "pg_restore --list >/tmp/prod_deploy_pg_restore_list.txt && wc -l /tmp/prod_deploy_pg_restore_list.txt"
+
+            echo "=== APPLY PROD MIGRATIONS ==="
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate
+
+            echo "=== VERIFY PROD MIGRATIONS CLEAN ==="
+            plan_output="$(docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan)"
+            printf "%s\n" "$plan_output"
+            printf "%s\n" "$plan_output" | grep -q "No planned migration operations" || {
+              echo "Production migration plan is still not clean after migrate." >&2
+              exit 1
+            }
           fi
 
           echo "=== UP APP SERVICES ==="

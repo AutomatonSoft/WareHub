@@ -18,6 +18,9 @@ services:
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}:${BACKEND_STAGE_TAG:?BACKEND_STAGE_TAG is required}
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +66,9 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}:${FRONTEND_STAGE_TAG:?FRONTEND_STAGE_TAG is required}
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       APP_ENV: stage
@@ -114,6 +120,9 @@ services:
   services:
     image: ${SERVICES_IMAGE:?SERVICES_IMAGE is required}:${SERVICES_STAGE_TAG:?SERVICES_STAGE_TAG is required}
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -244,6 +253,9 @@ services:
   orchestrator:
     image: ${ORCHESTRATOR_IMAGE:?ORCHESTRATOR_IMAGE is required}:${ORCHESTRATOR_STAGE_TAG:?ORCHESTRATOR_STAGE_TAG is required}
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       services:
         condition: service_started
