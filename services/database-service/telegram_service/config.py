@@ -14,6 +14,15 @@ def _clean_webhook_path(value: str | None) -> str:
     return normalized
 
 
+def _derive_public_webhook_path(webhook_path: str, value: str | None) -> str:
+    explicit = _clean_text(value)
+    if explicit:
+        return "/" + explicit.strip("/") + "/"
+    if webhook_path.startswith("/api/v1/"):
+        return "/api/v1/services/" + webhook_path.removeprefix("/api/v1/").lstrip("/")
+    return webhook_path
+
+
 def _parse_optional_int(value: str | None) -> int | None:
     raw = _clean_text(value)
     if not raw:
@@ -47,6 +56,7 @@ class TelegramRuntimeConfig:
     message_thread_id: int | None
     webhook_secret: str
     webhook_path: str
+    public_webhook_path: str
     api_base_url: str
     allowed_user_ids: tuple[int, ...]
     services_base_url: str
@@ -71,12 +81,14 @@ def load_telegram_runtime_config() -> TelegramRuntimeConfig:
         or _clean_text(os.getenv("ORCHESTRATOR_ORIGIN"))
         or "http://127.0.0.1:8935"
     ).rstrip("/")
+    webhook_path = _clean_webhook_path(os.getenv("TELEGRAM_WEBHOOK_PATH"))
     return TelegramRuntimeConfig(
         bot_token=_clean_text(os.getenv("TELEGRAM_BOT_TOKEN")),
         chat_id=_parse_optional_int(os.getenv("TELEGRAM_CHAT_ID")),
         message_thread_id=_parse_optional_int(os.getenv("MESSAGE_THREAD_ID")),
         webhook_secret=_clean_text(os.getenv("TELEGRAM_WEBHOOK_SECRET")),
-        webhook_path=_clean_webhook_path(os.getenv("TELEGRAM_WEBHOOK_PATH")),
+        webhook_path=webhook_path,
+        public_webhook_path=_derive_public_webhook_path(webhook_path, os.getenv("TELEGRAM_PUBLIC_WEBHOOK_PATH")),
         api_base_url=(
             _clean_text(os.getenv("TELEGRAM_API_BASE_URL"))
             or "https://api.telegram.org"

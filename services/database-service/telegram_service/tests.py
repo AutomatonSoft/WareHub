@@ -37,6 +37,7 @@ class TelegramServiceTests(SimpleTestCase):
     def test_load_runtime_config_normalizes_values(self):
         config = load_telegram_runtime_config()
         self.assertEqual(config.webhook_path, "/api/v1/telegram/hook/")
+        self.assertEqual(config.public_webhook_path, "/api/v1/services/telegram/hook/")
         self.assertEqual(config.chat_id, 12345)
         self.assertEqual(config.message_thread_id, 77)
         self.assertEqual(config.allowed_user_ids, (1, 2, 3))
@@ -124,6 +125,7 @@ class TelegramServiceTests(SimpleTestCase):
         )
 
         _args, kwargs = mocked_post.call_args
+        assert kwargs["json"]["url"] == "https://example.trycloudflare.com/api/v1/services/telegram/webhook/"
         assert kwargs["json"]["allowed_updates"] == [
             "message",
             "edited_message",

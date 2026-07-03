@@ -36,7 +36,7 @@ class Command(BaseCommand):
         if not base_url.startswith("https://"):
             raise CommandError("--base-url must start with https://")
 
-        webhook_url = f"{base_url}{config.webhook_path}"
+        webhook_url = f"{base_url}{config.public_webhook_path}"
         response = requests.post(
             f"{config.api_base_url}/bot{config.bot_token}/setWebhook",
             json={

@@ -18,6 +18,7 @@ DOMAIN_ORDER = [
     "afterbuy",
     "kaufland",
     "marketplace",
+    "telegram",
     "hood",
     "otto",
     "xl",
@@ -37,6 +38,7 @@ TAG_CONFIG = {
     "afterbuy": ("Afterbuy", "Afterbuy lookup and order creation helpers."),
     "kaufland": ("Kaufland", "Kaufland marketplace product operations."),
     "marketplace": ("Marketplace Health", "Marketplace integration health checks."),
+    "telegram": ("Telegram", "Telegram bot webhook and marketplace action callbacks."),
     "hood": ("Hood", "Hood marketplace read and update helpers."),
     "otto": ("Otto", "Otto marketplace read and write endpoints."),
     "xl": ("XL", "XLMOEBEL catalog and batch endpoints."),
@@ -85,6 +87,12 @@ def enrich_openapi_document(document: dict) -> dict:
             "name": "x-warehub-service-token",
             "description": "Service-to-service token accepted from trusted orchestrator hosts.",
         },
+        "telegramWebhookSecret": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "x-telegram-bot-api-secret-token",
+            "description": "Telegram webhook secret token configured through `TELEGRAM_WEBHOOK_SECRET`.",
+        },
     }
     schemas = components.setdefault("schemas", {})
     schemas.setdefault(
@@ -101,6 +109,31 @@ def enrich_openapi_document(document: dict) -> dict:
                     "description": "Optional request correlation id.",
                 },
                 "details": {"type": "object", "additionalProperties": True, "nullable": True},
+            },
+        },
+    )
+    schemas.setdefault(
+        "TelegramUpdate",
+        {
+            "type": "object",
+            "required": ["update_id"],
+            "additionalProperties": True,
+            "properties": {
+                "update_id": {"type": "integer", "description": "Telegram update identifier."},
+                "message": {"type": "object", "additionalProperties": True, "nullable": True},
+                "callback_query": {"type": "object", "additionalProperties": True, "nullable": True},
+            },
+        },
+    )
+    schemas.setdefault(
+        "TelegramWebhookResponse",
+        {
+            "type": "object",
+            "required": ["ok"],
+            "additionalProperties": True,
+            "properties": {
+                "ok": {"type": "boolean"},
+                "status": {"type": "string", "nullable": True},
             },
         },
     )
@@ -134,8 +167,22 @@ def enrich_operation(path: str, method: str, operation: dict) -> None:
     if not str(operation.get("description") or "").strip():
         operation["description"] = build_description(path, method)
 
+    if is_telegram_webhook_path(path):
+        enrich_telegram_webhook_operation(operation)
+
     apply_security(path, operation)
     enrich_responses(path, method, operation)
+
+
+def enrich_telegram_webhook_operation(operation: dict) -> None:
+    operation["requestBody"] = {
+        "required": True,
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/TelegramUpdate"}
+            }
+        },
+    }
 
 
 def apply_security(path: str, operation: dict) -> None:
@@ -151,6 +198,9 @@ def apply_security(path: str, operation: dict) -> None:
     if path == "/api/v1/dev/session/sync/":
         operation["security"] = [{"backendBearerAuth": []}]
         return
+    if is_telegram_webhook_path(path):
+        operation["security"] = [{"telegramWebhookSecret": []}]
+        return
     operation["security"] = [{"sessionCookieAuth": []}, {"serviceTokenAuth": []}]
 
 
@@ -165,6 +215,25 @@ def enrich_responses(path: str, method: str, operation: dict) -> None:
         ensure_error_response(responses, "403", "Backend account is not approved or role is not allowed.")
         ensure_error_response(responses, "404", "Session bridge is disabled for the current host.")
         ensure_error_response(responses, "502", "Backend auth service could not be reached.")
+        return
+
+    if is_telegram_webhook_path(path):
+        responses.pop("201", None)
+        responses.setdefault(
+            "200",
+            {
+                "description": "Telegram update accepted and processed.",
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/TelegramWebhookResponse"}
+                    }
+                },
+            },
+        )
+        ensure_error_response(responses, "400", "Telegram update payload is not a JSON object.")
+        ensure_error_response(responses, "403", "Telegram webhook secret token is invalid.")
+        ensure_error_response(responses, "500", "Telegram update processing failed.")
+        ensure_error_response(responses, "503", "Telegram webhook configuration is incomplete.")
         return
 
     if path in {"/api/v1/readyz", "/api/v1/readyz/"}:
@@ -247,6 +316,10 @@ def has_path_parameter(path: str) -> bool:
     return "{" in path and "}" in path
 
 
+def is_telegram_webhook_path(path: str) -> bool:
+    return path.rstrip("/") == "/api/v1/telegram/webhook"
+
+
 def title_case(value: str) -> str:
     return value.replace("-", " ").replace("_", " ").title().strip()
 
@@ -321,6 +394,8 @@ def build_summary(path: str, method: str) -> str:
         return "Get Kaufland integration health"
     if tail[:2] == ["marketplace", "hood"]:
         return "Get Hood integration health"
+    if tail[:2] == ["telegram", "webhook"] and method == "post":
+        return "Handle Telegram webhook update"
     if tail[:1] == ["hood"]:
         return "Get Hood item by EAN"
     if tail[:1] == ["otto"] and "upsert" in tail:
@@ -397,6 +472,8 @@ def build_description(path: str, method: str) -> str:
         return "Performs Kaufland marketplace product operations using service-managed adapters."
     if tail[:1] == ["marketplace"]:
         return "Exposes operational health information for marketplace integrations."
+    if tail[:2] == ["telegram", "webhook"]:
+        return "Receives Telegram bot updates, validates the Telegram secret header, and dispatches marketplace action callbacks."
     if tail[:1] == ["hood"]:
         return "Fetches and optionally updates Hood item data for the provided EAN."
     if tail[:1] == ["otto"]:
