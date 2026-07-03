@@ -442,6 +442,7 @@ function titleCaseLabel(value: string): string {
     scalar: "System",
     session: "Session",
     system: "System",
+    telegram: "Telegram",
     uploads: "Uploads",
     xl: "XL"
   };
@@ -480,7 +481,7 @@ function getDomainSortIndex(repoName: string, domain: string): number {
   const normalizedDomainKey = domain.trim().toLowerCase().replace(/\s+/g, "-");
   const domainOrders: Record<string, string[]> = {
     backend: ["system", "mobile", "logs", "auth", "admin", "intakes", "kids", "label-layout", "printer-setup", "uploads", "afterbuy"],
-    services: ["system", "session", "kids", "orders", "inventory", "ean-pool", "uploads", "afterbuy", "kaufland", "marketplace", "hood", "otto", "xl", "jv"],
+    services: ["system", "session", "kids", "orders", "inventory", "ean-pool", "uploads", "afterbuy", "kaufland", "marketplace", "telegram", "hood", "otto", "xl", "jv"],
     orchestrator: ["system", "jobs", "product-editor", "products", "reconciliation"]
   };
 
