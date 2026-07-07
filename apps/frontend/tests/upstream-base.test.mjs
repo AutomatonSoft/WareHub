@@ -27,8 +27,8 @@ test("backend upstream candidates normalize api-v1 and keep Docker backend first
     BACKEND_API_BASE_URL: "http://localhost:8932/api/v1"
   });
 
-  assert.equal(candidates[0], "http://backend:8932");
-  assert.ok(candidates.includes("http://localhost:8932"));
+  assert.equal(candidates[0], "http://backend:8932/api/v1");
+  assert.ok(candidates.includes("http://localhost:8932/api/v1"));
 });
 
 test("orchestrator upstream candidates support origin-style envs and Docker fallback", () => {
