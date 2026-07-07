@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildMergedOpenApiResponse, buildOpenApiProxyFailureResponse } from "../app/api/v1/docs/openapi/openapi-merge.ts";
-import { resolveDocsOrigin } from "../app/api/v1/docs/openapi/route.ts";
+import { resolveDocsOrigin } from "../app/api/v1/docs/openapi/docs-origin.ts";
 
 test("openapi route helper: merge error returns HTTP 502 JSON without leaking env values", async () => {
   const response = buildMergedOpenApiResponse(
