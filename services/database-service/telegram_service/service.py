@@ -26,6 +26,17 @@ from .orchestrator_client import TelegramMarketplaceJobClient
 
 logger = logging.getLogger(__name__)
 
+ACTION_DELETE_LABEL = "Удалить товар"
+ACTION_LIST_LABEL = "Выставить товар"
+ACTION_CANCEL_LABEL = "Отмена"
+CONFIRM_YES_LABEL = "Подтвердить"
+
+LEGACY_ACTION_DELETE = "action:delete"
+LEGACY_ACTION_LIST = "action:list"
+LEGACY_ACTION_CANCEL = "action:cancel"
+LEGACY_CONFIRM_YES = "confirm:yes"
+LEGACY_CONFIRM_NO = "confirm:no"
+
 
 @dataclass
 class TelegramUpdateContext:
@@ -46,28 +57,34 @@ class TelegramUpdateContext:
         return str(self.message_thread_id or "")
 
 
-def build_action_keyboard() -> dict[str, list[list[dict[str, str]]]]:
+def build_action_keyboard() -> dict[str, Any]:
     return {
-        "inline_keyboard": [
+        "keyboard": [
             [
-                {"text": "Удалить товар", "callback_data": "action:delete"},
-                {"text": "Выставить товар", "callback_data": "action:list"},
+                {"text": ACTION_DELETE_LABEL},
+                {"text": ACTION_LIST_LABEL},
             ],
             [
-                {"text": "Отмена", "callback_data": "action:cancel"},
+                {"text": ACTION_CANCEL_LABEL},
             ],
-        ]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
+        "input_field_placeholder": "Выбери действие",
     }
 
 
-def build_confirm_keyboard() -> dict[str, list[list[dict[str, str]]]]:
+def build_confirm_keyboard() -> dict[str, Any]:
     return {
-        "inline_keyboard": [
+        "keyboard": [
             [
-                {"text": "Подтвердить", "callback_data": "confirm:yes"},
-                {"text": "Отмена", "callback_data": "confirm:no"},
+                {"text": CONFIRM_YES_LABEL},
+                {"text": ACTION_CANCEL_LABEL},
             ]
-        ]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
+        "input_field_placeholder": "Подтверди или отмени",
     }
 
 
@@ -131,6 +148,10 @@ def _normalize_price_text(value: str) -> str:
 def _is_main_ean_text(value: str) -> bool:
     normalized = str(value or "").strip()
     return len(normalized) == 13 and normalized.isdigit()
+
+
+def _normalize_command_text(value: str) -> str:
+    return str(value or "").strip().casefold()
 
 
 def _lookup_kid_by_number(kid_number: str) -> Kid | None:
@@ -257,18 +278,33 @@ class TelegramConversationService:
     def _dispatch(self, ctx: TelegramUpdateContext) -> dict[str, Any]:
         if ctx.callback_query_id:
             self.bot.answer_callback_query(callback_query_id=ctx.callback_query_id)
-        if ctx.text in {"/start", "/menu"}:
+
+        normalized_text = _normalize_command_text(ctx.text)
+        callback_data = str(ctx.callback_data or "").strip()
+
+        if normalized_text in {"/start", "/menu"}:
             self._reset_state(ctx)
             self._send_action_menu(ctx, "Выбери действие:")
             return {"status": "processed"}
-        if ctx.text == "/cancel" or ctx.callback_data == "action:cancel" or ctx.callback_data == "confirm:no":
+
+        if normalized_text == "/cancel" or normalized_text == _normalize_command_text(ACTION_CANCEL_LABEL):
             self._reset_state(ctx)
             self._send_action_menu(ctx, "Действие отменено. Выбери следующий шаг:")
             return {"status": "processed"}
-        if ctx.callback_data in {"action:delete", "action:list"}:
+
+        if normalized_text in {
+            _normalize_command_text(ACTION_DELETE_LABEL),
+            _normalize_command_text(ACTION_LIST_LABEL),
+        } or callback_data in {LEGACY_ACTION_DELETE, LEGACY_ACTION_LIST}:
             return self._handle_action_choice(ctx)
-        if ctx.callback_data == "confirm:yes":
+
+        if normalized_text == _normalize_command_text(CONFIRM_YES_LABEL) or callback_data == LEGACY_CONFIRM_YES:
             return self._handle_confirmation(ctx)
+
+        if callback_data in {LEGACY_ACTION_CANCEL, LEGACY_CONFIRM_NO}:
+            self._reset_state(ctx)
+            self._send_action_menu(ctx, "Действие отменено. Выбери следующий шаг:")
+            return {"status": "processed"}
 
         state_row = self._get_or_create_state(ctx)
         if state_row.state == "awaiting_kid":
@@ -309,7 +345,8 @@ class TelegramConversationService:
         )
 
     def _handle_action_choice(self, ctx: TelegramUpdateContext) -> dict[str, Any]:
-        action = "delete" if ctx.callback_data == "action:delete" else "list"
+        normalized_text = _normalize_command_text(ctx.text)
+        action = "delete" if normalized_text == _normalize_command_text(ACTION_DELETE_LABEL) or ctx.callback_data == LEGACY_ACTION_DELETE else "list"
         state_row = self._get_or_create_state(ctx)
         state_row.state = "awaiting_kid"
         state_row.payload = {"action": action}
@@ -319,6 +356,7 @@ class TelegramConversationService:
             chat_id=ctx.chat_id or 0,
             message_thread_id=ctx.message_thread_id,
             text=prompt,
+            reply_markup=build_action_keyboard(),
         )
         return {"status": "processed"}
 
@@ -331,6 +369,7 @@ class TelegramConversationService:
                     chat_id=ctx.chat_id or 0,
                     message_thread_id=ctx.message_thread_id,
                     text="KID не может быть пустым.",
+                    reply_markup=build_action_keyboard(),
                 )
                 return {"status": "ignored", "reason": "empty_kid_number"}
             kid = _lookup_kid_by_number(kid_number)
@@ -356,6 +395,7 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text="\n".join(summary_lines),
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "processed"}
 
@@ -365,6 +405,7 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text=f"KID не найден: {ctx.text}",
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "ignored", "reason": "kid_not_found"}
 
@@ -394,21 +435,23 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text="Place должен быть целым числом. Введи значение еще раз.",
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "ignored", "reason": "invalid_place"}
         kid_number = str(state_row.payload.get("kid_number") or "").strip()
         kid = _lookup_kid_by_number(kid_number)
+        place_value = ctx.text.strip()
         state_row.state = "awaiting_main_ean"
         state_row.payload = {
             "action": "list",
             "kid_number": kid_number,
-            "place": ctx.text.strip(),
+            "place": place_value,
         }
         state_row.save(update_fields=["state", "payload", "updated_at"])
         confirm_lines = [
             "Place сохранен.",
             f"KID: {kid_number}",
-            f"Новый place: {ctx.text.strip()}",
+            f"Новый place: {place_value}",
             "Введи main_ean (13 цифр):",
         ]
         if kid is not None:
@@ -417,7 +460,7 @@ class TelegramConversationService:
             chat_id=ctx.chat_id or 0,
             message_thread_id=ctx.message_thread_id,
             text="\n".join(confirm_lines),
-            reply_markup=build_confirm_keyboard(),
+            reply_markup=build_action_keyboard(),
         )
         return {"status": "processed"}
 
@@ -427,6 +470,7 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text="main_ean должен состоять ровно из 13 цифр. Введи значение еще раз.",
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "ignored", "reason": "invalid_main_ean"}
         payload = dict(state_row.payload)
@@ -438,6 +482,7 @@ class TelegramConversationService:
             chat_id=ctx.chat_id or 0,
             message_thread_id=ctx.message_thread_id,
             text="Введи quantity (целое число, 0 или больше):",
+            reply_markup=build_action_keyboard(),
         )
         return {"status": "processed"}
 
@@ -447,6 +492,7 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text="Quantity должен быть целым числом 0 или больше. Введи значение еще раз.",
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "ignored", "reason": "invalid_quantity"}
         payload = dict(state_row.payload)
@@ -458,6 +504,7 @@ class TelegramConversationService:
             chat_id=ctx.chat_id or 0,
             message_thread_id=ctx.message_thread_id,
             text="Введи price (например 199.99):",
+            reply_markup=build_action_keyboard(),
         )
         return {"status": "processed"}
 
@@ -467,6 +514,7 @@ class TelegramConversationService:
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
                 text="Price должен быть числом. Введи значение еще раз.",
+                reply_markup=build_action_keyboard(),
             )
             return {"status": "ignored", "reason": "invalid_price"}
         kid_number = str(state_row.payload.get("kid_number") or "").strip()

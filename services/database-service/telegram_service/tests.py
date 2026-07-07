@@ -15,7 +15,16 @@ from telegram_service.models import TelegramActionAudit, TelegramConversationSta
 from telegram_service.notifier import TelegramMarketplaceJobNotifier
 from telegram_service.kids_client import TelegramKidsClient
 from telegram_service.orchestrator_client import TelegramMarketplaceJobClient
-from telegram_service.service import TelegramConversationService, TelegramUpdateContext, build_action_keyboard, build_confirm_keyboard
+from telegram_service.service import (
+    ACTION_CANCEL_LABEL,
+    ACTION_DELETE_LABEL,
+    ACTION_LIST_LABEL,
+    CONFIRM_YES_LABEL,
+    TelegramConversationService,
+    TelegramUpdateContext,
+    build_action_keyboard,
+    build_confirm_keyboard,
+)
 from telegram_service.views import TelegramWebhookAPIView
 
 
@@ -48,13 +57,16 @@ class TelegramServiceTests(SimpleTestCase):
         self.assertEqual(config.orchestrator_poll_attempts, 45)
         self.assertEqual(config.orchestrator_poll_interval_seconds, 0.4)
 
-    def test_build_keyboards_include_expected_callbacks(self):
+    def test_build_keyboards_include_expected_labels(self):
         action_keyboard = build_action_keyboard()
         confirm_keyboard = build_confirm_keyboard()
-        self.assertEqual(action_keyboard["inline_keyboard"][0][0]["callback_data"], "action:delete")
-        self.assertEqual(action_keyboard["inline_keyboard"][0][1]["callback_data"], "action:list")
-        self.assertEqual(confirm_keyboard["inline_keyboard"][0][0]["callback_data"], "confirm:yes")
-        self.assertEqual(confirm_keyboard["inline_keyboard"][0][1]["callback_data"], "confirm:no")
+        self.assertEqual(action_keyboard["keyboard"][0][0]["text"], ACTION_DELETE_LABEL)
+        self.assertEqual(action_keyboard["keyboard"][0][1]["text"], ACTION_LIST_LABEL)
+        self.assertEqual(action_keyboard["keyboard"][1][0]["text"], ACTION_CANCEL_LABEL)
+        self.assertEqual(confirm_keyboard["keyboard"][0][0]["text"], CONFIRM_YES_LABEL)
+        self.assertEqual(confirm_keyboard["keyboard"][0][1]["text"], ACTION_CANCEL_LABEL)
+        self.assertTrue(action_keyboard["resize_keyboard"])
+        self.assertTrue(confirm_keyboard["resize_keyboard"])
 
     def test_webhook_url_resolves_for_canonical_paths(self):
         resolved_with_slash = resolve("/api/v1/telegram/webhook/")
@@ -265,14 +277,14 @@ class TelegramServiceAsyncFlowTests(TestCase):
         service = TelegramConversationService(config=self._config(), bot=bot)
         ctx = TelegramUpdateContext(
             update_id=2,
-            update_type="callback_query",
+            update_type="message",
             chat_id=100,
             user_id=200,
             username="said",
             display_name="Said",
-            text="",
-            callback_data="confirm:yes",
-            callback_query_id="cb-2",
+            text=CONFIRM_YES_LABEL,
+            callback_data="",
+            callback_query_id="",
             message_id=10,
             message_thread_id=None,
         )
@@ -304,14 +316,14 @@ class TelegramServiceAsyncFlowTests(TestCase):
         service = TelegramConversationService(config=self._config(), bot=bot)
         ctx = TelegramUpdateContext(
             update_id=1,
-            update_type="callback_query",
+            update_type="message",
             chat_id=100,
             user_id=200,
             username="said",
             display_name="Said",
-            text="",
-            callback_data="confirm:yes",
-            callback_query_id="cb-1",
+            text=CONFIRM_YES_LABEL,
+            callback_data="",
+            callback_query_id="",
             message_id=10,
             message_thread_id=None,
         )
