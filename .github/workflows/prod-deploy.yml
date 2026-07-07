@@ -274,6 +274,12 @@ jobs:
             --override "$candidate_dir/.env.override" \
             --output "$candidate_dir/.env"
 
+          current_service_token="$(grep -E '^PROD_ORCHESTRATOR_SERVICE_AUTH_TOKEN=' "$candidate_dir/.env" | tail -n 1 | cut -d= -f2- || true)"
+          if [ -z "$current_service_token" ] || [[ "$current_service_token" == *"__SET_IN_GITHUB_ENVIRONMENT__"* ]] || [[ "$current_service_token" == *"TODO"* ]]; then
+            generated_service_token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+            sed -i -E "s|^PROD_ORCHESTRATOR_SERVICE_AUTH_TOKEN=.*$|PROD_ORCHESTRATOR_SERVICE_AUTH_TOKEN=${generated_service_token}|" "$candidate_dir/.env"
+          fi
+
           cp infra/deploy/prod/docker-compose.yml "$candidate_dir/docker-compose.yml"
 
           image_keys=(BACKEND_IMAGE FRONTEND_IMAGE GATEWAY_IMAGE MOBILE_IMAGE SERVICES_IMAGE ORCHESTRATOR_IMAGE)

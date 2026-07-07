@@ -105,6 +105,28 @@ class DatabaseApiTests(APITestCase):
         self.assertIn("timeout", response.data["sync"]["error_detail"].lower())
         mocked_search.assert_called_once()
 
+    @patch("database.views.Orders.objects.create", side_effect=RuntimeError("order write failed"))
+    @patch(
+        "database.views.search_items_auktionsliste",
+        return_value=[
+            {
+                "order_id": "ORDER-FAIL-1",
+                "title": "Order sync failure fixture",
+                "zahlungssumme": "10,00",
+                "rechnungssumme": "10,00",
+            }
+        ],
+    )
+    def test_create_kid_reports_afterbuy_order_persist_failure(self, mocked_search, mocked_create_order):
+        response = self.client.post("/api/v1/kids/", {"kid_number": "900907"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sync"]["error"], "afterbuy_order_sync_failed")
+        self.assertIn("order write failed", response.data["sync"]["error_detail"])
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["900907"]).exists())
+        mocked_search.assert_called_once()
+        mocked_create_order.assert_called_once()
+
     @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
     def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
         payload = {"kid_number": "900902"}

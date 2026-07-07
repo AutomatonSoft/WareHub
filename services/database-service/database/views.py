@@ -635,77 +635,82 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         summary["fetched_items"] = len(normalized_raw_items)
         summary["collapsed_items"] = len(items)
 
-        for item in items:
-            raw_order_id = str(
-                item.get("order_id")
-                or item.get("OrderID")
-                or item.get("orderId")
-                or item.get("orderid")
-                or ""
-            ).strip()
-            main_order_id = str(item.get("main_order_id") or "").strip()
-            source_order_ids = [
-                str(x).strip()
-                for x in (item.get("source_order_ids") or [])
-                if str(x).strip()
-            ]
+        try:
+            for item in items:
+                raw_order_id = str(
+                    item.get("order_id")
+                    or item.get("OrderID")
+                    or item.get("orderId")
+                    or item.get("orderid")
+                    or ""
+                ).strip()
+                main_order_id = str(item.get("main_order_id") or "").strip()
+                source_order_ids = [
+                    str(x).strip()
+                    for x in (item.get("source_order_ids") or [])
+                    if str(x).strip()
+                ]
 
-            if not main_order_id and source_order_ids:
-                main_order_id = source_order_ids[0]
-            if not main_order_id and raw_order_id:
-                main_order_id = raw_order_id.split(",")[0].strip()
-            if not main_order_id:
-                summary["skipped_without_order_id"] += 1
-                continue
+                if not main_order_id and source_order_ids:
+                    main_order_id = source_order_ids[0]
+                if not main_order_id and raw_order_id:
+                    main_order_id = raw_order_id.split(",")[0].strip()
+                if not main_order_id:
+                    summary["skipped_without_order_id"] += 1
+                    continue
 
-            verkaufsdatum = str(item.get("verkaufsdatum") or item.get("order_date") or "").strip()
-            zahlungssumme = str(item.get("zahlungssumme") or "").strip()
-            rechnungssumme = str(item.get("rechnungssumme") or "").strip()
-            title = str(item.get("title") or "").strip() or f"Order {main_order_id}"
-            sku = str(item.get("sku") or "").strip() or None
-            memo = str(item.get("memo") or "").strip() or None
-            platform = str(item.get("platform") or "").strip() or None
-            buyer = str(item.get("buyer") or "").strip() or None
-            additional_items = item.get("additional_items") if isinstance(item.get("additional_items"), list) else []
+                verkaufsdatum = str(item.get("verkaufsdatum") or item.get("order_date") or "").strip()
+                zahlungssumme = str(item.get("zahlungssumme") or "").strip()
+                rechnungssumme = str(item.get("rechnungssumme") or "").strip()
+                title = str(item.get("title") or "").strip() or f"Order {main_order_id}"
+                sku = str(item.get("sku") or "").strip() or None
+                memo = str(item.get("memo") or "").strip() or None
+                platform = str(item.get("platform") or "").strip() or None
+                buyer = str(item.get("buyer") or "").strip() or None
+                additional_items = item.get("additional_items") if isinstance(item.get("additional_items"), list) else []
 
-            defaults = {
-                "platform": platform,
-                "buyer": buyer,
-                "title": title,
-                "sku": sku,
-                "memo": memo,
-                "status": "no_paid",
-                "date": parse_afterbuy_datetime(verkaufsdatum),
-                "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                "payment_status": rechnungssumme or None,
-                "additional_items": additional_items,
-            }
+                defaults = {
+                    "platform": platform,
+                    "buyer": buyer,
+                    "title": title,
+                    "sku": sku,
+                    "memo": memo,
+                    "date": parse_afterbuy_datetime(verkaufsdatum),
+                    "status": _status_by_amounts(zahlungssumme, rechnungssumme),
+                    "payment_status": rechnungssumme or None,
+                    "additional_items": additional_items,
+                }
 
-            order_id_candidates = [main_order_id, raw_order_id, *source_order_ids]
-            seen_candidates: set[str] = set()
-            order_id_candidates = [
-                value
-                for value in order_id_candidates
-                if value and not (value in seen_candidates or seen_candidates.add(value))
-            ]
+                order_id_candidates = [main_order_id, raw_order_id, *source_order_ids]
+                seen_candidates: set[str] = set()
+                order_id_candidates = [
+                    value
+                    for value in order_id_candidates
+                    if value and not (value in seen_candidates or seen_candidates.add(value))
+                ]
 
-            order = Orders.objects.filter(kid=kid, order_id__in=order_id_candidates).first()
-            if order is None:
-                Orders.objects.create(kid=kid, order_id=main_order_id, **defaults)
-                summary["created"] += 1
-                continue
+                order = Orders.objects.filter(kid=kid, order_id__in=order_id_candidates).first()
+                if order is None:
+                    Orders.objects.create(kid=kid, order_id=main_order_id, **defaults)
+                    summary["created"] += 1
+                    continue
 
-            fields_to_update: list[str] = []
-            if order.order_id != main_order_id:
-                order.order_id = main_order_id
-                fields_to_update.append("order_id")
-            for field, value in defaults.items():
-                if getattr(order, field) != value:
-                    setattr(order, field, value)
-                    fields_to_update.append(field)
-            if fields_to_update:
-                order.save(update_fields=fields_to_update)
-                summary["updated"] += 1
+                fields_to_update: list[str] = []
+                if order.order_id != main_order_id:
+                    order.order_id = main_order_id
+                    fields_to_update.append("order_id")
+                for field, value in defaults.items():
+                    if getattr(order, field) != value:
+                        setattr(order, field, value)
+                        fields_to_update.append(field)
+                if fields_to_update:
+                    order.save(update_fields=fields_to_update)
+                    summary["updated"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("KID_AFTERBUY_ORDER_SYNC_PERSIST_FAILED kid_number=%s", kid_number)
+            summary["error"] = "afterbuy_order_sync_failed"
+            summary["error_detail"] = str(exc)
+            return summary
 
         return summary
 
