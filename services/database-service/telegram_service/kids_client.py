@@ -26,7 +26,17 @@ class TelegramKidsClient:
             },
             timeout=20,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            response_text = (response.text or "").strip()
+            if response_text:
+                raise requests.HTTPError(
+                    f"{exc}. Response body: {response_text}",
+                    request=exc.request,
+                    response=exc.response,
+                ) from exc
+            raise
         payload = response.json()
         if not isinstance(payload, dict):
             raise RuntimeError("Kids create returned non-object payload.")
