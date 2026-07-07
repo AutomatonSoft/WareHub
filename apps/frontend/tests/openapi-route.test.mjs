@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildMergedOpenApiResponse, buildOpenApiProxyFailureResponse } from "../app/api/v1/docs/openapi/openapi-merge.ts";
+import { resolveDocsOrigin } from "../app/api/v1/docs/openapi/route.ts";
 
 test("openapi route helper: merge error returns HTTP 502 JSON without leaking env values", async () => {
   const response = buildMergedOpenApiResponse(
@@ -77,6 +78,23 @@ test("openapi route helper: successful document uses request origin as servers[0
 
   assert.equal(response.status, 200);
   assert.equal(body.servers[0].url, "https://docs.warehub.example");
+});
+
+test("openapi docs origin: prefers forwarded public host and proto over internal bind url", () => {
+  const request = new Request("http://0.0.0.0:8931/api/v1/docs/openapi", {
+    headers: {
+      "x-forwarded-host": "warehub.automatonsoft.de",
+      "x-forwarded-proto": "https",
+      "x-forwarded-port": "443"
+    }
+  });
+
+  assert.equal(resolveDocsOrigin(request), "https://warehub.automatonsoft.de");
+});
+
+test("openapi docs origin: normalizes local localhost origin to 127.0.0.1", () => {
+  const request = new Request("http://localhost:8931/api/v1/docs/openapi");
+  assert.equal(resolveDocsOrigin(request), "http://127.0.0.1:8931");
 });
 
 test("openapi route helper: unresolved security scheme returns HTTP 502 JSON", async () => {
