@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRequestId } from "../../../../../lib/api/request-id";
+import { resolveServicesApiBaseCandidates } from "../../../../../lib/api/upstream-base";
 
 export const runtime = "nodejs";
-
-const DEFAULT_CANDIDATES = [
-  "http://127.0.0.1:8934",
-  "http://localhost:8934"
-];
-
-const SERVICES_CANDIDATES = (() => {
-  const configured = process.env.SERVICES_ORIGIN?.trim();
-  if (!configured) {
-    return DEFAULT_CANDIDATES;
-  }
-  return [configured, ...DEFAULT_CANDIDATES.filter((candidate) => candidate !== configured)];
-})();
 
 async function proxyUpload(request: NextRequest): Promise<NextResponse> {
   const query = request.nextUrl.search ?? "";
@@ -24,8 +12,9 @@ async function proxyUpload(request: NextRequest): Promise<NextResponse> {
   const body = Buffer.from(await request.arrayBuffer());
 
   let lastError: unknown = null;
+  const servicesCandidates = resolveServicesApiBaseCandidates().map((base) => base.replace(/\/api\/v1$/i, ""));
 
-  for (const base of SERVICES_CANDIDATES) {
+  for (const base of servicesCandidates) {
     try {
       const headers: Record<string, string> = {
         "content-type": request.headers.get("content-type") ?? "multipart/form-data",

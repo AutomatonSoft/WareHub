@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRequestId } from "../../../../../lib/api/request-id";
+import { resolveOrchestratorApiBaseCandidates } from "../../../../../lib/api/upstream-base";
 
 export const runtime = "nodejs";
-
-const CANDIDATES = [
-  "http://127.0.0.1:8935/api/v1",
-  "http://localhost:8935/api/v1",
-  "http://sofortbot-orchestrator-dev:8011/api/v1"
-];
 
 function normalizeOrchestratorPath(rawPathPart: string): string {
   const trimmed = rawPathPart.replace(/^\/+|\/+$/g, "");
@@ -34,8 +29,9 @@ async function proxyToOrchestrator(request: NextRequest, path: string[]): Promis
       : Buffer.from(await request.arrayBuffer());
 
   let lastError: unknown = null;
+  const candidates = resolveOrchestratorApiBaseCandidates();
 
-  for (const base of CANDIDATES) {
+  for (const base of candidates) {
     const targetUrl = `${resolveOrchestratorTarget(base, pathPart)}${query}`;
     try {
       const response = await fetch(targetUrl, {

@@ -4,6 +4,7 @@ import {
   buildOpenApiProxyFailureResponse,
   type OpenApiDocument
 } from "./openapi-merge";
+import { resolveDocsOrigin } from "./docs-origin";
 
 const OPENAPI_CACHE_TTL_MS = 30_000;
 export const runtime = "nodejs";
@@ -55,18 +56,6 @@ async function fetchFirstOpenApiDocument(baseCandidates: string[], timeoutMs: nu
     }
   }
   return null;
-}
-
-function resolveDocsOrigin(request: Request): string | null {
-  try {
-    const url = new URL(request.url);
-    if (url.hostname === "localhost") {
-      url.hostname = "127.0.0.1";
-    }
-    return url.origin;
-  } catch {
-    return null;
-  }
 }
 
 export async function GET(request: Request) {
