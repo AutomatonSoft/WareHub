@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRequestId } from "../../../../../lib/api/request-id";
+import { resolveServicesApiBaseCandidates } from "../../../../../lib/api/upstream-base";
 
 export const runtime = "nodejs";
-
-const CANDIDATES = [
-  "http://127.0.0.1:8934/api/v1",
-  "http://localhost:8934/api/v1",
-  "http://services:8000/api/v1"
-];
 
 function normalizeServicePath(rawPathPart: string): string {
   const trimmed = rawPathPart.replace(/^\/+|\/+$/g, "");
@@ -28,7 +23,9 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
       : Buffer.from(await request.arrayBuffer());
 
   let lastError: unknown = null;
-  const candidates = request.method === "GET" || request.method === "HEAD" ? CANDIDATES : [CANDIDATES[0]];
+  const configuredCandidates = resolveServicesApiBaseCandidates();
+  const candidates =
+    request.method === "GET" || request.method === "HEAD" ? configuredCandidates : [configuredCandidates[0]];
 
   for (const base of candidates) {
     const targetUrl = `${base}/${pathPart}${query}`;

@@ -73,6 +73,12 @@ services:
       NODE_ENV: production
       APP_ENV: stage
       APP_VERSION: ${FRONTEND_STAGE_TAG:?FRONTEND_STAGE_TAG is required}
+      BACKEND_ORIGIN: http://backend:8932
+      BACKEND_INTERNAL_API_BASE_URL: http://backend:8932/api/v1
+      SERVICES_ORIGIN: http://services:8000
+      SERVICES_INTERNAL_API_BASE_URL: http://services:8000/api/v1
+      ORCHESTRATOR_ORIGIN: http://orchestrator:8011
+      ORCHESTRATOR_INTERNAL_API_BASE_URL: http://orchestrator:8011/api/v1
       NEXT_PUBLIC_APP_ENV: stage
       NEXT_PUBLIC_APP_VERSION: ${FRONTEND_STAGE_TAG:?FRONTEND_STAGE_TAG is required}
       NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
