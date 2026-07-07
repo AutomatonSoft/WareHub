@@ -127,6 +127,52 @@ class DatabaseApiTests(APITestCase):
         mocked_search.assert_called_once()
         mocked_create_order.assert_called_once()
 
+    @patch.object(KidListCreateAPIView, "_upsert_product_attributes", side_effect=RuntimeError("attributes write failed"))
+    def test_create_kid_reports_product_attributes_persist_failure(self, mocked_upsert_product_attributes):
+        response = self.client.post(
+            "/api/v1/kids/",
+            {
+                "kid_number": "900908",
+                "quantity": 5,
+                "price": "4561",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["enrichment"]["ok"])
+        self.assertEqual(
+            response.data["enrichment"]["errors"][0]["code"],
+            "product_attributes_persist_failed",
+        )
+        self.assertIn("attributes write failed", response.data["enrichment"]["errors"][0]["detail"])
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["900908"]).exists())
+        mocked_upsert_product_attributes.assert_called_once()
+
+    @patch.object(KidListCreateAPIView, "_upsert_main_ean", side_effect=RuntimeError("main ean write failed"))
+    def test_create_kid_reports_main_ean_persist_failure(self, mocked_upsert_main_ean):
+        response = self.client.post(
+            "/api/v1/kids/",
+            {
+                "kid_number": "900909",
+                "place": "9999",
+                "main_ean": "4260174428871",
+                "quantity": 5,
+                "price": "4561",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["enrichment"]["ok"])
+        self.assertEqual(
+            response.data["enrichment"]["errors"][0]["code"],
+            "main_ean_persist_failed",
+        )
+        self.assertIn("main ean write failed", response.data["enrichment"]["errors"][0]["detail"])
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["900909"]).exists())
+        mocked_upsert_main_ean.assert_called_once()
+
     @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
     def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
         payload = {"kid_number": "900902"}

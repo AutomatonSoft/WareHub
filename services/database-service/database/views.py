@@ -720,6 +720,52 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         return kid, sync_summary
 
     @staticmethod
+    def _empty_enrichment_summary() -> dict:
+        return {
+            "ok": True,
+            "errors": [],
+        }
+
+    def _append_enrichment_error(self, summary: dict, *, code: str, detail: str) -> None:
+        summary["ok"] = False
+        summary["errors"].append({"code": code, "detail": detail})
+
+    def _apply_kid_enrichment(self, kid, *, product_attrs: dict, main_ean: str | None) -> dict:
+        summary = self._empty_enrichment_summary()
+
+        try:
+            self._upsert_product_attributes(kid, product_attrs)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("KID_PRODUCT_ATTRIBUTES_PERSIST_FAILED kid_id=%s", getattr(kid, "id", None))
+            self._append_enrichment_error(
+                summary,
+                code="product_attributes_persist_failed",
+                detail=str(exc),
+            )
+
+        try:
+            self._ensure_database_ean_defaults(kid)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("KID_EAN_DEFAULTS_PERSIST_FAILED kid_id=%s", getattr(kid, "id", None))
+            self._append_enrichment_error(
+                summary,
+                code="ean_defaults_persist_failed",
+                detail=str(exc),
+            )
+
+        try:
+            self._upsert_main_ean(kid, main_ean)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("KID_MAIN_EAN_PERSIST_FAILED kid_id=%s", getattr(kid, "id", None))
+            self._append_enrichment_error(
+                summary,
+                code="main_ean_persist_failed",
+                detail=str(exc),
+            )
+
+        return summary
+
+    @staticmethod
     def _coalesce_value(data, query, key: str):
         value = data.get(key)
         if value in (None, ""):
@@ -943,13 +989,16 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         if existing is None:
             with transaction.atomic():
                 kid, sync_summary = self.perform_create(serializer)
-                self._upsert_product_attributes(kid, product_attrs)
-                self._ensure_database_ean_defaults(kid)
-                self._upsert_main_ean(kid, main_ean)
+            enrichment_summary = self._apply_kid_enrichment(
+                kid,
+                product_attrs=product_attrs,
+                main_ean=main_ean,
+            )
             output = self.get_serializer(kid)
             headers = self.get_success_headers(output.data)
             response_data = dict(output.data)
             response_data["sync"] = sync_summary
+            response_data["enrichment"] = enrichment_summary
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
         update_fields = []
@@ -963,13 +1012,16 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         if update_fields:
             existing.save(update_fields=update_fields)
 
-        self._upsert_product_attributes(existing, product_attrs)
-        self._ensure_database_ean_defaults(existing)
-        self._upsert_main_ean(existing, main_ean)
+        enrichment_summary = self._apply_kid_enrichment(
+            existing,
+            product_attrs=product_attrs,
+            main_ean=main_ean,
+        )
         sync_summary = self._sync_orders_for_kid(existing)
         output = self.get_serializer(existing)
         response_data = dict(output.data)
         response_data["sync"] = sync_summary
+        response_data["enrichment"] = enrichment_summary
         return Response(response_data, status=status.HTTP_200_OK)
 
 class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
