@@ -857,9 +857,9 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         raw_main = cls._coalesce_value(data, query, "main_ean")
         if raw_main in (None, ""):
             raw_main = cls._coalesce_value(data, query, "database_ean")
-        normalized = KidMarketplaceEanAPIView._normalize_optional_ean(raw_main)
+        normalized = KidMarketplaceEansAPIView._normalize_optional_ean(raw_main)
         if normalized is not None:
-            cls._validate_ean(normalized, "main_ean")
+            KidMarketplaceEansAPIView._validate_ean(normalized, "main_ean")
         return normalized
 
     @staticmethod

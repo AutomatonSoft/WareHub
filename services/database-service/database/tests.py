@@ -1,4 +1,5 @@
 from django.db.utils import ProgrammingError
+from django.test import override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -242,6 +243,37 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(ean_row.main_ean, "4062292028939")
         self.assertEqual(attrs.quantity, 3)
         self.assertEqual(str(attrs.price), "349.99")
+
+    @override_settings(
+        ALLOWED_HOSTS=["localhost", "127.0.0.1", "services"],
+        ORCHESTRATOR_SERVICE_AUTH_TOKEN="warehub-local-orchestrator",
+        ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=["localhost", "127.0.0.1", "services"],
+    )
+    def test_create_kid_accepts_main_ean_for_service_token_requests(self):
+        payload = {
+            "kid_number": "900910",
+            "place": "9999",
+            "main_ean": "4260174428871",
+            "quantity": 5,
+            "price": "4564",
+        }
+
+        self.client.cookies.clear()
+        response = self.client.post(
+            "/api/v1/kids/",
+            payload,
+            format="json",
+            HTTP_HOST="services:8000",
+            HTTP_X_WAREHUB_SERVICE_TOKEN="warehub-local-orchestrator",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        kid = Kid.objects.get(kid_number__contains=["900910"])
+        ean_row = Ean.objects.get(kid=kid)
+        attrs = ProductAttributes.objects.get(kid=kid)
+        self.assertEqual(ean_row.main_ean, "4260174428871")
+        self.assertEqual(attrs.quantity, 5)
+        self.assertEqual(str(attrs.price), "4564.00")
 
     def test_create_kid_is_idempotent_by_kid_number(self):
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}

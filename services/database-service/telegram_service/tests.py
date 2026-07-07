@@ -1,5 +1,6 @@
 import os
 from unittest.mock import patch
+import requests
 
 from django.test import TestCase
 from django.test import SimpleTestCase
@@ -209,6 +210,34 @@ class TelegramServiceTests(SimpleTestCase):
         )
         self.assertEqual(created["status_code"], 201)
         self.assertEqual(created["data"]["id"], 77)
+
+    @patch("telegram_service.kids_client.requests.post")
+    @patch.dict(
+        os.environ,
+        {
+            "TELEGRAM_BOT_TOKEN": "token",
+            "TELEGRAM_WEBHOOK_SECRET": "secret",
+            "SERVICES_ORIGIN": "http://127.0.0.1:8934",
+            "ORCHESTRATOR_SERVICE_AUTH_TOKEN": "warehub-local-orchestrator",
+        },
+        clear=False,
+    )
+    def test_kids_client_includes_response_body_on_http_errors(self, mocked_post):
+        mocked_response = mocked_post.return_value
+        mocked_response.status_code = 500
+        mocked_response.text = '{"detail":"boom"}'
+        mocked_response.raise_for_status.side_effect = requests.HTTPError(
+            "500 Server Error: Internal Server Error for url: http://127.0.0.1:8934/api/v1/kids/",
+            response=mocked_response,
+        )
+
+        client = TelegramKidsClient(load_telegram_runtime_config())
+
+        with self.assertRaises(requests.HTTPError) as ctx:
+            client.create_kid(kid_number="566725168", place="55", main_ean="4062292028939", quantity=3, price="199.99")
+
+        self.assertIn("Response body", str(ctx.exception))
+        self.assertIn('{"detail":"boom"}', str(ctx.exception))
 
 
 class TelegramServiceAsyncFlowTests(TestCase):
