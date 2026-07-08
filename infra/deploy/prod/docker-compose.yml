@@ -224,6 +224,50 @@ services:
       python manage.py runserver 0.0.0.0:8000
       "
 
+  telegram_notifier:
+    image: ${SERVICES_IMAGE}:${SERVICES_APP_VERSION}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      services:
+        condition: service_started
+      orchestrator:
+        condition: service_started
+    environment:
+      SECRET_KEY: ${SERVICES_SECRET_KEY:-prod-change-me}
+      DEBUG: "false"
+      APP_ENV: prod
+      SERVICES_APP_VERSION: ${SERVICES_APP_VERSION}
+      SERVICES_SERVICE_NAME: ${SERVICES_SERVICE_NAME:-warehub-database-service}
+      SERVICES_LOG_LEVEL: ${SERVICES_LOG_LEVEL:-INFO}
+      SENTRY_DSN: ${SERVICES_PROD_SENTRY_DSN:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SERVICES_PROD_SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      ALLOWED_HOSTS: ${PROD_SERVICES_ALLOWED_HOSTS:-127.0.0.1,localhost,warehub.automatonsoft.de}
+      ALLOWED_HOSTS_EXTRA: ${ALLOWED_HOSTS_EXTRA:-}
+      BACKEND_AUTH_BASE_URL: ${PROD_BACKEND_AUTH_BASE_URL:-http://backend:8932/api/v1}
+      BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS: ${PROD_BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS:-warehub.automatonsoft.de,localhost,127.0.0.1}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_WEBHOOK_PATH: ${TELEGRAM_WEBHOOK_PATH:-}
+      TELEGRAM_SERVICES_BASE_URL: ${PROD_TELEGRAM_SERVICES_BASE_URL:-http://services:8000}
+      TELEGRAM_ORCHESTRATOR_BASE_URL: ${PROD_TELEGRAM_ORCHESTRATOR_BASE_URL:-http://orchestrator:8011}
+      ORCHESTRATOR_SERVICE_AUTH_TOKEN: ${PROD_ORCHESTRATOR_SERVICE_AUTH_TOKEN:?PROD_ORCHESTRATOR_SERVICE_AUTH_TOKEN is required}
+      ORCHESTRATOR_SERVICE_ALLOWED_HOSTS: ${PROD_ORCHESTRATOR_SERVICE_ALLOWED_HOSTS:-services}
+      POSTGRES_DB: ${PROD_POSTGRES_DB}
+      POSTGRES_USER: ${PROD_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PROD_POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    command: >
+      sh -c "
+      python manage.py run_telegram_marketplace_notifier
+      "
+
   orchestrator:
     image: ${ORCHESTRATOR_IMAGE}:${ORCHESTRATOR_APP_VERSION}
     restart: unless-stopped

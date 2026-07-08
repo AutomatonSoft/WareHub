@@ -9,7 +9,7 @@ import type { AuthUser } from "../../app/client-api-types";
 import { writeStoredLang } from "../../app/i18n";
 import { useLanguage } from "../../app/use-labels";
 import { useLabels } from "../../app/use-labels";
-import { adminNavigationItem, navigationItems } from "../../lib/navigation";
+import { adminNavigationItem, navigationItems, telegramAdminNavigationItem } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
 import { Button, buttonVariants } from "../ui/button";
 import { AppUserMenu } from "./app-user-menu";
@@ -32,7 +32,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const visibleNavigationItems = useMemo(() => {
     if (currentUser?.role === "admin") {
-      return [...navigationItems, adminNavigationItem];
+      return [...navigationItems, adminNavigationItem, telegramAdminNavigationItem];
     }
     return navigationItems;
   }, [currentUser?.role]);

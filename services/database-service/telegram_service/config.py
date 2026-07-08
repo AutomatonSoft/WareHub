@@ -49,6 +49,13 @@ def _parse_csv_ints(value: str | None) -> tuple[int, ...]:
     return tuple(values)
 
 
+def _parse_delivery_mode(value: str | None) -> str:
+    normalized = _clean_text(value).casefold()
+    if normalized == "polling":
+        return "polling"
+    return "webhook"
+
+
 @dataclass(frozen=True)
 class TelegramRuntimeConfig:
     bot_token: str
@@ -58,6 +65,7 @@ class TelegramRuntimeConfig:
     webhook_path: str
     public_webhook_path: str
     api_base_url: str
+    delivery_mode: str
     allowed_user_ids: tuple[int, ...]
     services_base_url: str
     service_auth_token: str
@@ -93,6 +101,7 @@ def load_telegram_runtime_config() -> TelegramRuntimeConfig:
             _clean_text(os.getenv("TELEGRAM_API_BASE_URL"))
             or "https://api.telegram.org"
         ).rstrip("/"),
+        delivery_mode=_parse_delivery_mode(os.getenv("TELEGRAM_DELIVERY_MODE")),
         allowed_user_ids=_parse_csv_ints(os.getenv("TELEGRAM_ALLOWED_USER_IDS")),
         services_base_url=services_base_url,
         service_auth_token=_clean_text(os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN")),
