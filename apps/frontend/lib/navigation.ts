@@ -5,6 +5,7 @@ import {
   Map,
   PlusSquare,
   PencilRuler,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -21,4 +22,10 @@ export const adminNavigationItem = {
   href: "/admin/users",
   label: "Admin users",
   icon: Users
+} as const;
+
+export const telegramAdminNavigationItem = {
+  href: "/admin/telegram-access",
+  label: "Telegram access",
+  icon: ShieldCheck,
 } as const;

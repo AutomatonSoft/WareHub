@@ -11,9 +11,9 @@ from .models import (
 
 @admin.register(TelegramAccessBinding)
 class TelegramAccessBindingAdmin(admin.ModelAdmin):
-    list_display = ("telegram_user_id", "chat_id", "thread_key", "login", "is_active", "is_admin")
-    search_fields = ("telegram_user_id", "chat_id", "login", "display_name")
-    list_filter = ("is_active", "is_admin")
+    list_display = ("telegram_user_id", "chat_id", "login", "email", "status", "last_seen_at")
+    search_fields = ("telegram_user_id", "chat_id", "login", "display_name", "email")
+    list_filter = ("status", "is_active", "is_admin")
 
 
 @admin.register(TelegramConversationState)

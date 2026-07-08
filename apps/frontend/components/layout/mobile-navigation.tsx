@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { writeStoredLang } from "../../app/i18n";
 import type { AuthUser } from "../../app/client-api-types";
 import { useLanguage } from "../../app/use-labels";
-import { adminNavigationItem, navigationItems } from "../../lib/navigation";
+import { adminNavigationItem, navigationItems, telegramAdminNavigationItem } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
 import { Button, buttonVariants } from "../ui/button";
 import {
@@ -30,7 +30,9 @@ export function MobileNavigation({
 }) {
   const pathname = usePathname();
   const lang = useLanguage();
-  const visibleNavigationItems = currentUser?.role === "admin" ? [...navigationItems, adminNavigationItem] : navigationItems;
+  const visibleNavigationItems = currentUser?.role === "admin"
+    ? [...navigationItems, adminNavigationItem, telegramAdminNavigationItem]
+    : navigationItems;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

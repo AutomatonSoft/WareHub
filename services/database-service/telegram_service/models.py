@@ -4,8 +4,10 @@ from django.db import models
 class TelegramConversationState(models.Model):
     STATE_CHOICES = [
         ("idle", "idle"),
+        ("awaiting_access_email", "awaiting_access_email"),
         ("awaiting_action", "awaiting_action"),
         ("awaiting_kid", "awaiting_kid"),
+        ("awaiting_list_form", "awaiting_list_form"),
         ("awaiting_place", "awaiting_place"),
         ("awaiting_main_ean", "awaiting_main_ean"),
         ("awaiting_quantity", "awaiting_quantity"),
@@ -34,15 +36,44 @@ class TelegramConversationState(models.Model):
 
 
 class TelegramAccessBinding(models.Model):
-    telegram_user_id = models.BigIntegerField(unique=True)
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REVOKED = "revoked"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, STATUS_PENDING),
+        (STATUS_APPROVED, STATUS_APPROVED),
+        (STATUS_REVOKED, STATUS_REVOKED),
+    ]
+
+    telegram_user_id = models.BigIntegerField()
     chat_id = models.BigIntegerField(db_index=True)
     thread_key = models.CharField(max_length=64, blank=True, default="")
     login = models.CharField(max_length=255, blank=True, default="")
     display_name = models.CharField(max_length=255, blank=True, default="")
+    email = models.EmailField(max_length=254, blank=True, default="")
+    app_user_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    app_user_username = models.CharField(max_length=255, blank=True, default="")
+    app_user_login = models.CharField(max_length=255, blank=True, default="")
+    app_user_email = models.EmailField(max_length=254, blank=True, default="")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
     is_admin = models.BooleanField(default=False, db_index=True)
+    requested_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.CharField(max_length=255, blank=True, default="")
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.CharField(max_length=255, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["telegram_user_id", "chat_id"],
+                name="uniq_telegram_access_binding_scope",
+            ),
+        ]
 
 
 class TelegramUpdateAudit(models.Model):

@@ -100,7 +100,12 @@ from kaufland.views import (
 )
 from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
-from telegram_service.views import TelegramWebhookAPIView
+from telegram_service.views import (
+    TelegramAccessApproveAPIView,
+    TelegramAccessListAPIView,
+    TelegramAccessRevokeAPIView,
+    TelegramWebhookAPIView,
+)
 
 
 _telegram_runtime_config = load_telegram_runtime_config()
@@ -332,6 +337,22 @@ for index, webhook_route_path in enumerate(_telegram_webhook_route_paths()):
             name="telegram-webhook-v1" if index == 0 else f"telegram-webhook-v1-alias-{index}",
         )
     )
+
+api_v1_patterns.extend(
+    [
+        path("api/v1/telegram/access/", TelegramAccessListAPIView.as_view(), name="telegram-access-list-v1"),
+        path(
+            "api/v1/telegram/access/<int:binding_id>/approve/",
+            TelegramAccessApproveAPIView.as_view(),
+            name="telegram-access-approve-v1",
+        ),
+        path(
+            "api/v1/telegram/access/<int:binding_id>/revoke/",
+            TelegramAccessRevokeAPIView.as_view(),
+            name="telegram-access-revoke-v1",
+        ),
+    ]
+)
 
 class OpenApiSchemaView(APIView):
     permission_classes = [AllowAny]
