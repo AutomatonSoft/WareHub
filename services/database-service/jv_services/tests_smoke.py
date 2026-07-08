@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve, Resolver404
 
 
@@ -61,6 +61,81 @@ class JVRoutesSmokeTest(SimpleTestCase):
         self.assertIsNotNone(views_batch)
         self.assertIsNotNone(views_read)
         self.assertIsNotNone(views_write)
+
+    @patch("jv_services.views_read.fetch_source_product_snapshot_by_artikelnr")
+    @patch("jv_services.views_read.jv_site_catalog")
+    @patch("jv_services.views_read.source_db_config_for_site")
+    @patch("database.permissions.SessionRolePermission.has_permission", return_value=True)
+    def test_jv_sites_by_ean_discover_uses_artikelnr_lookup_only(
+        self,
+        _mock_permission,
+        mock_source_db_config_for_site,
+        mock_jv_site_catalog,
+        mock_fetch_source_product_snapshot_by_artikelnr,
+    ):
+        from jv_services.views_read import JVSitesByEANAPIView
+
+        mock_jv_site_catalog.return_value = [{"site_key": "JV_DE", "domain": "jv.de"}]
+        mock_source_db_config_for_site.return_value = {"site_key": "JV_DE"}
+        mock_fetch_source_product_snapshot_by_artikelnr.return_value = {
+            "product": {
+                "product_id": 123,
+                "ean": "4260533187876",
+                "model": "4260533187876",
+                "price": "99.99",
+            },
+            "descriptions": [{"name": "Test product"}],
+            "jv_fields": {"currency_code": "EUR"},
+        }
+
+        request = RequestFactory().get("/api/v1/jv/sites/by-ean/4260533187876/")
+        response = JVSitesByEANAPIView.as_view()(request, ean="4260533187876")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["found_count"], 1)
+        self.assertEqual(response.data["found"][0]["title"], "Test product")
+        mock_fetch_source_product_snapshot_by_artikelnr.assert_called_once_with(
+            {"site_key": "JV_DE"},
+            "4260533187876",
+        )
+
+    @patch("jv_services.views_read.fetch_source_product_snapshot_by_artikelnr")
+    @patch("jv_services.views_read.build_source_payload", return_value={"ok": True})
+    @patch("jv_services.views_read.source_db_config_for_site", return_value={"site_key": "JV_DE"})
+    @patch("database.permissions.SessionRolePermission.has_permission", return_value=True)
+    def test_jv_product_by_ean_view_uses_artikelnr_lookup(
+        self,
+        _mock_permission,
+        _mock_source_db_config_for_site,
+        _mock_build_source_payload,
+        mock_fetch_source_product_snapshot_by_artikelnr,
+    ):
+        from jv_services.views_read import JVProductByEANAPIView
+
+        mock_fetch_source_product_snapshot_by_artikelnr.return_value = {
+            "product": {
+                "product_id": 123,
+                "ean": "4260533187876",
+                "model": "4260533187876",
+                "price": "99.99",
+                "date_modified": None,
+            },
+            "descriptions": [{"language_id": 1, "name": "Test product", "description": ""}],
+            "categories": [],
+            "stores": [],
+            "images": [],
+            "specials": [],
+            "jv_fields": {"currency_code": "EUR"},
+        }
+
+        request = RequestFactory().get("/api/v1/jv/products/by-ean/4260533187876/", {"site": "JV", "site_key": "JV_DE"})
+        response = JVProductByEANAPIView.as_view()(request, ean="4260533187876")
+
+        self.assertEqual(response.status_code, 200)
+        mock_fetch_source_product_snapshot_by_artikelnr.assert_called_once_with(
+            {"site_key": "JV_DE"},
+            "4260533187876",
+        )
 
     def test_jv_source_config_catalog_defaults(self):
         from jv_services.source_config import jv_site_catalog
@@ -550,6 +625,113 @@ class JVRoutesSmokeTest(SimpleTestCase):
         self.assertTrue(callable(build_job_precompute_context))
         self.assertTrue(callable(save_job_precompute_context))
         self.assertTrue(callable(build_batch_plan))
+
+    @patch("jv_services.batch_service._extract_translation_source_from_snapshot", return_value={"description": "desc"})
+    @patch("jv_services.batch_service._language_map_for_site", return_value={"de": 1})
+    @patch("jv_services.batch_service.fetch_source_product_snapshot_by_artikelnr")
+    @patch("jv_services.batch_service.source_db_config_for_site", return_value={"site_key": "JV_DE"})
+    @patch("jv_services.batch_service._sites_for_family", return_value=[{"site": "JV", "site_key": "JV_DE", "domain": "jv.de"}])
+    def test_jv_batch_precompute_uses_artikelnr_lookup(
+        self,
+        _mock_sites_for_family,
+        _mock_source_db_config_for_site,
+        mock_fetch_source_product_snapshot_by_artikelnr,
+        _mock_language_map_for_site,
+        _mock_extract_translation_source_from_snapshot,
+    ):
+        from jv_services.batch_service import build_job_precompute_context
+
+        mock_fetch_source_product_snapshot_by_artikelnr.return_value = {
+            "product": {"product_id": 123, "ean": "4071489201321", "model": "4071489201321"},
+            "descriptions": [{"name": "Test"}],
+            "jv_fields": {"currency_code": "EUR"},
+        }
+
+        build_job_precompute_context(
+            ean="4071489201321",
+            payload={"translate_texts": True, "site_keys": ["JV_DE"]},
+        )
+
+        mock_fetch_source_product_snapshot_by_artikelnr.assert_called_once_with(
+            {"site_key": "JV_DE"},
+            "4071489201321",
+        )
+
+    @patch("jv_services.views_write.finalize_error")
+    @patch("jv_services.views_write.claim_idempotency_or_response")
+    @patch("jv_services.views_write._request_body_for_hash", return_value={})
+    @patch("jv_services.views_write.fetch_source_product_snapshot_by_artikelnr")
+    @patch("jv_services.views_write.source_db_config_for_site", return_value={"site_key": "JV_DE"})
+    def test_jv_sync_by_ean_view_uses_artikelnr_lookup(
+        self,
+        _mock_source_db_config_for_site,
+        mock_fetch_source_product_snapshot_by_artikelnr,
+        _mock_request_body_for_hash,
+        mock_claim_idempotency_or_response,
+        _mock_finalize_error,
+    ):
+        from jv_services.views_write import JVProductCreateByEANAPIView
+        from rest_framework.request import Request
+        from rest_framework.test import APIRequestFactory
+
+        mock_claim_idempotency_or_response.return_value = (object(), None)
+        mock_fetch_source_product_snapshot_by_artikelnr.return_value = None
+
+        raw_request = APIRequestFactory().post(
+            "/api/v1/jv/products/sync-by-ean/4071489201321/",
+            data={},
+            format="json",
+        )
+        raw_request.GET = raw_request.GET.copy()
+        raw_request.GET["site"] = "JV"
+        raw_request.GET["site_key"] = "JV_DE"
+        request = Request(raw_request)
+        response = JVProductCreateByEANAPIView().post.__wrapped__(JVProductCreateByEANAPIView(), request, ean="4071489201321")
+
+        self.assertEqual(response.status_code, 404)
+        mock_fetch_source_product_snapshot_by_artikelnr.assert_called_once_with(
+            {"site_key": "JV_DE"},
+            "4071489201321",
+        )
+
+    @patch("jv_services.batch_service._language_map_for_site", return_value={"de": 1})
+    @patch("jv_services.batch_service.fetch_source_product_snapshot_by_artikelnr")
+    @patch("jv_services.batch_service.source_db_config_for_site", return_value={"site_key": "JV_DE"})
+    def test_jv_batch_plan_uses_artikelnr_lookup(
+        self,
+        _mock_source_db_config_for_site,
+        mock_fetch_source_product_snapshot_by_artikelnr,
+        _mock_language_map_for_site,
+    ):
+        from jv_services.batch_service import build_batch_plan
+
+        mock_fetch_source_product_snapshot_by_artikelnr.return_value = {
+            "product": {
+                "product_id": 123,
+                "ean": "4071489201321",
+                "model": "4071489201321",
+                "price": "99.99",
+            },
+            "descriptions": [{"name": "Test product"}],
+            "jv_fields": {"currency_code": "EUR"},
+        }
+
+        plan = build_batch_plan(
+            ean="4071489201321",
+            payload={"site_keys": ["JV_DE"]},
+            precomputed={
+                "selected_site_keys": ["JV_DE"],
+                "candidate_rows": [{"site": "JV", "site_key": "JV_DE", "domain": "jv.de"}],
+            },
+        )
+
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0]["status"], "pending")
+        self.assertEqual(plan[0]["details"]["source_model"], "4071489201321")
+        mock_fetch_source_product_snapshot_by_artikelnr.assert_called_once_with(
+            {"site_key": "JV_DE"},
+            "4071489201321",
+        )
 
     def test_jv_batch_translation_helpers_import(self):
         from jv_services.batch_translation import (

@@ -25,7 +25,7 @@ from .source_client import (
     create_product_in_source,
     fetch_source_language_id_by_locale,
     fetch_source_product_snapshot_by_product_id,
-    fetch_source_product_snapshot_by_ean,
+    fetch_source_product_snapshot_by_artikelnr,
     push_product_to_source,
     source_db_config_for_site,
 )
@@ -579,7 +579,7 @@ class JVProductCreateByEANAPIView(APIView):
             return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         try:
-            snapshot = fetch_source_product_snapshot_by_ean(db_config, ean.strip())
+            snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, ean.strip())
         except Exception as exc:
             logger.exception(
                 "JV_SYNC_SOURCE_FETCH_FAILED code=jv_sync_source_fetch_failed ean=%s site=%s site_key=%s",
@@ -602,7 +602,7 @@ class JVProductCreateByEANAPIView(APIView):
         if not snapshot:
             payload = {
                 "code": "jv_source_product_not_found",
-                "detail": f"Товар не найден в source DB по указанному ean (site={site}).",
+                "detail": f"Товар не найден в source DB по указанному artikelnr (site={site}).",
             }
             finalize_error(
                 idem_record,
