@@ -440,6 +440,13 @@ class JVRoutesSmokeTest(SimpleTestCase):
                 )
             _load_delivery_mapping_overrides.cache_clear()
 
+    def test_jv_source_reader_first_present_value_preserves_zero(self):
+        from jv_services.source_reader import _first_present_value
+
+        self.assertEqual(_first_present_value(0, 11, 12), 0)
+        self.assertEqual(_first_present_value("", 11, 12), 11)
+        self.assertIsNone(_first_present_value(None, ""))
+
     def test_jv_batch_serializer_accepts_categories_by_site_key(self):
         from jv_services.serializers import JVBatchPayloadSerializer
 
@@ -460,6 +467,29 @@ class JVRoutesSmokeTest(SimpleTestCase):
             {
                 "JV_DE": [{"category_id": 10, "main_category": True}],
                 "JV_AT": [{"category_id": 20, "main_category": False}],
+            },
+        )
+
+    def test_jv_batch_serializer_accepts_jv_fields_by_site_key(self):
+        from jv_services.serializers import JVBatchPayloadSerializer
+
+        serializer = JVBatchPayloadSerializer(
+            data={
+                "site_family": "JV",
+                "site_keys": ["JV_DE", "JV_AT"],
+                "jv_fields_by_site_key": {
+                    "jv_de": {"lieferzeitid": "11"},
+                    "JV_AT": {"lieferzeitid": "7", "lieferzeit": "7"},
+                },
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            serializer.validated_data["jv_fields_by_site_key"],
+            {
+                "JV_DE": {"lieferzeitid": "11"},
+                "JV_AT": {"lieferzeitid": "7", "lieferzeit": "7"},
             },
         )
 

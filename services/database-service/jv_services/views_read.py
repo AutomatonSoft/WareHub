@@ -171,15 +171,12 @@ class JVLocalProductByEANAPIView(APIView):
             )
 
         normalized_ean = ean.strip()
-        product = ImportedProduct.objects.filter(
+        local_product = ImportedProduct.objects.filter(
             site=site,
             site_key=site_key or "",
             ean=normalized_ean,
         ).first()
-        if product is not None:
-            return Response(_serialize_local_jv_product(product, site_key=site_key or ""), status=status.HTTP_200_OK)
-
-        product = None
+        product = local_product
         conflict_product = None
         normalized_site_key = site_key or ""
         snapshot = None
@@ -319,7 +316,7 @@ def _build_local_jv_fields(product: ImportedProduct, *, serialized: dict, site_k
         "ean": str(product.source_ean_field or "").strip() or str(product.ean or "").strip(),
         "inaktiv": 0 if bool(product.status) else 1,
         "is_sofort": 1,
-        "lieferzeitid": 11,
+        "lieferzeitid": None,
         "uvp": uvp_value,
         "urlkey": _build_local_jv_urlkey(product=product, fallback_name=fallback_name),
         "site": product.site,

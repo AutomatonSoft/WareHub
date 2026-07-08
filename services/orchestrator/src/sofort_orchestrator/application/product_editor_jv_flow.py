@@ -144,10 +144,7 @@ class ProductEditorJvFlow:
                 warnings=[ProductEditorWarning(code="product_editor_jv_target_not_found", message="No JV target was found for this EAN.")],
             )
 
-        local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
-        if local.status_code == 404:
-            self.gateway.sync_jv_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
-            local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
+        local = self._load_local_draft_for_site(ean=ean, request_id=request_id, site_key=baseline_site_key)
 
         if not (200 <= local.status_code < 300):
             return ProductEditorLoadResponse(
@@ -169,12 +166,48 @@ class ProductEditorJvFlow:
                 )
             )
 
+        draft = _normalize_jv_draft(local.body, baseline_site_key)
+        found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
+        site_payloads = {
+            site_key: site_payload
+            for site_key, site_payload in (
+                (
+                    site_key,
+                    self._load_local_draft_for_site(ean=ean, request_id=request_id, site_key=site_key).body,
+                )
+                for site_key in found_target_ids
+            )
+            if isinstance(site_payload, dict) and site_payload.get("ean")
+        }
+        draft["categories_by_site_key"] = {
+            site_key: site_categories
+            for site_key, site_categories in (
+                (
+                    site_key,
+                    site_payload.get("categories") if isinstance(site_payload.get("categories"), list) else [],
+                )
+                for site_key, site_payload in site_payloads.items()
+            )
+            if site_categories
+        }
+        draft["jv_fields_by_site_key"] = {
+            site_key: site_fields
+            for site_key, site_fields in (
+                (
+                    site_key,
+                    site_payload.get("jv_fields") if isinstance(site_payload.get("jv_fields"), dict) else {},
+                )
+                for site_key, site_payload in site_payloads.items()
+            )
+            if site_fields
+        }
+
         return ProductEditorLoadResponse(
             request_id=request_id,
             ean=ean,
             active_group=ProductEditorGroupId.JV,
             baseline_target_id=baseline_site_key,
-            draft=_normalize_jv_draft(local.body, baseline_site_key),
+            draft=draft,
             supported=True,
             warnings=warnings,
         )
@@ -335,6 +368,13 @@ class ProductEditorJvFlow:
         results = self.discover_targets(ean=ean, request_id=request_id)
         return [target_id for target_id, state in results.items() if state["status"] is ProductEditorTargetStatus.FOUND]
 
+    def _load_local_draft_for_site(self, *, ean: str, request_id: str, site_key: str):
+        local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+        if local.status_code == 404:
+            self.gateway.sync_jv_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+            local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+        return local
+
 
 class ProductEditorJvFlowError(RuntimeError):
     def __init__(self, code: str, message: str, status_code: int, details: dict | None = None) -> None:
@@ -348,7 +388,7 @@ class ProductEditorJvFlowError(RuntimeError):
 def _normalize_jv_draft(payload: dict, baseline_site_key: str) -> dict:
     descriptions = payload.get("descriptions") if isinstance(payload.get("descriptions"), list) else []
     categories = payload.get("categories") if isinstance(payload.get("categories"), list) else []
-    images = payload.get("images") if isinstance(payload.get("images"), list) else []
+    images = _normalize_jv_images_payload(payload)
     jv_fields = payload.get("jv_fields") if isinstance(payload.get("jv_fields"), dict) else {}
     return {
         "target_id": baseline_site_key,
@@ -360,6 +400,7 @@ def _normalize_jv_draft(payload: dict, baseline_site_key: str) -> dict:
         "quantity": payload.get("quantity"),
         "status": bool(payload.get("status", False)),
         "image": str(payload.get("image") or "").strip(),
+        "image_public_url": str(payload.get("image_public_url") or "").strip(),
         "descriptions": descriptions,
         "categories": categories,
         "images": images,
@@ -476,14 +517,81 @@ def _normalize_jv_categories_payload(draft: dict) -> tuple[list[dict], int | Non
     )
 
 
+def _normalize_jv_categories_by_site_key_payload(draft: dict) -> dict[str, list[dict]]:
+    raw_value = draft.get("categories_by_site_key") if isinstance(draft.get("categories_by_site_key"), dict) else {}
+    normalized: dict[str, list[dict]] = {}
+    for raw_site_key, rows in raw_value.items():
+        site_key = str(raw_site_key or "").strip().upper()
+        if not site_key:
+            continue
+        child_draft = {"categories": rows if isinstance(rows, list) else []}
+        site_categories, _ = _normalize_jv_categories_payload(child_draft)
+        if site_categories:
+            normalized[site_key] = site_categories
+    return normalized
+
+
+def _normalize_jv_images_payload(payload: dict) -> list[dict]:
+    raw_images = payload.get("images") if isinstance(payload.get("images"), list) else []
+    public_rows = payload.get("images_public_urls") if isinstance(payload.get("images_public_urls"), list) else []
+    public_url_by_key: dict[tuple[str, int], str] = {}
+    for row in public_rows:
+        if not isinstance(row, dict):
+            continue
+        image_value = str(row.get("image") or "").strip()
+        sort_order = int(row.get("sort_order") or 0)
+        public_url = str(row.get("public_url") or "").strip()
+        if image_value and public_url:
+            public_url_by_key[(image_value, sort_order)] = public_url
+
+    normalized: list[dict] = []
+    for row in raw_images:
+        if not isinstance(row, dict):
+            continue
+        image_value = str(row.get("image") or "").strip()
+        if not image_value:
+            continue
+        sort_order = int(row.get("sort_order") or 0)
+        public_url = str(row.get("public_url") or public_url_by_key.get((image_value, sort_order), "")).strip()
+        normalized.append(
+            {
+                "image": image_value,
+                "public_url": public_url,
+                "sort_order": sort_order,
+            }
+        )
+    return normalized
+
+
+def _normalize_jv_fields_by_site_key_payload(draft: dict) -> dict[str, dict]:
+    raw_value = draft.get("jv_fields_by_site_key") if isinstance(draft.get("jv_fields_by_site_key"), dict) else {}
+    base_fields = draft.get("jv_fields") if isinstance(draft.get("jv_fields"), dict) else {}
+    normalized: dict[str, dict] = {}
+    for raw_site_key, value in raw_value.items():
+        site_key = str(raw_site_key or "").strip().upper()
+        if not site_key or not isinstance(value, dict):
+            continue
+        merged_fields = dict(base_fields)
+        merged_fields.update(value)
+        normalized[site_key] = merged_fields
+    return normalized
+
+
 def _build_jv_batch_payload(*, draft: dict, changed_fields: list[str], target_ids: list[str], baseline_site_key: str) -> dict:
     filtered = filtered_payload(Marketplace.XLJV, draft if isinstance(draft, dict) else {})
     payload = {field: filtered[field] for field in changed_fields if field in filtered}
     if "categories" in changed_fields:
         normalized_categories, template_main_category_id = _normalize_jv_categories_payload(draft if isinstance(draft, dict) else {})
         payload["categories"] = normalized_categories
+        categories_by_site_key = _normalize_jv_categories_by_site_key_payload(draft if isinstance(draft, dict) else {})
+        if categories_by_site_key:
+            payload["categories_by_site_key"] = categories_by_site_key
         if template_main_category_id is not None:
             payload["template_main_category_id"] = template_main_category_id
+    if "jv_fields" in changed_fields:
+        jv_fields_by_site_key = _normalize_jv_fields_by_site_key_payload(draft if isinstance(draft, dict) else {})
+        if jv_fields_by_site_key:
+            payload["jv_fields_by_site_key"] = jv_fields_by_site_key
     textual_changed = any(field in _JV_TEXTUAL_FIELDS for field in changed_fields)
     if textual_changed and "JV_CO_UK" in target_ids:
         payload["translate_texts"] = True

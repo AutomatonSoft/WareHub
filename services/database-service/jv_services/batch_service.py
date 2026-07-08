@@ -839,6 +839,12 @@ def build_batch_plan(*, ean: str, payload: dict, precomputed: dict | None = None
         for site_key, rows in categories_by_site_key_raw.items()
         if str(site_key or "").strip()
     }
+    jv_fields_by_site_key_raw = payload.get("jv_fields_by_site_key") or {}
+    jv_fields_by_site_key = {
+        str(site_key or "").strip().upper(): value
+        for site_key, value in jv_fields_by_site_key_raw.items()
+        if str(site_key or "").strip() and isinstance(value, dict)
+    }
     has_explicit_stores = "stores" in payload
     has_explicit_images = "images" in payload
     has_explicit_specials = "specials" in payload
@@ -974,11 +980,19 @@ def build_batch_plan(*, ean: str, payload: dict, precomputed: dict | None = None
             }
             site_key_norm = str(site_key or "").strip().upper()
 
-            if base_jv_fields is not None:
-                jv_fields_for_site = copy.deepcopy(base_jv_fields)
+            site_specific_jv_fields = jv_fields_by_site_key.get(site_key_norm)
+            if base_jv_fields is not None or site_specific_jv_fields is not None:
+                jv_fields_for_site = copy.deepcopy(base_jv_fields) if base_jv_fields is not None else {}
+                if isinstance(site_specific_jv_fields, dict):
+                    jv_fields_for_site.update(copy.deepcopy(site_specific_jv_fields))
+                has_explicit_site_delivery = (
+                    isinstance(site_specific_jv_fields, dict)
+                    and site_specific_jv_fields.get("lieferzeitid") not in (None, "")
+                )
                 if (
                     template_site_key
                     and str(site_key or "").strip().upper() != template_site_key
+                    and not has_explicit_site_delivery
                     and jv_fields_for_site.get("lieferzeitid") not in (None, "")
                 ):
                     source_delivery_id = jv_fields_for_site.get("lieferzeitid")

@@ -33,6 +33,16 @@ def _json_safe_datetime(value):
     return value
 
 
+def _first_present_value(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and value == "":
+            continue
+        return value
+    return None
+
+
 @lru_cache(maxsize=8)
 def _load_jv_category_main_overrides(path_raw: str) -> dict:
     path = Path(path_raw)
@@ -376,9 +386,11 @@ def _fetch_jv_product_snapshot_by_ean(cur, ean: str, *, site_key: str | None = N
             "content_by_language": jv_content_rows,
             "is_sofort": jv_admin_fields.get("is_sofort"),
             "mwstid": jv_admin_fields.get("mwstid"),
-            "lieferzeitid": jv_admin_fields.get("lieferzeitid")
-            or jv_admin_fields.get("lieferzeit")
-            or jv_admin_fields.get("lieferzeit_id"),
+            "lieferzeitid": _first_present_value(
+                jv_admin_fields.get("lieferzeitid"),
+                jv_admin_fields.get("lieferzeit"),
+                jv_admin_fields.get("lieferzeit_id"),
+            ),
             "einheitid": jv_admin_fields.get("einheitid"),
             "grundeinheit": jv_admin_fields.get("grundeinheit"),
             "vpe": jv_admin_fields.get("vpe"),
@@ -724,9 +736,11 @@ def _fetch_jv_product_snapshot_by_product_id(cur, source_product_id: int, *, sit
             "content_by_language": jv_content_rows,
             "is_sofort": jv_admin_fields.get("is_sofort"),
             "mwstid": jv_admin_fields.get("mwstid"),
-            "lieferzeitid": jv_admin_fields.get("lieferzeitid")
-            or jv_admin_fields.get("lieferzeit")
-            or jv_admin_fields.get("lieferzeit_id"),
+            "lieferzeitid": _first_present_value(
+                jv_admin_fields.get("lieferzeitid"),
+                jv_admin_fields.get("lieferzeit"),
+                jv_admin_fields.get("lieferzeit_id"),
+            ),
             "einheitid": jv_admin_fields.get("einheitid"),
             "grundeinheit": jv_admin_fields.get("grundeinheit"),
             "vpe": jv_admin_fields.get("vpe"),

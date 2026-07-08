@@ -162,8 +162,8 @@ export function extractProductEditorApiError(error: unknown): ProductEditorApiEr
   };
 }
 
-export async function getJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOption[]> {
-  const response = await apiFetch("/api/v1/jv/delivery-options/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+export async function getJvDeliveryOptions(siteKey = "JV_DE"): Promise<ProductEditorJvDeliveryOption[]> {
+  const response = await apiFetch(`/api/v1/jv/delivery-options/?site=JV&site_key=${encodeURIComponent(siteKey)}&language=de`, { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV delivery options load failed.");
@@ -192,8 +192,8 @@ export async function getJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOpt
     .filter((row): row is ProductEditorJvDeliveryOption => Boolean(row));
 }
 
-export async function getJvRubricOptions(): Promise<ProductEditorJvCategoryOption[]> {
-  const response = await apiFetch("/api/v1/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+export async function getJvRubricOptions(siteKey = "JV_DE"): Promise<ProductEditorJvCategoryOption[]> {
+  const response = await apiFetch(`/api/v1/jv/rubrics/tree/?site=JV&site_key=${encodeURIComponent(siteKey)}&language=de`, { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV rubric tree load failed.");
@@ -225,8 +225,8 @@ export async function getJvRubricOptions(): Promise<ProductEditorJvCategoryOptio
   return result;
 }
 
-export async function getJvRubricTree(): Promise<ProductEditorJvRubricNode[]> {
-  const response = await apiFetch("/api/v1/jv/rubrics/tree/?site=JV&site_key=JV_DE&language=de", { method: "GET" });
+export async function getJvRubricTree(siteKey = "JV_DE"): Promise<ProductEditorJvRubricNode[]> {
+  const response = await apiFetch(`/api/v1/jv/rubrics/tree/?site=JV&site_key=${encodeURIComponent(siteKey)}&language=de`, { method: "GET" });
   const body = await readJsonSafe(response);
   if (!response.ok) {
     throw toApiError(response, body, "JV rubric tree load failed.");
@@ -243,9 +243,11 @@ export async function getJvRubricTree(): Promise<ProductEditorJvRubricNode[]> {
 
 export async function uploadProductEditorImages(input: {
   files: File[];
+  sourceUrls?: string[];
   site: "JV" | "XL";
   siteKey: string;
   ean?: string;
+  artikelnr?: string;
   imageRole: ProductEditorImageRole;
 }): Promise<ProductEditorUploadImagesResponse> {
   const query = new URLSearchParams();
@@ -255,10 +257,18 @@ export async function uploadProductEditorImages(input: {
   if (input.ean && input.ean.trim()) {
     query.set("ean", input.ean.trim());
   }
+  if (input.artikelnr && input.artikelnr.trim()) {
+    query.set("artikelnr", input.artikelnr.trim());
+  }
 
   const formData = new FormData();
   for (const file of input.files) {
     formData.append("images", file);
+  }
+  for (const sourceUrl of input.sourceUrls ?? []) {
+    if (String(sourceUrl || "").trim()) {
+      formData.append("source_urls", String(sourceUrl).trim());
+    }
   }
 
   const response = await apiFetch(`/api/v1/uploads/images/?${query.toString()}`, {
