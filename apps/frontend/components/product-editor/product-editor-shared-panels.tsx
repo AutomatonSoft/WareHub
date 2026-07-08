@@ -91,7 +91,8 @@ export function ProductEditorEmptyPanel({
             <Input
               value={eanValue}
               onChange={(event) => onChangeEan(event.target.value)}
-              placeholder="Enter 13-digit EAN for this tab"
+              placeholder="Enter product identifier for this tab"
+              maxLength={100}
               className="h-11 rounded-[var(--radius-control)] border-border bg-background"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && isEanValid && !searching) {
@@ -113,11 +114,11 @@ export function ProductEditorEmptyPanel({
           <div className="flex flex-col gap-1.5">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
             <h2 className="text-2xl font-semibold leading-tight text-foreground">No product loaded</h2>
-            <p className="mx-auto max-w-xl text-sm leading-6 text-muted-foreground">Enter an EAN here and run discovery to resolve marketplace targets for this tab.</p>
+            <p className="mx-auto max-w-xl text-sm leading-6 text-muted-foreground">Enter a product identifier here and run discovery to resolve marketplace targets for this tab.</p>
             <p className="mx-auto max-w-xl text-xs leading-5 text-muted-foreground">{body}</p>
           </div>
           <div className="grid gap-2 rounded-[var(--radius-card)] border border-border bg-muted/25 p-3 text-left text-xs text-muted-foreground sm:grid-cols-3">
-            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">1 Enter EAN - Input product identifier</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">1 Enter identifier - Input product identifier</span>
             <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">2 Discover targets - Resolve across marketplaces</span>
             <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">3 Apply through Orchestrator - Edit and publish changes</span>
           </div>
@@ -158,6 +159,7 @@ export function ProductEditorPanelLayout(props: {
   changedCount: number;
   status?: string;
   hideHeaderBadges?: boolean;
+  headerLead?: ReactNode;
   headerActions?: ReactNode;
   topLeft: ReactNode;
   topRight: ReactNode;
@@ -168,11 +170,15 @@ export function ProductEditorPanelLayout(props: {
     <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
       <CardHeader className="wh-card-header-divider pb-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.kicker}</p>
-            <CardTitle className="mt-1 text-base">{props.title}</CardTitle>
-            {props.subtitle ? <CardDescription>{props.subtitle}</CardDescription> : null}
-          </div>
+          {props.headerLead ? (
+            <div className="min-w-0 flex-1">{props.headerLead}</div>
+          ) : (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.kicker}</p>
+              <CardTitle className="mt-1 text-base">{props.title}</CardTitle>
+              {props.subtitle ? <CardDescription>{props.subtitle}</CardDescription> : null}
+            </div>
+          )}
           {props.headerActions ? (
             <div className="flex flex-wrap items-center gap-1.5">{props.headerActions}</div>
           ) : !props.hideHeaderBadges ? (

@@ -12,8 +12,7 @@ from .models import ImportedProduct
 from .serializers import ImportedProductDetailSerializer
 from .source_client import (
     JV_LANGUAGE_ID_BY_CODE,
-    fetch_source_product_brief_by_ean,
-    fetch_source_product_snapshot_by_ean,
+    fetch_source_product_snapshot_by_artikelnr,
     jv_site_catalog,
     source_db_config_for_site,
 )
@@ -32,6 +31,26 @@ from .view_helpers import (
 
 logger = logging.getLogger(__name__)
 JV_LANGUAGE_CODE_BY_ID = {int(value): str(key).lower() for key, value in JV_LANGUAGE_ID_BY_CODE.items()}
+
+
+def _brief_row_from_snapshot(snapshot: dict) -> dict | None:
+    product = (snapshot or {}).get("product") or {}
+    if not product:
+        return None
+
+    descriptions = (snapshot or {}).get("descriptions") or []
+    title = ""
+    if descriptions:
+        title = str((descriptions[0] or {}).get("name") or "").strip()
+
+    return {
+        "product_id": product.get("product_id"),
+        "ean": product.get("ean"),
+        "model": product.get("model"),
+        "price": product.get("price"),
+        "currency_code": (snapshot or {}).get("jv_fields", {}).get("currency_code"),
+        "title": title,
+    }
 
 class JVProductByEANAPIView(APIView):
     permission_classes = [SessionRolePermission]
@@ -59,7 +78,7 @@ class JVProductByEANAPIView(APIView):
             )
 
         try:
-            snapshot = fetch_source_product_snapshot_by_ean(db_config, ean.strip())
+            snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, ean.strip())
         except Exception as exc:
             logger.exception(
                 "JV_SOURCE_FETCH_FAILED code=jv_source_fetch_failed ean=%s site=%s site_key=%s",
@@ -77,7 +96,7 @@ class JVProductByEANAPIView(APIView):
             )
         if not snapshot:
             return Response(
-                {"detail": f"Товар не найден в source DB по указанному ean (site={site})."},
+                {"detail": f"Товар не найден в source DB по указанному artikelnr (site={site})."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -107,7 +126,10 @@ class JVSitesByEANAPIView(APIView):
                 continue
 
             try:
-                row = fetch_source_product_brief_by_ean(db_config, normalized_ean)
+                snapshot = fetch_source_product_snapshot_by_artikelnr(
+                    db_config,
+                    normalized_ean,
+                )
             except Exception as exc:
                 logger.warning(
                     "JV_ALL_SITES_QUERY_ERROR code=jv_all_sites_query_error site=%s site_key=%s domain=%s error=%s",
@@ -126,6 +148,7 @@ class JVSitesByEANAPIView(APIView):
                 )
                 continue
 
+            row = _brief_row_from_snapshot(snapshot)
             if not row:
                 missing.append({"site_key": site_key, "domain": domain, "reason": "not_found"})
                 continue
@@ -171,15 +194,12 @@ class JVLocalProductByEANAPIView(APIView):
             )
 
         normalized_ean = ean.strip()
-        product = ImportedProduct.objects.filter(
+        local_product = ImportedProduct.objects.filter(
             site=site,
             site_key=site_key or "",
             ean=normalized_ean,
         ).first()
-        if product is not None:
-            return Response(_serialize_local_jv_product(product, site_key=site_key or ""), status=status.HTTP_200_OK)
-
-        product = None
+        product = local_product
         conflict_product = None
         normalized_site_key = site_key or ""
         snapshot = None
@@ -187,7 +207,7 @@ class JVLocalProductByEANAPIView(APIView):
         db_config = source_db_config_for_site(site, site_key=site_key)
         if db_config:
             try:
-                snapshot = fetch_source_product_snapshot_by_ean(db_config, normalized_ean)
+                snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, normalized_ean)
             except Exception as exc:
                 logger.exception(
                     "JV_LOCAL_SOURCE_FETCH_FAILED code=jv_local_source_fetch_failed ean=%s site=%s site_key=%s",
@@ -319,7 +339,7 @@ def _build_local_jv_fields(product: ImportedProduct, *, serialized: dict, site_k
         "ean": str(product.source_ean_field or "").strip() or str(product.ean or "").strip(),
         "inaktiv": 0 if bool(product.status) else 1,
         "is_sofort": 1,
-        "lieferzeitid": 11,
+        "lieferzeitid": None,
         "uvp": uvp_value,
         "urlkey": _build_local_jv_urlkey(product=product, fallback_name=fallback_name),
         "site": product.site,

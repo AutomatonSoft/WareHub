@@ -51,7 +51,7 @@ export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGro
         ) : (
           <EmptyState
             title="No product loaded"
-            description="Start with a 13-digit EAN in the command block, run Discover, then review JV/XL and marketplace targets."
+            description="Start with a product identifier in the command block, run Discover, then review JV/XL and marketplace targets."
             className="wh-target-matrix-empty py-8"
           />
         )

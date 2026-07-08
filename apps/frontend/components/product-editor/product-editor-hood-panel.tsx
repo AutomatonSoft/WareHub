@@ -28,9 +28,13 @@ type ProductEditorHoodPanelProps = {
   onChange: (patch: Partial<ProductEditorHoodDraft>) => void;
   onRemoveImage: (imageUrl: string) => void;
   onReorderImages: (sourceImageUrl: string, targetImageUrl: string) => void;
-  onUploadMainFiles: (files: FileList | null) => void;
-  onUploadAdditionalFiles: (files: FileList | null) => void;
+  onUploadFiles: (files: FileList | null) => void;
   onApplyEditedProducts: () => void;
+  eanValue: string;
+  isEanValid: boolean;
+  searching: boolean;
+  onChangeEan: (value: string) => void;
+  onSearch: () => void;
 };
 
 const HOOD_CATEGORY_OPTIONS = [
@@ -83,6 +87,35 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
       title={ean ? `EAN: ${ean}` : "EAN: -"}
       changedCount={0}
       hideHeaderBadges
+      headerLead={
+        <div className="min-w-0">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <Input
+              value={props.eanValue}
+              onChange={(event) => props.onChangeEan(event.target.value)}
+              placeholder="Enter EAN, SKU or product ID"
+              maxLength={100}
+              className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && props.isEanValid && !props.searching) {
+                  event.preventDefault();
+                  props.onSearch();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 rounded-xl px-4 text-sm font-semibold"
+              disabled={!props.isEanValid || props.searching}
+              onClick={props.onSearch}
+            >
+              {props.searching ? "Searching..." : "Discover"}
+            </Button>
+          </div>
+          {ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {ean}</p> : null}
+        </div>
+      }
       headerActions={
         <Button
           type="button"
@@ -102,8 +135,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
             imageUploadLoading={props.imageUploadLoading}
             onRemoveImage={props.onRemoveImage}
             onReorderImages={props.onReorderImages}
-            onUploadMainFiles={props.onUploadMainFiles}
-            onUploadAdditionalFiles={props.onUploadAdditionalFiles}
+            onUploadFiles={props.onUploadFiles}
           />
           <HoodCategoryPanel draft={props.draft} onChange={props.onChange} />
         </div>

@@ -106,8 +106,15 @@ export type ProductEditorJvCategory = {
   main_category?: boolean;
 };
 
+export type ProductEditorJvSiteKey = "JV_DE" | "JV_CO_UK" | "JV_CH" | "JV_AT";
+
+export type ProductEditorJvCategoriesBySiteKey = Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>>;
+
+export type ProductEditorJvFieldsBySiteKey = Partial<Record<ProductEditorJvSiteKey, Record<string, unknown>>>;
+
 export type ProductEditorJvImage = {
   image: string;
+  public_url?: string;
   sort_order?: number;
 };
 
@@ -121,10 +128,14 @@ export type ProductEditorJvDraft = {
   quantity: string;
   status: boolean;
   image: string;
+  image_public_url: string;
   descriptions: ProductEditorJvDescription[];
   categories: ProductEditorJvCategory[];
+  categories_by_site_key: ProductEditorJvCategoriesBySiteKey;
   images: ProductEditorJvImage[];
   jv_fields: Record<string, unknown>;
+  jv_fields_by_site_key: ProductEditorJvFieldsBySiteKey;
+  pending_uploads: ProductEditorPendingUpload[];
 };
 
 export type ProductEditorPendingUpload = {
@@ -132,6 +143,7 @@ export type ProductEditorPendingUpload = {
   name: string;
   size: number;
   type: string;
+  preview_url?: string;
   file?: File;
 };
 

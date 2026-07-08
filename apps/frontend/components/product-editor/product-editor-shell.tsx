@@ -11,7 +11,8 @@ import {
   discoverProductEditor,
   getProductEditorJob,
   loadProductEditorGroup,
-  planProductEditor
+  planProductEditor,
+  uploadProductEditorImages
 } from "./product-editor-api";
 import { fetchHoodByEan, patchHoodByEan } from "../hood/hood-api";
 import { extractFirstItemFromPayload } from "../hood/hood-search-utils";
@@ -46,6 +47,7 @@ import type {
   ProductEditorJobResponse,
   ProductEditorJvDraft,
   ProductEditorPlanResponse,
+  ProductEditorJvSiteKey,
   ProductEditorTarget
 } from "./product-editor-types";
 
@@ -55,6 +57,15 @@ type HoodWarningsByTab = Record<HoodTabKey, ProductEditorDiscoverResponse["warni
 type HoodLoadingByTab = Record<HoodTabKey, boolean>;
 type HoodApplyLoadingByTab = Record<HoodTabKey, boolean>;
 type HoodImageUploadLoadingByTab = Record<HoodTabKey, boolean>;
+
+const PRODUCT_IDENTIFIER_MAX_LENGTH = 100;
+const JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
+const JV_IMAGE_UPLOAD_RETRY_DELAY_MS = 1500;
+
+function isValidProductIdentifier(value: string): boolean {
+  const normalized = value.trim();
+  return normalized.length > 0 && normalized.length <= PRODUCT_IDENTIFIER_MAX_LENGTH;
+}
 
 function ProductEditorContent() {
   const { showToast } = useToast();
@@ -87,6 +98,8 @@ function ProductEditorContent() {
   const [jobResponse, setJobResponse] = useState<ProductEditorJobResponse | null>(null);
   const [applyConfirmed, setApplyConfirmed] = useState(false);
   const skipNextAutoJvLoadKeyRef = useRef<string | null>(null);
+  const jvAutoLoadInFlightKeyRef = useRef<string | null>(null);
+  const loadedJvAutoLoadKeyRef = useRef<string | null>(null);
 
   const activeTabEanInput = tabEanInputs[activeTabKey] ?? "";
   const effectiveTabEanInput = activeTabEanInput.trim() || eanInput.trim();
@@ -97,8 +110,8 @@ function ProductEditorContent() {
   const hoodLoading = activeHoodTabKey ? hoodLoadingByTab[activeHoodTabKey] : false;
   const hoodApplyLoading = activeHoodTabKey ? hoodApplyLoadingByTab[activeHoodTabKey] : false;
   const hoodImageUploadLoading = activeHoodTabKey ? hoodImageUploadLoadingByTab[activeHoodTabKey] : false;
-  const isGlobalEanValid = /^\d{13}$/.test(eanInput.trim());
-  const isEffectiveTabEanValid = /^\d{13}$/.test(effectiveTabEanInput);
+  const isGlobalEanValid = isValidProductIdentifier(eanInput);
+  const isEffectiveTabEanValid = isValidProductIdentifier(effectiveTabEanInput);
   const hasLocalLoadedJv = activeGroupId === "JV" && isLoadedJvDraft(jvDraft, effectiveTabEanInput);
   const hasLocalLoadedHood =
     activeGroupId === "HOOD" &&
@@ -128,11 +141,18 @@ function ProductEditorContent() {
     }
     if (activeGroupId === "JV" && hasActionableJvTarget(findGroup(discover, "JV")) && !isLoadedJvDraft(jvDraft, discover.ean)) {
       const autoLoadKey = buildJvAutoLoadKey(discover.ean, discover.recommended_baseline_target_id);
+      if (jvAutoLoadInFlightKeyRef.current === autoLoadKey) {
+        return;
+      }
+      if (loadedJvAutoLoadKeyRef.current === autoLoadKey) {
+        return;
+      }
       if (skipNextAutoJvLoadKeyRef.current === autoLoadKey) {
         skipNextAutoJvLoadKeyRef.current = null;
         return;
       }
-      void loadJvDraft(discover, discover.recommended_baseline_target_id);
+      jvAutoLoadInFlightKeyRef.current = autoLoadKey;
+      void loadJvDraft(discover, discover.recommended_baseline_target_id, autoLoadKey);
     }
   }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft]);
 
@@ -148,13 +168,13 @@ function ProductEditorContent() {
 
   async function handleSearchGlobal() {
     const ean = eanInput.trim();
-    if (!/^\d{13}$/.test(ean)) return;
+    if (!isValidProductIdentifier(ean)) return;
     await runDiscover(ean, activeGroupId);
   }
 
   async function handleSearchForActiveTab() {
     const ean = effectiveTabEanInput;
-    if (!/^\d{13}$/.test(ean)) return;
+    if (!isValidProductIdentifier(ean)) return;
     setDiscovering(true);
     setPageError(null);
     setDiscover(null);
@@ -242,21 +262,26 @@ function ProductEditorContent() {
     }
   }
 
-  async function loadJvDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
+  async function loadJvDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null, autoLoadKey?: string) {
     setJvLoading(true);
     setPageError(null);
+    const resolvedAutoLoadKey = autoLoadKey ?? buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId);
     try {
       const response = await loadProductEditorGroup({ ean: currentDiscover.ean, activeGroup: "JV", baselineTargetId: preferredTargetId });
       const hydrated = hydrateJvDraft(response.draft as never);
       setJvDraft(hydrated);
       setInitialJvDraft(hydrated);
       setJvWarnings(response.warnings);
+      loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId ?? response.baseline_target_id);
       clearPlanAndJobState();
     } catch (error) {
       const message = error instanceof Error ? error.message : "JV draft load failed.";
       setPageError(message);
       showToast(message, "error");
     } finally {
+      if (jvAutoLoadInFlightKeyRef.current === resolvedAutoLoadKey) {
+        jvAutoLoadInFlightKeyRef.current = null;
+      }
       setJvLoading(false);
     }
   }
@@ -346,6 +371,216 @@ function ProductEditorContent() {
     clearPlanStateOnly();
   }
 
+  async function uploadJvImagesForSite(input: {
+    siteKey: ProductEditorJvSiteKey;
+    files?: File[];
+    sourceUrls?: string[];
+    imageRole: "main" | "additional";
+    ean: string;
+    artikelnr: string;
+  }) {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE; attempt += 1) {
+      try {
+        return await uploadProductEditorImages({
+          files: input.files ?? [],
+          sourceUrls: input.sourceUrls ?? [],
+          site: "JV",
+          siteKey: input.siteKey,
+          ean: input.ean,
+          artikelnr: input.artikelnr,
+          imageRole: input.imageRole
+        });
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error("JV image upload failed.");
+        if (attempt >= JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE) {
+          break;
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, JV_IMAGE_UPLOAD_RETRY_DELAY_MS));
+      }
+    }
+    throw lastError ?? new Error("JV image upload failed.");
+  }
+
+  type JvGalleryUploadSource = {
+    raw: string;
+    preview: string;
+    file: File | null;
+  };
+
+  function normalizeJvPreviewUrl(raw: string, explicitPublicUrl?: string): string {
+    const publicUrl = String(explicitPublicUrl ?? "").trim();
+    if (publicUrl) return publicUrl;
+    const normalizedRaw = String(raw || "").trim();
+    if (!normalizedRaw) return "";
+    if (/^(https?:)?\/\//i.test(normalizedRaw) || normalizedRaw.startsWith("blob:") || normalizedRaw.startsWith("data:")) {
+      return normalizedRaw;
+    }
+    if (normalizedRaw.startsWith("cosmoshop/")) return `https://www.jvmoebel.de/${normalizedRaw}`;
+    if (normalizedRaw.startsWith("/cosmoshop/")) return `https://www.jvmoebel.de${normalizedRaw}`;
+    if (normalizedRaw.startsWith("/")) return `https://www.jvmoebel.de${normalizedRaw}`;
+    return `https://www.jvmoebel.de/${normalizedRaw}`;
+  }
+
+  function buildJvGalleryUploadSources(currentDraft: ProductEditorJvDraft): { mainSource: JvGalleryUploadSource | null; additionalSources: JvGalleryUploadSource[] } {
+    const pendingFilesByPreview = new Map(
+      currentDraft.pending_uploads
+        .filter((item) => item.file instanceof File && String(item.preview_url || "").trim())
+        .map((item) => [String(item.preview_url || "").trim(), item.file as File])
+    );
+
+    const mainPreview = normalizeJvPreviewUrl(currentDraft.image, currentDraft.image_public_url);
+    const mainSource = mainPreview
+      ? {
+          raw: String(currentDraft.image || "").trim(),
+          preview: mainPreview,
+          file: pendingFilesByPreview.get(mainPreview) ?? pendingFilesByPreview.get(String(currentDraft.image || "").trim()) ?? null
+        }
+      : null;
+
+    const additionalSources = currentDraft.images
+      .map((row) => {
+        const raw = String(row.image || "").trim();
+        const preview = normalizeJvPreviewUrl(raw, row.public_url);
+        if (!preview) return null;
+        return {
+          raw,
+          preview,
+          file: pendingFilesByPreview.get(preview) ?? pendingFilesByPreview.get(raw) ?? null
+        } satisfies JvGalleryUploadSource;
+      })
+      .filter((row): row is JvGalleryUploadSource => Boolean(row));
+
+    return { mainSource, additionalSources };
+  }
+
+  function deriveJvArtikelNr(currentDraft: ProductEditorJvDraft): string {
+    const candidates = [
+      currentDraft.jv_fields?.artikelnr,
+      currentDraft.source_model,
+      currentDraft.source_sku,
+      currentDraft.source_ean_field,
+      currentDraft.ean
+    ];
+    for (const value of candidates) {
+      const normalized = String(value ?? "").trim();
+      if (normalized) return normalized;
+    }
+    return currentDraft.ean.trim();
+  }
+
+  async function uploadSingleJvGalleryAsset(input: {
+    siteKey: ProductEditorJvSiteKey;
+    source: JvGalleryUploadSource;
+    imageRole: "main" | "additional";
+    ean: string;
+    artikelnr: string;
+  }) {
+    if (input.source.file) {
+      return uploadJvImagesForSite({
+        siteKey: input.siteKey,
+        files: [input.source.file],
+        imageRole: input.imageRole,
+        ean: input.ean,
+        artikelnr: input.artikelnr
+      });
+    }
+    return uploadJvImagesForSite({
+      siteKey: input.siteKey,
+      sourceUrls: [input.source.preview],
+      imageRole: input.imageRole,
+      ean: input.ean,
+      artikelnr: input.artikelnr
+    });
+  }
+
+  async function synchronizeJvGalleryAssets(currentDraft: ProductEditorJvDraft, selectedTargetIds: ProductEditorJvSiteKey[]): Promise<ProductEditorJvDraft> {
+    const { mainSource, additionalSources } = buildJvGalleryUploadSources(currentDraft);
+    if (!mainSource && additionalSources.length === 0) {
+      return currentDraft;
+    }
+
+    const baselineSiteKey = currentDraft.target_id as ProductEditorJvSiteKey;
+    const targetSiteKeys = [
+      baselineSiteKey,
+      ...Array.from(new Set(selectedTargetIds.filter((item) => item !== baselineSiteKey)))
+    ];
+    const artikelnr = deriveJvArtikelNr(currentDraft);
+
+    let baselineMainUpload: Awaited<ReturnType<typeof uploadJvImagesForSite>> | null = null;
+    const baselineAdditionalUploads: Array<Awaited<ReturnType<typeof uploadJvImagesForSite>>> = [];
+
+    for (const siteKey of targetSiteKeys) {
+      let currentMainUpload: Awaited<ReturnType<typeof uploadJvImagesForSite>> | null = null;
+      const currentAdditionalUploads: Array<Awaited<ReturnType<typeof uploadJvImagesForSite>>> = [];
+
+      if (mainSource) {
+        currentMainUpload = await uploadSingleJvGalleryAsset({
+          siteKey,
+          source: mainSource,
+          imageRole: "main",
+          ean: currentDraft.ean,
+          artikelnr
+        });
+      }
+
+      for (const source of additionalSources) {
+        currentAdditionalUploads.push(await uploadSingleJvGalleryAsset({
+          siteKey,
+          source,
+          imageRole: "additional",
+          ean: currentDraft.ean,
+          artikelnr
+        }));
+      }
+
+      if (siteKey === baselineSiteKey) {
+        baselineMainUpload = currentMainUpload;
+        baselineAdditionalUploads.push(...currentAdditionalUploads);
+        continue;
+      }
+
+      if (
+        baselineMainUpload &&
+        currentMainUpload &&
+        JSON.stringify(currentMainUpload.uploaded_image_urls) !== JSON.stringify(baselineMainUpload.uploaded_image_urls)
+      ) {
+        throw new Error(`JV image upload path mismatch for ${siteKey}. Upload aborted before batch save.`);
+      }
+
+      if (currentAdditionalUploads.length !== baselineAdditionalUploads.length) {
+        throw new Error(`JV gallery upload count mismatch for ${siteKey}. Upload aborted before batch save.`);
+      }
+      for (let index = 0; index < currentAdditionalUploads.length; index += 1) {
+        if (String(currentAdditionalUploads[index]?.image || "").trim() !== String(baselineAdditionalUploads[index]?.image || "").trim()) {
+          throw new Error(`JV gallery upload path mismatch for ${siteKey}. Upload aborted before batch save.`);
+        }
+      }
+    }
+
+    const nextImage = String(baselineMainUpload?.image || mainSource?.raw || currentDraft.image).trim();
+    const nextImagePublicUrl = String(baselineMainUpload?.image_public_url || mainSource?.preview || currentDraft.image_public_url).trim();
+    const nextImages = currentDraft.images.map((row, index) => {
+      const uploaded = baselineAdditionalUploads[index];
+      if (!uploaded) {
+        return row;
+      }
+      return {
+        image: String(uploaded.image || row.image).trim(),
+        public_url: String(uploaded.image_public_url || row.public_url || row.image).trim(),
+        sort_order: Number(row.sort_order ?? index)
+      };
+    });
+
+    return {
+      ...currentDraft,
+      image: nextImage,
+      image_public_url: nextImagePublicUrl,
+      images: nextImages,
+      pending_uploads: []
+    };
+  }
+
   async function handleReviewChanges() {
     const { activeDraft, changedFields, selectedTargetIds } = getPlanContext();
     if (!activeDraft || changedFields.length === 0) {
@@ -353,8 +588,8 @@ function ProductEditorContent() {
       return;
     }
     const planEan = getPlanEan(activeDraft);
-    if (!/^\d{13}$/.test(planEan)) {
-      showToast("Active tab EAN is invalid.", "error");
+    if (!isValidProductIdentifier(planEan)) {
+      showToast("Active tab product identifier is invalid.", "error");
       return;
     }
     setPlanLoading(true);
@@ -383,18 +618,18 @@ function ProductEditorContent() {
 
   async function handleApplyJvEditedProducts() {
     const ean = jvDraft.ean.trim();
-    if (!/^\d{13}$/.test(ean)) {
-      showToast("JV EAN is invalid.", "error");
+    if (!isValidProductIdentifier(ean)) {
+      showToast("JV product identifier is invalid.", "error");
       return;
     }
-    if (jvChangedFields.length === 0) {
+    if (jvChangedFields.length === 0 && jvDraft.pending_uploads.length === 0) {
       showToast("No edited JV fields to apply.", "error");
       return;
     }
-    const selectedTargetIds = discover?.groups
+    const selectedTargetIds = (discover?.groups
       .find((group) => group.id === "JV")
       ?.targets.filter((target) => target.status === "found")
-      .map((target) => target.id) ?? [];
+      .map((target) => target.id) ?? []) as ProductEditorJvSiteKey[];
     if (selectedTargetIds.length === 0) {
       showToast("No found JV targets are available for orchestrator apply.", "error");
       return;
@@ -421,11 +656,16 @@ function ProductEditorContent() {
     });
     let acceptedJobId = "";
     try {
+      const requiresImageSync = jvDraft.pending_uploads.length > 0 || jvChangedFields.includes("image") || jvChangedFields.includes("images");
+      const draftAfterUpload = requiresImageSync
+        ? await synchronizeJvGalleryAssets(jvDraft, selectedTargetIds)
+        : jvDraft;
+      setJvDraft(draftAfterUpload);
       const plan = await planProductEditor({
         ean,
         activeGroup: "JV",
-        changedFields: jvChangedFields,
-        draft: jvDraft as unknown as Record<string, unknown>,
+        changedFields: buildJvChangedFields(initialJvDraft, draftAfterUpload),
+        draft: draftAfterUpload as unknown as Record<string, unknown>,
         selectedTargetIds
       });
       setPlanResponse(plan);
@@ -448,7 +688,7 @@ function ProductEditorContent() {
       const success = Number(summary.success ?? 0);
       const failed = Number(summary.failed ?? 0);
       if (finalStatus === "completed") {
-        setInitialJvDraft(jvDraft);
+        setInitialJvDraft(draftAfterUpload);
         showToast(`JV orchestrator job completed. Success: ${success}, Failed: ${failed}.`, "success");
       } else {
         showToast(`JV orchestrator job finished with status ${finalStatus || "unknown"}. Success: ${success}, Failed: ${failed}.`, "error");
@@ -473,12 +713,45 @@ function ProductEditorContent() {
     applyHoodImagesUpdate(reorderHoodImages(hoodDraft.images, sourceImageUrl, targetImageUrl));
   }
 
-  async function handleUploadHoodImages(role: "main" | "additional", files: FileList | null) {
+  async function uploadHoodImageFiles(input: {
+    ean: string;
+    account: "jv" | "xl";
+    files: File[];
+    role: "main" | "additional";
+  }): Promise<string[]> {
+    const { response, payload } = await patchHoodByEan({
+      ean: input.ean,
+      account: input.account,
+      payloadObject: {},
+      changedKeys: [],
+      patchFiles: input.files,
+      uploadOnly: true
+    });
+    if (!response.ok) {
+      const detail =
+        payload && typeof payload === "object" && "detail" in (payload as Record<string, unknown>)
+          ? String((payload as Record<string, unknown>).detail || "")
+          : "";
+      throw new Error(detail || `HOOD FTP upload failed: HTTP ${response.status}`);
+    }
+
+    const uploadedUrls =
+      payload && typeof payload === "object" && Array.isArray((payload as { uploaded_image_urls?: unknown[] }).uploaded_image_urls)
+        ? (payload as { uploaded_image_urls?: unknown[] }).uploaded_image_urls!.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+    if (uploadedUrls.length === 0) {
+      throw new Error("FTP upload finished but no URLs were returned.");
+    }
+
+    return uploadedUrls;
+  }
+
+  async function handleUploadHoodFiles(files: FileList | null) {
     const tabKey = getHoodTabKey(activeTabKey);
     if (!tabKey || !files || files.length === 0) return;
 
     const ean = hoodDraft.ean.trim();
-    if (!/^\d{13}$/.test(ean)) {
+    if (!isValidProductIdentifier(ean)) {
       showToast("Load HOOD product first, then upload images.", "error");
       return;
     }
@@ -486,38 +759,44 @@ function ProductEditorContent() {
     setHoodTabImageUploadLoading(tabKey, true);
     setPageError(null);
     try {
-      const { response, payload } = await patchHoodByEan({
-        ean,
-        account: hoodDraft.account,
-        payloadObject: {},
-        changedKeys: [],
-        patchFiles: Array.from(files),
-        uploadOnly: true
-      });
-      if (!response.ok) {
-        const detail =
-          payload && typeof payload === "object" && "detail" in (payload as Record<string, unknown>)
-            ? String((payload as Record<string, unknown>).detail || "")
-            : "";
-        throw new Error(detail || `HOOD FTP upload failed: HTTP ${response.status}`);
+      const selectedFiles = Array.from(files);
+      let nextImages = hoodDraft.images;
+      let uploadedCount = 0;
+
+      if (nextImages.length === 0 && selectedFiles.length > 0) {
+        const [mainFile, ...additionalFiles] = selectedFiles;
+        const uploadedMainUrls = await uploadHoodImageFiles({
+          ean,
+          account: hoodDraft.account,
+          files: [mainFile],
+          role: "main"
+        });
+        nextImages = mergeHoodImageUrls(nextImages, uploadedMainUrls, "main");
+        uploadedCount += uploadedMainUrls.length;
+
+        if (additionalFiles.length > 0) {
+          const uploadedAdditionalUrls = await uploadHoodImageFiles({
+            ean,
+            account: hoodDraft.account,
+            files: additionalFiles,
+            role: "additional"
+          });
+          nextImages = mergeHoodImageUrls(nextImages, uploadedAdditionalUrls, "additional");
+          uploadedCount += uploadedAdditionalUrls.length;
+        }
+      } else {
+        const uploadedAdditionalUrls = await uploadHoodImageFiles({
+          ean,
+          account: hoodDraft.account,
+          files: selectedFiles,
+          role: "additional"
+        });
+        nextImages = mergeHoodImageUrls(nextImages, uploadedAdditionalUrls, "additional");
+        uploadedCount += uploadedAdditionalUrls.length;
       }
 
-      const uploadedUrls =
-        payload && typeof payload === "object" && Array.isArray((payload as { uploaded_image_urls?: unknown[] }).uploaded_image_urls)
-          ? (payload as { uploaded_image_urls?: unknown[] }).uploaded_image_urls!.map((item) => String(item || "").trim()).filter(Boolean)
-          : [];
-      if (uploadedUrls.length === 0) {
-        throw new Error("FTP upload finished but no URLs were returned.");
-      }
-
-      const nextImages = mergeHoodImageUrls(hoodDraft.images, uploadedUrls, role);
       applyHoodImagesUpdate(nextImages);
-      showToast(
-        role === "main"
-          ? `Main image uploaded to HOOD FTP.`
-          : `${uploadedUrls.length} additional image(s) uploaded to HOOD FTP.`,
-        "success"
-      );
+      showToast(`Uploaded ${uploadedCount} image(s) to HOOD FTP.`, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "HOOD FTP upload failed.";
       setPageError(message);
@@ -532,8 +811,8 @@ function ProductEditorContent() {
     if (!tabKey) return;
 
     const ean = hoodDraft.ean.trim();
-    if (!/^\d{13}$/.test(ean)) {
-      showToast("HOOD EAN is invalid.", "error");
+    if (!isValidProductIdentifier(ean)) {
+      showToast("HOOD product identifier is invalid.", "error");
       return;
     }
 
@@ -665,6 +944,8 @@ function ProductEditorContent() {
 
   function resetEditorState() {
     setDiscover(null);
+    jvAutoLoadInFlightKeyRef.current = null;
+    loadedJvAutoLoadKeyRef.current = null;
     setHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setInitialHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setHoodWarningsByTab(createEmptyHoodWarningsByTab());
@@ -779,8 +1060,7 @@ function ProductEditorContent() {
           jvBatchApplyLoading={jvBatchApplyLoading}
           onRemoveHoodImage={handleRemoveHoodImage}
           onReorderHoodImages={handleReorderHoodImages}
-          onUploadHoodMainFiles={(files) => void handleUploadHoodImages("main", files)}
-          onUploadHoodAdditionalFiles={(files) => void handleUploadHoodImages("additional", files)}
+          onUploadHoodFiles={(files) => void handleUploadHoodFiles(files)}
           onApplyHoodEditedProducts={() => void handleApplyHoodEditedProducts()}
           onApplyJvEditedProducts={() => void handleApplyJvEditedProducts()}
         />
@@ -809,7 +1089,37 @@ function findFirstFoundTarget(group: ReturnType<typeof findGroup>): ProductEdito
 }
 
 function isLoadedJvDraft(draft: ProductEditorJvDraft, ean: string): boolean {
-  return draft.ean === ean && Boolean(draft.target_id);
+  if (!Boolean(draft.target_id)) {
+    return false;
+  }
+
+  const normalizedIdentifier = normalizeProductIdentifier(ean);
+  if (!normalizedIdentifier) {
+    return false;
+  }
+
+  const exactCandidates = [draft.ean, draft.source_ean_field, draft.source_model, draft.source_sku]
+    .map(normalizeProductIdentifier)
+    .filter(Boolean);
+
+  if (exactCandidates.includes(normalizedIdentifier)) {
+    return true;
+  }
+
+  const canonicalEanCandidates = [draft.ean, draft.source_ean_field]
+    .map(extractCanonicalEan)
+    .filter(Boolean);
+
+  return canonicalEanCandidates.some((candidate) => normalizedIdentifier.includes(candidate));
+}
+
+function normalizeProductIdentifier(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function extractCanonicalEan(value: string): string {
+  const match = normalizeProductIdentifier(value).match(/\d{13}/);
+  return match ? match[0] : "";
 }
 
 function buildJvAutoLoadKey(ean: string, baselineTargetId?: string | null): string {
@@ -887,7 +1197,7 @@ function isLoadedHoodDraft(
   expectedVariant: "jv" | "xl" | null,
   expectedTargetId?: string | null
 ): boolean {
-  if (!/^\d{13}$/.test(ean) || !/^\d{13}$/.test(draft.ean)) return false;
+  if (!isValidProductIdentifier(ean) || !isValidProductIdentifier(draft.ean)) return false;
   if (draft.ean !== ean || !draft.target_id) return false;
   if (expectedVariant && draft.account !== expectedVariant) return false;
   if (expectedTargetId && draft.target_id !== expectedTargetId) return false;

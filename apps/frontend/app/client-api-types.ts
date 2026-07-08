@@ -45,6 +45,39 @@ export type AdminUsersQueryParams = {
   sort?: "newest" | "oldest";
 };
 
+export type TelegramAccessStatus = "pending" | "approved" | "revoked";
+
+export type TelegramAccessEntry = {
+  id: number;
+  telegram_user_id: number;
+  chat_id: number;
+  thread_key: string;
+  username: string | null;
+  display_name: string | null;
+  email: string | null;
+  app_user: {
+    id: string | null;
+    username: string | null;
+    login: string | null;
+    email: string | null;
+  };
+  status: TelegramAccessStatus;
+  requested_at: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TelegramAccessQueryParams = {
+  search?: string;
+  status?: "all" | TelegramAccessStatus;
+  sort?: "newest" | "oldest";
+};
+
 export type IntakeDeleteAuditQueryParams = {
   limit?: number;
   actor_login?: string;

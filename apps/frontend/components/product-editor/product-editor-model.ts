@@ -47,10 +47,14 @@ export function createEmptyJvDraft(): ProductEditorJvDraft {
     quantity: "",
     status: false,
     image: "",
+    image_public_url: "",
     descriptions: [],
     categories: [],
+    categories_by_site_key: {},
     images: [],
-    jv_fields: {}
+    jv_fields: {},
+    jv_fields_by_site_key: {},
+    pending_uploads: []
   };
 }
 
@@ -95,10 +99,13 @@ export function hydrateJvDraft(input?: {
   quantity: number | null;
   status: boolean;
   image: string;
+  image_public_url?: string;
   descriptions: Array<Record<string, unknown>>;
   categories: Array<Record<string, unknown>>;
+  categories_by_site_key?: Record<string, unknown>;
   images: Array<Record<string, unknown>>;
   jv_fields: Record<string, unknown>;
+  jv_fields_by_site_key?: Record<string, unknown>;
 }): ProductEditorJvDraft {
   if (!input) return createEmptyJvDraft();
   return {
@@ -111,6 +118,7 @@ export function hydrateJvDraft(input?: {
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
     image: input.image || "",
+    image_public_url: String(input.image_public_url ?? ""),
     descriptions: Array.isArray(input.descriptions)
       ? input.descriptions.map((row) => ({
           language_id: Number(row.language_id ?? 1),
@@ -128,13 +136,17 @@ export function hydrateJvDraft(input?: {
           main_category: Boolean(row.main_category)
         })).filter((row) => row.category_id > 0)
       : [],
+    categories_by_site_key: normalizeCategoriesBySiteKey(input.categories_by_site_key),
     images: Array.isArray(input.images)
       ? input.images.map((row) => ({
           image: String(row.image ?? ""),
+          public_url: String(row.public_url ?? ""),
           sort_order: Number(row.sort_order ?? 0)
         })).filter((row) => row.image.trim() !== "")
       : [],
-    jv_fields: input.jv_fields ?? {}
+    jv_fields: input.jv_fields ?? {},
+    jv_fields_by_site_key: normalizeFieldsBySiteKey(input.jv_fields_by_site_key),
+    pending_uploads: []
   };
 }
 
@@ -228,13 +240,54 @@ export function buildJvChangedFields(initial: ProductEditorJvDraft, current: Pro
   if (JSON.stringify(current.categories) !== JSON.stringify(initial.categories)) {
     changed.add("categories");
   }
+  if (JSON.stringify(current.categories_by_site_key) !== JSON.stringify(initial.categories_by_site_key)) {
+    changed.add("categories");
+  }
   if (JSON.stringify(current.images) !== JSON.stringify(initial.images)) {
     changed.add("images");
   }
   if (JSON.stringify(current.jv_fields) !== JSON.stringify(initial.jv_fields)) {
     changed.add("jv_fields");
   }
+  if (JSON.stringify(current.jv_fields_by_site_key) !== JSON.stringify(initial.jv_fields_by_site_key)) {
+    changed.add("jv_fields");
+  }
   return Array.from(changed);
+}
+
+function normalizeCategoriesBySiteKey(input: Record<string, unknown> | undefined): ProductEditorJvDraft["categories_by_site_key"] {
+  const normalized: ProductEditorJvDraft["categories_by_site_key"] = {};
+  if (!input) return normalized;
+  for (const [rawSiteKey, rawRows] of Object.entries(input)) {
+    const siteKey = String(rawSiteKey || "").trim().toUpperCase();
+    if (!siteKey || !Array.isArray(rawRows)) continue;
+    const rows = rawRows
+      .map((row) => {
+        const item = row as Record<string, unknown>;
+        const categoryId = Number(item.category_id ?? 0);
+        if (!Number.isFinite(categoryId) || categoryId <= 0) return null;
+        return {
+          category_id: categoryId,
+          main_category: Boolean(item.main_category)
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    if (rows.length > 0) {
+      normalized[siteKey as keyof ProductEditorJvDraft["categories_by_site_key"]] = rows;
+    }
+  }
+  return normalized;
+}
+
+function normalizeFieldsBySiteKey(input: Record<string, unknown> | undefined): ProductEditorJvDraft["jv_fields_by_site_key"] {
+  const normalized: ProductEditorJvDraft["jv_fields_by_site_key"] = {};
+  if (!input) return normalized;
+  for (const [rawSiteKey, rawValue] of Object.entries(input)) {
+    const siteKey = String(rawSiteKey || "").trim().toUpperCase();
+    if (!siteKey || !rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) continue;
+    normalized[siteKey as keyof ProductEditorJvDraft["jv_fields_by_site_key"]] = { ...(rawValue as Record<string, unknown>) };
+  }
+  return normalized;
 }
 
 export function addPendingUploads(

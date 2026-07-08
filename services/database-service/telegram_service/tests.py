@@ -14,18 +14,26 @@ from telegram_service.config import load_telegram_runtime_config
 from telegram_service.models import TelegramActionAudit, TelegramConversationState, TelegramMarketplaceJob
 from telegram_service.notifier import TelegramMarketplaceJobNotifier
 from telegram_service.kids_client import TelegramKidsClient
+from telegram_service.models import TelegramAccessBinding
 from telegram_service.orchestrator_client import TelegramMarketplaceJobClient
 from telegram_service.service import (
     ACTION_CANCEL_LABEL,
     ACTION_DELETE_LABEL,
     ACTION_LIST_LABEL,
     CONFIRM_YES_LABEL,
+    REQUEST_ACCESS_LABEL,
     TelegramConversationService,
     TelegramUpdateContext,
+    build_access_keyboard,
     build_action_keyboard,
     build_confirm_keyboard,
 )
-from telegram_service.views import TelegramWebhookAPIView
+from telegram_service.views import (
+    TelegramAccessApproveAPIView,
+    TelegramAccessListAPIView,
+    TelegramAccessRevokeAPIView,
+    TelegramWebhookAPIView,
+)
 
 
 class TelegramServiceTests(SimpleTestCase):
@@ -60,11 +68,13 @@ class TelegramServiceTests(SimpleTestCase):
     def test_build_keyboards_include_expected_labels(self):
         action_keyboard = build_action_keyboard()
         confirm_keyboard = build_confirm_keyboard()
+        access_keyboard = build_access_keyboard()
         self.assertEqual(action_keyboard["keyboard"][0][0]["text"], ACTION_DELETE_LABEL)
         self.assertEqual(action_keyboard["keyboard"][0][1]["text"], ACTION_LIST_LABEL)
         self.assertEqual(action_keyboard["keyboard"][1][0]["text"], ACTION_CANCEL_LABEL)
         self.assertEqual(confirm_keyboard["keyboard"][0][0]["text"], CONFIRM_YES_LABEL)
         self.assertEqual(confirm_keyboard["keyboard"][0][1]["text"], ACTION_CANCEL_LABEL)
+        self.assertEqual(access_keyboard["keyboard"][0][0]["text"], REQUEST_ACCESS_LABEL)
         self.assertTrue(action_keyboard["resize_keyboard"])
         self.assertTrue(confirm_keyboard["resize_keyboard"])
 
@@ -260,7 +270,9 @@ class TelegramServiceAsyncFlowTests(TestCase):
             message_thread_id=None,
             webhook_secret="secret",
             webhook_path="/api/v1/telegram/webhook/",
+            public_webhook_path="/api/v1/services/telegram/webhook/",
             api_base_url="https://api.telegram.org",
+            delivery_mode="polling",
             allowed_user_ids=(),
             services_base_url="http://127.0.0.1:8934",
             service_auth_token="warehub-local-orchestrator",
@@ -268,6 +280,285 @@ class TelegramServiceAsyncFlowTests(TestCase):
             orchestrator_poll_attempts=3,
             orchestrator_poll_interval_seconds=0.1,
         )
+
+    def test_wrong_chat_is_rejected_even_with_binding(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(
+            config=TelegramRuntimeConfig(
+                bot_token="token",
+                chat_id=999,
+                message_thread_id=None,
+                webhook_secret="secret",
+                webhook_path="/api/v1/telegram/webhook/",
+                public_webhook_path="/api/v1/services/telegram/webhook/",
+                api_base_url="https://api.telegram.org",
+                delivery_mode="polling",
+                allowed_user_ids=(),
+                services_base_url="http://127.0.0.1:8934",
+                service_auth_token="warehub-local-orchestrator",
+                orchestrator_base_url="http://127.0.0.1:8935",
+                orchestrator_poll_attempts=3,
+                orchestrator_poll_interval_seconds=0.1,
+            ),
+            bot=bot,
+        )
+        TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            is_active=True,
+            status="approved",
+        )
+        ctx = TelegramUpdateContext(
+            update_id=1,
+            update_type="message",
+            chat_id=100,
+            user_id=200,
+            username="user",
+            display_name="User",
+            text="/start",
+            callback_data="",
+            callback_query_id="",
+            message_id=1,
+            message_thread_id=None,
+        )
+
+        self.assertFalse(service._is_allowed_context(ctx))
+
+    def test_unapproved_user_gets_access_prompt_on_start(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+
+        with patch.object(service.bot, "send_message", return_value={"ok": True}) as mocked_send:
+            result = service.handle_update(
+                {
+                    "update_id": 100,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": 100},
+                        "from": {"id": 200, "username": "user", "first_name": "Test"},
+                        "text": "/start",
+                    },
+                }
+            )
+
+        self.assertEqual(result["status"], "processed")
+        mocked_send.assert_called_once()
+        self.assertIn("reply_markup", mocked_send.call_args.kwargs)
+        self.assertEqual(mocked_send.call_args.kwargs["reply_markup"]["keyboard"][0][0]["text"], REQUEST_ACCESS_LABEL)
+
+    def test_request_access_creates_pending_binding_with_email(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+
+        first_update = {
+            "update_id": 101,
+            "message": {
+                "message_id": 1,
+                "chat": {"id": 100},
+                "from": {"id": 200, "username": "user", "first_name": "Test"},
+                "text": REQUEST_ACCESS_LABEL,
+            },
+        }
+        second_update = {
+            "update_id": 102,
+            "message": {
+                "message_id": 2,
+                "chat": {"id": 100},
+                "from": {"id": 200, "username": "user", "first_name": "Test"},
+                "text": "user@example.com",
+            },
+        }
+
+        service.handle_update(first_update)
+        result = service.handle_update(second_update)
+
+        self.assertEqual(result["status"], "processed")
+        binding = TelegramAccessBinding.objects.get(telegram_user_id=200, chat_id=100)
+        self.assertEqual(binding.status, "pending")
+        self.assertEqual(binding.email, "user@example.com")
+        self.assertFalse(binding.is_active)
+
+    def test_approved_binding_can_open_menu(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+        TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            email="user@example.com",
+            is_active=True,
+            status="approved",
+        )
+
+        with patch.object(service.bot, "send_message", return_value={"ok": True}) as mocked_send:
+            result = service.handle_update(
+                {
+                    "update_id": 103,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": 100},
+                        "from": {"id": 200, "username": "user", "first_name": "Test"},
+                        "text": "/menu",
+                    },
+                }
+            )
+
+        self.assertEqual(result["status"], "processed")
+        mocked_send.assert_called_once()
+        self.assertEqual(mocked_send.call_args.kwargs["reply_markup"]["keyboard"][0][0]["text"], ACTION_DELETE_LABEL)
+
+    def test_list_action_requests_single_form_message(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+        TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            email="user@example.com",
+            is_active=True,
+            status="approved",
+        )
+
+        with patch.object(service.bot, "send_message", return_value={"ok": True}) as mocked_send:
+            result = service.handle_update(
+                {
+                    "update_id": 104,
+                    "message": {
+                        "message_id": 1,
+                        "chat": {"id": 100},
+                        "from": {"id": 200, "username": "user", "first_name": "Test"},
+                        "text": ACTION_LIST_LABEL,
+                    },
+                }
+            )
+
+        self.assertEqual(result["status"], "processed")
+        state = TelegramConversationState.objects.get(chat_id=100, telegram_user_id=200, thread_key="")
+        self.assertEqual(state.state, "awaiting_list_form")
+        self.assertIn("одним сообщением", mocked_send.call_args.kwargs["text"].lower())
+
+    @patch.object(TelegramKidsClient, "create_kid")
+    def test_list_form_accepts_required_fields_only(self, mocked_create_kid):
+        mocked_create_kid.return_value = {"status_code": 201, "data": {"id": 1, "place": "9999"}}
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+        TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            email="user@example.com",
+            is_active=True,
+            status="approved",
+        )
+
+        service.handle_update(
+            {
+                "update_id": 105,
+                "message": {
+                    "message_id": 1,
+                    "chat": {"id": 100},
+                    "from": {"id": 200, "username": "user", "first_name": "Test"},
+                    "text": ACTION_LIST_LABEL,
+                },
+            }
+        )
+        service.handle_update(
+            {
+                "update_id": 106,
+                "message": {
+                    "message_id": 2,
+                    "chat": {"id": 100},
+                    "from": {"id": 200, "username": "user", "first_name": "Test"},
+                    "text": "KID: 566725168\nPlace: 9999",
+                },
+            }
+        )
+
+        state = TelegramConversationState.objects.get(chat_id=100, telegram_user_id=200, thread_key="")
+        self.assertEqual(state.state, "awaiting_confirmation")
+        self.assertEqual(state.payload["kid_number"], "566725168")
+        self.assertEqual(state.payload["place"], "9999")
+        self.assertNotIn("main_ean", state.payload)
+        self.assertNotIn("quantity", state.payload)
+        self.assertNotIn("price", state.payload)
+
+        with patch.object(service.bot, "send_message", return_value={"ok": True}):
+            result = service._handle_confirmation(
+                TelegramUpdateContext(
+                    update_id=107,
+                    update_type="message",
+                    chat_id=100,
+                    user_id=200,
+                    username="user",
+                    display_name="Test",
+                    text=CONFIRM_YES_LABEL,
+                    callback_data="",
+                    callback_query_id="",
+                    message_id=3,
+                    message_thread_id=None,
+                )
+            )
+
+        self.assertEqual(result["status"], "processed")
+        mocked_create_kid.assert_called_once_with(
+            kid_number="566725168",
+            place="9999",
+            main_ean=None,
+            quantity=None,
+            price=None,
+        )
+
+    def test_list_form_requires_kid_and_place(self):
+        bot = type("Bot", (), {"send_message": lambda *args, **kwargs: {"ok": True}, "answer_callback_query": lambda *args, **kwargs: {"ok": True}})()
+        service = TelegramConversationService(config=self._config(), bot=bot)
+        TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            email="user@example.com",
+            is_active=True,
+            status="approved",
+        )
+
+        service.handle_update(
+            {
+                "update_id": 108,
+                "message": {
+                    "message_id": 1,
+                    "chat": {"id": 100},
+                    "from": {"id": 200, "username": "user", "first_name": "Test"},
+                    "text": ACTION_LIST_LABEL,
+                },
+            }
+        )
+
+        with patch.object(service.bot, "send_message", return_value={"ok": True}) as mocked_send:
+            result = service.handle_update(
+                {
+                    "update_id": 109,
+                    "message": {
+                        "message_id": 2,
+                        "chat": {"id": 100},
+                        "from": {"id": 200, "username": "user", "first_name": "Test"},
+                        "text": "KID: 566725168",
+                    },
+                }
+            )
+
+        self.assertEqual(result["status"], "ignored")
+        self.assertEqual(result["reason"], "missing_required_list_form_fields")
+        self.assertIn("KID и Place", mocked_send.call_args.kwargs["text"])
 
     @patch.object(TelegramKidsClient, "create_kid")
     @patch("telegram_service.service.TelegramMarketplaceJobClient.create_job")
@@ -390,3 +681,57 @@ class TelegramServiceAsyncFlowTests(TestCase):
         mocked_get_job.assert_called_once_with(job_id="job-42")
         mocked_send.assert_called_once()
         self.assertEqual(TelegramActionAudit.objects.filter(request_id="req-42", status="ok").count(), 1)
+
+    def test_admin_access_api_lists_and_transitions_binding(self):
+        binding = TelegramAccessBinding.objects.create(
+            telegram_user_id=200,
+            chat_id=100,
+            thread_key="",
+            login="user",
+            display_name="User",
+            email="user@example.com",
+            is_active=False,
+            status="pending",
+        )
+
+        list_request = APIRequestFactory().get("/api/v1/telegram/access/")
+        list_request.session = {"role": "admin", "login": "ravil"}
+        list_response = TelegramAccessListAPIView.as_view()(list_request)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data[0]["email"], "user@example.com")
+        self.assertEqual(list_response.data[0]["app_user"]["id"], None)
+
+        approve_request = APIRequestFactory().post(
+            f"/api/v1/telegram/access/{binding.id}/approve/",
+            {
+                "app_user": {
+                    "id": "user-1",
+                    "username": "Said Aka",
+                    "login": "saidaka",
+                    "email": "user@example.com",
+                }
+            },
+            format="json",
+        )
+        approve_request.session = {"role": "admin", "login": "ravil"}
+        approve_response = TelegramAccessApproveAPIView.as_view()(approve_request, binding_id=binding.id)
+        self.assertEqual(approve_response.status_code, 200)
+
+        binding.refresh_from_db()
+        self.assertEqual(binding.status, "approved")
+        self.assertTrue(binding.is_active)
+        self.assertEqual(binding.approved_by, "ravil")
+        self.assertEqual(binding.app_user_id, "user-1")
+        self.assertEqual(binding.app_user_username, "Said Aka")
+        self.assertEqual(binding.app_user_login, "saidaka")
+        self.assertEqual(binding.app_user_email, "user@example.com")
+
+        revoke_request = APIRequestFactory().post(f"/api/v1/telegram/access/{binding.id}/revoke/", {}, format="json")
+        revoke_request.session = {"role": "admin", "login": "ravil"}
+        revoke_response = TelegramAccessRevokeAPIView.as_view()(revoke_request, binding_id=binding.id)
+        self.assertEqual(revoke_response.status_code, 200)
+
+        binding.refresh_from_db()
+        self.assertEqual(binding.status, "revoked")
+        self.assertFalse(binding.is_active)
+        self.assertEqual(binding.revoked_by, "ravil")

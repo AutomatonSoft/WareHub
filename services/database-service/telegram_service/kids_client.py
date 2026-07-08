@@ -11,16 +11,28 @@ class TelegramKidsClient:
     def __init__(self, config: TelegramRuntimeConfig) -> None:
         self.config = config
 
-    def create_kid(self, *, kid_number: str, place: str, main_ean: str, quantity: int, price: str) -> dict[str, Any]:
+    def create_kid(
+        self,
+        *,
+        kid_number: str,
+        place: str,
+        main_ean: str | None,
+        quantity: int | None,
+        price: str | None,
+    ) -> dict[str, Any]:
+        payload = {
+            "kid_number": str(kid_number).strip(),
+            "place": str(place).strip(),
+        }
+        if str(main_ean or "").strip():
+            payload["main_ean"] = str(main_ean).strip()
+        if quantity is not None:
+            payload["quantity"] = int(quantity)
+        if str(price or "").strip():
+            payload["price"] = str(price).strip()
         response = requests.post(
             f"{self.config.services_base_url}/api/v1/kids/",
-            json={
-                "kid_number": str(kid_number).strip(),
-                "place": str(place).strip(),
-                "main_ean": str(main_ean).strip(),
-                "quantity": int(quantity),
-                "price": str(price).strip(),
-            },
+            json=payload,
             headers={
                 "x-warehub-service-token": self.config.service_auth_token,
             },

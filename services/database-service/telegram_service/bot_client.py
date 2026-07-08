@@ -31,6 +31,43 @@ class TelegramBotClient:
         result = body.get("result")
         return result if isinstance(result, dict) else {"result": result}
 
+    def get_updates(
+        self,
+        *,
+        offset: int | None = None,
+        timeout_seconds: int = 30,
+        allowed_updates: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, Any] = {
+            "timeout": max(int(timeout_seconds), 0),
+        }
+        if offset is not None:
+            payload["offset"] = int(offset)
+        if allowed_updates:
+            payload["allowed_updates"] = allowed_updates
+
+        response = requests.get(
+            self._method_url("getUpdates"),
+            params=payload,
+            timeout=max(timeout_seconds + 10, 20),
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict) or not body.get("ok"):
+            raise RuntimeError(f"Telegram API getUpdates failed: {body}")
+        result = body.get("result")
+        if not isinstance(result, list):
+            raise RuntimeError("Telegram API getUpdates returned non-list payload.")
+        return [item for item in result if isinstance(item, dict)]
+
+    def delete_webhook(self, *, drop_pending_updates: bool = False) -> dict[str, Any]:
+        return self.call(
+            "deleteWebhook",
+            {
+                "drop_pending_updates": bool(drop_pending_updates),
+            },
+        )
+
     def send_message(
         self,
         *,

@@ -1,31 +1,40 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ProductEditorPreviewImage } from "./product-editor-preview-image";
 import { ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { buildJvChangedFields } from "./product-editor-model";
 import {
   getJvDeliveryOptions,
   getJvRubricTree,
-  uploadProductEditorImages,
   type ProductEditorJvDeliveryOption,
   type ProductEditorJvRubricNode
 } from "./product-editor-api";
+import { ProductEditorGalleryCard } from "./product-editor-gallery-card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { StatusBadge } from "../ui/status-badge";
 import { cn } from "../../lib/cn";
-import type { ProductEditorJobResponse, ProductEditorJvDraft, ProductEditorWarning } from "./product-editor-types";
+import type {
+  ProductEditorJobResponse,
+  ProductEditorJvCategory,
+  ProductEditorJvDraft,
+  ProductEditorJvFieldsBySiteKey,
+  ProductEditorJvSiteKey,
+  ProductEditorWarning
+} from "./product-editor-types";
 
-const JV_SITE_KEYS = ["JV_DE", "JV_CO_UK", "JV_CH", "JV_AT"] as const;
-const UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
-const UPLOAD_RETRY_DELAY_MS = 1500;
-let cachedDeliveryOptions: ProductEditorJvDeliveryOption[] | null = null;
-let deliveryOptionsPromise: Promise<ProductEditorJvDeliveryOption[]> | null = null;
-let cachedRubricTree: ProductEditorJvRubricNode[] | null = null;
-let rubricTreePromise: Promise<ProductEditorJvRubricNode[]> | null = null;
+const JV_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [
+  { key: "JV_DE", label: "JV DE" },
+  { key: "JV_AT", label: "JV AT" },
+  { key: "JV_CH", label: "JV CH" },
+  { key: "JV_CO_UK", label: "JV UK" }
+] as const;
+let cachedDeliveryOptionsBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>> = {};
+let deliveryOptionsPromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvDeliveryOption[]>>> = {};
+let cachedRubricTreeBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>> = {};
+let rubricTreePromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvRubricNode[]>>> = {};
 
 type ProductEditorJvPanelProps = {
   draft: ProductEditorJvDraft;
@@ -37,12 +46,19 @@ type ProductEditorJvPanelProps = {
   batchApplyLoading?: boolean;
   jobResponse?: ProductEditorJobResponse | null;
   onApplyEditedProducts?: () => void;
+  eanValue: string;
+  isEanValid: boolean;
+  searching: boolean;
+  onChangeEan: (value: string) => void;
+  onSearch: () => void;
 };
 
 export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
+  const baselineSiteKey = resolveJvBaselineSiteKey(props.draft);
   const changedFields = buildJvChangedFields(props.initialDraft, props.draft);
-  const mainImageUrl = normalizeJvImageUrl(props.draft.image);
-  const additionalImageUrls = getAdditionalImageUrls(props.draft, mainImageUrl);
+  const galleryState = buildJvGalleryState(props.draft);
+  const mainImageUrl = galleryState.mainImage.preview;
+  const additionalImageUrls = galleryState.additionalImages.map((item) => item.preview);
   const jvContentDe = getJvContentByLanguage(props.draft.jv_fields, "de");
   const productName = String(jvContentDe?.name ?? "");
   const metaTitleValue = String(jvContentDe?.meta_title ?? "");
@@ -53,7 +69,6 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const kurzbeschreibungValue = String(jvContentDe?.kurzbeschreibung ?? jvContentDe?.short_description_real ?? "");
   const descriptionValue = String(jvContentDe?.description ?? "");
   const descriptionPreviewHtml = normalizeDescriptionHtmlForPreview(descriptionValue);
-  const rawDeliveryIdValue = String(props.draft.jv_fields?.lieferzeitid ?? "");
   const urlKeyValue = props.draft.jv_fields?.urlkey ?? "";
   const priceValue = props.draft.price ?? "";
   const uvpValue = props.draft.jv_fields?.uvp ?? "";
@@ -61,51 +76,51 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const isInactiveDisabled = Number(props.draft.jv_fields?.inaktiv ?? 1) === 1;
   const isSofortEnabled = !isSofortDisabled;
   const isInactiveEnabled = !isInactiveDisabled;
-  const galleryImages = [mainImageUrl, ...additionalImageUrls].filter((item) => item.trim() !== "");
+  const galleryImages = galleryState.allImages;
   const [selectedImageUrl, setSelectedImageUrl] = useState<string>(mainImageUrl || additionalImageUrls[0] || "");
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
-  const [deliveryOptions, setDeliveryOptions] = useState<ProductEditorJvDeliveryOption[]>([]);
-  const [categoryTree, setCategoryTree] = useState<ProductEditorJvRubricNode[]>([]);
-  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<number>>(new Set());
+  const [activeSiteKey, setActiveSiteKey] = useState<ProductEditorJvSiteKey>(baselineSiteKey);
+  const [deliveryOptionsBySite, setDeliveryOptionsBySite] = useState<Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>>>({});
+  const [categoryTreeBySite, setCategoryTreeBySite] = useState<Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>>>({});
+  const [expandedCategoryIdsBySite, setExpandedCategoryIdsBySite] = useState<Partial<Record<ProductEditorJvSiteKey, Set<number>>>>({});
   const [categoryQuery, setCategoryQuery] = useState("");
   const [onlyCheckedCategories, setOnlyCheckedCategories] = useState(false);
-  const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null);
-  const [dragOverImageIndex, setDragOverImageIndex] = useState<number | null>(null);
-  const [uploadingImageUrls, setUploadingImageUrls] = useState<Set<string>>(new Set());
-  const [uploadProgress, setUploadProgress] = useState<{
-    active: boolean;
-    label: string;
-    percent: number;
-  }>({
-    active: false,
-    label: "",
-    percent: 0
-  });
   const displayImageUrl = selectedImageUrl || mainImageUrl || additionalImageUrls[0] || "";
-  const mainImageInputRef = useRef<HTMLInputElement | null>(null);
-  const additionalImagesInputRef = useRef<HTMLInputElement | null>(null);
   const createdObjectUrlsRef = useRef<string[]>([]);
   const latestDraftRef = useRef(props.draft);
-  const selectedImageUrlRef = useRef(selectedImageUrl);
+  const galleryItems = galleryImages.map((item, index) => ({
+    id: buildGalleryItemId(item.preview, index),
+    src: item.preview,
+    uploading: false
+  }));
+  const selectedGalleryItemId = galleryItems.find((item) => item.src === displayImageUrl)?.id ?? galleryItems[0]?.id ?? "";
 
   useEffect(() => {
     latestDraftRef.current = props.draft;
   }, [props.draft]);
 
   useEffect(() => {
-    selectedImageUrlRef.current = selectedImageUrl;
-  }, [selectedImageUrl]);
+    setActiveSiteKey(baselineSiteKey);
+  }, [baselineSiteKey]);
 
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      try {
-        const options = await loadCachedJvDeliveryOptions();
-        if (mounted) setDeliveryOptions(options);
-      } catch {
-        if (mounted) setDeliveryOptions([]);
+      const entries = await Promise.all(
+        JV_SITE_TABS.map(async ({ key }) => {
+          try {
+            return [key, await loadCachedJvDeliveryOptions(key)] as const;
+          } catch {
+            return [key, []] as const;
+          }
+        })
+      );
+      if (mounted) {
+        setDeliveryOptionsBySite(Object.fromEntries(entries) as Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>>);
       }
-    })();
+    })().catch(() => {
+      if (mounted) setDeliveryOptionsBySite({});
+    });
     return () => {
       mounted = false;
     };
@@ -123,28 +138,45 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      try {
-        const tree = await loadCachedJvRubricTree();
-        if (mounted) {
-          setCategoryTree(tree);
-          setExpandedCategoryIds(collectAllCategoryIds(tree));
-        }
-      } catch {
-        if (mounted) {
-          setCategoryTree([]);
-          setExpandedCategoryIds(new Set());
-        }
+      const entries = await Promise.all(
+        JV_SITE_TABS.map(async ({ key }) => {
+          try {
+            const tree = await loadCachedJvRubricTree(key);
+            return [key, tree, collectAllCategoryIds(tree)] as const;
+          } catch {
+            return [key, [], new Set<number>()] as const;
+          }
+        })
+      );
+      if (mounted) {
+        setCategoryTreeBySite(
+          Object.fromEntries(entries.map(([key, tree]) => [key, tree])) as Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>>
+        );
+        setExpandedCategoryIdsBySite(
+          Object.fromEntries(entries.map(([key, _tree, expanded]) => [key, expanded])) as Partial<Record<ProductEditorJvSiteKey, Set<number>>>
+        );
       }
-    })();
+    })().catch(() => {
+      if (mounted) {
+        setCategoryTreeBySite({});
+        setExpandedCategoryIdsBySite({});
+      }
+    });
     return () => {
       mounted = false;
     };
   }, []);
 
-  const selectedCategoryIds = new Set(props.draft.categories.map((item) => item.category_id));
-  const mainCategoryId = props.draft.categories.find((item) => item.main_category)?.category_id ?? null;
+  const categoriesBySiteKey = getDraftCategoriesBySiteKey(props.draft, baselineSiteKey);
+  const currentCategories = categoriesBySiteKey[activeSiteKey] ?? [];
+  const selectedCategoryIds = new Set(currentCategories.map((item) => item.category_id));
+  const mainCategoryId = currentCategories.find((item) => item.main_category)?.category_id ?? null;
+  const categoryTree = categoryTreeBySite[activeSiteKey] ?? [];
+  const expandedCategoryIds = expandedCategoryIdsBySite[activeSiteKey] ?? new Set<number>();
   const filteredCategoryTree = filterCategoryTree(categoryTree, categoryQuery, selectedCategoryIds, onlyCheckedCategories);
-  const deliveryIdValue = normalizeDeliverySelectValue(rawDeliveryIdValue, deliveryOptions);
+  const deliveryOptions = deliveryOptionsBySite[activeSiteKey] ?? [];
+  const deliveryValuesBySiteKey = getDraftDeliveryValuesBySiteKey(props.draft, baselineSiteKey);
+  const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
   const progressPhase = String(jobSummary.progress_phase || jobStatus || "").trim();
@@ -157,17 +189,8 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     progressTotal || progressApplied + progressSkipped + progressFailed,
     progressApplied + progressSkipped + progressFailed
   );
-  const isInlineProgressVisible =
-    Boolean(props.batchApplyLoading) ||
-    jobStatus === "queued" ||
-    jobStatus === "running" ||
-    Boolean(progressPhase) ||
-    progressTotal > 0;
-  const inlineProgressPercent = progressTotal > 0
-    ? Math.min(100, Math.round((progressCompleted / progressTotal) * 100))
-    : props.batchApplyLoading || jobStatus === "queued" || jobStatus === "running"
-      ? 15
-      : 100;
+  const isInlineProgressVisible = Boolean(props.batchApplyLoading) || jobStatus === "queued" || jobStatus === "running" || Boolean(progressPhase) || progressTotal > 0;
+  const pendingUploadCount = props.draft.pending_uploads.length;
 
   function patchPrimaryName(name: string) {
     const nextJvFields = setJvContentByLanguage(props.draft.jv_fields, "de", { name });
@@ -231,11 +254,26 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
   function patchDeliveryId(value: string) {
     const normalizedValue = normalizeDeliverySelectValue(value, deliveryOptions) || value;
-    props.onChange({
-      jv_fields: {
-        ...(props.draft.jv_fields ?? {}),
-        lieferzeitid: normalizedValue
+    const nextFieldsBySiteKey: ProductEditorJvFieldsBySiteKey = {
+      ...props.draft.jv_fields_by_site_key,
+      [activeSiteKey]: {
+        ...(props.draft.jv_fields_by_site_key[activeSiteKey] ?? {}),
+        lieferzeitid: normalizedValue,
+        lieferzeit: normalizedValue,
+        lieferzeit_id: normalizedValue
       }
+    };
+    props.onChange({
+      jv_fields_by_site_key: nextFieldsBySiteKey,
+      jv_fields:
+        activeSiteKey === baselineSiteKey
+          ? {
+              ...(props.draft.jv_fields ?? {}),
+              lieferzeitid: normalizedValue,
+              lieferzeit: normalizedValue,
+              lieferzeit_id: normalizedValue
+            }
+          : props.draft.jv_fields
     });
   }
 
@@ -261,17 +299,13 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
   function addCategory(categoryId: number) {
     if (selectedCategoryIds.has(categoryId)) return;
-    props.onChange({
-      categories: [...props.draft.categories, { category_id: categoryId, main_category: props.draft.categories.length === 0 }]
-    });
+    patchCategoriesForSite(activeSiteKey, [...currentCategories, { category_id: categoryId, main_category: currentCategories.length === 0 }]);
   }
 
   function removeCategory(categoryId: number) {
-    const next = props.draft.categories.filter((item) => item.category_id !== categoryId);
+    const next = currentCategories.filter((item) => item.category_id !== categoryId);
     const hasMain = next.some((item) => item.main_category);
-    props.onChange({
-      categories: hasMain ? next : next.map((item, index) => ({ ...item, main_category: index === 0 }))
-    });
+    patchCategoriesForSite(activeSiteKey, hasMain ? next : next.map((item, index) => ({ ...item, main_category: index === 0 })));
   }
 
   function toggleCategory(categoryId: number, checked: boolean) {
@@ -288,208 +322,48 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     return url;
   }
 
-  function resolveUploadSite(): "JV" | "XL" {
-    if ((props.activeTabLabel ?? "").toUpperCase().includes("XL")) return "XL";
-    const rawSite = String(props.draft.jv_fields?.site ?? "").toUpperCase();
-    return rawSite === "XL" ? "XL" : "JV";
+  function revokeTrackedObjectUrl(url: string) {
+    const normalized = String(url || "").trim();
+    if (!normalized.startsWith("blob:")) return;
+    URL.revokeObjectURL(normalized);
+    createdObjectUrlsRef.current = createdObjectUrlsRef.current.filter((entry) => entry !== normalized);
   }
 
-  function resolveUploadSiteKey(site: "JV" | "XL"): string {
-    const fieldSiteKey = String(props.draft.jv_fields?.site_key ?? "").trim();
-    if (fieldSiteKey) return fieldSiteKey;
-    return site === "XL" ? "XLMOEBEL_DE" : "JV_DE";
-  }
-
-  async function sleep(ms: number) {
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, ms);
-    });
-  }
-
-  async function uploadWithRetry(input: {
-    files: File[];
-    site: "JV" | "XL";
-    siteKey: string;
-    imageRole: "main" | "additional";
-  }) {
-    let lastError: unknown = null;
-    for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS_PER_SITE; attempt += 1) {
-      try {
-        setUploadProgress((prev) => ({
-          ...prev,
-          label: `Uploading ${input.imageRole} (${input.siteKey}) attempt ${attempt}/${UPLOAD_MAX_ATTEMPTS_PER_SITE}...`
-        }));
-        return await uploadProductEditorImages({
-          files: input.files,
-          site: input.site,
-          siteKey: input.siteKey,
-          ean: props.draft.ean,
-          imageRole: input.imageRole
-        });
-      } catch (error) {
-        lastError = error;
-        if (attempt < UPLOAD_MAX_ATTEMPTS_PER_SITE) {
-          await sleep(UPLOAD_RETRY_DELAY_MS);
-        }
-      }
-    }
-    throw lastError ?? new Error(`Upload failed for site key ${input.siteKey}`);
-  }
-
-  async function uploadImagesForAllSites(input: {
-    files: File[];
-    site: "JV" | "XL";
-    fallbackSiteKey: string;
-    imageRole: "main" | "additional";
-  }) {
-    if (input.site === "JV") {
-      const responsesBySiteKey = new Map<string, Awaited<ReturnType<typeof uploadProductEditorImages>>>();
-      setUploadProgress({
-        active: true,
-        label: `Uploading ${input.imageRole} image${input.files.length > 1 ? "s" : ""} to JV sites...`,
-        percent: 0
-      });
-      for (let index = 0; index < JV_SITE_KEYS.length; index += 1) {
-        const siteKey = JV_SITE_KEYS[index];
-        const response = await uploadWithRetry({
-          files: input.files,
-          site: "JV",
-          siteKey,
-          imageRole: input.imageRole
-        });
-        responsesBySiteKey.set(siteKey, response);
-        setUploadProgress((prev) => ({
-          ...prev,
-          percent: Math.round(((index + 1) / JV_SITE_KEYS.length) * 100)
-        }));
-      }
-      setUploadProgress({ active: false, label: "", percent: 0 });
-      const preferred = responsesBySiteKey.get("JV_DE") ?? responsesBySiteKey.values().next().value;
-      if (!preferred) {
-        throw new Error("Upload failed for JV sites.");
-      }
-      return preferred;
-    }
-
-    setUploadProgress({
-      active: true,
-      label: `Uploading ${input.imageRole} image${input.files.length > 1 ? "s" : ""}...`,
-      percent: 20
-    });
-    const response = await uploadWithRetry({
-      files: input.files,
-      site: input.site,
-      siteKey: input.fallbackSiteKey,
-      imageRole: input.imageRole
-    });
-    setUploadProgress({ active: false, label: "", percent: 0 });
-    return response;
-  }
-
-  function markUploading(urls: string[]) {
-    if (urls.length === 0) return;
-    setUploadingImageUrls((prev) => {
-      const next = new Set(prev);
-      for (const url of urls) next.add(url);
-      return next;
-    });
-  }
-
-  function unmarkUploading(urls: string[]) {
-    if (urls.length === 0) return;
-    setUploadingImageUrls((prev) => {
-      const next = new Set(prev);
-      for (const url of urls) next.delete(url);
-      return next;
-    });
-  }
-
-  function replaceImageUrlsInDraft(oldToNew: Map<string, string>) {
-    if (oldToNew.size === 0) return;
-    const currentDraft = latestDraftRef.current;
-    const nextMain = oldToNew.get(currentDraft.image) ?? currentDraft.image;
-    const nextImages = currentDraft.images.map((row) => ({
-      ...row,
-      image: oldToNew.get(row.image) ?? row.image
-    }));
-    props.onChange({ image: nextMain, images: nextImages });
-    const selectedCurrent = selectedImageUrlRef.current;
-    if (selectedCurrent) {
-      setSelectedImageUrl(oldToNew.get(selectedCurrent) ?? selectedCurrent);
-    }
-  }
-
-  async function handlePickMainImage(event: React.ChangeEvent<HTMLInputElement>) {
-    const inputElement = event.currentTarget;
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const tempUrl = createObjectUrl(file);
-    props.onChange({ image: tempUrl });
-    setSelectedImageUrl(tempUrl);
-    markUploading([tempUrl]);
-    const site = resolveUploadSite();
-    const siteKey = resolveUploadSiteKey(site);
-    try {
-      const response = await uploadImagesForAllSites({
-        files: [file],
-        site,
-        fallbackSiteKey: siteKey,
-        imageRole: "main"
-      });
-      const uploadedMain = String(response.image ?? response.uploaded_image_urls?.[0] ?? "").trim();
-      if (uploadedMain) {
-        const replaceMap = new Map<string, string>([[tempUrl, uploadedMain]]);
-        replaceImageUrlsInDraft(replaceMap);
-      }
-    } catch {
-      // keep local preview URL on failure; user can retry upload.
-      setUploadProgress({ active: false, label: "", percent: 0 });
-    } finally {
-      unmarkUploading([tempUrl]);
-    }
-    inputElement.value = "";
-  }
-
-  async function handlePickAdditionalImages(event: React.ChangeEvent<HTMLInputElement>) {
-    const inputElement = event.currentTarget;
-    const files = event.target.files;
+  function handleUploadImages(files: FileList | null) {
     if (!files || files.length === 0) return;
     const fileList = Array.from(files);
-    const tempUrls: string[] = [];
-    const nextImages = [...props.draft.images];
-    for (const file of fileList) {
+    const draft = latestDraftRef.current;
+    const currentGalleryState = buildJvGalleryState(draft);
+    const galleryWasEmpty = currentGalleryState.allImages.length === 0;
+    const additionalFiles = galleryWasEmpty ? fileList.slice(1) : fileList;
+    const mainTempUrl = galleryWasEmpty && fileList[0] ? createObjectUrl(fileList[0]) : "";
+    const nextImages = [...draft.images];
+    const nextPendingUploads = [...draft.pending_uploads];
+
+    for (const file of additionalFiles) {
       const tempUrl = createObjectUrl(file);
-      tempUrls.push(tempUrl);
       nextImages.push({
         image: tempUrl,
+        public_url: tempUrl,
         sort_order: nextImages.length
       });
+      nextPendingUploads.push(buildPendingUploadEntry(file, tempUrl, nextPendingUploads.length));
     }
-    props.onChange({ images: nextImages });
-    markUploading(tempUrls);
-    const site = resolveUploadSite();
-    const siteKey = resolveUploadSiteKey(site);
-    try {
-      const response = await uploadImagesForAllSites({
-        files: fileList,
-        site,
-        fallbackSiteKey: siteKey,
-        imageRole: "additional"
-      });
-      const uploadedUrls = Array.isArray(response.uploaded_image_urls) ? response.uploaded_image_urls.map((value) => String(value)) : [];
-      const replaceMap = new Map<string, string>();
-      for (let index = 0; index < tempUrls.length; index += 1) {
-        const uploaded = String(uploadedUrls[index] ?? "").trim();
-        if (uploaded) replaceMap.set(tempUrls[index], uploaded);
-      }
-      replaceImageUrlsInDraft(replaceMap);
-    } catch {
-      // keep local preview URLs on failure; user can retry upload.
-      setUploadProgress({ active: false, label: "", percent: 0 });
-    } finally {
-      unmarkUploading(tempUrls);
+
+    if (mainTempUrl && fileList[0]) {
+      nextPendingUploads.push(buildPendingUploadEntry(fileList[0], mainTempUrl, nextPendingUploads.length));
     }
-    inputElement.value = "";
+
+    props.onChange({
+      image: mainTempUrl || draft.image,
+      image_public_url: mainTempUrl || draft.image_public_url,
+      images: nextImages,
+      pending_uploads: dedupePendingUploads(nextPendingUploads)
+    });
+
+    if (mainTempUrl) {
+      setSelectedImageUrl(mainTempUrl);
+    }
   }
 
   function moveGalleryImage(fromIndex: number, toIndex: number) {
@@ -501,40 +375,56 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
     const [nextMain, ...nextAdditional] = items;
     props.onChange({
-      image: nextMain ?? "",
-      images: nextAdditional.map((image, index) => ({ image, sort_order: index }))
+      image: nextMain?.raw ?? "",
+      image_public_url: nextMain?.preview ?? "",
+      images: nextAdditional.map((image, index) => ({ image: image.raw, public_url: image.preview, sort_order: index }))
     });
-    setSelectedImageUrl(moved);
+    setSelectedImageUrl(moved.preview);
   }
 
   function removeGalleryImage(index: number) {
     if (index < 0 || index >= galleryImages.length) return;
+    const removedImage = galleryImages[index]?.preview ?? "";
     const next = galleryImages.filter((_, idx) => idx !== index);
     const [nextMain, ...nextAdditional] = next;
+    const nextPendingUploads = props.draft.pending_uploads.filter((item) => item.preview_url !== removedImage);
     props.onChange({
-      image: nextMain ?? "",
-      images: nextAdditional.map((image, idx) => ({ image, sort_order: idx }))
+      image: nextMain?.raw ?? "",
+      image_public_url: nextMain?.preview ?? "",
+      images: nextAdditional.map((image, idx) => ({ image: image.raw, public_url: image.preview, sort_order: idx })),
+      pending_uploads: nextPendingUploads
     });
-    if (selectedImageUrl === galleryImages[index]) {
-      setSelectedImageUrl(nextMain ?? nextAdditional[0] ?? "");
+    revokeTrackedObjectUrl(removedImage);
+    if (selectedImageUrl === galleryImages[index]?.preview) {
+      setSelectedImageUrl(nextMain?.preview ?? nextAdditional[0]?.preview ?? "");
     }
   }
 
   function setMainCategory(categoryId: number) {
-    props.onChange({
-      categories: props.draft.categories.map((item) => ({ ...item, main_category: item.category_id === categoryId }))
-    });
+    patchCategoriesForSite(activeSiteKey, currentCategories.map((item) => ({ ...item, main_category: item.category_id === categoryId })));
   }
 
   function toggleCategoryExpand(categoryId: number) {
-    setExpandedCategoryIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(categoryId)) {
-        next.delete(categoryId);
-      } else {
-        next.add(categoryId);
-      }
-      return next;
+    setExpandedCategoryIdsBySite((prev) => {
+      const next = new Set(prev[activeSiteKey] ?? []);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return {
+        ...prev,
+        [activeSiteKey]: next
+      };
+    });
+  }
+
+  function patchCategoriesForSite(siteKey: ProductEditorJvSiteKey, categories: ProductEditorJvCategory[]) {
+    const normalized = normalizeCategorySelection(categories);
+    const nextBySiteKey = {
+      ...categoriesBySiteKey,
+      [siteKey]: normalized
+    };
+    props.onChange({
+      categories_by_site_key: nextBySiteKey,
+      categories: siteKey === baselineSiteKey ? normalized : (nextBySiteKey[baselineSiteKey] ?? props.draft.categories)
     });
   }
 
@@ -544,38 +434,59 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       title={props.draft.ean ? `EAN: ${props.draft.ean}` : "EAN: -"}
       changedCount={changedFields.length}
       status={props.draft.target_id || undefined}
+      headerLead={
+        <div className="min-w-0">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <Input
+              value={props.eanValue}
+              onChange={(event) => props.onChangeEan(event.target.value)}
+              placeholder="Enter EAN, SKU or product ID"
+              maxLength={100}
+              className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && props.isEanValid && !props.searching) {
+                  event.preventDefault();
+                  props.onSearch();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 rounded-xl px-4 text-sm font-semibold"
+              disabled={!props.isEanValid || props.searching}
+              onClick={props.onSearch}
+            >
+              {props.searching ? "Searching..." : "Discover"}
+            </Button>
+          </div>
+          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}</p> : null}
+        </div>
+      }
       headerActions={
-        <div className="flex min-w-[280px] flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {pendingUploadCount > 0 ? (
+            <StatusBadge tone="planned">Images pending {pendingUploadCount}</StatusBadge>
+          ) : null}
+          {isInlineProgressVisible ? (
+            <>
+              <StatusBadge tone={jobStatus === "failed" ? "missing" : jobStatus === "completed" ? "found" : "planned"}>
+                {progressMessage || progressPhase || jobStatus || "running"}
+              </StatusBadge>
+              <StatusBadge tone={jobStatus === "failed" ? "missing" : "planned"}>
+                {progressCompleted}/{progressTotal || progressCompleted || 0}
+              </StatusBadge>
+            </>
+          ) : null}
           <Button
             type="button"
             variant="outline"
             className="h-9 rounded-xl text-xs font-semibold"
             onClick={props.onApplyEditedProducts}
-            disabled={Boolean(props.batchApplyLoading) || changedFields.length === 0}
+            disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
           >
             {props.batchApplyLoading ? "Updating..." : "Update Edited Products"}
           </Button>
-          {isInlineProgressVisible ? (
-            <div className="w-full min-w-[280px] rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-medium text-foreground">
-                    {progressMessage || "Preparing orchestrator plan."}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    {progressPhase || "planning"} / {progressCompleted}/{progressTotal || progressCompleted || 0}
-                  </div>
-                </div>
-                <StatusBadge tone="planned">{jobStatus || "running"}</StatusBadge>
-              </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn("h-full rounded-full bg-primary transition-all", (props.batchApplyLoading || jobStatus === "queued" || jobStatus === "running") && "animate-pulse")}
-                  style={{ width: `${inlineProgressPercent}%` }}
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       }
       topLeft={
@@ -610,11 +521,19 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
           </div>
           <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3">
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">delivery</p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">delivery</p>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{activeSiteKey}</span>
+              </div>
+              <SiteTabBar
+                activeSiteKey={activeSiteKey}
+                onChange={setActiveSiteKey}
+                renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
+              />
               <select
                 value={deliveryIdValue}
                 onChange={(event) => patchDeliveryId(event.target.value)}
-                className="h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="mt-2 h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               >
                 {deliveryOptions.length === 0 ? (
                   <option value={deliveryIdValue || ""}>{deliveryIdValue || "No delivery options"}</option>
@@ -655,142 +574,47 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       }
       topRight={
         <div className="space-y-4">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xl font-semibold text-foreground">Product Gallery</p>
-                <p className="text-sm text-muted-foreground">Manage product images, delete old images, upload new product photos.</p>
-              </div>
-              <span className="inline-flex items-center rounded-full border border-emerald-300/70 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                {galleryImages.length} images
-              </span>
-            </div>
-
-          {displayImageUrl ? (
-            <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-muted/30">
-              <ProductEditorPreviewImage src={displayImageUrl} className={cn("object-cover", uploadingImageUrls.has(displayImageUrl) ? "grayscale opacity-60" : null)} />
-              {displayImageUrl === mainImageUrl ? (
-                <span className="absolute left-2 top-2 z-10 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-white">
-                  Main
-                </span>
-              ) : null}
-            </div>
-          ) : (
-              <div className="flex aspect-[4/3] items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-xs text-muted-foreground">
-                No product images loaded
-              </div>
-            )}
-
-            {galleryImages.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {galleryImages.map((url, index) => (
-                  <div
-                  key={`${url}-${index}`}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={() => {
-                    setDraggedImageIndex(index);
-                    setDragOverImageIndex(index);
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDragOverImageIndex(index);
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (draggedImageIndex !== null) {
-                      moveGalleryImage(draggedImageIndex, index);
-                    }
-                    setDraggedImageIndex(null);
-                    setDragOverImageIndex(null);
-                  }}
-                  onDragEnd={() => {
-                    setDraggedImageIndex(null);
-                    setDragOverImageIndex(null);
-                  }}
-                  onClick={() => setSelectedImageUrl(url)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedImageUrl(url);
-                    }
-                  }}
-                  className={cn(
-                    "relative h-20 w-32 overflow-hidden rounded-xl border bg-muted/30 transition",
-                    url === displayImageUrl ? "border-emerald-500 ring-1 ring-emerald-500/40" : "border-border hover:border-emerald-400/60",
-                    dragOverImageIndex === index && draggedImageIndex !== index ? "ring-2 ring-emerald-400/80" : null,
-                    draggedImageIndex === index ? "opacity-60" : null
-                  )}
-                >
-                  <ProductEditorPreviewImage src={url} className={cn("object-cover", uploadingImageUrls.has(url) ? "grayscale opacity-60" : null)} />
-                  {url === mainImageUrl ? (
-                    <span className="absolute left-1 top-1 z-10 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-500/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-white">
-                      Main
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeGalleryImage(index);
-                    }}
-                    className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-red-500/90 text-sm font-bold leading-none text-white shadow-sm transition hover:scale-105 hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-                    aria-label="Remove image"
-                    title="Remove image"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            ) : null}
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="h-11 rounded-xl text-sm font-semibold"
-                onClick={() => mainImageInputRef.current?.click()}
-              >
-                Upload main image
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className="h-11 rounded-xl text-sm font-semibold"
-                onClick={() => additionalImagesInputRef.current?.click()}
-              >
-                Add additional images
-              </Button>
-            </div>
-            {uploadProgress.active ? (
-              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-2">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                    {uploadProgress.label}
-                  </span>
-                  <span className="text-xs font-semibold text-emerald-700">{uploadProgress.percent}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-                  <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                    style={{ width: `${Math.max(2, Math.min(100, uploadProgress.percent))}%` }}
-                  />
-                </div>
-              </div>
-            ) : null}
-            <input ref={mainImageInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickMainImage} />
-            <input ref={additionalImagesInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePickAdditionalImages} />
-          </div>
+          <ProductEditorGalleryCard
+            items={galleryItems}
+            selectedItemId={selectedGalleryItemId}
+            uploadLoading={false}
+            uploadButtonLabel="Upload images"
+            emptyPreviewLabel="No image"
+            emptyGalleryLabel="No gallery images"
+            onSelectItem={(itemId) => {
+              const item = galleryItems.find((entry) => entry.id === itemId);
+              if (item) {
+                setSelectedImageUrl(item.src);
+              }
+            }}
+            onRemoveItem={(itemId) => {
+              const itemIndex = galleryItems.findIndex((entry) => entry.id === itemId);
+              if (itemIndex >= 0) {
+                removeGalleryImage(itemIndex);
+              }
+            }}
+            onReorderItems={(sourceItemId, targetItemId) => {
+              const sourceIndex = galleryItems.findIndex((entry) => entry.id === sourceItemId);
+              const targetIndex = galleryItems.findIndex((entry) => entry.id === targetItemId);
+              if (sourceIndex >= 0 && targetIndex >= 0) {
+                moveGalleryImage(sourceIndex, targetIndex);
+              }
+            }}
+            onUploadFiles={handleUploadImages}
+          />
 
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</p>
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                Selected: {props.draft.categories.length}
+                {activeSiteKey}: {currentCategories.length}
               </span>
             </div>
+            <SiteTabBar
+              activeSiteKey={activeSiteKey}
+              onChange={setActiveSiteKey}
+              renderMeta={(siteKey) => String((categoriesBySiteKey[siteKey] ?? []).length)}
+            />
             <div className="flex items-center gap-2">
               <Input
                 value={categoryQuery}
@@ -816,16 +640,17 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                     key={node.id}
                     node={node}
                     level={0}
-                  expandedCategoryIds={expandedCategoryIds}
-                  selectedCategoryIds={selectedCategoryIds}
-                  mainCategoryId={mainCategoryId}
-                  onToggleExpand={toggleCategoryExpand}
-                  onToggleSelect={toggleCategory}
-                  onSetMainCategory={setMainCategory}
-                />
-              ))
-            )}
-          </div>
+                    expandedCategoryIds={expandedCategoryIds}
+                    selectedCategoryIds={selectedCategoryIds}
+                    mainCategoryId={mainCategoryId}
+                    radioName={`jv-main-category-${activeSiteKey}`}
+                    onToggleExpand={toggleCategoryExpand}
+                    onToggleSelect={toggleCategory}
+                    onSetMainCategory={setMainCategory}
+                  />
+                ))
+              )}
+            </div>
           </div>
         </div>
       }
@@ -892,38 +717,38 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   );
 }
 
-async function loadCachedJvDeliveryOptions(): Promise<ProductEditorJvDeliveryOption[]> {
-  if (cachedDeliveryOptions) {
-    return cachedDeliveryOptions;
+async function loadCachedJvDeliveryOptions(siteKey: ProductEditorJvSiteKey): Promise<ProductEditorJvDeliveryOption[]> {
+  if (cachedDeliveryOptionsBySite[siteKey]) {
+    return cachedDeliveryOptionsBySite[siteKey] ?? [];
   }
-  if (!deliveryOptionsPromise) {
-    deliveryOptionsPromise = getJvDeliveryOptions()
+  if (!deliveryOptionsPromiseBySite[siteKey]) {
+    deliveryOptionsPromiseBySite[siteKey] = getJvDeliveryOptions(siteKey)
       .then((options) => {
-        cachedDeliveryOptions = options;
+        cachedDeliveryOptionsBySite = { ...cachedDeliveryOptionsBySite, [siteKey]: options };
         return options;
       })
       .finally(() => {
-        deliveryOptionsPromise = null;
+        deliveryOptionsPromiseBySite = { ...deliveryOptionsPromiseBySite, [siteKey]: undefined };
       });
   }
-  return deliveryOptionsPromise;
+  return deliveryOptionsPromiseBySite[siteKey] ?? [];
 }
 
-async function loadCachedJvRubricTree(): Promise<ProductEditorJvRubricNode[]> {
-  if (cachedRubricTree) {
-    return cachedRubricTree;
+async function loadCachedJvRubricTree(siteKey: ProductEditorJvSiteKey): Promise<ProductEditorJvRubricNode[]> {
+  if (cachedRubricTreeBySite[siteKey]) {
+    return cachedRubricTreeBySite[siteKey] ?? [];
   }
-  if (!rubricTreePromise) {
-    rubricTreePromise = getJvRubricTree()
+  if (!rubricTreePromiseBySite[siteKey]) {
+    rubricTreePromiseBySite[siteKey] = getJvRubricTree(siteKey)
       .then((tree) => {
-        cachedRubricTree = tree;
+        cachedRubricTreeBySite = { ...cachedRubricTreeBySite, [siteKey]: tree };
         return tree;
       })
       .finally(() => {
-        rubricTreePromise = null;
+        rubricTreePromiseBySite = { ...rubricTreePromiseBySite, [siteKey]: undefined };
       });
   }
-  return rubricTreePromise;
+  return rubricTreePromiseBySite[siteKey] ?? [];
 }
 
 type CategoryTreeRowProps = {
@@ -932,6 +757,7 @@ type CategoryTreeRowProps = {
   expandedCategoryIds: Set<number>;
   selectedCategoryIds: Set<number>;
   mainCategoryId: number | null;
+  radioName: string;
   onToggleExpand: (categoryId: number) => void;
   onToggleSelect: (categoryId: number, checked: boolean) => void;
   onSetMainCategory: (categoryId: number) => void;
@@ -955,8 +781,11 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
         <button
           type="button"
           onClick={() => hasChildren && props.onToggleExpand(props.node.id)}
-          className="w-4 text-center text-muted-foreground"
+          className="relative w-4 text-center text-transparent"
         >
+          <span className="absolute inset-0 text-muted-foreground" aria-hidden>
+            {hasChildren ? (expanded ? "\u25BE" : "\u25B8") : ""}
+          </span>
           {hasChildren ? (expanded ? "▾" : "▸") : ""}
         </button>
         <input
@@ -974,7 +803,7 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
         {selected ? (
           <input
             type="radio"
-            name="jv-main-category"
+            name={props.radioName}
             className="h-4 w-4 shrink-0 accent-emerald-600"
             checked={props.mainCategoryId === props.node.id}
             onChange={() => props.onSetMainCategory(props.node.id)}
@@ -992,12 +821,43 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
               expandedCategoryIds={props.expandedCategoryIds}
               selectedCategoryIds={props.selectedCategoryIds}
               mainCategoryId={props.mainCategoryId}
+              radioName={props.radioName}
               onToggleExpand={props.onToggleExpand}
               onToggleSelect={props.onToggleSelect}
               onSetMainCategory={props.onSetMainCategory}
             />
           ))
         : null}
+    </div>
+  );
+}
+
+type SiteTabBarProps = {
+  activeSiteKey: ProductEditorJvSiteKey;
+  onChange: (siteKey: ProductEditorJvSiteKey) => void;
+  renderMeta: (siteKey: ProductEditorJvSiteKey) => string;
+};
+
+function SiteTabBar(props: SiteTabBarProps) {
+  return (
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {JV_SITE_TABS.map((site) => {
+        const active = site.key === props.activeSiteKey;
+        return (
+          <button
+            key={site.key}
+            type="button"
+            onClick={() => props.onChange(site.key)}
+            className={cn(
+              "rounded-xl border px-3 py-2 text-left transition",
+              active ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-border bg-white text-foreground hover:border-emerald-200"
+            )}
+          >
+            <div className="text-xs font-semibold">{site.label}</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">{props.renderMeta(site.key)}</div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1017,6 +877,53 @@ function collectAllCategoryIds(nodes: ProductEditorJvRubricNode[]): Set<number> 
 function toNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {
+  const candidate = String(draft.target_id || draft.jv_fields?.site_key || "").trim().toUpperCase();
+  return JV_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
+}
+
+function normalizeCategorySelection(categories: ProductEditorJvCategory[]): ProductEditorJvCategory[] {
+  const seen = new Set<number>();
+  const normalized = categories.filter((item) => {
+    const categoryId = Number(item.category_id);
+    if (!Number.isFinite(categoryId) || categoryId <= 0 || seen.has(categoryId)) return false;
+    seen.add(categoryId);
+    return true;
+  }).map((item) => ({ category_id: Number(item.category_id), main_category: Boolean(item.main_category) }));
+  if (normalized.length === 0) return [];
+  const mainCategoryId = normalized.find((item) => item.main_category)?.category_id ?? normalized[0].category_id;
+  return normalized.map((item) => ({ ...item, main_category: item.category_id === mainCategoryId }));
+}
+
+function getDraftCategoriesBySiteKey(
+  draft: ProductEditorJvDraft,
+  baselineSiteKey: ProductEditorJvSiteKey
+): Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> {
+  const next: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> = {};
+  for (const site of JV_SITE_TABS) {
+    const categories = draft.categories_by_site_key[site.key] ?? (site.key === baselineSiteKey ? draft.categories : []);
+    next[site.key] = normalizeCategorySelection(categories);
+  }
+  return next;
+}
+
+function getDraftDeliveryValuesBySiteKey(
+  draft: ProductEditorJvDraft,
+  baselineSiteKey: ProductEditorJvSiteKey
+): Partial<Record<ProductEditorJvSiteKey, string>> {
+  const next: Partial<Record<ProductEditorJvSiteKey, string>> = {};
+  for (const site of JV_SITE_TABS) {
+    const siteFields = draft.jv_fields_by_site_key[site.key] ?? {};
+    const baselineValue = site.key === baselineSiteKey ? draft.jv_fields?.lieferzeitid : "";
+    next[site.key] = String(siteFields.lieferzeitid ?? baselineValue ?? "").trim();
+  }
+  return next;
+}
+
+function getDeliverySelectionLabel(value: string): string {
+  return value.trim() ? `ID ${value}` : "Not selected";
 }
 
 function filterCategoryTree(
@@ -1085,6 +992,30 @@ function countNonEmptyLines(value: string): number {
     .filter((line) => line.length > 0).length;
 }
 
+function buildPendingUploadEntry(file: File, previewUrl: string, index: number) {
+  return {
+    id: `${file.name}-${file.size}-${Date.now()}-${index}`,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    preview_url: previewUrl,
+    file,
+  };
+}
+
+function dedupePendingUploads(pendingUploads: ProductEditorJvDraft["pending_uploads"]): ProductEditorJvDraft["pending_uploads"] {
+  const seen = new Set<string>();
+  const result: ProductEditorJvDraft["pending_uploads"] = [];
+  for (const item of pendingUploads) {
+    const previewUrl = String(item.preview_url || "").trim();
+    const signature = previewUrl || `${item.name}-${item.size}`;
+    if (!signature || seen.has(signature)) continue;
+    seen.add(signature);
+    result.push(item);
+  }
+  return result;
+}
+
 function normalizeJvImageUrl(value: string): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -1094,19 +1025,47 @@ function normalizeJvImageUrl(value: string): string {
   return `https://jvmoebel.de/${raw}`;
 }
 
-function getAdditionalImageUrls(draft: ProductEditorJvDraft, mainImageUrl: string): string[] {
+type JvGalleryImage = {
+  raw: string;
+  preview: string;
+};
+
+function resolveJvPreviewUrl(rawValue: string, publicUrl?: string): string {
+  const explicitPublicUrl = String(publicUrl ?? "").trim();
+  if (explicitPublicUrl) return normalizeJvImageUrl(explicitPublicUrl);
+  return normalizeJvImageUrl(rawValue);
+}
+
+function buildJvGalleryState(draft: ProductEditorJvDraft): { mainImage: JvGalleryImage; additionalImages: JvGalleryImage[]; allImages: JvGalleryImage[] } {
+  const mainImage: JvGalleryImage = {
+    raw: String(draft.image || "").trim(),
+    preview: resolveJvPreviewUrl(draft.image, draft.image_public_url),
+  };
+  const additionalImages = getAdditionalImageEntries(draft, mainImage);
+  const allImages = [mainImage, ...additionalImages].filter((item) => item.preview.trim() !== "");
+  return { mainImage, additionalImages, allImages };
+}
+
+function buildGalleryItemId(url: string, index: number): string {
+  return `${index}:${url}`;
+}
+
+function getAdditionalImageEntries(draft: ProductEditorJvDraft, mainImage: JvGalleryImage): JvGalleryImage[] {
   const seen = new Set<string>();
-  const result: string[] = [];
-  if (mainImageUrl) {
-    seen.add(mainImageUrl.toLowerCase());
+  const result: JvGalleryImage[] = [];
+  if (mainImage.preview) {
+    seen.add(mainImage.preview.toLowerCase());
   }
   for (const row of draft.images) {
-    const normalized = normalizeJvImageUrl(row.image);
+    const normalized = resolveJvPreviewUrl(row.image, row.public_url);
     if (!normalized) continue;
     const key = normalized.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push(normalized);
+    result.push({
+      raw: String(row.image || "").trim(),
+      preview: normalized,
+    });
   }
   return result;
 }

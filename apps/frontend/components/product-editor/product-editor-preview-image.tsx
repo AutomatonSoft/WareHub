@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const failedBlobPreviewSources = new Set<string>();
 
@@ -9,6 +9,10 @@ export function ProductEditorPreviewImage({ src, className }: { src: string; cla
   const normalizedSrc = normalizePreviewSrc(src);
   const isBlobSrc = normalizedSrc.startsWith("blob:");
   const isKnownFailed = isBlobSrc ? failedBlobPreviewSources.has(normalizedSrc) : false;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [normalizedSrc]);
 
   if (failed || isKnownFailed || !normalizedSrc) {
     return (

@@ -171,7 +171,7 @@ jobs:
       STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
       STAGE_PROJECT_NAME: warehub-stage
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
-      STAGE_EXPECTED_SERVICE_COUNT: "7"
+      STAGE_EXPECTED_SERVICE_COUNT: "8"
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
 
     steps:
@@ -412,7 +412,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/stage"
           BACKUP_ROOT="/opt/warehub/backups/stage"
           EXPECTED_GATEWAY_PORT="8940"
-          EXPECTED_SERVICE_COUNT="7"
+          EXPECTED_SERVICE_COUNT="8"
 
           candidate_dir="$(mktemp -d /tmp/warehub-stage-deploy.XXXXXXXX)"
           cleanup() {
@@ -551,7 +551,7 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --quiet
 
           echo "=== PULL IMAGES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services telegram_notifier orchestrator
 
           echo "=== APPLY STAGE MIGRATIONS ==="
           for attempt in $(seq 1 10); do
@@ -572,7 +572,7 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan
 
           echo "=== UP APP SERVICES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services telegram_notifier orchestrator
 
           echo "=== UP GATEWAY ==="
           docker compose --project-name "$PROJECT" --env-file .env.gateway-candidate -f docker-compose.gateway-candidate.yml up -d --no-build --force-recreate --no-deps gateway
@@ -645,7 +645,7 @@ jobs:
           check_url product-editor "https://stagewarehub.automatonsoft.de/product-editor" 307
 
           echo "=== VERIFY RUNNING IMAGE REFS ==="
-          for service in backend frontend gateway mobile services orchestrator; do
+          for service in backend frontend gateway mobile services telegram_notifier orchestrator; do
             container="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$service" --format "{{.ID}}")"
             [ -n "$container" ] || {
               echo "Missing container for $service" >&2

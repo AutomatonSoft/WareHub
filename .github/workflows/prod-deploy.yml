@@ -36,7 +36,7 @@ jobs:
       PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
       PROD_PROJECT_NAME: warehub-prod
       PROD_EXPECTED_GATEWAY_PORT: "8950"
-      PROD_EXPECTED_SERVICE_COUNT: "7"
+      PROD_EXPECTED_SERVICE_COUNT: "8"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
       MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
@@ -385,7 +385,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/prod"
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
-          EXPECTED_SERVICE_COUNT="7"
+          EXPECTED_SERVICE_COUNT="8"
           MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           candidate_dir="$(mktemp -d /tmp/warehub-prod-deploy.XXXXXXXX)"
@@ -461,7 +461,7 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --quiet
 
           echo "=== PULL IMAGES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services telegram_notifier orchestrator
 
           echo "=== VERIFY PROD MIGRATION PLAN ==="
           plan_output="$(docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan)"
@@ -494,7 +494,7 @@ jobs:
           fi
 
           echo "=== UP APP SERVICES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services telegram_notifier orchestrator
 
           echo "=== UP GATEWAY ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --force-recreate --no-deps gateway

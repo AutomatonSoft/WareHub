@@ -1,6 +1,5 @@
 import { findGroup, hasActionableHoodTarget, hasActionableJvTarget } from "./product-editor-model";
 import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
-import { ProductEditorJobPanel } from "./product-editor-job-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
 import { PRODUCT_EDITOR_PLACEHOLDER_DETAILS, PRODUCT_EDITOR_TAB_COPY } from "./product-editor-copy";
 import { ProductEditorEmptyPanel } from "./product-editor-shared-panels";
@@ -51,8 +50,7 @@ export function ProductEditorActiveGroupPanel(input: {
   jvBatchApplyLoading: boolean;
   onRemoveHoodImage: (imageUrl: string) => void;
   onReorderHoodImages: (sourceImageUrl: string, targetImageUrl: string) => void;
-  onUploadHoodMainFiles: (files: FileList | null) => void;
-  onUploadHoodAdditionalFiles: (files: FileList | null) => void;
+  onUploadHoodFiles: (files: FileList | null) => void;
   onApplyHoodEditedProducts: () => void;
   onApplyJvEditedProducts: () => void;
 }) {
@@ -104,11 +102,14 @@ export function ProductEditorActiveGroupPanel(input: {
           onChange={input.onPatchHood}
           onRemoveImage={input.onRemoveHoodImage}
           onReorderImages={input.onReorderHoodImages}
-          onUploadMainFiles={input.onUploadHoodMainFiles}
-          onUploadAdditionalFiles={input.onUploadHoodAdditionalFiles}
+          onUploadFiles={input.onUploadHoodFiles}
           onApplyEditedProducts={input.onApplyHoodEditedProducts}
+          eanValue={input.eanValue}
+          isEanValid={input.isEanValid}
+          searching={input.searching}
+          onChangeEan={input.onChangeEan}
+          onSearch={input.onSearch}
         />
-        <ProductEditorJobPanel job={input.jobResponse} loading={input.jobLoading} onRefresh={input.onRefreshJob} />
       </div>
     );
   }
@@ -153,8 +154,12 @@ export function ProductEditorActiveGroupPanel(input: {
           batchApplyLoading={input.jvBatchApplyLoading}
           jobResponse={input.jobResponse}
           onApplyEditedProducts={input.onApplyJvEditedProducts}
+          eanValue={input.eanValue}
+          isEanValid={input.isEanValid}
+          searching={input.searching}
+          onChangeEan={input.onChangeEan}
+          onSearch={input.onSearch}
         />
-        <ProductEditorJobPanel job={input.jobResponse} loading={input.jobLoading} onRefresh={input.onRefreshJob} />
       </div>
     );
   }
