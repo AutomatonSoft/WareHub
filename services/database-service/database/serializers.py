@@ -291,6 +291,23 @@ class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
         return str(value).strip()
 
 
+class MarketplaceXLDeactivateByKidSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=255)
+    inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+
+    def validate_kid_number(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("kid_number не может быть пустым.")
+        return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
+
+
 class EANPoolTakeNextSerializer(serializers.Serializer):
     reserved_by = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
@@ -301,3 +318,5 @@ class EANUsageMarkSerializer(serializers.Serializer):
     site_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
     local_product_id = serializers.IntegerField(required=False)
     source_product_id = serializers.IntegerField(required=False)
+
+

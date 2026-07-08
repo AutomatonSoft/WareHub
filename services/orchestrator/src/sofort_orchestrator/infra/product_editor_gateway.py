@@ -67,6 +67,30 @@ class ProductEditorGateway:
         response = self.http.request("GET", url, headers=headers)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id)
+        url = f"{self.base_url}/api/v1/xl/sites/by-ean/{ean}/"
+        response = self.http.request("GET", url, headers=headers, params={"site": "XL"})
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def fetch_xl_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id)
+        url = f"{self.base_url}/api/v1/xl/products/local-by-ean/{ean}/"
+        response = self.http.request("GET", url, headers=headers, params={"site": "XL", "site_key": site_key})
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def sync_xl_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id, content_type="application/json")
+        url = f"{self.base_url}/api/v1/xl/products/sync-by-ean/{ean}/"
+        response = self.http.request("POST", url, headers=headers, params={"site": "XL", "site_key": site_key}, json={})
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def apply_xl_batch_by_ean(self, *, ean: str, request_id: str, payload: dict) -> GatewayResult:
+        headers = self._headers(request_id, content_type="application/json")
+        url = f"{self.base_url}/api/v1/xl/batch/update-by-ean/{ean}/apply/"
+        response = self.http.request("POST", url, headers=headers, json=payload)
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
 
 def _json_or_text(response) -> dict:
     try:

@@ -22,7 +22,9 @@ class FakeProductEditorGateway:
     def __init__(self):
         self.patch_calls: list[dict] = []
         self.jv_batch_calls: list[dict] = []
+        self.xl_batch_calls: list[dict] = []
         self.jv_sites_calls = 0
+        self.xl_sites_calls = 0
         self.fetch_by_account = {
             "jv": {
                 "account": "jv",
@@ -92,6 +94,44 @@ class FakeProductEditorGateway:
                 ]
             },
         }
+        self.xl_sites = {
+            "site": "XL",
+            "query_ean": "4012345678901",
+            "found": [
+                {"site_key": "XLMOEBEL_DE", "domain": "xlmoebel.de", "product_id": 201, "ean": "4012345678901", "price": "39.99", "currency_code": "EUR", "title": "Desk XL DE"},
+            ],
+            "missing": [{"site_key": "XLMOEBEL_CH", "domain": "xlmoebel.ch", "reason": "ean_not_found"}],
+            "found_count": 1,
+            "missing_count": 1,
+        }
+        self.xl_local = {
+            "XLMOEBEL_DE": {"detail": "not found"},
+            "XLMOEBEL_DE_synced": {
+                "ean": "4012345678901",
+                "source_model": "XL-DE-BASE",
+                "source_sku": "XL-SKU-1",
+                "source_ean_field": "4012345678901",
+                "price": "39.99",
+                "quantity": 5,
+                "status": True,
+                "image": "catalog/xl-de.jpg",
+                "descriptions": [{"language_id": 1, "name": "XL DE Desk", "description": "<p>XL DE</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}],
+                "categories": [{"category_id": 21, "main_category": True}],
+                "stores": [{"store_id": 0}],
+                "images": [{"image": "catalog/xl-de-1.jpg", "sort_order": 0}],
+                "specials": [],
+            },
+        }
+        self.xl_synced_site_keys: set[str] = set()
+        self.xl_batch_result = {
+            "summary": {"applied": 1, "failed": 0, "skipped": 0, "translation_used_sites": 0, "translation_error_sites": 0},
+            "job": {
+                "id": 601,
+                "items": [
+                    {"site": "XL", "site_key": "XLMOEBEL_DE", "domain": "xlmoebel.de", "status": "applied"},
+                ],
+            },
+        }
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
         body = self.fetch_by_account[account]
@@ -142,6 +182,26 @@ class FakeProductEditorGateway:
             }
         }
         return type("R", (), {"status_code": 200, "body": body})()
+
+    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str):
+        self.xl_sites_calls += 1
+        return type("R", (), {"status_code": 200, "body": self.xl_sites})()
+
+    def fetch_xl_local_by_ean(self, *, ean: str, site_key: str, request_id: str):
+        if site_key == "XLMOEBEL_DE" and site_key not in self.xl_synced_site_keys:
+            return type("R", (), {"status_code": 404, "body": self.xl_local["XLMOEBEL_DE"]})()
+        key = f"{site_key}_synced" if site_key in self.xl_synced_site_keys else site_key
+        body = self.xl_local.get(key) or self.xl_local.get(site_key) or {"detail": "not found"}
+        status_code = 200 if "ean" in body else 404
+        return type("R", (), {"status_code": status_code, "body": body})()
+
+    def sync_xl_by_ean(self, *, ean: str, site_key: str, request_id: str):
+        self.xl_synced_site_keys.add(site_key)
+        return type("R", (), {"status_code": 200, "body": {"created": True, "updated": False}})()
+
+    def apply_xl_batch_by_ean(self, *, ean: str, request_id: str, payload: dict):
+        self.xl_batch_calls.append({"ean": ean, "payload": payload, "request_id": request_id})
+        return type("R", (), {"status_code": 202, "body": self.xl_batch_result})()
 
 
 def _client(tmp_path) -> tuple[TestClient, FakeProductEditorGateway]:
@@ -204,15 +264,34 @@ def test_product_editor_load_returns_normalized_hood_draft(tmp_path):
     assert payload["draft"]["images"] == ["https://img/1.jpg", "https://img/2.jpg"]
 
 
-def test_product_editor_load_rejects_group_not_supported_yet(tmp_path):
+def test_product_editor_discover_respects_active_group_xl(tmp_path):
     client, _ = _client(tmp_path)
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "XL"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["selected_group_id"] == "XL"
+    assert payload["selected_target_ids"] == ["XLMOEBEL_DE"]
+    xl_group = next(group for group in payload["groups"] if group["id"] == "XL")
+    targets = {target["id"]: target for target in xl_group["targets"]}
+    assert targets["XLMOEBEL_DE"]["status"] == "found"
+
+
+def test_product_editor_load_returns_normalized_xl_draft(tmp_path):
+    client, gateway = _client(tmp_path)
     response = client.post(
         "/api/v1/orchestrator/product-editor/load",
         json={"ean": "4012345678901", "active_group": "XL", "baseline_target_id": "XLMOEBEL_DE"},
     )
-    assert response.status_code == 501
+    assert response.status_code == 200
     payload = response.json()
-    assert payload["code"] == "product_editor_group_not_supported_yet"
+    assert payload["supported"] is True
+    assert payload["baseline_target_id"] == "XLMOEBEL_DE"
+    assert payload["draft"]["source_model"] == "XL-DE-BASE"
+    assert payload["draft"]["price"] == "39.99"
+    assert "XLMOEBEL_DE" in gateway.xl_synced_site_keys
 
 
 def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local(tmp_path):
@@ -286,6 +365,32 @@ def test_product_editor_plan_returns_all_found_jv_targets_and_translation_warnin
     assert "product_editor_translation_required" in warning_codes
     assert payload["summary"]["baseline_site_key"] == "JV_DE"
     assert gateway.jv_sites_calls == 0
+
+
+def test_product_editor_plan_returns_xl_de_target(tmp_path):
+    client, gateway = _client(tmp_path)
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "XL",
+            "changed_fields": ["price", "descriptions"],
+            "draft": {
+                "target_id": "XLMOEBEL_DE",
+                "price": "10.00",
+                "descriptions": [{"language_id": 1, "name": "Desk", "description": "<p>Desk</p>"}],
+            },
+            "selected_target_ids": ["XLMOEBEL_DE", "XLMOEBEL_CH"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert [target["id"] for target in payload["targets"]] == ["XLMOEBEL_DE"]
+    warning_codes = [warning["code"] for warning in payload["warnings"]]
+    assert "product_editor_live_source_batch_apply" in warning_codes
+    assert "product_editor_xl_de_only" in warning_codes
+    assert payload["summary"]["baseline_site_key"] == "XLMOEBEL_DE"
+    assert gateway.xl_sites_calls == 0
 
 
 def test_product_editor_apply_requires_existing_plan(tmp_path):
@@ -406,6 +511,63 @@ def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path)
     assert job_response.status_code == 200
     job_payload = job_response.json()
     assert job_payload["status"] == "queued"
+
+
+def test_product_editor_apply_executes_xl_batch_apply_via_orchestrator(tmp_path):
+    client, gateway = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "XL",
+            "changed_fields": ["price"],
+            "draft": {
+                "target_id": "XLMOEBEL_DE",
+                "price": "10.00",
+            },
+            "selected_target_ids": ["XLMOEBEL_DE"],
+        },
+    )
+    plan_id = plan_response.json()["plan_id"]
+
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_id, "confirmation": True},
+    )
+    assert apply_response.status_code == 200
+    apply_payload = apply_response.json()
+    assert apply_payload["status"] == "queued"
+    command = Deps.job_store.get_job_command(job_id=apply_payload["job_id"])
+    assert command is not None
+    overrides = command.channels[0].overrides
+    assert overrides["site_keys"] == ["XLMOEBEL_DE"]
+    assert overrides["template_site_key"] == "XLMOEBEL_DE"
+    assert command.channels[0].site == "XL"
+
+    assert Deps.job_store.mark_running(job_id=apply_payload["job_id"]) is True
+    Deps.job_store.mark_completed(
+        job_id=apply_payload["job_id"],
+        result=OrchestrateResponse(
+            request_id="req-xl-completed",
+            status=FinalStatus.SUCCESS,
+            results=[
+                ChannelResult(
+                    marketplace=command.channels[0].marketplace,
+                    target="xljv,site=XL,site_key=XLMOEBEL_DE",
+                    status="success",
+                    status_code=202,
+                    data=gateway.xl_batch_result,
+                )
+            ],
+        ),
+    )
+
+    job_response = client.get(f"/api/v1/orchestrator/product-editor/jobs/{apply_payload['job_id']}")
+    assert job_response.status_code == 200
+    job_payload = job_response.json()
+    assert job_payload["status"] == JobStatus.COMPLETED.value
+    assert job_payload["summary"]["applied"] == 1
+    assert job_payload["targets"][0]["target_id"] == "XLMOEBEL_DE"
 
 
 def test_product_editor_job_prefers_terminal_orchestrator_status_over_stale_live_batch(tmp_path):

@@ -110,9 +110,11 @@ function ProductEditorContent() {
   const hoodLoading = activeHoodTabKey ? hoodLoadingByTab[activeHoodTabKey] : false;
   const hoodApplyLoading = activeHoodTabKey ? hoodApplyLoadingByTab[activeHoodTabKey] : false;
   const hoodImageUploadLoading = activeHoodTabKey ? hoodImageUploadLoadingByTab[activeHoodTabKey] : false;
-  const isGlobalEanValid = isValidProductIdentifier(eanInput);
-  const isEffectiveTabEanValid = isValidProductIdentifier(effectiveTabEanInput);
-  const hasLocalLoadedJv = activeGroupId === "JV" && isLoadedJvDraft(jvDraft, effectiveTabEanInput);
+  const isGlobalEanValid = /^\d{13}$/.test(eanInput.trim());
+  const isEffectiveTabEanValid = /^\d{13}$/.test(effectiveTabEanInput);
+  const hasLocalLoadedJv =
+    (activeGroupId === "JV" || activeGroupId === "XL") &&
+    isLoadedJvDraft(jvDraft, effectiveTabEanInput);
   const hasLocalLoadedHood =
     activeGroupId === "HOOD" &&
     isLoadedHoodDraft(hoodDraft, effectiveTabEanInput, getSourceVariantFromTab(activeTabKey));
@@ -139,7 +141,11 @@ function ProductEditorContent() {
     ) {
       void loadHoodDraft(discover, preferredTargetId ?? discover.recommended_baseline_target_id);
     }
-    if (activeGroupId === "JV" && hasActionableJvTarget(findGroup(discover, "JV")) && !isLoadedJvDraft(jvDraft, discover.ean)) {
+    if (
+      (activeGroupId === "JV" || activeGroupId === "XL") &&
+      hasActionableJvTarget(findGroup(discover, activeGroupId)) &&
+      !isLoadedJvDraft(jvDraft, discover.ean)
+    ) {
       const autoLoadKey = buildJvAutoLoadKey(discover.ean, discover.recommended_baseline_target_id);
       if (jvAutoLoadInFlightKeyRef.current === autoLoadKey) {
         return;
@@ -151,8 +157,7 @@ function ProductEditorContent() {
         skipNextAutoJvLoadKeyRef.current = null;
         return;
       }
-      jvAutoLoadInFlightKeyRef.current = autoLoadKey;
-      void loadJvDraft(discover, discover.recommended_baseline_target_id, autoLoadKey);
+      void loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
     }
   }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft]);
 
@@ -188,6 +193,15 @@ function ProductEditorContent() {
         showToast(`JV tab loaded for ${ean}.`, "success");
         return;
       }
+      if (activeGroupId === "XL") {
+        const loaded = await loadXlDraftByEan(ean);
+        if (!loaded) {
+          showToast(`Product ${ean} not found for XL tab.`, "error");
+          return;
+        }
+        showToast(`XL tab loaded for ${ean}.`, "success");
+        return;
+      }
       if (activeGroupId === "HOOD") {
         const loaded = await loadHoodDraftByEan(ean);
         if (!loaded) {
@@ -197,7 +211,7 @@ function ProductEditorContent() {
         showToast(`${activeTabKey.replace("_", " ")} tab loaded for ${ean}.`, "success");
         return;
       }
-      showToast("Local tab search is currently available for JV and HOOD tabs.", "error");
+      showToast("Local tab search is currently available for JV, XL, and HOOD tabs.", "error");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Tab search failed.";
       setPageError(message);
@@ -262,12 +276,20 @@ function ProductEditorContent() {
     }
   }
 
-  async function loadJvDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null, autoLoadKey?: string) {
+  async function loadJvDraft(
+    currentDiscover: ProductEditorDiscoverResponse,
+    activeGroup: "JV" | "XL" = "JV",
+    preferredTargetId?: string | null
+  ) {
     setJvLoading(true);
     setPageError(null);
     const resolvedAutoLoadKey = autoLoadKey ?? buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId);
     try {
-      const response = await loadProductEditorGroup({ ean: currentDiscover.ean, activeGroup: "JV", baselineTargetId: preferredTargetId });
+      const response = await loadProductEditorGroup({
+        ean: currentDiscover.ean,
+        activeGroup,
+        baselineTargetId: preferredTargetId
+      });
       const hydrated = hydrateJvDraft(response.draft as never);
       setJvDraft(hydrated);
       setInitialJvDraft(hydrated);
@@ -275,7 +297,7 @@ function ProductEditorContent() {
       loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId ?? response.baseline_target_id);
       clearPlanAndJobState();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "JV draft load failed.";
+      const message = error instanceof Error ? error.message : `${activeGroup} draft load failed.`;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -302,6 +324,29 @@ function ProductEditorContent() {
       const response = await loadProductEditorGroup({
         ean,
         activeGroup: "JV",
+        baselineTargetId: discovered.recommended_baseline_target_id
+      });
+      const hydrated = hydrateJvDraft(response.draft as never);
+      if (!hydrated.target_id) return false;
+      setJvDraft(hydrated);
+      setInitialJvDraft(hydrated);
+      setJvWarnings(response.warnings);
+      clearPlanAndJobState();
+      return true;
+    } finally {
+      setJvLoading(false);
+    }
+  }
+
+  async function loadXlDraftByEan(ean: string): Promise<boolean> {
+    setJvLoading(true);
+    try {
+      const discovered = await discoverProductEditor(ean, "XL");
+      skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(ean, discovered.recommended_baseline_target_id);
+      setDiscover(limitDiscoverToActiveGroup(discovered, "XL"));
+      const response = await loadProductEditorGroup({
+        ean,
+        activeGroup: "XL",
         baselineTargetId: discovered.recommended_baseline_target_id
       });
       const hydrated = hydrateJvDraft(response.draft as never);
@@ -617,21 +662,23 @@ function ProductEditorContent() {
   }
 
   async function handleApplyJvEditedProducts() {
+    const activeStructuredGroup = activeGroupId === "XL" ? "XL" : "JV";
+    const activeStructuredLabel = activeStructuredGroup === "XL" ? "XL" : "JV";
     const ean = jvDraft.ean.trim();
-    if (!isValidProductIdentifier(ean)) {
-      showToast("JV product identifier is invalid.", "error");
+    if (!/^\d{13}$/.test(ean)) {
+      showToast(`${activeStructuredLabel} EAN is invalid.`, "error");
       return;
     }
-    if (jvChangedFields.length === 0 && jvDraft.pending_uploads.length === 0) {
-      showToast("No edited JV fields to apply.", "error");
+    if (jvChangedFields.length === 0) {
+      showToast(`No edited ${activeStructuredLabel} fields to apply.`, "error");
       return;
     }
-    const selectedTargetIds = (discover?.groups
-      .find((group) => group.id === "JV")
+    const selectedTargetIds = discover?.groups
+      .find((group) => group.id === activeStructuredGroup)
       ?.targets.filter((target) => target.status === "found")
       .map((target) => target.id) ?? []) as ProductEditorJvSiteKey[];
     if (selectedTargetIds.length === 0) {
-      showToast("No found JV targets are available for orchestrator apply.", "error");
+      showToast(`No found ${activeStructuredLabel} targets are available for orchestrator apply.`, "error");
       return;
     }
     setJvBatchApplyLoading(true);
@@ -640,7 +687,7 @@ function ProductEditorContent() {
       request_id: "",
       job_id: "",
       status: "running",
-      active_group: "JV",
+      active_group: activeStructuredGroup,
       summary: {
         supported: true,
         success: 0,
@@ -663,9 +710,9 @@ function ProductEditorContent() {
       setJvDraft(draftAfterUpload);
       const plan = await planProductEditor({
         ean,
-        activeGroup: "JV",
-        changedFields: buildJvChangedFields(initialJvDraft, draftAfterUpload),
-        draft: draftAfterUpload as unknown as Record<string, unknown>,
+        activeGroup: activeStructuredGroup,
+        changedFields: jvChangedFields,
+        draft: jvDraft as unknown as Record<string, unknown>,
         selectedTargetIds
       });
       setPlanResponse(plan);
@@ -681,23 +728,26 @@ function ProductEditorContent() {
         targets: [],
         error: null
       });
-      showToast(`Orchestrator apply accepted for job ${response.job_id.slice(0, 8)}.`, "success");
+      showToast(`${activeStructuredLabel} orchestrator apply accepted for job ${response.job_id.slice(0, 8)}.`, "success");
       const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
       const finalStatus = String(finalJob.status || "").toLowerCase();
       const summary = finalJob.summary ?? {};
       const success = Number(summary.success ?? 0);
       const failed = Number(summary.failed ?? 0);
       if (finalStatus === "completed") {
-        setInitialJvDraft(draftAfterUpload);
-        showToast(`JV orchestrator job completed. Success: ${success}, Failed: ${failed}.`, "success");
+        setInitialJvDraft(jvDraft);
+        showToast(`${activeStructuredLabel} orchestrator job completed. Success: ${success}, Failed: ${failed}.`, "success");
       } else {
-        showToast(`JV orchestrator job finished with status ${finalStatus || "unknown"}. Success: ${success}, Failed: ${failed}.`, "error");
+        showToast(
+          `${activeStructuredLabel} orchestrator job finished with status ${finalStatus || "unknown"}. Success: ${success}, Failed: ${failed}.`,
+          "error"
+        );
       }
     } catch (error) {
       if (!acceptedJobId) {
         setJobResponse(null);
       }
-      const message = error instanceof Error ? error.message : "JV batch apply failed.";
+      const message = error instanceof Error ? error.message : `${activeStructuredLabel} batch apply failed.`;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -918,12 +968,12 @@ function ProductEditorContent() {
         selectedTargetIds: hoodDraft.target_id ? [hoodDraft.target_id] : []
       };
     }
-    if (activeGroupId === "JV") {
+    if (activeGroupId === "JV" || activeGroupId === "XL") {
       return {
         activeDraft: jvDraft,
         changedFields: jvChangedFields,
         selectedTargetIds: discover?.groups
-          .find((group) => group.id === "JV")
+          .find((group) => group.id === activeGroupId)
           ?.targets.filter((target) => target.status === "found")
           .map((target) => target.id) ?? []
       };

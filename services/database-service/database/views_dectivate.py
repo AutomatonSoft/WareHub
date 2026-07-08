@@ -8,12 +8,14 @@ from database.serializers import (
     MarketplaceDeactivateByKidSerializer,
     MarketplaceHoodDeactivateByKidSerializer,
     MarketplaceJVDeactivateByKidSerializer,
+    MarketplaceXLDeactivateByKidSerializer,
 )
 from database.marketplace_deactivate_service import (
     deactivate_marketplaces_by_explicit_sites,
     deactivate_hood_by_kid_number,
     deactivate_jv_sofort_by_kid_number,
     deactivate_marketplaces_by_kid_number,
+    deactivate_xl_by_kid_number,
     toggle_local_marketplace_statuses_by_kid_number,
 )
 from jv_services.view_helpers import session_actor
@@ -78,6 +80,23 @@ class MarketplaceHoodDeactivateByKidAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         result = deactivate_hood_by_kid_number(
+            kid_number=str(validated["kid_number"]).strip(),
+            inactive=bool(validated.get("inactive", True)),
+            actor=actor,
+            place=validated.get("place"),
+        )
+        return Response(result["payload"], status=result["status_code"])
+
+
+class MarketplaceXLDeactivateByKidAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        actor = session_actor(request)
+        serializer = MarketplaceXLDeactivateByKidSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        result = deactivate_xl_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
