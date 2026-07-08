@@ -35,9 +35,8 @@ from .models import (
 )
 from .source_client import (
     fetch_source_language_id_by_locale,
-    fetch_source_product_brief_by_ean,
+    fetch_source_product_snapshot_by_artikelnr,
     fetch_source_product_snapshot_by_product_id,
-    fetch_source_product_snapshot_by_ean,
     push_product_to_source,
     source_db_config_for_site,
 )
@@ -85,6 +84,26 @@ logger = logging.getLogger(__name__)
 _FX_MAX_RATE_CACHE: dict[tuple[str, str, int, str], Decimal] = {}
 _APPLY_ITEM_LOCKS_GUARD = threading.Lock()
 _APPLY_ITEM_LOCKS: dict[tuple[int, str], threading.Lock] = {}
+
+
+def _brief_row_from_snapshot(snapshot: dict) -> dict | None:
+    product = (snapshot or {}).get("product") or {}
+    if not product:
+        return None
+
+    descriptions = (snapshot or {}).get("descriptions") or []
+    title = ""
+    if descriptions:
+        title = str((descriptions[0] or {}).get("name") or "").strip()
+
+    return {
+        "product_id": product.get("product_id"),
+        "ean": product.get("ean"),
+        "model": product.get("model"),
+        "price": product.get("price"),
+        "currency_code": (snapshot or {}).get("jv_fields", {}).get("currency_code"),
+        "title": title,
+    }
 
 
 def _runtime_debug_context() -> dict:
@@ -725,7 +744,7 @@ def build_job_precompute_context(*, ean: str, payload: dict) -> dict:
             if not db_config:
                 continue
             try:
-                snapshot = fetch_source_product_snapshot_by_ean(db_config, ean)
+                snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, ean)
             except Exception:
                 continue
             if not snapshot:
@@ -888,7 +907,8 @@ def build_batch_plan(*, ean: str, payload: dict, precomputed: dict | None = None
             continue
 
         try:
-            row = fetch_source_product_brief_by_ean(db_config, ean)
+            snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, ean)
+            row = _brief_row_from_snapshot(snapshot)
             if not row:
                 plan_items.append({
                     "site": site, "site_key": site_key, "domain": domain, "status": "skipped",
@@ -1128,6 +1148,7 @@ def build_batch_plan(*, ean: str, payload: dict, precomputed: dict | None = None
                 details_payload["images"] = explicit_images
             if has_explicit_specials:
                 details_payload["specials"] = explicit_specials
+            details_payload["source_model"] = str(row.get("model") or "").strip()
 
             plan_items.append(
                 {
@@ -1210,11 +1231,12 @@ def _apply_batch_item(
         try:
             update_item_progress(item, phase="loading_source", message="Loading current source product state.")
             lookup_ean = (item.effective_ean or "").strip() or ean
+            lookup_artikelnr = str((item.details or {}).get("source_model") or "").strip() or lookup_ean
             snapshot = None
             if item.source_product_id:
                 snapshot = fetch_source_product_snapshot_by_product_id(db_config, int(item.source_product_id))
             if not snapshot:
-                snapshot = fetch_source_product_snapshot_by_ean(db_config, lookup_ean)
+                snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, lookup_artikelnr)
             if not snapshot:
                 mark_item_skipped(
                     item,
