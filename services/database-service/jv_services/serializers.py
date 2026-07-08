@@ -236,6 +236,7 @@ class JVBatchPayloadSerializer(serializers.Serializer):
         required=False,
     )
     categories_by_site_key = serializers.DictField(required=False)
+    jv_fields_by_site_key = serializers.DictField(required=False)
     descriptions = BatchDescriptionChangeSerializer(many=True, required=False)
     translate_texts = serializers.BooleanField(required=False, default=False)
     translation_source = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False)
@@ -299,6 +300,17 @@ class JVBatchPayloadSerializer(serializers.Serializer):
             if len(category_ids) != len(set(category_ids)):
                 raise serializers.ValidationError(f"{site_key}: duplicate category_id in categories.")
             normalized[site_key] = normalized_rows
+        return normalized
+
+    def validate_jv_fields_by_site_key(self, value):
+        normalized = {}
+        for raw_site_key, raw_fields in (value or {}).items():
+            site_key = str(raw_site_key or "").strip().upper()
+            if not site_key:
+                continue
+            if not isinstance(raw_fields, dict):
+                raise serializers.ValidationError(f"{site_key}: expected an object of JV fields.")
+            normalized[site_key] = dict(raw_fields)
         return normalized
 
     def validate_stores(self, value):

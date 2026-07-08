@@ -7,7 +7,6 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "../ui/card";
 import { Input } from "../ui/input";
 import { Separator } from "../ui/separator";
-import { StatusBadge } from "../ui/status-badge";
 import { Toolbar } from "../ui/toolbar";
 import { cn } from "../../lib/cn";
 import type { ProductEditorDiscoverResponse } from "./product-editor-types";
@@ -48,6 +47,7 @@ export function ProductEditorHeaderCard(props: {
                 value={props.eanInput}
                 onChange={(event) => props.onChangeEan(event.target.value)}
                 placeholder="Enter EAN, SKU or product ID"
+                maxLength={100}
                 className="h-10 w-full bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-primary/35"
               />
               <Button type="button" className="wh-discover-button h-10 w-full text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary/35" disabled={!props.isEanValid || props.discovering} onClick={props.onSearch}>
@@ -55,11 +55,6 @@ export function ProductEditorHeaderCard(props: {
                 Discover Product
               </Button>
             </Toolbar>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px] text-muted-foreground">
-            <StatusBadge tone="found">Found {props.foundCount}</StatusBadge>
-            <StatusBadge tone="missing">Missing {props.missingCount}</StatusBadge>
-            <StatusBadge tone="planned">Total {props.totalCount}</StatusBadge>
           </div>
         </div>
         {props.children ? (

@@ -76,8 +76,9 @@ class FakeProductEditorGateway:
         }
         self.jv_local = {
             "JV_DE": {"detail": "not found"},
-            "JV_AT": {"ean": "4012345678901", "source_model": "JV-AT-BASE", "price": "31.99", "quantity": 4, "status": True, "image": "catalog/at.jpg", "descriptions": [{"language_id": 1, "name": "AT Desk", "description": "<p>AT</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 11, "main_category": True}], "images": [{"image": "catalog/at-1.jpg", "sort_order": 0}], "jv_fields": {"artikelnr": "JV-AT-BASE"}},
-            "JV_DE_synced": {"ean": "4012345678901", "source_model": "JV-DE-BASE", "price": "29.99", "quantity": 3, "status": True, "image": "catalog/de.jpg", "descriptions": [{"language_id": 1, "name": "DE Desk", "description": "<p>DE</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 10, "main_category": True}], "images": [{"image": "catalog/de-1.jpg", "sort_order": 0}], "jv_fields": {"artikelnr": "JV-DE-BASE"}},
+            "JV_AT": {"ean": "4012345678901", "source_model": "JV-AT-BASE", "price": "31.99", "quantity": 4, "status": True, "image": "catalog/at.jpg", "image_public_url": "https://www.jvmoebel.at/catalog/at.jpg", "descriptions": [{"language_id": 1, "name": "AT Desk", "description": "<p>AT</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 11, "main_category": True}], "images": [{"image": "catalog/at-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/at-1.jpg", "sort_order": 0, "public_url": "https://www.jvmoebel.at/catalog/at-1.jpg"}], "jv_fields": {"artikelnr": "JV-AT-BASE", "lieferzeitid": "7"}},
+            "JV_CO_UK": {"ean": "4012345678901", "source_model": "JV-UK-BASE", "price": "32.99", "quantity": 2, "status": True, "image": "catalog/uk.jpg", "image_public_url": "https://www.jvfurniture.co.uk/catalog/uk.jpg", "descriptions": [{"language_id": 1, "name": "UK Desk", "description": "<p>UK</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 21, "main_category": True}], "images": [{"image": "catalog/uk-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/uk-1.jpg", "sort_order": 0, "public_url": "https://www.jvfurniture.co.uk/catalog/uk-1.jpg"}], "jv_fields": {"artikelnr": "JV-UK-BASE", "lieferzeitid": "5"}},
+            "JV_DE_synced": {"ean": "4012345678901", "source_model": "JV-DE-BASE", "price": "29.99", "quantity": 3, "status": True, "image": "catalog/de.jpg", "image_public_url": "https://www.jvmoebel.de/catalog/de.jpg", "descriptions": [{"language_id": 1, "name": "DE Desk", "description": "<p>DE</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 10, "main_category": True}, {"category_id": 12, "main_category": False}], "images": [{"image": "catalog/de-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/de-1.jpg", "sort_order": 0, "public_url": "https://www.jvmoebel.de/catalog/de-1.jpg"}], "jv_fields": {"artikelnr": "JV-DE-BASE", "lieferzeitid": "11"}},
         }
         self.synced_site_keys: set[str] = set()
         self.jv_batch_result = {
@@ -226,8 +227,18 @@ def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local
     assert payload["baseline_target_id"] == "JV_DE"
     assert payload["draft"]["source_model"] == "JV-DE-BASE"
     assert payload["draft"]["price"] == "29.99"
+    assert payload["draft"]["image_public_url"] == "https://www.jvmoebel.de/catalog/de.jpg"
+    assert payload["draft"]["images"][0]["public_url"] == "https://www.jvmoebel.de/catalog/de-1.jpg"
+    assert payload["draft"]["categories_by_site_key"] == {
+        "JV_DE": [{"category_id": 10, "main_category": True}, {"category_id": 12, "main_category": False}],
+        "JV_AT": [{"category_id": 11, "main_category": True}],
+        "JV_CO_UK": [{"category_id": 21, "main_category": True}],
+    }
+    assert payload["draft"]["jv_fields_by_site_key"]["JV_DE"]["lieferzeitid"] == "11"
+    assert payload["draft"]["jv_fields_by_site_key"]["JV_AT"]["lieferzeitid"] == "7"
+    assert payload["draft"]["jv_fields_by_site_key"]["JV_CO_UK"]["lieferzeitid"] == "5"
     assert "JV_DE" in gateway.synced_site_keys
-    assert gateway.jv_sites_calls == 0
+    assert gateway.jv_sites_calls == 1
 
 
 def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):
@@ -600,6 +611,56 @@ def test_product_editor_apply_sends_updated_jv_main_category(tmp_path):
         {"category_id": 11, "main_category": True},
         {"category_id": 12, "main_category": False},
     ]
+
+
+def test_product_editor_apply_sends_site_specific_jv_batch_overrides(tmp_path):
+    client, gateway = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "changed_fields": ["categories", "jv_fields"],
+            "draft": {
+                "target_id": "JV_DE",
+                "categories": [
+                    {"category_id": 10, "main_category": True},
+                ],
+                "categories_by_site_key": {
+                    "JV_DE": [{"category_id": 10, "main_category": True}],
+                    "JV_AT": [{"category_id": 20, "main_category": True}],
+                },
+                "jv_fields": {
+                    "lieferzeitid": "11",
+                    "content_by_language": [{"language_code": "de", "name": "Desk"}],
+                },
+                "jv_fields_by_site_key": {
+                    "JV_DE": {"lieferzeitid": "11"},
+                    "JV_AT": {"lieferzeitid": "7"},
+                },
+            },
+            "selected_target_ids": ["JV_DE", "JV_AT"],
+        },
+    )
+    assert plan_response.status_code == 200
+    plan_id = plan_response.json()["plan_id"]
+
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_id, "confirmation": True},
+    )
+    assert apply_response.status_code == 200
+    apply_payload = apply_response.json()
+    command = Deps.job_store.get_job_command(job_id=apply_payload["job_id"])
+    assert command is not None
+    payload = command.channels[0].overrides
+    assert payload["categories_by_site_key"] == {
+        "JV_DE": [{"category_id": 10, "main_category": True}],
+        "JV_AT": [{"category_id": 20, "main_category": True}],
+    }
+    assert payload["jv_fields_by_site_key"]["JV_DE"]["lieferzeitid"] == "11"
+    assert payload["jv_fields_by_site_key"]["JV_AT"]["lieferzeitid"] == "7"
+    assert payload["jv_fields_by_site_key"]["JV_AT"]["content_by_language"] == [{"language_code": "de", "name": "Desk"}]
 
 
 def test_product_editor_job_status_endpoint_returns_not_found(tmp_path):
