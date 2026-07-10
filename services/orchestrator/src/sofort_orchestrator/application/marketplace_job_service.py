@@ -30,6 +30,19 @@ class MarketplaceJobService:
         )
         results.extend(
             self._call_channel(
+                fallback_site_key="XLMOEBEL_DE",
+                fallback_channel="XL",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_xl_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                    place=place,
+                ),
+            )
+        )
+        results.extend(
+            self._call_channel(
                 fallback_site_key="HOOD",
                 fallback_channel="HOOD",
                 request_id=request_id,

@@ -1678,6 +1678,78 @@ def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor
     return payload
 
 
+def deactivate_xl_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
+    kid = _find_kid_by_number(kid_number)
+    if kid is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_not_found",
+                "detail": "Kid с таким kid_number не найден.",
+                "kid_number": str(kid_number or "").strip(),
+            },
+            "status_code": status.HTTP_404_NOT_FOUND,
+        }
+
+    ean_row = getattr(kid, "ean", None)
+    if ean_row is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_mapping_missing",
+                "detail": "У Kid отсутствует связанный Ean.",
+                "kid_number": _primary_kid_number_value(kid),
+            },
+            "status_code": status.HTTP_409_CONFLICT,
+        }
+
+    xl_ean = str(getattr(ean_row, "xl", "") or "").strip()
+    if not xl_ean:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_ean_missing",
+                "detail": "Поле Ean.xl пустое.",
+                "kid_number": _primary_kid_number_value(kid),
+            },
+            "status_code": status.HTTP_409_CONFLICT,
+        }
+
+    result = _apply_xl_deactivate(
+        ean=xl_ean,
+        site_key="XLMOEBEL_DE",
+        inactive=inactive,
+        actor=actor,
+    )
+    results = [result]
+
+    if result.get("ok") and result.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
+        status_row, _ = EanStatus.objects.get_or_create(ean=kid)
+        status_row.xl = not bool(inactive)
+        status_row.save(update_fields=["xl"])
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
+
+    response_status = status.HTTP_200_OK if result.get("ok") else status.HTTP_207_MULTI_STATUS
+    payload = _build_success_response(
+        entity_name="kid_number",
+        entity_value=_primary_kid_number_value(kid),
+        inactive=inactive,
+        results=results,
+        response_status=response_status,
+    )
+    payload["payload"]["kid_id"] = kid.id
+    payload["payload"]["ean"] = xl_ean
+    payload["payload"]["mode"] = "xl_de_only"
+    return payload
+
+
 def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
     kid = _find_kid_by_number(kid_number)
     if kid is None:

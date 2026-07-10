@@ -77,6 +77,7 @@ type MarketplaceConfirmDialogState = {
 
 const MARKETPLACE_CONFIRM_TARGETS = [
   { key: "JV", state: "live" as const },
+  { key: "XL", state: "live" as const },
   { key: "HOOD", state: "live" as const },
   { key: "OTTO", state: "pending" as const },
   { key: "EBAY", state: "pending" as const },

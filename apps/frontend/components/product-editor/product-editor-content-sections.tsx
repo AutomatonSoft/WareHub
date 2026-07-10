@@ -273,13 +273,15 @@ export function ProductEditorAttributesEditor({
   subtitle,
   attributes,
   onChange,
-  emptyText = "No Artikelmerkmale loaded."
+  emptyText = "No Artikelmerkmale loaded.",
+  readOnly = false
 }: {
   title?: string;
   subtitle?: string;
   attributes: Array<{ key: string; label: string; value: string }>;
   onChange: (attributes: Array<{ key: string; label: string; value: string }>) => void;
   emptyText?: string;
+  readOnly?: boolean;
 }) {
   return (
     <ProductEditorSection title={title} subtitle={subtitle}>
@@ -291,7 +293,11 @@ export function ProductEditorAttributesEditor({
             <FormField key={`${row.key}-${index}`} label={row.label}>
               <Input
                 value={row.value}
+                readOnly={readOnly}
                 onChange={(event) => {
+                  if (readOnly) {
+                    return;
+                  }
                   const next = attributes.map((current, currentIndex) =>
                     currentIndex === index ? { ...current, value: event.target.value } : current
                   );
@@ -333,4 +339,3 @@ function PendingUploadRow({
     </div>
   );
 }
-

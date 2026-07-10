@@ -241,6 +241,22 @@ export async function getJvRubricTree(siteKey = "JV_DE"): Promise<ProductEditorJ
   return buildRubricTreeFromItems(rawItems);
 }
 
+export async function getXlRubricTree(siteKey = "XLMOEBEL_DE"): Promise<ProductEditorJvRubricNode[]> {
+  const response = await apiFetch(`/api/v1/xl/rubrics/tree/?site=XL&site_key=${encodeURIComponent(siteKey)}&language=de`, { method: "GET" });
+  const body = await readJsonSafe(response);
+  if (!response.ok) {
+    throw toApiError(response, body, "XL rubric tree load failed.");
+  }
+
+  const rawTree = Array.isArray(body.tree) ? body.tree : [];
+  if (rawTree.length > 0) {
+    return normalizeRubricNodes(rawTree);
+  }
+
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  return buildRubricTreeFromItems(rawItems);
+}
+
 export async function uploadProductEditorImages(input: {
   files: File[];
   sourceUrls?: string[];

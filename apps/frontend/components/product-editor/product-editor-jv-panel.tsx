@@ -6,6 +6,7 @@ import { buildJvChangedFields } from "./product-editor-model";
 import {
   getJvDeliveryOptions,
   getJvRubricTree,
+  getXlRubricTree,
   type ProductEditorJvDeliveryOption,
   type ProductEditorJvRubricNode
 } from "./product-editor-api";
@@ -31,12 +32,17 @@ const JV_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }
   { key: "JV_CH", label: "JV CH" },
   { key: "JV_CO_UK", label: "JV UK" }
 ] as const;
+const XL_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [
+  { key: "XLMOEBEL_DE", label: "XL DE" }
+] as const;
+const ALL_STRUCTURED_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [...JV_SITE_TABS, ...XL_SITE_TABS];
 let cachedDeliveryOptionsBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>> = {};
 let deliveryOptionsPromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvDeliveryOption[]>>> = {};
 let cachedRubricTreeBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>> = {};
 let rubricTreePromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvRubricNode[]>>> = {};
 
 type ProductEditorJvPanelProps = {
+  groupId: "JV" | "XL";
   draft: ProductEditorJvDraft;
   initialDraft: ProductEditorJvDraft;
   loading: boolean;
@@ -54,6 +60,8 @@ type ProductEditorJvPanelProps = {
 };
 
 export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
+  const isXlMode = props.groupId === "XL";
+  const siteTabs = isXlMode ? XL_SITE_TABS : JV_SITE_TABS;
   const baselineSiteKey = resolveJvBaselineSiteKey(props.draft);
   const changedFields = buildJvChangedFields(props.initialDraft, props.draft);
   const galleryState = buildJvGalleryState(props.draft);
@@ -107,9 +115,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       const entries = await Promise.all(
-        JV_SITE_TABS.map(async ({ key }) => {
+        siteTabs.map(async ({ key }) => {
           try {
-            return [key, await loadCachedJvDeliveryOptions(key)] as const;
+            return [key, isXlMode ? [] : await loadCachedJvDeliveryOptions(key)] as const;
           } catch {
             return [key, []] as const;
           }
@@ -124,7 +132,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isXlMode, siteTabs]);
 
   useEffect(() => {
     return () => {
@@ -139,9 +147,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       const entries = await Promise.all(
-        JV_SITE_TABS.map(async ({ key }) => {
+        siteTabs.map(async ({ key }) => {
           try {
-            const tree = await loadCachedJvRubricTree(key);
+            const tree = isXlMode ? await loadCachedXlRubricTree(key) : await loadCachedJvRubricTree(key);
             return [key, tree, collectAllCategoryIds(tree)] as const;
           } catch {
             return [key, [], new Set<number>()] as const;
@@ -165,7 +173,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isXlMode, siteTabs]);
 
   const categoriesBySiteKey = getDraftCategoriesBySiteKey(props.draft, baselineSiteKey);
   const currentCategories = categoriesBySiteKey[activeSiteKey] ?? [];
@@ -460,7 +468,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               {props.searching ? "Searching..." : "Discover"}
             </Button>
           </div>
-          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}</p> : null}
+          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}{isXlMode ? " · source: xl.de" : ""}</p> : null}
         </div>
       }
       headerActions={
@@ -525,26 +533,35 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">delivery</p>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{activeSiteKey}</span>
               </div>
-              <SiteTabBar
-                activeSiteKey={activeSiteKey}
-                onChange={setActiveSiteKey}
-                renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
-              />
-              <select
-                value={deliveryIdValue}
-                onChange={(event) => patchDeliveryId(event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-              >
-                {deliveryOptions.length === 0 ? (
-                  <option value={deliveryIdValue || ""}>{deliveryIdValue || "No delivery options"}</option>
-                ) : (
-                  deliveryOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))
-                )}
-              </select>
+              {isXlMode ? (
+                <div className="mt-2 rounded-xl border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                  XL DE does not expose JV-style delivery options here.
+                </div>
+              ) : (
+                <>
+                  <SiteTabBar
+                    siteTabs={siteTabs}
+                    activeSiteKey={activeSiteKey}
+                    onChange={setActiveSiteKey}
+                    renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
+                  />
+                  <select
+                    value={deliveryIdValue}
+                    onChange={(event) => patchDeliveryId(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {deliveryOptions.length === 0 ? (
+                      <option value={deliveryIdValue || ""}>{deliveryIdValue || "No delivery options"}</option>
+                    ) : (
+                      deliveryOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </>
+              )}
             </div>
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">meta_title</p>
@@ -611,6 +628,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               </span>
             </div>
             <SiteTabBar
+              siteTabs={siteTabs}
               activeSiteKey={activeSiteKey}
               onChange={setActiveSiteKey}
               renderMeta={(siteKey) => String((categoriesBySiteKey[siteKey] ?? []).length)}
@@ -751,6 +769,23 @@ async function loadCachedJvRubricTree(siteKey: ProductEditorJvSiteKey): Promise<
   return rubricTreePromiseBySite[siteKey] ?? [];
 }
 
+async function loadCachedXlRubricTree(siteKey: ProductEditorJvSiteKey): Promise<ProductEditorJvRubricNode[]> {
+  if (cachedRubricTreeBySite[siteKey]) {
+    return cachedRubricTreeBySite[siteKey] ?? [];
+  }
+  if (!rubricTreePromiseBySite[siteKey]) {
+    rubricTreePromiseBySite[siteKey] = getXlRubricTree(siteKey)
+      .then((tree) => {
+        cachedRubricTreeBySite = { ...cachedRubricTreeBySite, [siteKey]: tree };
+        return tree;
+      })
+      .finally(() => {
+        rubricTreePromiseBySite = { ...rubricTreePromiseBySite, [siteKey]: undefined };
+      });
+  }
+  return rubricTreePromiseBySite[siteKey] ?? [];
+}
+
 type CategoryTreeRowProps = {
   node: ProductEditorJvRubricNode;
   level: number;
@@ -833,6 +868,7 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
 }
 
 type SiteTabBarProps = {
+  siteTabs: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }>;
   activeSiteKey: ProductEditorJvSiteKey;
   onChange: (siteKey: ProductEditorJvSiteKey) => void;
   renderMeta: (siteKey: ProductEditorJvSiteKey) => string;
@@ -841,7 +877,7 @@ type SiteTabBarProps = {
 function SiteTabBar(props: SiteTabBarProps) {
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      {JV_SITE_TABS.map((site) => {
+      {props.siteTabs.map((site) => {
         const active = site.key === props.activeSiteKey;
         return (
           <button
@@ -881,7 +917,7 @@ function toNumber(value: unknown): number {
 
 function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {
   const candidate = String(draft.target_id || draft.jv_fields?.site_key || "").trim().toUpperCase();
-  return JV_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
+  return ALL_STRUCTURED_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
 }
 
 function normalizeCategorySelection(categories: ProductEditorJvCategory[]): ProductEditorJvCategory[] {
@@ -902,7 +938,7 @@ function getDraftCategoriesBySiteKey(
   baselineSiteKey: ProductEditorJvSiteKey
 ): Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> {
   const next: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> = {};
-  for (const site of JV_SITE_TABS) {
+  for (const site of ALL_STRUCTURED_SITE_TABS) {
     const categories = draft.categories_by_site_key[site.key] ?? (site.key === baselineSiteKey ? draft.categories : []);
     next[site.key] = normalizeCategorySelection(categories);
   }
@@ -914,7 +950,7 @@ function getDraftDeliveryValuesBySiteKey(
   baselineSiteKey: ProductEditorJvSiteKey
 ): Partial<Record<ProductEditorJvSiteKey, string>> {
   const next: Partial<Record<ProductEditorJvSiteKey, string>> = {};
-  for (const site of JV_SITE_TABS) {
+  for (const site of ALL_STRUCTURED_SITE_TABS) {
     const siteFields = draft.jv_fields_by_site_key[site.key] ?? {};
     const baselineValue = site.key === baselineSiteKey ? draft.jv_fields?.lieferzeitid : "";
     next[site.key] = String(siteFields.lieferzeitid ?? baselineValue ?? "").trim();

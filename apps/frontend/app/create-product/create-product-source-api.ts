@@ -60,6 +60,9 @@ export type CreateProductJvSourceSnapshot = {
   rawPayload: Record<string, unknown>;
 };
 
+export type CreateProductSourceSiteKind = "JV" | "XL";
+export const CREATE_PRODUCT_XL_DEFAULT_SITE_KEY = "XLMOEBEL_DE";
+
 function asTrimmedString(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -198,6 +201,31 @@ export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promi
   return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> });
 }
 
+export async function fetchCreateProductSourceSitesByMainEan(input: {
+  mainEan: string;
+  site: CreateProductSourceSiteKind;
+}): Promise<CreateProductJvSourceSite[]> {
+  const normalizedMainEan = normalizeEanOrEmpty(input.mainEan);
+  if (!normalizedMainEan) {
+    return [];
+  }
+
+  if (input.site === "XL") {
+    return [
+      {
+        siteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+        domain: "xlmoebel.de",
+        productId: null,
+        ean: normalizedMainEan,
+        price: "",
+        title: "",
+      },
+    ];
+  }
+
+  return fetchCreateProductJvSitesByMainEan(normalizedMainEan);
+}
+
 export async function fetchCreateProductJvSourceSnapshot(input: {
   mainEan: string;
   siteKey: string;
@@ -242,4 +270,55 @@ export async function fetchCreateProductJvSourceSnapshot(input: {
     categories: normalizeCategories(payload as Record<string, unknown>),
     rawPayload: payload as Record<string, unknown>,
   };
+}
+
+export async function fetchCreateProductSourceSnapshot(input: {
+  mainEan: string;
+  site: CreateProductSourceSiteKind;
+  siteKey?: string;
+}): Promise<CreateProductJvSourceSnapshot> {
+  const normalizedMainEan = normalizeEanOrEmpty(input.mainEan);
+  if (!normalizedMainEan) {
+    throw new Error("Main EAN is empty.");
+  }
+
+  if (input.site === "XL") {
+    const siteKey = (input.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY).trim() || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY;
+    const { response, payload } = await xljvGetProductByEan({
+      ean: normalizedMainEan,
+      site: "XL",
+      siteKey,
+    });
+    if (!response.ok) {
+      throw new Error(payload.detail || `XL source product request failed: HTTP ${response.status}`);
+    }
+
+    const descriptions = Array.isArray(payload.descriptions) ? (payload.descriptions as DescriptionRow[]) : [];
+    const primary = pickGermanLikeDescription(descriptions);
+    const description = primary ? asTrimmedString(primary.description) : "";
+    const productName =
+      (primary ? asTrimmedString(primary.name) : "") ||
+      asTrimmedString(payload.source_model) ||
+      asTrimmedString(payload.ean);
+    const imageUrls = normalizeImageUrls(payload as Record<string, unknown>, siteKey);
+
+    return {
+      siteKey,
+      sourceProductId: asNumberOrNull(payload.source_product_id),
+      ean: normalizeEanOrEmpty(asTrimmedString(payload.ean)),
+      price: asTrimmedString(payload.price),
+      productName,
+      description,
+      shortDescription: stripHtml(description).slice(0, 255),
+      imagesText: imageUrls.join("\n"),
+      imageUrls,
+      categories: normalizeCategories(payload as Record<string, unknown>),
+      rawPayload: payload as Record<string, unknown>,
+    };
+  }
+
+  return fetchCreateProductJvSourceSnapshot({
+    mainEan: normalizedMainEan,
+    siteKey: (input.siteKey || "").trim(),
+  });
 }

@@ -92,6 +92,39 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+configure_macos_libpq_env() {
+  local brew_path libpq_prefix libpq_bin libpq_lib
+
+  command_exists brew || return 0
+  brew_path="$(command -v brew)"
+  [[ -n "$brew_path" ]] || return 0
+
+  libpq_prefix="$("$brew_path" --prefix libpq 2>/dev/null || true)"
+  [[ -n "$libpq_prefix" ]] || return 0
+
+  libpq_bin="$libpq_prefix/bin"
+  libpq_lib="$libpq_prefix/lib"
+
+  if [[ -d "$libpq_bin" && ":$PATH:" != *":$libpq_bin:"* ]]; then
+    export PATH="$libpq_bin:$PATH"
+  fi
+
+  if [[ -x "$libpq_bin/pg_config" ]]; then
+    export PG_CONFIG="$libpq_bin/pg_config"
+  fi
+
+  if [[ -d "$libpq_lib" ]]; then
+    if [[ -n "${DYLD_FALLBACK_LIBRARY_PATH-}" ]]; then
+      case ":$DYLD_FALLBACK_LIBRARY_PATH:" in
+        *":$libpq_lib:"*) ;;
+        *) export DYLD_FALLBACK_LIBRARY_PATH="$libpq_lib:$DYLD_FALLBACK_LIBRARY_PATH" ;;
+      esac
+    else
+      export DYLD_FALLBACK_LIBRARY_PATH="$libpq_lib"
+    fi
+  fi
+}
+
 assert_repo_root() {
   local current expected
   current="$(pwd -P)"
@@ -681,9 +714,9 @@ get_command_for_app() {
       ;;
     services)
       if [[ "$with_migrations" == true ]]; then
-        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py migrate --fake-initial --noinput && \"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py migrate --fake-initial --noinput && \"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934 --noreload"
       else
-        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934 --noreload"
       fi
       ;;
     services-jv-worker)
@@ -738,6 +771,16 @@ shell_command = (
 )
 
 child_env = os.environ.copy()
+for key in (
+    "VIRTUAL_ENV",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "PYTHONEXECUTABLE",
+    "__PYVENV_LAUNCHER__",
+):
+    child_env.pop(key, None)
+
+child_env["PYTHONUNBUFFERED"] = "1"
 for raw_line in runtime_env_lines.splitlines():
     line = raw_line.strip()
     if not line or "=" not in line:
@@ -963,6 +1006,7 @@ assert_docker
 assert_docker_daemon_ready
 assert_root_env_file
 import_root_env
+configure_macos_libpq_env
 initialize_local_runtime_env
 assert_compose_config
 ensure_local_dev_log_directory

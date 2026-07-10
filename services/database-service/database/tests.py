@@ -803,6 +803,77 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.hood_jv)
         self.assertFalse(status_row.hood_xl)
 
+    @patch("database.marketplace_deactivate_service._apply_xl_deactivate")
+    def test_marketplace_xl_deactivate_by_kid_uses_only_xlmoebel_de_and_updates_status(self, mocked_apply_xl):
+        kid = Kid.objects.create(kid_number=["KID-XL-DEACTIVATE"], place="4")
+        Ean.objects.create(kid=kid, xl="4062292028939")
+        EanStatus.objects.create(ean=kid, xl=True)
+
+        mocked_apply_xl.return_value = {
+            "ok": True,
+            "site_key": "XLMOEBEL_DE",
+            "channel": "XL",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": "4062292028939",
+                "site_key": "XLMOEBEL_DE",
+                "inactive": True,
+                "status": False,
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/xl/deactivate-by-kid/",
+            {"kid_number": "KID-XL-DEACTIVATE", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "xl_de_only")
+        self.assertEqual(response.data["summary"]["total"], 1)
+        mocked_apply_xl.assert_called_once_with(
+            ean="4062292028939",
+            site_key="XLMOEBEL_DE",
+            inactive=True,
+            actor="admin",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service._apply_xl_deactivate")
+    def test_marketplace_xl_activate_by_kid_updates_place_from_request(self, mocked_apply_xl):
+        kid = Kid.objects.create(kid_number=["KID-XL-ACTIVATE"], place="-4")
+        Ean.objects.create(kid=kid, xl="4062292028939")
+        EanStatus.objects.create(ean=kid, xl=False)
+
+        mocked_apply_xl.return_value = {
+            "ok": True,
+            "site_key": "XLMOEBEL_DE",
+            "channel": "XL",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": "4062292028939",
+                "site_key": "XLMOEBEL_DE",
+                "inactive": False,
+                "status": True,
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/xl/deactivate-by-kid/",
+            {"kid_number": "KID-XL-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "xl_de_only")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
+
     def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
         Ean.objects.create(

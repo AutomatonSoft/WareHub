@@ -29,6 +29,7 @@ def _connect_source_db(db_config: dict):
         password=db_config["password"],
         database=db_config["database"],
         port=db_config["port"],
+        use_pure=True,
         connection_timeout=XL_SOURCE_DB_CONNECT_TIMEOUT,
     )
 
@@ -57,6 +58,7 @@ def _fetch_oc_snapshot_by_product_id(cur, *, product_id: int, prefix: str):
         (product_id,),
     )
     descriptions = cur.fetchall() or []
+    preferred_language_id = _preferred_language_id(descriptions)
 
     has_main_category = _table_has_column(cur, raw_product_to_category, "main_category")
     categories_sql = (
@@ -92,6 +94,8 @@ def _fetch_oc_snapshot_by_product_id(cur, *, product_id: int, prefix: str):
         row = cur.fetchone() or {}
         seo_url = (row.get("keyword") or "").strip()
 
+    attributes = _fetch_oc_product_attributes(cur, product_id=product_id, prefix=prefix, language_id=preferred_language_id)
+
     return {
         "product": product,
         "descriptions": descriptions,
@@ -100,7 +104,169 @@ def _fetch_oc_snapshot_by_product_id(cur, *, product_id: int, prefix: str):
         "images": images,
         "specials": specials,
         "seo_url": seo_url,
+        "attributes": attributes,
     }
+
+
+def _preferred_language_id(descriptions: list[dict]) -> int:
+    for row in descriptions:
+        try:
+            if int(row.get("language_id")) == 1:
+                return 1
+        except (TypeError, ValueError):
+            continue
+    for row in descriptions:
+        try:
+            return int(row.get("language_id"))
+        except (TypeError, ValueError):
+            continue
+    return 1
+
+
+def _fetch_oc_product_options(cur, *, product_id: int, prefix: str, language_id: int) -> list[dict]:
+    raw_product_option = f"{prefix}product_option"
+    raw_product_option_value = f"{prefix}product_option_value"
+    raw_option = f"{prefix}option"
+    raw_option_description = f"{prefix}option_description"
+    raw_option_value_description = f"{prefix}option_value_description"
+    if not _table_exists(cur, raw_product_option):
+        return []
+
+    t_product_option = f"`{raw_product_option}`"
+    t_option = f"`{raw_option}`"
+    t_option_description = f"`{raw_option_description}`"
+    cur.execute(
+        f"""
+        SELECT
+            po.product_option_id,
+            po.option_id,
+            po.required,
+            po.value AS raw_value,
+            o.type AS option_type,
+            COALESCE(od.name, CONCAT('option_', po.option_id)) AS option_name
+        FROM {t_product_option} po
+        LEFT JOIN {t_option} o ON o.option_id = po.option_id
+        LEFT JOIN {t_option_description} od
+            ON od.option_id = po.option_id AND od.language_id = %s
+        WHERE po.product_id = %s
+        ORDER BY po.product_option_id ASC
+        """,
+        (language_id, product_id),
+    )
+    option_rows = cur.fetchall() or []
+    if not option_rows:
+        return []
+
+    values_by_product_option_id: dict[int, list[str]] = {}
+    if _table_exists(cur, raw_product_option_value) and _table_exists(cur, raw_option_value_description):
+        t_product_option_value = f"`{raw_product_option_value}`"
+        t_option_value_description = f"`{raw_option_value_description}`"
+        cur.execute(
+            f"""
+            SELECT
+                pov.product_option_id,
+                COALESCE(ovd.name, CONCAT('value_', pov.option_value_id)) AS value_name
+            FROM {t_product_option_value} pov
+            LEFT JOIN {t_option_value_description} ovd
+                ON ovd.option_value_id = pov.option_value_id AND ovd.language_id = %s
+            WHERE pov.product_id = %s
+            ORDER BY pov.product_option_id ASC, pov.product_option_value_id ASC
+            """,
+            (language_id, product_id),
+        )
+        for row in cur.fetchall() or []:
+            try:
+                product_option_id = int(row.get("product_option_id"))
+            except (TypeError, ValueError):
+                continue
+            value_name = str(row.get("value_name") or "").strip()
+            if not value_name:
+                continue
+            values_by_product_option_id.setdefault(product_option_id, []).append(value_name)
+
+    result: list[dict] = []
+    for row in option_rows:
+        try:
+            product_option_id = int(row.get("product_option_id"))
+        except (TypeError, ValueError):
+            continue
+        raw_values = values_by_product_option_id.get(product_option_id, [])
+        raw_value = str(row.get("raw_value") or "").strip()
+        display_value = ", ".join(value for value in raw_values if value) or raw_value
+        if not display_value:
+            continue
+        result.append(
+            {
+                "key": str(row.get("option_name") or "").strip(),
+                "name": str(row.get("option_name") or "").strip(),
+                "label": str(row.get("option_name") or "").strip(),
+                "value": display_value,
+                "type": str(row.get("option_type") or "").strip(),
+                "required": bool(row.get("required", 0)),
+                "values": raw_values,
+            }
+        )
+    return result
+
+
+def _fetch_oc_product_attributes(cur, *, product_id: int, prefix: str, language_id: int) -> list[dict]:
+    raw_product_attribute = f"{prefix}product_attribute"
+    raw_attribute_description = f"{prefix}attribute_description"
+    if not _table_exists(cur, raw_product_attribute):
+        return []
+
+    t_product_attribute = f"`{raw_product_attribute}`"
+    t_attribute_description = f"`{raw_attribute_description}`"
+    cur.execute(
+        f"""
+        SELECT
+            pa.attribute_id,
+            COALESCE(ad.name, CONCAT('attribute_', pa.attribute_id)) AS attribute_name,
+            pa.text
+        FROM {t_product_attribute} pa
+        LEFT JOIN {t_attribute_description} ad
+            ON ad.attribute_id = pa.attribute_id AND ad.language_id = %s
+        WHERE pa.product_id = %s AND pa.language_id = %s
+        ORDER BY pa.attribute_id ASC
+        """,
+        (language_id, product_id, language_id),
+    )
+    rows = cur.fetchall() or []
+    result: list[dict] = []
+    for row in rows:
+        name = str(row.get("attribute_name") or "").strip()
+        value = str(row.get("text") or "").strip()
+        if not name or not value:
+            continue
+        result.append(
+            {
+                "key": name,
+                "name": name,
+                "label": name,
+                "value": value,
+            }
+        )
+    return result
+
+
+def _find_xl_product_row_by_ean(cur, *, prefix: str, ean: str):
+    normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
+    cur.execute(
+        f"""
+        SELECT *
+        FROM `{prefix}product`
+        WHERE ean = %s
+           OR TRIM(ean) = TRIM(%s)
+           OR REPLACE(REPLACE(TRIM(ean), ' ', ''), '-', '') = %s
+           OR model = %s
+           OR TRIM(model) = TRIM(%s)
+           OR REPLACE(REPLACE(TRIM(model), ' ', ''), '-', '') = %s
+        ORDER BY product_id DESC
+        LIMIT 1
+        """,
+        (ean, ean, normalized_ean, ean, ean, normalized_ean),
+    )
+    return cur.fetchone()
 
 
 def fetch_xl_product_snapshot_by_ean(db_config: dict, ean: str):
@@ -110,23 +276,7 @@ def fetch_xl_product_snapshot_by_ean(db_config: dict, ean: str):
         prefix = db_config.get("table_prefix", "oc_")
         if not _table_exists(cur, f"{prefix}product"):
             return None
-        normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
-        cur.execute(
-            f"""
-            SELECT *
-            FROM `{prefix}product`
-            WHERE ean = %s
-               OR TRIM(ean) = TRIM(%s)
-               OR REPLACE(REPLACE(TRIM(ean), ' ', ''), '-', '') = %s
-               OR model = %s
-               OR TRIM(model) = TRIM(%s)
-               OR REPLACE(REPLACE(TRIM(model), ' ', ''), '-', '') = %s
-            ORDER BY product_id DESC
-            LIMIT 1
-            """,
-            (ean, ean, normalized_ean, ean, ean, normalized_ean),
-        )
-        product = cur.fetchone()
+        product = _find_xl_product_row_by_ean(cur, prefix=prefix, ean=ean)
         if not product:
             return None
         return _fetch_oc_snapshot_by_product_id(cur, product_id=int(product["product_id"]), prefix=prefix)
@@ -155,40 +305,30 @@ def fetch_xl_product_brief_by_ean(db_config: dict, ean: str):
         prefix = db_config.get("table_prefix", "oc_")
         if not _table_exists(cur, f"{prefix}product"):
             return None
-        t_product = f"`{prefix}product`"
         t_product_description = f"`{prefix}product_description`"
         t_setting = f"`{prefix}setting`"
         t_currency = f"`{prefix}currency`"
-        normalized_ean = "".join(ch for ch in (ean or "") if ch.isdigit())
+        product = _find_xl_product_row_by_ean(cur, prefix=prefix, ean=ean)
+        if not product:
+            return None
+        row = {
+            "product_id": product.get("product_id"),
+            "ean": product.get("ean"),
+            "model": product.get("model"),
+            "price": product.get("price"),
+        }
         cur.execute(
             f"""
-            SELECT
-                p.product_id,
-                p.ean,
-                p.model,
-                p.price,
-                (
-                  SELECT pd1.name
-                  FROM {t_product_description} pd1
-                  WHERE pd1.product_id = p.product_id
-                  ORDER BY CASE WHEN pd1.language_id = 1 THEN 0 ELSE 1 END, pd1.language_id
-                  LIMIT 1
-                ) AS title
-            FROM {t_product} p
-            WHERE p.ean = %s
-               OR TRIM(p.ean) = TRIM(%s)
-               OR REPLACE(REPLACE(TRIM(p.ean), ' ', ''), '-', '') = %s
-               OR p.model = %s
-               OR TRIM(p.model) = TRIM(%s)
-               OR REPLACE(REPLACE(TRIM(p.model), ' ', ''), '-', '') = %s
-            ORDER BY p.product_id DESC
+            SELECT pd1.name
+            FROM {t_product_description} pd1
+            WHERE pd1.product_id = %s
+            ORDER BY CASE WHEN pd1.language_id = 1 THEN 0 ELSE 1 END, pd1.language_id
             LIMIT 1
             """,
-            (ean, ean, normalized_ean, ean, ean, normalized_ean),
+            (product["product_id"],),
         )
-        row = cur.fetchone()
-        if not row:
-            return None
+        title_row = cur.fetchone() or {}
+        row["title"] = title_row.get("name") or ""
 
         currency_code = None
         try:

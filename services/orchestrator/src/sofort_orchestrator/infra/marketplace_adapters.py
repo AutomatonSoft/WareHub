@@ -54,6 +54,11 @@ class MarketplaceAdapters:
                 batch_payload = {key: value for key, value in payload.items() if not str(key).startswith("__product_editor_")}
                 response = self.http.request("POST", url, headers=headers, json=batch_payload)
                 return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
+            if product_editor_mode == "xl_batch_apply":
+                url = f"{self.base_url}/api/v1/xl/batch/update-by-ean/{ean}/apply/"
+                batch_payload = {key: value for key, value in payload.items() if not str(key).startswith("__product_editor_")}
+                response = self.http.request("POST", url, headers=headers, json=batch_payload)
+                return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
             url = f"{self.base_url}/api/v1/{route_site}/products/update-by-ean/{ean}/"
             response = self.http.request("PATCH", url, headers=headers, params=params, json=payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))

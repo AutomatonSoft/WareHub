@@ -60,7 +60,7 @@ class OrchestratorService:
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
             scoped_payload.update(channel.overrides)
 
-            missing = [] if product_editor_mode == "jv_batch_apply" else missing_required_fields(channel.marketplace, scoped_payload)
+            missing = [] if product_editor_mode in {"jv_batch_apply", "xl_batch_apply"} else missing_required_fields(channel.marketplace, scoped_payload)
             if missing:
                 results.append(
                     ChannelResult(

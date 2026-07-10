@@ -148,10 +148,17 @@ def build_product_editor_groups() -> list[ProductEditorGroup]:
             country=site_key.rsplit("_", 1)[-1],
             baseline_eligible=site_key == "XLMOEBEL_DE",
             auto_baseline_eligible=site_key == "XLMOEBEL_DE",
-            read_only=True,
-            planned=True,
-            capabilities=ProductEditorCapability(discover=True),
-            warnings=[_warning("product_editor_xl_placeholder", "XL editing is placeholder/read-only in MVP.")],
+            selected_by_default=site_key == "XLMOEBEL_DE",
+            read_only=site_key != "XLMOEBEL_DE",
+            planned=site_key != "XLMOEBEL_DE",
+            capabilities=ProductEditorCapability(
+                discover=True,
+                load=site_key == "XLMOEBEL_DE",
+                plan=site_key == "XLMOEBEL_DE",
+                apply=site_key == "XLMOEBEL_DE",
+                job_status=site_key == "XLMOEBEL_DE",
+            ),
+            warnings=[_warning("product_editor_xl_placeholder", "XL editing is enabled only for XLMOEBEL_DE in current runtime.")] if site_key != "XLMOEBEL_DE" else [],
         )
         for site_key in _XL_SITE_KEYS
     ]
