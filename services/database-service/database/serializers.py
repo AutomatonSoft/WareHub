@@ -318,5 +318,3 @@ class EANUsageMarkSerializer(serializers.Serializer):
     site_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
     local_product_id = serializers.IntegerField(required=False)
     source_product_id = serializers.IntegerField(required=False)
-
-
