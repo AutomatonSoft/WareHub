@@ -8,6 +8,6 @@ export default function MarketplaceError({ error, reset }: { error: Error & { di
     console.error("Marketplace route error", error);
   }, [error]);
 
-  return <RouteErrorState title="Marketplace error" reset={reset} />;
+  return <RouteErrorState titleKey="marketplaceErrorTitle" descriptionKey="routeErrorDescription" reset={reset} />;
 }
 

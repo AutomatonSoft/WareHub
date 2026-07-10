@@ -35,7 +35,7 @@ export function LiveKpiGrid({
       <div className="wh-dashboard__stats wh-stat-grid stagger-children">
         {loading
           ? Array.from({ length: 4 }).map((_, index) => <KpiSkeletonCard key={`kpi-skeleton-${index}`} />)
-          : displayMetrics.map((metric) => <StatCard key={metric.label} metric={metric} />)}
+          : displayMetrics.map((metric) => <StatCard key={metric.id} metric={metric} />)}
       </div>
       {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
     </div>

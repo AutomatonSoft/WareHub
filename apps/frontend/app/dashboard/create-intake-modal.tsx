@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+
 import { IntakeDto, createIntake, fetchAfterbuyOrdersByKid, AfterbuyKidOrderMatch } from "../client-api";
 import { Lang } from "../i18n";
 import { MAIN_CATEGORIES, SUBCATEGORIES_BY_MAIN, MainCategory } from "./category-map";
@@ -33,53 +34,77 @@ type UiCopy = {
   selectOrders: string;
   success: string;
   selectAtLeastOne: string;
+  failedCreate: string;
+  categoryOptional: string;
+  subcategoryOptional: string;
+  withoutCategory: string;
+  noSelection: string;
+  kidPlaceholder: string;
 };
 
 const copyByLang: Record<Lang, UiCopy> = {
   en: {
     title: "Create item by KID",
     kid: "KID number",
-    find: "Find OrderIDs",
+    find: "Find Order IDs",
     create: "Create selected",
     close: "Close",
     creating: "Creating...",
     finding: "Searching...",
     enterKid: "Enter KID number.",
-    notFound: "No OrderID found for this KID.",
+    notFound: "No Order ID found for this KID.",
     found: "Order list loaded.",
     selectOrders: "Select order IDs",
     success: "Items created.",
-    selectAtLeastOne: "Select at least one OrderID."
+    selectAtLeastOne: "Select at least one Order ID.",
+    failedCreate: "Failed to create item.",
+    categoryOptional: "Category (optional)",
+    subcategoryOptional: "Subcategory (optional)",
+    withoutCategory: "Without category",
+    noSelection: "No selection",
+    kidPlaceholder: "KID-123456"
   },
   ru: {
-    title: "Завести товар по KID",
+    title: "Создать товар по KID",
     kid: "Номер KID",
-    find: "Найти OrderID",
+    find: "Найти Order ID",
     create: "Создать выбранные",
     close: "Закрыть",
     creating: "Создание...",
     finding: "Поиск...",
     enterKid: "Введите номер KID.",
-    notFound: "По этому KID не найдено OrderID.",
+    notFound: "Для этого KID не найден ни один Order ID.",
     found: "Список заказов загружен.",
-    selectOrders: "Выберите OrderID",
+    selectOrders: "Выберите Order ID",
     success: "Товары созданы.",
-    selectAtLeastOne: "Выберите хотя бы один OrderID."
+    selectAtLeastOne: "Выберите хотя бы один Order ID.",
+    failedCreate: "Не удалось создать товар.",
+    categoryOptional: "Категория (необязательно)",
+    subcategoryOptional: "Подкатегория (необязательно)",
+    withoutCategory: "Без категории",
+    noSelection: "Не выбрано",
+    kidPlaceholder: "KID-123456"
   },
   de: {
     title: "Artikel per KID anlegen",
     kid: "KID-Nummer",
-    find: "OrderIDs suchen",
-    create: "Ausgewählte erstellen",
-    close: "Schließen",
+    find: "Order-IDs suchen",
+    create: "Ausgewahlte erstellen",
+    close: "Schliessen",
     creating: "Erstelle...",
     finding: "Suche...",
     enterKid: "KID-Nummer eingeben.",
-    notFound: "Keine OrderID für diese KID gefunden.",
+    notFound: "Keine Order-ID fur diese KID gefunden.",
     found: "Bestellliste geladen.",
-    selectOrders: "OrderIDs auswählen",
+    selectOrders: "Order-IDs auswahlen",
     success: "Artikel erstellt.",
-    selectAtLeastOne: "Mindestens eine OrderID auswählen."
+    selectAtLeastOne: "Mindestens eine Order-ID auswahlen.",
+    failedCreate: "Element konnte nicht erstellt werden.",
+    categoryOptional: "Kategorie (optional)",
+    subcategoryOptional: "Unterkategorie (optional)",
+    withoutCategory: "Ohne Kategorie",
+    noSelection: "Keine Auswahl",
+    kidPlaceholder: "KID-123456"
   }
 };
 
@@ -186,7 +211,7 @@ export function CreateIntakeModal({
       setMessage(text.success);
       onModalClose();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to create item.");
+      setMessage(error instanceof Error ? error.message : text.failedCreate);
     } finally {
       setIsCreating(false);
     }
@@ -217,12 +242,12 @@ export function CreateIntakeModal({
             <input
               value={kidValue}
               onChange={(event) => setKidValue(event.target.value)}
-              placeholder="KID-123456"
+              placeholder={text.kidPlaceholder}
               autoFocus
             />
           </label>
           <label>
-            Kategorie (optional)
+            {text.categoryOptional}
             <select
               className="ui-select"
               value={categoryMain}
@@ -232,7 +257,7 @@ export function CreateIntakeModal({
                 setCategorySub("");
               }}
             >
-              <option value="">Ohne Kategorie</option>
+              <option value="">{text.withoutCategory}</option>
               {MAIN_CATEGORIES.map((main) => (
                 <option key={main} value={main}>
                   {main}
@@ -241,14 +266,14 @@ export function CreateIntakeModal({
             </select>
           </label>
           <label>
-            Unterkategorie (optional)
+            {text.subcategoryOptional}
             <select
               className="ui-select"
               value={categorySub}
               disabled={!normalizedMain}
               onChange={(event) => setCategorySub(event.target.value)}
             >
-              <option value="">Keine Auswahl</option>
+              <option value="">{text.noSelection}</option>
               {subcategories.map((sub) => (
                 <option key={sub} value={sub}>
                   {sub}

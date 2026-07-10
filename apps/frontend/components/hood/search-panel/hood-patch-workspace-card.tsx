@@ -41,9 +41,9 @@ export function HoodPatchWorkspaceCard(props: Props) {
   const galleryImages = parseImagesText(patchForm.imagesText);
 
   return (
-    <Card className="min-w-0 overflow-hidden">
+      <Card className="min-w-0 overflow-hidden">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Patch Workspace</CardTitle>
+        <CardTitle className="text-base">{t.patchWorkspace}</CardTitle>
         <div className="text-sm text-muted-foreground">{t.fillFieldsAndPatchHint}</div>
       </CardHeader>
       <CardContent>
@@ -51,7 +51,7 @@ export function HoodPatchWorkspaceCard(props: Props) {
           <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,65fr)_minmax(320px,35fr)]">
             <main className="order-2 space-y-4 xl:order-1">
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="mb-3 text-sm font-semibold text-foreground">Main Fields</div>
+                <div className="mb-3 text-sm font-semibold text-foreground">{t.mainFields}</div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Input placeholder={t.productTitlePlaceholder} value={patchForm.title} onChange={(event) => onSetPatchField("title", event.target.value)} />
                   <Input placeholder={t.forExamplePrice} value={patchForm.price} onChange={(event) => onSetPatchField("price", event.target.value)} />
@@ -63,7 +63,7 @@ export function HoodPatchWorkspaceCard(props: Props) {
                 </div>
               </div>
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="mb-3 text-sm font-semibold text-foreground">Description</div>
+                <div className="mb-3 text-sm font-semibold text-foreground">{t.descriptionLabel}</div>
                 <Textarea value={patchForm.description} onChange={(event) => onSetPatchField("description", event.target.value)} className="min-h-[180px] bg-muted/30" placeholder={t.productDescriptionHtmlAllowed} />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -106,16 +106,16 @@ export function HoodPatchWorkspaceCard(props: Props) {
             </main>
             <aside className="order-1 space-y-4 xl:order-2">
               <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="text-sm font-semibold text-foreground">Gallery</div>
+                <div className="text-sm font-semibold text-foreground">{t.gallery}</div>
                 {galleryImages.length > 0 ? (
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px]">
                     <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                      <Image src={galleryImages[Math.min(activeGalleryIndex, galleryImages.length - 1)]} alt={`Hood gallery image ${Math.min(activeGalleryIndex, galleryImages.length - 1) + 1}`} width={920} height={560} unoptimized className="h-[260px] w-full object-contain" />
+                      <Image src={galleryImages[Math.min(activeGalleryIndex, galleryImages.length - 1)]} alt={t.gallery} width={920} height={560} unoptimized className="h-[260px] w-full object-contain" />
                     </div>
                     <div className="grid max-h-[260px] grid-cols-4 gap-2 overflow-auto lg:grid-cols-1">
                       {galleryImages.map((url, index) => (
                         <button key={`${url}-${index}`} type="button" onClick={() => setActiveGalleryIndex(index)} className={`overflow-hidden rounded-xl border ${index === activeGalleryIndex ? "border-primary" : "border-border"}`}>
-                          <Image src={url} alt={`Hood thumb ${index + 1}`} width={120} height={80} unoptimized className="h-20 w-full object-cover" />
+                          <Image src={url} alt={t.gallery} width={120} height={80} unoptimized className="h-20 w-full object-cover" />
                         </button>
                       ))}
                     </div>
@@ -127,20 +127,20 @@ export function HoodPatchWorkspaceCard(props: Props) {
               </div>
               {allHoodFields ? (
                 <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-                  <div className="text-sm font-semibold text-foreground">Categories / Properties</div>
+                  <div className="text-sm font-semibold text-foreground">{t.categoriesProperties}</div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm"><div className="text-xs text-muted-foreground">itemID</div><div className="font-medium text-foreground">{String((allHoodFields as { itemID?: unknown }).itemID ?? "-")}</div></div>
-                    <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm"><div className="text-xs text-muted-foreground">ean</div><div className="font-medium text-foreground">{String((allHoodFields as { ean?: unknown }).ean ?? (ean.trim() || "-"))}</div></div>
+                    <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm"><div className="text-xs text-muted-foreground">{t.itemIdLabel}</div><div className="font-medium text-foreground">{String((allHoodFields as { itemID?: unknown }).itemID ?? "-")}</div></div>
+                    <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm"><div className="text-xs text-muted-foreground">{t.ean}</div><div className="font-medium text-foreground">{String((allHoodFields as { ean?: unknown }).ean ?? (ean.trim() || "-"))}</div></div>
                   </div>
                   {hoodProductProperties.length > 0 ? (
                     <div className="space-y-2">
-                      <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground">productProperties</div>
+                      <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{t.productProperties}</div>
                       <div className="max-h-[280px] overflow-auto rounded-xl border border-border/60 bg-muted/30 p-2">
                         <div className="grid gap-2">
                           {hoodProductProperties.map((prop, index) => (
                             <div key={`${prop.name}-${index}`} className="grid gap-2 rounded-xl border border-border/50 bg-background/70 p-2 md:grid-cols-2">
-                              <div className="text-xs"><div className="text-muted-foreground">name</div><div className="text-foreground">{prop.name || "-"}</div></div>
-                              <div className="text-xs"><div className="text-muted-foreground">value</div><div className="text-foreground">{prop.value || "-"}</div></div>
+                              <div className="text-xs"><div className="text-muted-foreground">{t.nameLabel}</div><div className="text-foreground">{prop.name || "-"}</div></div>
+                              <div className="text-xs"><div className="text-muted-foreground">{t.valueLabel}</div><div className="text-foreground">{prop.value || "-"}</div></div>
                             </div>
                           ))}
                         </div>

@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
+import { useLabels, useLanguage } from "../../app/use-labels";
+import type { KpiMetric } from "../../lib/mock-data";
 import {
   DashboardKidDto as KidDto,
   DashboardOrderDto as OrderDto,
   fetchDashboardOverviewData
 } from "./dashboard-api";
 import { LiveKpiGrid } from "./live-kpi-grid";
-import type { KpiMetric } from "../../lib/mock-data";
 
 function parsePrice(value?: string | null): number {
   if (!value) {
@@ -18,20 +20,23 @@ function parsePrice(value?: string | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatCurrencyCompact(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+function formatCurrencyCompact(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "USD",
+    currency: "EUR",
     notation: "compact",
     maximumFractionDigits: 2
   }).format(value);
 }
 
 export function DashboardLiveOverview() {
+  const t = useLabels();
+  const lang = useLanguage();
   const [kids, setKids] = useState<KidDto[]>([]);
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const numberLocale = lang === "ru" ? "ru-RU" : lang === "de" ? "de-DE" : "en-US";
 
   useEffect(() => {
     let active = true;
@@ -51,7 +56,13 @@ export function DashboardLiveOverview() {
         if (active) {
           setKids([]);
           setOrders([]);
-          setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard data right now.");
+          const message =
+            loadError instanceof Error && loadError.message === "dashboard_overview_request_failed"
+              ? t.dashboardOverviewRequestFailed
+              : loadError instanceof Error
+                ? loadError.message
+                : t.unableLoadRecentActivity;
+          setError(message);
         }
       } finally {
         if (active) {
@@ -64,15 +75,15 @@ export function DashboardLiveOverview() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [t.unableLoadRecentActivity]);
 
   const metrics = useMemo<KpiMetric[]>(() => {
     if (error) {
       return [
-        { label: "Total Products", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Stock Value", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Low Stock Items", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Avg Fulfillment Rate", value: "N/A", delta: "Service unavailable", trend: "down" }
+        { id: "total_products", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "stock_value", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "low_stock_items", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "avg_fulfillment_rate", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" }
       ];
     }
 
@@ -86,31 +97,31 @@ export function DashboardLiveOverview() {
 
     return [
       {
-        label: "Total Products",
-        value: new Intl.NumberFormat("en-US").format(totalProducts),
-        delta: `${totalProducts} active`,
+        id: "total_products",
+        value: new Intl.NumberFormat(numberLocale).format(totalProducts),
+        delta: t.activeCount.replace("{count}", String(totalProducts)),
         trend: "up"
       },
       {
-        label: "Stock Value",
-        value: formatCurrencyCompact(stockValue),
-        delta: `${pricedOrders} priced`,
+        id: "stock_value",
+        value: formatCurrencyCompact(stockValue, numberLocale),
+        delta: t.pricedCount.replace("{count}", String(pricedOrders)),
         trend: "up"
       },
       {
-        label: "Low Stock Items",
-        value: new Intl.NumberFormat("en-US").format(noPaidOrders),
-        delta: `${noPaidOrders} unpaid`,
+        id: "low_stock_items",
+        value: new Intl.NumberFormat(numberLocale).format(noPaidOrders),
+        delta: t.unpaidCount.replace("{count}", String(noPaidOrders)),
         trend: "down"
       },
       {
-        label: "Avg Fulfillment Rate",
+        id: "avg_fulfillment_rate",
         value: `${fulfillmentRate.toFixed(1)}%`,
-        delta: `${paidOrders}/${totalOrders} fulfilled`,
+        delta: t.fulfilledCount.replace("{paid}", String(paidOrders)).replace("{total}", String(totalOrders)),
         trend: "up"
       }
     ];
-  }, [error, kids.length, orders]);
+  }, [error, kids.length, numberLocale, orders, t]);
 
   return (
     <div className="wh-dashboard">

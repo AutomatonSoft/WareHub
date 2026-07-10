@@ -8,6 +8,6 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
     console.error("Dashboard route error", error);
   }, [error]);
 
-  return <RouteErrorState title="Dashboard error" reset={reset} />;
+  return <RouteErrorState titleKey="dashboardErrorTitle" descriptionKey="routeErrorDescription" reset={reset} />;
 }
 

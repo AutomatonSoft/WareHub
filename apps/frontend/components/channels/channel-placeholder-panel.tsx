@@ -23,7 +23,7 @@ export function ChannelPlaceholderPanel({
         title={`${channelName} ${t.comingSoon}`}
         description={hint}
       />
-      <p className="mt-3 text-center text-xs text-muted-foreground">Presentation-only placeholder. Integration logic remains unchanged.</p>
+      <p className="mt-3 text-center text-xs text-muted-foreground">{t.presentationOnlyPlaceholderIntegrationLogicRemainsUnchanged}</p>
     </div>
   );
 }

@@ -16,12 +16,15 @@ import {
 
 type Setter<T> = (value: T) => void;
 const SEND_ALL_SITES_CONCURRENCY = 4;
+type ActionLabels = Record<string, string>;
 
-function parseJsonArray(raw: string, label?: string): unknown[] {
+function parseJsonArray(raw: string, labels: ActionLabels, label?: string): unknown[] {
   const text = (raw || "").trim();
   if (!text) return [];
   const parsed = JSON.parse(text);
-  if (label && !Array.isArray(parsed)) throw new Error(`${label} must be JSON array`);
+  if (label && !Array.isArray(parsed)) {
+    throw new Error(labels.xljvFieldMustBeJsonArray.replace("{field}", label));
+  }
   return Array.isArray(parsed) ? parsed : [];
 }
 
@@ -87,8 +90,9 @@ export async function sendCreatedProductToAllSites(args: {
   setError: Setter<string | null>;
   setSyncStatus: Setter<string | null>;
   setSyncLog: Setter<Record<string, unknown> | null>;
+  labels: ActionLabels;
 }) {
-  const { createForm, site, createImageFiles, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateAllSitesLoading, setError, setSyncStatus, setSyncLog } = args;
+  const { createForm, site, createImageFiles, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateAllSitesLoading, setError, setSyncStatus, setSyncLog, labels } = args;
   setCreateAllSitesLoading(true);
   setError(null);
   setSyncStatus(null);
@@ -97,11 +101,11 @@ export async function sendCreatedProductToAllSites(args: {
     .filter((o) => o.value && o.value !== "ALL_SITES")
     .map((o) => ({ site, site_key: o.value }));
 
-  const baseCategories = parseJsonArray(createForm.categories_json);
-  const baseStores = parseJsonArray(createForm.stores_json);
-  const baseExtraImages = parseJsonArray(createForm.images_json);
-  const baseSpecials = parseJsonArray(createForm.specials_json);
-  const baseExtraDescriptions = parseJsonArray(createForm.descriptions_json);
+  const baseCategories = parseJsonArray(createForm.categories_json, labels);
+  const baseStores = parseJsonArray(createForm.stores_json, labels);
+  const baseExtraImages = parseJsonArray(createForm.images_json, labels);
+  const baseSpecials = parseJsonArray(createForm.specials_json, labels);
+  const baseExtraDescriptions = parseJsonArray(createForm.descriptions_json, labels);
 
   let existingSiteKeys = new Set<string>();
   let discovery: Record<string, unknown> | null = null;
@@ -129,12 +133,14 @@ export async function sendCreatedProductToAllSites(args: {
           ean: createForm.ean,
           files: createImageFiles
         });
-        if (!uploadResp.ok) throw new Error(String(uploadData.detail || `Upload failed HTTP ${uploadResp.status}`));
+        if (!uploadResp.ok) {
+          throw new Error(String(uploadData.detail || labels.xljvUploadFailedHttp.replace("{status}", String(uploadResp.status))));
+        }
         uploadedUrls = Array.isArray(uploadData.uploaded_image_urls)
           ? uploadData.uploaded_image_urls.map((v) => String(v || "").trim()).filter(Boolean)
           : [];
         if (uploadedUrls.length === 0) {
-          throw new Error(`Upload returned no image URLs for ${target.site_key}`);
+          throw new Error(labels.xljvUploadNoImageUrlsForSite.replace("{siteKey}", target.site_key));
         }
       }
 
@@ -319,14 +325,14 @@ export async function sendCreatedProductToAllSites(args: {
       }
       return { site: target.site, site_key: target.site_key, ok: createResp.ok, status: createResp.status, action: "create", response: createData };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err || "error");
+      const msg = err instanceof Error ? err.message : String(err || labels.error);
       return { site: target.site, site_key: target.site_key, ok: false, error: msg };
     }
   });
 
   setSyncLog({ mode: "create_and_push_all_sites", ean: createForm.ean, concurrency: SEND_ALL_SITES_CONCURRENCY, discovery, summary });
   const okCount = summary.filter((r) => Boolean((r as Record<string, unknown>).ok)).length;
-  setSyncStatus(`Send all finished: ${okCount}/${summary.length} successful.`);
+  setSyncStatus(labels.xljvSendAllFinishedStatus.replace("{ok}", String(okCount)).replace("{total}", String(summary.length)));
   setCreateAllSitesLoading(false);
 }
 
@@ -345,8 +351,9 @@ export async function sendCreatedProduct(args: {
   setEan: Setter<string>;
   setItem: Setter<XLJVResponse | null>;
   setCreateForm: Setter<XLJVCreateFormState | null>;
+  labels: ActionLabels;
 }) {
-  const { createForm, site, siteKey, siteKeyOptions, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateProductSendLoading, setError, setSyncStatus, setSyncLog, setEan, setItem, setCreateForm } = args;
+  const { createForm, site, siteKey, siteKeyOptions, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateProductSendLoading, setError, setSyncStatus, setSyncLog, setEan, setItem, setCreateForm, labels } = args;
   setCreateProductSendLoading(true);
   setError(null);
   setSyncStatus(null);
@@ -363,11 +370,11 @@ export async function sendCreatedProduct(args: {
         ? siteKey.trim()
         : fallbackSiteKey;
 
-    const categories = parseJsonArray(createForm.categories_json, "categories");
-    const stores = parseJsonArray(createForm.stores_json, "stores");
-    const extraImages = parseJsonArray(createForm.images_json, "images");
-    const specials = parseJsonArray(createForm.specials_json, "specials");
-    const extraDescriptions = parseJsonArray(createForm.descriptions_json, "descriptions");
+    const categories = parseJsonArray(createForm.categories_json, labels, "categories");
+    const stores = parseJsonArray(createForm.stores_json, labels, "stores");
+    const extraImages = parseJsonArray(createForm.images_json, labels, "images");
+    const specials = parseJsonArray(createForm.specials_json, labels, "specials");
+    const extraDescriptions = parseJsonArray(createForm.descriptions_json, labels, "descriptions");
 
     const base: Record<string, unknown> = {
       ean: createForm.ean,
@@ -455,7 +462,7 @@ export async function sendCreatedProduct(args: {
     if (!response.ok) {
       const code = String(data.code || "");
       if (code === "xljv_source_product_id_required_for_push") {
-        setSyncStatus("Saved in local DB, but source push needs Source Product ID. Fill it and click Send again.");
+        setSyncStatus(labels.xljvSavedLocalDbNeedsSourceProductId);
         return;
       }
       if (site === "XL" && code === "xl_create_ean_conflict") {
@@ -467,17 +474,22 @@ export async function sendCreatedProduct(args: {
         });
         setSyncLog(updateData as Record<string, unknown>);
         if (!updateResponse.ok) {
-          throw new Error(String((updateData as Record<string, unknown>).detail || `Request failed: HTTP ${updateResponse.status}`));
+          throw new Error(
+            String(
+              (updateData as Record<string, unknown>).detail ||
+                labels.requestFailedHttpStatus.replace("{status}", String(updateResponse.status))
+            )
+          );
         }
         const updatedItem = (((updateData as Record<string, unknown>).item as Record<string, unknown> | undefined) || updateData || {}) as Record<string, unknown>;
         const updatedEan = String(updatedItem.ean || createForm.ean || "").trim();
         setEan(updatedEan);
         setItem(updatedItem as XLJVResponse);
         setCreateForm(null);
-        setSyncStatus(`Existing XL product${updatedEan ? ` with EAN ${updatedEan}` : ""} updated and sent.`);
+        setSyncStatus(labels.xljvExistingXlUpdatedAndSent.replace("{eanPart}", updatedEan ? labels.xljvWithEan.replace("{ean}", updatedEan) : ""));
         return;
       }
-      throw new Error(String(data.detail || `Request failed: HTTP ${response.status}`));
+      throw new Error(String(data.detail || labels.requestFailedHttpStatus.replace("{status}", String(response.status))));
     }
 
     const createdItem = (data.item as Record<string, unknown> | undefined) || {};
@@ -485,10 +497,14 @@ export async function sendCreatedProduct(args: {
     setEan(createdEan);
     setItem(createdItem as XLJVResponse);
     setCreateForm(null);
-    setSyncStatus(`Created and sent ${site} product${createdEan ? ` with EAN ${createdEan}` : ""}.`);
+    setSyncStatus(
+      labels.xljvCreatedAndSentProduct
+        .replace("{site}", site)
+        .replace("{eanPart}", createdEan ? labels.xljvWithEan.replace("{ean}", createdEan) : "")
+    );
   } catch (requestError) {
     const message = requestError instanceof Error ? requestError.message : "";
-    setError(message || "Failed to create/send product.");
+    setError(message || labels.xljvFailedCreateSendProduct);
   } finally {
     setCreateProductSendLoading(false);
   }
@@ -506,11 +522,12 @@ export async function syncByEan(args: {
   setSyncStatus: Setter<string | null>;
   setSyncLog: Setter<Record<string, unknown> | null>;
   onSuccess: (normalizedEan: string, site: Site, siteKey: string) => void;
+  labels: ActionLabels;
 }) {
-  const { ean, site, siteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSyncLoading, setError, setSyncStatus, setSyncLog, onSuccess } = args;
+  const { ean, site, siteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSyncLoading, setError, setSyncStatus, setSyncLog, onSuccess, labels } = args;
   const normalized = ean.trim();
   if (!normalized) {
-    setError("Enter EAN.");
+    setError(labels.xljvEnterEan);
     return;
   }
   setSyncLoading(true);
@@ -531,7 +548,7 @@ export async function syncByEan(args: {
       batch: useBatch
     });
 
-    setSyncStatus(`HTTP ${response.status}`);
+    setSyncStatus(labels.xljvHttpStatus.replace("{status}", String(response.status)));
     let parsed: unknown = text;
     if (text) {
       try {
@@ -545,7 +562,7 @@ export async function syncByEan(args: {
     if (response.ok) onSuccess(normalized, site, siteKey);
   } catch (requestError) {
     const message = requestError instanceof Error ? requestError.message : "";
-    setError(message || "Failed to sync product.");
+    setError(message || labels.xljvFailedSyncProduct);
   } finally {
     setSyncLoading(false);
   }
@@ -574,12 +591,13 @@ export async function sendToSelectedSites(args: {
   setSyncStatus: Setter<string | null>;
   setSyncLog: Setter<Record<string, unknown> | null>;
   setBatchLanguageMaps: Setter<SiteLanguageMapPreview[]>;
+  labels: ActionLabels;
 }) {
-  const { ean, orderDraft, site, selectedSiteKeys, templateSiteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSendSelectedLoading, setBatchLanguageMapsAttempted, setError, setSyncStatus, setSyncLog, setBatchLanguageMaps } = args;
+  const { ean, orderDraft, site, selectedSiteKeys, templateSiteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSendSelectedLoading, setBatchLanguageMapsAttempted, setError, setSyncStatus, setSyncLog, setBatchLanguageMaps, labels } = args;
   const normalized = ean.trim();
-  if (!normalized) return void setError("Enter EAN.");
-  if (selectedSiteKeys.length === 0) return void setError("Choose at least one target site.");
-  if (!templateSiteKey) return void setError("Choose template site.");
+  if (!normalized) return void setError(labels.xljvEnterEan);
+  if (selectedSiteKeys.length === 0) return void setError(labels.chooseOneTargetSite);
+  if (!templateSiteKey) return void setError(labels.chooseTemplateSite);
 
   setSendSelectedLoading(true);
   setBatchLanguageMapsAttempted(true);
@@ -611,7 +629,7 @@ export async function sendToSelectedSites(args: {
       requestBody
     });
 
-    setSyncStatus(`HTTP ${response.status}`);
+    setSyncStatus(labels.xljvHttpStatus.replace("{status}", String(response.status)));
     let parsedValue: unknown = parsed;
     const parsedObj = parsedValue && typeof parsedValue === "object" ? (parsedValue as Record<string, unknown>) : null;
     const jobObj =
@@ -683,7 +701,7 @@ export async function sendToSelectedSites(args: {
     setSyncLog({ ok: response.ok, status: response.status, mode: "batch_apply_selected_sites", ean: normalized, selected_site_keys: selectedSiteKeys, template_site_key: templateSiteKey, payload: requestBody, response: parsedValue ?? null });
   } catch (requestError) {
     const message = requestError instanceof Error ? requestError.message : "";
-    setError(message || "Failed to send to selected sites.");
+    setError(message || labels.xljvFailedSendSelectedSites);
   } finally {
     setSendSelectedLoading(false);
   }

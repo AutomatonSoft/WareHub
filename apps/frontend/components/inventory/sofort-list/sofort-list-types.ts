@@ -33,6 +33,7 @@ export type SofortListRow = {
   photo: string;
   photoCount: number;
   place: string;
+  bWare: boolean;
   store: boolean;
   quantity: number;
   room: string | null;

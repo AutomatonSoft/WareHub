@@ -80,7 +80,7 @@ function buildRubricTree(rubrics: RubricTreeNode[]) {
 }
 
 export function XLJVEditForm(props: XLJVEditFormProps) {
-  useLabels();
+  const t = useLabels();
   const {
     site,
     siteKey,
@@ -164,6 +164,7 @@ export function XLJVEditForm(props: XLJVEditFormProps) {
   return (
     <form onSubmit={(event) => void onHandleSave(event)} className="space-y-4">
       <ProductEditorActionBar
+        t={t}
         saving={saving}
         batchSending={batchSending}
         onReset={() => window.location.reload()}
@@ -172,6 +173,7 @@ export function XLJVEditForm(props: XLJVEditFormProps) {
       <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,65fr)_minmax(320px,35fr)]">
         <aside className="order-1 space-y-4 xl:order-2">
           <ProductGalleryCard
+            t={t}
             form={form}
             site={site}
             siteKey={siteKey}
@@ -184,6 +186,7 @@ export function XLJVEditForm(props: XLJVEditFormProps) {
             onUploadImages={onUploadImages}
           />
           <RubricAssignmentCard
+            t={t}
             rubricsLoading={rubricsLoading}
             onReloadRubrics={onReloadRubrics}
             rubricsTree={rubricsTree}
@@ -195,9 +198,10 @@ export function XLJVEditForm(props: XLJVEditFormProps) {
         </aside>
 
         <main className="order-2 space-y-4 xl:order-1">
-          <MainFieldsCard {...commonProps} />
-          {site === "JV" ? <JVFieldsCard {...commonProps} {...deliveryProps} /> : null}
+          <MainFieldsCard t={t} {...commonProps} />
+          {site === "JV" ? <JVFieldsCard t={t} {...commonProps} {...deliveryProps} /> : null}
           <DescriptionsCard
+            t={t}
             form={form}
             site={site}
             setForm={setForm}

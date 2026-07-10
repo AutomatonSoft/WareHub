@@ -29,6 +29,14 @@ from uuid import uuid4
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
 from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_rows, build_kid_ean_summary
+from .place_rules import (
+    find_place_conflict,
+    normalize_place,
+    parse_pool_place,
+    suggest_nearest_free_place,
+    suggest_next_free_base_place,
+    suggest_same_base_subplace,
+)
 from .kid_green_import_service import (
     KidGreenImportOptions,
     import_kid_green_json_bytes,
@@ -313,6 +321,69 @@ def _find_kid_by_number(kid_number: str):
     if not normalized:
         return None
     return Kid.objects.filter(kid_number__contains=[normalized]).order_by("id").first()
+
+
+def _find_kid_by_place(place: object):
+    normalized = normalize_place(place)
+    if not normalized:
+        return None
+    return Kid.objects.filter(place=normalized).order_by("id").first()
+
+
+def _place_conflict_error(place: object, *, exclude_kid_id: int | None = None) -> dict:
+    normalized = normalize_place(place)
+    same_base_subplace = suggest_same_base_subplace(normalized, exclude_kid_id=exclude_kid_id)
+    next_free_base_place = suggest_next_free_base_place(
+        exclude_kid_id=exclude_kid_id,
+        start_from=(parse_pool_place(normalized)[0] + 1) if parse_pool_place(normalized) is not None else 1,
+    )
+    suggested_place = same_base_subplace or next_free_base_place or suggest_nearest_free_place(normalized, exclude_kid_id=exclude_kid_id)
+    message_parts = [f"Place '{normalized}' is already occupied."]
+    if same_base_subplace:
+        message_parts.append(f"Nearest free subplace: '{same_base_subplace}'.")
+    if next_free_base_place:
+        message_parts.append(f"Nearest free base place: '{next_free_base_place}'.")
+    message = " ".join(message_parts)
+    return {
+        "code": "place_occupied",
+        "message": message,
+        "place": [message],
+        "details": {
+            "requested_place": normalized,
+            "suggested_place": suggested_place,
+            "same_base_subplace": same_base_subplace,
+            "next_free_base_place": next_free_base_place,
+        },
+    }
+
+
+def _existing_kid_requires_place_error(existing, *, exclude_kid_id: int | None = None) -> dict:
+    current_place = normalize_place(getattr(existing, "place", None))
+    same_base_subplace = suggest_same_base_subplace(current_place, exclude_kid_id=exclude_kid_id)
+    parsed_place = parse_pool_place(current_place)
+    next_free_base_place = suggest_next_free_base_place(
+        exclude_kid_id=exclude_kid_id,
+        start_from=(parsed_place[0] + 1) if parsed_place is not None else 1,
+    )
+    message_parts = [f"This kid already exists under place '{current_place}'."]
+    if same_base_subplace:
+        message_parts.append(f"Nearest free subplace: '{same_base_subplace}'.")
+    if next_free_base_place:
+        message_parts.append(f"Nearest free base place: '{next_free_base_place}'.")
+    message = " ".join(message_parts)
+    return {
+        "code": "kid_already_exists_place_required",
+        "message": message,
+        "place": [message],
+        "details": {
+            "kid_id": getattr(existing, "id", None),
+            "kid_number": primary_kid_number(getattr(existing, "kid_number", None)),
+            "current_place": current_place,
+            "same_base_subplace": same_base_subplace,
+            "next_free_base_place": next_free_base_place,
+            "suggested_place": same_base_subplace or next_free_base_place,
+        },
+    }
 
 
 class ServiceHealthAPIView(APIView):
@@ -925,8 +996,19 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             or self._coalesce_value(payload, query, "kid")
             or []
         )
+        primary_payload_kid_number = primary_kid_number(payload["kid_number"])
+        existing = _find_kid_by_number(primary_payload_kid_number)
         place = self._coalesce_value(payload, query, "place")
-        if place not in (None, ""):
+        if place in (None, ""):
+            if existing is not None:
+                return Response(
+                    _existing_kid_requires_place_error(existing, exclude_kid_id=existing.id),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            auto_place = suggest_next_free_base_place()
+            if auto_place is not None:
+                payload["place"] = auto_place
+        else:
             payload["place"] = str(place).strip()
         account = self._coalesce_value(payload, query, "account")
         if account not in (None, ""):
@@ -946,7 +1028,6 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             except Exception:
                 pass
 
-        primary_payload_kid_number = primary_kid_number(payload["kid_number"])
         uploaded_files = collect_uploaded_files(request)
         uploaded_photo_urls: list[str] = []
         if uploaded_files:
@@ -985,7 +1066,12 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         validated = serializer.validated_data
         kid_number = primary_kid_number(validated.get("kid_number"))
 
-        existing = _find_kid_by_number(kid_number)
+        existing = _find_kid_by_place(validated.get("place"))
+        target_place = validated.get("place")
+        conflict = find_place_conflict(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None)
+        if conflict is not None:
+            return Response(_place_conflict_error(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None), status=status.HTTP_400_BAD_REQUEST)
+
         if existing is None:
             with transaction.atomic():
                 kid, sync_summary = self.perform_create(serializer)
@@ -1000,6 +1086,13 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             response_data["sync"] = sync_summary
             response_data["enrichment"] = enrichment_summary
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+
+        existing_kid_number = primary_kid_number(existing.kid_number)
+        if existing_kid_number != kid_number:
+            return Response(
+                _place_conflict_error(target_place, exclude_kid_id=None),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         update_fields = []
         for field in ("account", "place", "photo", "room", "furniture_type", "listing_status", "commentary", "b_ware", "store", "in_transit"):
@@ -1042,6 +1135,12 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         payload = request.data.copy() if hasattr(request.data, "copy") else request.data
         serializer = self.get_serializer(instance, data=payload, partial=partial)
         serializer.is_valid(raise_exception=True)
+
+        if "place" in serializer.validated_data:
+            target_place = serializer.validated_data.get("place")
+            conflict = find_place_conflict(target_place, exclude_kid_id=instance.id)
+            if conflict is not None:
+                return Response(_place_conflict_error(target_place, exclude_kid_id=instance.id), status=status.HTTP_400_BAD_REQUEST)
 
         photo_was_provided = "photo" in serializer.validated_data
         next_photos = _normalize_photo_list(serializer.validated_data.get("photo")) if photo_was_provided else old_photos
@@ -1647,6 +1746,8 @@ class InventoryRowsAPIView(APIView):
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
         listing_raw = str(request.query_params.get("listing") or "").strip().lower()
+        b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
+        in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
             rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "place", place_raw)]
@@ -1678,6 +1779,12 @@ class InventoryRowsAPIView(APIView):
                 for row in rows
                 if str(row.get("listing_status") or "unlisted").strip().lower() == listing_raw
             ]
+
+        if b_ware_raw == "true":
+            rows = [row for row in rows if row.get("b_ware") is True]
+
+        if in_transit_raw == "true":
+            rows = [row for row in rows if row.get("in_transit") is True]
 
         if query_raw:
             query_tokens = [token for token in query_raw.split() if token]

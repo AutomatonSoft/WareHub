@@ -84,7 +84,7 @@ export function DashboardView({
       <header className="dashboard-header">
         <div>
           <div className="brand-row">
-            <Image className="brand-logo" src="/brand/logo.png" alt="SofortBot logo" width={44} height={44} />
+            <Image className="brand-logo" src="/brand/logo.png" alt={t.brandLogoAlt} width={44} height={44} />
           </div>
           <div className="hero-chip-row">
             <span className="hero-chip">{t.liveWarehouse}</span>
@@ -277,7 +277,7 @@ export function DashboardView({
                         <b>{item.product_sku || "-"}</b>
                       </div>
                       <div>
-                        <span>KID</span>
+                        <span>{t.kid}</span>
                         <b>{item.kid_number || "-"}</b>
                       </div>
                       <div>

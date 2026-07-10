@@ -1,15 +1,21 @@
+export type KpiMetricId =
+  | "total_products"
+  | "stock_value"
+  | "low_stock_items"
+  | "avg_fulfillment_rate";
+
 export type KpiMetric = {
-  label: string;
+  id: KpiMetricId;
   value: string;
   delta: string;
   trend: "up" | "down";
 };
 
 export const kpiMetrics: KpiMetric[] = [
-  { label: "Total Products", value: "12,847", delta: "+8.4%", trend: "up" },
-  { label: "Stock Value", value: "$3.84M", delta: "+5.1%", trend: "up" },
-  { label: "Low Stock Items", value: "47", delta: "-6 today", trend: "down" },
-  { label: "Avg Fulfillment Rate", value: "98.7%", delta: "+1.3%", trend: "up" }
+  { id: "total_products", value: "12,847", delta: "+8.4%", trend: "up" },
+  { id: "stock_value", value: "$3.84M", delta: "+5.1%", trend: "up" },
+  { id: "low_stock_items", value: "47", delta: "-6 today", trend: "down" },
+  { id: "avg_fulfillment_rate", value: "98.7%", delta: "+1.3%", trend: "up" }
 ];
 
 export const trendSeries = [
@@ -64,10 +70,10 @@ export const warehouseGrid = [
 ];
 
 export const zoneSummary = [
-  { zone: "Receiving", occupancy: 72, activePicks: 14 },
-  { zone: "Fast Moving", occupancy: 88, activePicks: 26 },
-  { zone: "Bulk Storage", occupancy: 64, activePicks: 9 },
-  { zone: "Returns", occupancy: 41, activePicks: 6 }
+  { zone: "receiving", occupancy: 72, activePicks: 14 },
+  { zone: "fast_moving", occupancy: 88, activePicks: 26 },
+  { zone: "bulk_storage", occupancy: 64, activePicks: 9 },
+  { zone: "returns", occupancy: 41, activePicks: 6 }
 ];
 
 export const permissionRows = [

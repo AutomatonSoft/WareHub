@@ -4,12 +4,12 @@ export { getRequiredEanError };
 export function getSendToSelectedSitesPrecheckError(input) {
   const eanError = getRequiredEanError(input?.ean, input?.labels || {});
   if (eanError) return eanError;
-  if (!input?.hasOrderDraft) return input?.labels?.createOrderDraftFirst || "Create order draft first.";
+  if (!input?.hasOrderDraft) return input?.labels?.createOrderDraftFirst || "";
   if (!Array.isArray(input?.selectedSiteKeys) || input.selectedSiteKeys.length === 0) {
-    return input?.labels?.chooseOneTargetSite || "Choose at least one target site.";
+    return input?.labels?.chooseOneTargetSite || "";
   }
   if (!String(input?.templateSiteKey || "").trim()) {
-    return input?.labels?.chooseTemplateSite || "Choose template site.";
+    return input?.labels?.chooseTemplateSite || "";
   }
   return null;
 }

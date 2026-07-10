@@ -83,7 +83,7 @@ export function XLJVSearchPanel({ initialSite }: { initialSite?: Site } = {}) {
       {controller.error ? <XLJVErrorState message={controller.error} /> : null}
       {controller.loading || controller.allXlLoading ? <XLJVLoadingState /> : null}
       {!controller.loading && !controller.allXlLoading && !controller.item && !controller.allXlResult && !controller.orderDraft ? (
-        <XLJVEmptyState message="No product loaded yet." />
+        <XLJVEmptyState message={t.xljvNoProductLoadedYet} />
       ) : null}
 
       <XLJVSearchResults

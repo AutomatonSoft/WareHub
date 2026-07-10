@@ -14,6 +14,7 @@ from django.db.models import (
     OneToOneField,
     BooleanField
 )
+from django.db.models import Q
 from .kid_number_utils import normalize_kid_numbers
 
 class Paymant:
@@ -52,6 +53,15 @@ class Kid(Model):
     def save(self, *args, **kwargs):
         self.kid_number = normalize_kid_numbers(self.kid_number)
         return super().save(*args, **kwargs)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=["place"],
+                condition=Q(place__isnull=False) & ~Q(place=""),
+                name="uniq_kid_non_empty_place",
+            ),
+        ]
 
 
 class Ean(Model):

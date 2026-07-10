@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { History } from "lucide-react";
+import { useLabels } from "../../app/use-labels";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { fetchTimelineLogs, ServiceLogEntry } from "./dashboard-api";
@@ -15,24 +16,24 @@ type TimelineEvent = {
   timestampMs: number;
 };
 
-function relativeTime(timestampMs: number): string {
+function relativeTime(timestampMs: number, labels: { justNow: string; minutesAgo: string; hoursAgo: string; daysAgo: string }): string {
   const diffMs = Date.now() - timestampMs;
   if (!Number.isFinite(diffMs) || diffMs < 0) {
-    return "just now";
+    return labels.justNow;
   }
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 1) {
-    return "just now";
+    return labels.justNow;
   }
   if (minutes < 60) {
-    return `${minutes}m ago`;
+    return labels.minutesAgo.replace("{count}", String(minutes));
   }
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
-    return `${hours}h ago`;
+    return labels.hoursAgo.replace("{count}", String(hours));
   }
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return labels.daysAgo.replace("{count}", String(days));
 }
 
 function pickActor(message: string, context: string | null | undefined): string {
@@ -42,7 +43,7 @@ function pickActor(message: string, context: string | null | undefined): string 
   }
 
   if (!context) {
-    return "system";
+    return "";
   }
 
   try {
@@ -55,7 +56,7 @@ function pickActor(message: string, context: string | null | undefined): string 
   } catch {
   }
 
-  return "system";
+  return "";
 }
 
 function pickEntity(message: string, context: string | null | undefined): string {
@@ -68,10 +69,11 @@ function pickEntity(message: string, context: string | null | undefined): string
   if (sku) {
     return `SKU ${sku}`;
   }
-  return "General";
+  return "";
 }
 
 export function ActivityTimeline() {
+  const t = useLabels();
   const [logs, setLogs] = useState<ServiceLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export function ActivityTimeline() {
       } catch (loadError) {
         if (active) {
           setLogs([]);
-          setError(loadError instanceof Error ? loadError.message : "Unable to load recent activity.");
+          setError(loadError instanceof Error ? loadError.message : t.unableLoadRecentActivity);
         }
       } finally {
         if (active) {
@@ -117,16 +119,21 @@ export function ActivityTimeline() {
         return {
           id: `${entry.timestamp ?? "ts"}-${entry.channel ?? "ch"}-${index}`,
           actor: pickActor(entry.message ?? "", entry.context),
-          action: (entry.message ?? "Action").trim(),
-          entity: pickEntity(entry.message ?? "", entry.context),
-          when: relativeTime(timestampMs),
+          action: (entry.message ?? "").trim() || t.activityActionFallback,
+          entity: pickEntity(entry.message ?? "", entry.context) || t.activityEntityFallback,
+          when: relativeTime(timestampMs, {
+            justNow: t.justNow,
+            minutesAgo: t.minutesAgo,
+            hoursAgo: t.hoursAgo,
+            daysAgo: t.daysAgo,
+          }),
           timestampMs
         };
       })
       .filter((entry) => entry.timestampMs > 0 && entry.action.length > 0)
       .sort((a, b) => b.timestampMs - a.timestampMs)
       .slice(0, 12);
-  }, [logs]);
+  }, [logs, t.daysAgo, t.hoursAgo, t.justNow, t.minutesAgo]);
 
   return (
     <Card className="wh-section-card wh-dashboard__activity-card min-w-0">
@@ -134,9 +141,9 @@ export function ActivityTimeline() {
       <div className="min-w-0">
         <CardTitle className="title-with-icon wh-section-card__title">
           <span className="title-icon-chip"><History aria-hidden="true" size={14} /></span>
-          Activity Timeline
+          {t.activityTimeline}
         </CardTitle>
-        <CardDescription className="wh-section-card__subtitle">Recent orchestration, sync, and warehouse-side events.</CardDescription>
+        <CardDescription className="wh-section-card__subtitle">{t.recentOrchestrationSyncWarehouse}</CardDescription>
       </div>
       </CardHeader>
       <CardContent className="wh-section-card__body">
@@ -154,22 +161,24 @@ export function ActivityTimeline() {
         ) : error ? (
           <li className="wh-empty-state wh-empty-state--dashboard wh-activity-empty">
             <History className="wh-activity-empty__icon" />
-            <p className="wh-activity-empty__title">Activity feed unavailable</p>
+            <p className="wh-activity-empty__title">{t.activityFeedUnavailable}</p>
             <p className="wh-activity-empty__description">{error}</p>
           </li>
         ) : events.length === 0 ? (
           <li className="wh-empty-state wh-empty-state--dashboard wh-activity-empty">
             <History className="wh-activity-empty__icon" />
-            <p className="wh-activity-empty__title">No recent activity</p>
-            <p className="wh-activity-empty__description">Sync events and warehouse actions will appear here after the next operation.</p>
+            <p className="wh-activity-empty__title">{t.noRecentActivity}</p>
+            <p className="wh-activity-empty__description">{t.syncEventsAppearAfterNextOperation}</p>
           </li>
         ) : (
           events.map((event) => (
             <li key={event.id} className="flex items-start gap-3">
               <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[color:var(--primary-container)]" />
               <div className="min-w-0">
-                <p className="truncate text-sm text-foreground" title={`${event.actor}: ${event.action}`}>
-                  <span className="font-semibold">{event.actor}</span> {event.action}
+                <p className="truncate text-sm text-foreground" title={event.actor ? `${event.actor}: ${event.action}` : event.action}>
+                  {event.actor ? <span className="font-semibold">{event.actor}</span> : null}
+                  {event.actor ? " " : null}
+                  {event.action}
                 </p>
                 <p className="ui-caption">{event.entity} | {event.when}</p>
               </div>

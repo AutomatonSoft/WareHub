@@ -11,16 +11,25 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useLabels } from "@/app/use-labels";
 import { cn } from "@/lib/utils";
-import { bulkUpdateKids, createMarketplaceToggleJob, fetchKidDetails, getMarketplaceToggleJob, patchKidDetails, patchKidMarketplaceEans, uploadKidImages } from "../inventory-api";
+import {
+  bulkUpdateKids,
+  createMarketplaceToggleJob,
+  fetchKidDetails,
+  getMarketplaceToggleJob,
+  patchKidDetails,
+  patchKidMarketplaceEans,
+  uploadKidImages,
+  CreateKidRequestError,
+  type PlaceSuggestionHints,
+} from "../inventory-api";
 import { useToast } from "../../shared/toast-provider";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
 
 const ACCOUNT_EMPTY_VALUE = "__empty_account__";
-const LISTING_STATUS_EMPTY_VALUE = "__empty_listing_status__";
-
 type EditDraftState = {
   kidNumber: string;
   account: "" | "JV" | "XL" | "CH";
@@ -138,7 +147,7 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     account: "",
     place: row.place ?? "",
     listingStatus: row.listingStatus,
-    bWare: false,
+    bWare: row.bWare,
     store: row.store,
     inTransit: false,
     commentary: row.commentary ?? "",
@@ -223,6 +232,25 @@ function CompactField({
   );
 }
 
+function PlaceSuggestionNote({
+  suggestions,
+  labels,
+}: {
+  suggestions: PlaceSuggestionHints | null;
+  labels: { subplaceSuggestion: string; baseSuggestion: string };
+}) {
+  if (!suggestions || (!suggestions.sameBaseSubplace && !suggestions.nextFreeBasePlace)) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1 rounded-[var(--radius-control)] border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-900">
+      {suggestions.sameBaseSubplace ? <p>{labels.subplaceSuggestion}: {suggestions.sameBaseSubplace}</p> : null}
+      {suggestions.nextFreeBasePlace ? <p>{labels.baseSuggestion}: {suggestions.nextFreeBasePlace}</p> : null}
+    </div>
+  );
+}
+
 function StatusFlagField({
   label,
   checked,
@@ -284,6 +312,7 @@ export function SofortListTableShell(props: {
   };
 }) {
   const { labels } = props;
+  const t = useLabels();
   const { showToast } = useToast();
   const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
   const [editingRow, setEditingRow] = useState<SofortListRow | null>(null);
@@ -293,6 +322,7 @@ export function SofortListTableShell(props: {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deactivatingRowId, setDeactivatingRowId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editPlaceSuggestions, setEditPlaceSuggestions] = useState<PlaceSuggestionHints | null>(null);
   const [marketplaceResult, setMarketplaceResult] = useState<MarketplaceResultDialogState | null>(null);
   const [marketplaceConfirm, setMarketplaceConfirm] = useState<MarketplaceConfirmDialogState | null>(null);
 
@@ -331,6 +361,7 @@ export function SofortListTableShell(props: {
     let active = true;
     setLoadingDetails(true);
     setEditError(null);
+    setEditPlaceSuggestions(null);
 
     void fetchKidDetails(editingRow.kidId)
       .then((details) => {
@@ -355,7 +386,7 @@ export function SofortListTableShell(props: {
       })
       .catch((error) => {
         if (!active) return;
-        setEditError(error instanceof Error ? error.message : "Failed to load product details.");
+        setEditError(error instanceof Error ? error.message : t.failedLoadProductDetails);
       })
       .finally(() => {
         if (active) {
@@ -366,7 +397,7 @@ export function SofortListTableShell(props: {
     return () => {
       active = false;
     };
-  }, [editingRow]);
+  }, [editingRow, t.failedLoadProductDetails]);
 
   function closeFullscreenPhoto() {
     if (!fullscreenPhoto) return;
@@ -377,6 +408,7 @@ export function SofortListTableShell(props: {
     setEditingRow(row);
     setEditDraft(createEditDraft(row));
     setEditError(null);
+    setEditPlaceSuggestions(null);
   }
 
   function closeEditModal() {
@@ -384,6 +416,7 @@ export function SofortListTableShell(props: {
     setEditingRow(null);
     setEditDraft(null);
     setEditError(null);
+    setEditPlaceSuggestions(null);
     setLoadingDetails(false);
   }
 
@@ -423,6 +456,7 @@ export function SofortListTableShell(props: {
 
     setSavingEdit(true);
     setEditError(null);
+    setEditPlaceSuggestions(null);
 
     try {
       const uploadedPhotoUrls =
@@ -522,7 +556,8 @@ export function SofortListTableShell(props: {
       props.onUpdateRow(nextRow);
       closeEditModal();
     } catch (requestError) {
-      setEditError(requestError instanceof Error ? requestError.message : "Failed to save changes.");
+      setEditError(requestError instanceof Error ? requestError.message : t.failedSaveChanges);
+      setEditPlaceSuggestions(requestError instanceof CreateKidRequestError ? requestError.placeSuggestions : null);
     } finally {
       setSavingEdit(false);
     }
@@ -536,7 +571,7 @@ export function SofortListTableShell(props: {
       }
       await waitMs(400);
     }
-    throw new Error(`Marketplace toggle job ${jobId} polling timed out.`);
+    throw new Error(t.marketplaceToggleTimedOut.replace("{jobId}", jobId));
   }
 
   async function runMarketplaceAction(row: SofortListRow, nextInactive: boolean, nextPlace: string) {
@@ -582,31 +617,31 @@ export function SofortListTableShell(props: {
             <thead>
               <tr className="ui-table-head-row sticky top-0 z-10">
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--select wh-sofort-cell wh-sofort-cell--narrow py-3 text-center">
-                  <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label="Select visible rows" />
+                  <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label={t.selectVisibleRows} />
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--place wh-sofort-cell py-3 text-left">
                   <span className="ui-table-head-label">{labels.place.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--image wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">IMAGE</span>
+                  <span className="ui-table-head-label">{t.image.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--product wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">PRODUCT</span>
+                  <span className="ui-table-head-label">{t.product.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--attributes wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">ATTRIBUTES</span>
+                  <span className="ui-table-head-label">{t.attributes.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--commentary wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">COMMENTARY</span>
+                  <span className="ui-table-head-label">{t.commentary.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--price wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">EAN</span>
+                  <span className="ui-table-head-label">{t.ean}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--marketplace wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">MARKETPLACE EAN</span>
+                  <span className="ui-table-head-label">{t.marketplaceEanTitle.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head wh-sofort-head-cell wh-sofort-head-cell--actions wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">ACTIONS</span>
+                  <span className="ui-table-head-label">{t.actions.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="hidden wh-sofort-head-cell wh-sofort-head-cell--hidden">
                   <span className="inline-flex items-center gap-1">{labels.quantity.toUpperCase()}</span>
@@ -620,7 +655,7 @@ export function SofortListTableShell(props: {
                     <Checkbox
                       checked={props.selectedRowIds.has(row.id)}
                       onCheckedChange={() => props.onToggleRowSelection(row.id)}
-                      aria-label={`Select row ${row.kidNumber}`}
+                      aria-label={t.selectRow.replace("{kid}", row.kidNumber)}
                     />
                   </td>
                   <td className="wh-sofort-cell py-3 align-middle">
@@ -628,15 +663,15 @@ export function SofortListTableShell(props: {
                       <span className="wh-sofort-place-cell__value" title={row.place}>
                         {props.highlightText(row.place, props.query)}
                       </span>
-                      <span className="wh-sofort-place-cell__location" title={`Location ${row.store ? "Store" : "Warehouse"}`}>
-                        {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}
+                      <span className="wh-sofort-place-cell__location" title={`${t.location} ${row.store ? t.store : t.warehouse}`}>
+                        {props.highlightText(row.store ? t.store : t.warehouse, props.query)}
                       </span>
                     </div>
                   </td>
                   <td className="wh-sofort-image-cell wh-sofort-cell py-3 text-center align-middle">
                     {row.photo !== "-" ? (
                       <button type="button" className="wh-sofort-product-cell__image" onClick={() => setFullscreenPhoto(row.photo)}>
-                        <Image src={row.photo} alt={`Kid ${row.kidNumber}`} width={240} height={240} unoptimized className="wh-sofort-photo" />
+                        <Image src={row.photo} alt={t.productPhotoForKid.replace("{kid}", row.kidNumber)} width={240} height={240} unoptimized className="wh-sofort-photo" />
                       </button>
                     ) : (
                       <div className="wh-sofort-product-cell__image">
@@ -648,29 +683,29 @@ export function SofortListTableShell(props: {
                     <div className="wh-sofort-product-cell">
                       <div className="wh-sofort-product-cell__content">
                         <p className="wh-sofort-product-cell__title wh-inventory-title-text">
-                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID: </span>
+                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">{t.kid}: </span>
                           <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `Price ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `Price ${displayNullable(row.price)}`}>
-                          Price: {props.highlightText(
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `${t.price} ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `${t.price} ${displayNullable(row.price)}`}>
+                          {t.price}: {props.highlightText(
                             row.price !== null
                               ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
                               : displayNullable(row.price),
                             props.query
                           )}
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Quantity ${row.quantity}`}>Quantity: {props.highlightText(String(row.quantity), props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`${t.quantity} ${row.quantity}`}>{t.quantity}: {props.highlightText(String(row.quantity), props.query)}</p>
                       </div>
                     </div>
                   </td>
                   <td className="wh-sofort-attributes-cell wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-warehouse-cell">
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Room ${displayNullable(row.room)}`}><span>Room:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Type ${displayNullable(row.furnitureType)}`}><span>Type:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Company ${displayNullable(row.company)}`}><span>Company:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Color ${displayNullable(row.color)}`}><span>Color:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Size ${displayNullable(row.size)}`}><span>Size:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Material ${displayNullable(row.material)}`}><span>Material:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.room} ${displayNullable(row.room)}`}><span>{t.room}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.type} ${displayNullable(row.furnitureType)}`}><span>{t.type}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.company} ${displayNullable(row.company)}`}><span>{t.company}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.color} ${displayNullable(row.color)}`}><span>{t.color}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.size} ${displayNullable(row.size)}`}><span>{t.size}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.material} ${displayNullable(row.material)}`}><span>{t.material}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
                     </div>
                   </td>
                   <td className="wh-sofort-commentary-cell-wrap wh-sofort-cell py-3 align-middle">
@@ -691,9 +726,18 @@ export function SofortListTableShell(props: {
                     <SofortListMarketplaceMatrix
                       siteEans={row.siteEans}
                       siteEanStatuses={row.siteEanStatuses}
+                      bWare={row.bWare}
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
+                      labels={{
+                        matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
+                        jv: "JV",
+                        xl: "XL",
+                        matched: t.matched,
+                        value: t.value,
+                        empty: t.noValue,
+                      }}
                     />
                   </td>
                   <td className="wh-sofort-actions-cell wh-sofort-cell py-3 align-middle">
@@ -702,9 +746,9 @@ export function SofortListTableShell(props: {
                         href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
                         className={buttonVariants({ variant: "default", size: "sm", className: "min-w-[68px]" })}
                       >
-                        Create
+                        {t.create}
                       </Link>
-                      <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>Edit</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>{t.edit}</Button>
                       <Button
                         type="button"
                         variant="outline"
@@ -712,7 +756,7 @@ export function SofortListTableShell(props: {
                         onClick={() => requestMarketplaceAction(row)}
                         disabled={deactivatingRowId === row.id}
                       >
-                        {deactivatingRowId === row.id ? "..." : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                        {deactivatingRowId === row.id ? t.working : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
                       </Button>
                     </div>
                   </td>
@@ -725,11 +769,11 @@ export function SofortListTableShell(props: {
       </div>
       {fullscreenPhoto ? (
         <div className="wh-sofort-photo-viewer" role="dialog" aria-modal="true" onClick={closeFullscreenPhoto}>
-          <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label="Close image viewer">
-            Close
+          <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label={t.closeImageViewer}>
+            {t.close}
           </button>
           <div className="wh-sofort-photo-viewer__content" onClick={(event) => event.stopPropagation()}>
-            <Image src={fullscreenPhoto} alt="Product image" width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
+            <Image src={fullscreenPhoto} alt={t.productPhoto} width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
           </div>
         </div>
       ) : null}
@@ -775,8 +819,8 @@ export function SofortListTableShell(props: {
                   {props.labels.confirmActionDetails}
                 </p>
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  <p>KID: {marketplaceConfirm.row.kidNumber}</p>
-                  <p>EAN: {marketplaceConfirm.row.ean || "—"}</p>
+                  <p>{t.kid}: {marketplaceConfirm.row.kidNumber}</p>
+                  <p>{t.ean}: {marketplaceConfirm.row.ean || "—"}</p>
                   <p>{props.labels.confirmActionCurrentPlace}: {marketplaceConfirm.row.place || "—"}</p>
                 </div>
               </div>
@@ -807,7 +851,7 @@ export function SofortListTableShell(props: {
 
               <div className="rounded-xl border border-border/70 bg-background p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Marketplace
+                  {t.marketplace}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {MARKETPLACE_CONFIRM_TARGETS.map((target) => (
@@ -893,33 +937,33 @@ export function SofortListTableShell(props: {
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setMarketplaceResult(null)}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => setMarketplaceResult(null)}>{t.close}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(editingRow)} onOpenChange={(open) => { if (!open) closeEditModal(); }}>
         <DialogContent className="!flex !w-[min(1120px,calc(100vw-32px))] !max-w-[1120px] !gap-0 !p-0 h-auto max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl">
           <DialogHeader className="sticky top-0 z-20 border-b border-[#e5e7eb] bg-background px-5 py-4 sm:px-6">
-            <DialogTitle>Edit product</DialogTitle>
+            <DialogTitle>{t.editProductTitle}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-4 pb-6">
               <div className="rounded-lg border border-emerald-300/60 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                <strong>Editing mode</strong>
-                {editingRow ? ` · KID ${editingRow.kidNumber} · Place ${editingRow.place}` : ""}
+                <strong>{t.editingMode}</strong>
+                {editingRow ? ` · ${t.kid} ${editingRow.kidNumber} · ${t.place} ${editingRow.place}` : ""}
               </div>
 
               {editDraft ? (
                 <>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,0.92fr)] xl:items-start">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)] xl:items-start">
                     <SectionCard
                       icon={Package2}
-                      title="Identity & Status"
-                      description="Database kid fields, operational flags and listing state."
+                      title={t.identityStatusTitle}
+                      description={t.identityStatusDescription}
                     >
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                        <div className="xl:col-span-4">
-                          <CompactField label="Kid Number" htmlFor="edit-kid-number">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                        <div className="min-w-0 xl:col-span-8">
+                          <CompactField label={t.kidNumber} htmlFor="edit-kid-number">
                             <Input
                               id="edit-kid-number"
                               className="h-10 rounded-[var(--radius-control)]"
@@ -929,19 +973,19 @@ export function SofortListTableShell(props: {
                           </CompactField>
                         </div>
 
-                        <div className="xl:col-span-2">
-                          <CompactField label="Account" htmlFor="edit-kid-account">
+                        <div className="min-w-0 xl:col-span-4">
+                          <CompactField label={t.account} htmlFor="edit-kid-account">
                             <Select
                               value={editDraft.account || ACCOUNT_EMPTY_VALUE}
                               onValueChange={(nextValue) => updateDraft("account", nextValue === ACCOUNT_EMPTY_VALUE ? "" : (nextValue as EditDraftState["account"]))}
                             >
                               <SelectTrigger id="edit-kid-account" className="h-10 w-full min-w-0 rounded-[var(--radius-control)]">
                                 <span className={`min-w-0 truncate text-left ${editDraft.account ? "text-foreground" : "text-muted-foreground"}`}>
-                                  {editDraft.account || "Not selected"}
+                                  {editDraft.account || t.notSelected}
                                 </span>
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value={ACCOUNT_EMPTY_VALUE}>Not selected</SelectItem>
+                                <SelectItem value={ACCOUNT_EMPTY_VALUE}>{t.notSelected}</SelectItem>
                                 <SelectItem value="JV">JV</SelectItem>
                                 <SelectItem value="XL">XL</SelectItem>
                                 <SelectItem value="CH">CH</SelectItem>
@@ -950,53 +994,48 @@ export function SofortListTableShell(props: {
                           </CompactField>
                         </div>
 
-                        <CompactField label="Place" htmlFor="edit-kid-place">
-                          <Input
-                            id="edit-kid-place"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.place}
-                            onChange={(event) => updateDraft("place", event.target.value)}
+                        <div className="min-w-0 xl:col-span-4">
+                          <CompactField label={t.place} htmlFor="edit-kid-place">
+                            <Input
+                              id="edit-kid-place"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.place}
+                              onChange={(event) => updateDraft("place", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
+
+                        <div className="min-w-0 xl:col-span-4">
+                          <CompactField label={t.room} htmlFor="edit-kid-room">
+                            <Input
+                              id="edit-kid-room"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.room}
+                              onChange={(event) => updateDraft("room", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
+
+                        <div className="min-w-0 xl:col-span-4">
+                          <CompactField label={t.type} htmlFor="edit-kid-type">
+                            <Input
+                              id="edit-kid-type"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.furnitureType}
+                              onChange={(event) => updateDraft("furnitureType", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
+
+                        <div className="md:col-span-2 xl:col-span-12">
+                          <PlaceSuggestionNote
+                            suggestions={editPlaceSuggestions}
+                            labels={{ subplaceSuggestion: t.subplaceSuggestion, baseSuggestion: t.baseSuggestion }}
                           />
-                        </CompactField>
+                        </div>
 
-                        <CompactField label="Room" htmlFor="edit-kid-room">
-                          <Input
-                            id="edit-kid-room"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.room}
-                            onChange={(event) => updateDraft("room", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Type" htmlFor="edit-kid-type">
-                          <Input
-                            id="edit-kid-type"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.furnitureType}
-                            onChange={(event) => updateDraft("furnitureType", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Listing Status" htmlFor="edit-kid-listing-status">
-                          <Select
-                            value={editDraft.listingStatus || LISTING_STATUS_EMPTY_VALUE}
-                            onValueChange={(nextValue) => updateDraft("listingStatus", nextValue === LISTING_STATUS_EMPTY_VALUE ? "" : (nextValue as EditDraftState["listingStatus"]))}
-                          >
-                            <SelectTrigger id="edit-kid-listing-status" className="h-10 w-full min-w-0 rounded-[var(--radius-control)]">
-                              <span className={`min-w-0 truncate text-left ${editDraft.listingStatus ? "text-foreground" : "text-muted-foreground"}`}>
-                                {editDraft.listingStatus || "Not selected"}
-                              </span>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={LISTING_STATUS_EMPTY_VALUE}>Not selected</SelectItem>
-                              <SelectItem value="listed">listed</SelectItem>
-                              <SelectItem value="unlisted">unlisted</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </CompactField>
-
-                        <div className="md:col-span-2 xl:col-span-6">
-                          <CompactField label="Commentary" htmlFor="edit-kid-commentary">
+                        <div className="md:col-span-2 xl:col-span-12">
+                          <CompactField label={t.commentary} htmlFor="edit-kid-commentary">
                             <Textarea
                               id="edit-kid-commentary"
                               className="min-h-[112px] w-full resize-y rounded-[var(--radius-control)] px-3 py-2.5"
@@ -1006,11 +1045,11 @@ export function SofortListTableShell(props: {
                           </CompactField>
                         </div>
 
-                        <div className="md:col-span-2 xl:col-span-6">
+                        <div className="md:col-span-2 xl:col-span-12">
                           <div className="grid gap-3 sm:grid-cols-3">
-                            <StatusFlagField label="B-Ware" checked={editDraft.bWare} onCheckedChange={(checked) => updateDraft("bWare", checked)} />
-                            <StatusFlagField label="Store" checked={editDraft.store} onCheckedChange={(checked) => updateDraft("store", checked)} />
-                            <StatusFlagField label="In Transit" checked={editDraft.inTransit} onCheckedChange={(checked) => updateDraft("inTransit", checked)} />
+                            <StatusFlagField label={t.bWare} checked={editDraft.bWare} onCheckedChange={(checked) => updateDraft("bWare", checked)} />
+                            <StatusFlagField label={t.store} checked={editDraft.store} onCheckedChange={(checked) => updateDraft("store", checked)} />
+                            <StatusFlagField label={t.inTransit} checked={editDraft.inTransit} onCheckedChange={(checked) => updateDraft("inTransit", checked)} />
                           </div>
                         </div>
                       </div>
@@ -1018,94 +1057,108 @@ export function SofortListTableShell(props: {
 
                     <SectionCard
                       icon={Palette}
-                      title="Product Attributes"
-                      description="Product attributes stored alongside the kid record."
+                      title={t.productAttributesTitle}
+                      description={t.productAttributesDescription}
                       className="h-full"
                     >
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <CompactField label="Quantity" htmlFor="edit-kid-quantity">
-                          <Input
-                            id="edit-kid-quantity"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            inputMode="numeric"
-                            value={editDraft.quantity}
-                            onChange={(event) => updateDraft("quantity", event.target.value)}
-                          />
-                        </CompactField>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.quantity} htmlFor="edit-kid-quantity">
+                            <Input
+                              id="edit-kid-quantity"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              inputMode="numeric"
+                              value={editDraft.quantity}
+                              onChange={(event) => updateDraft("quantity", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Price" htmlFor="edit-kid-price">
-                          <Input
-                            id="edit-kid-price"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            inputMode="decimal"
-                            value={editDraft.price}
-                            onChange={(event) => updateDraft("price", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.price} htmlFor="edit-kid-price">
+                            <Input
+                              id="edit-kid-price"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              inputMode="decimal"
+                              value={editDraft.price}
+                              onChange={(event) => updateDraft("price", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Currency" htmlFor="edit-kid-currency">
-                          <Input
-                            id="edit-kid-currency"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.currency}
-                            onChange={(event) => updateDraft("currency", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.currency} htmlFor="edit-kid-currency">
+                            <Input
+                              id="edit-kid-currency"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.currency}
+                              onChange={(event) => updateDraft("currency", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Company" htmlFor="edit-kid-company">
-                          <Input
-                            id="edit-kid-company"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.company}
-                            onChange={(event) => updateDraft("company", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.company} htmlFor="edit-kid-company">
+                            <Input
+                              id="edit-kid-company"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.company}
+                              onChange={(event) => updateDraft("company", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Color" htmlFor="edit-kid-color">
-                          <Input
-                            id="edit-kid-color"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.color}
-                            onChange={(event) => updateDraft("color", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.color} htmlFor="edit-kid-color">
+                            <Input
+                              id="edit-kid-color"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.color}
+                              onChange={(event) => updateDraft("color", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Size" htmlFor="edit-kid-size">
-                          <Input
-                            id="edit-kid-size"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.size}
-                            onChange={(event) => updateDraft("size", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 xl:col-span-3">
+                          <CompactField label={t.size} htmlFor="edit-kid-size">
+                            <Input
+                              id="edit-kid-size"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.size}
+                              onChange={(event) => updateDraft("size", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
 
-                        <CompactField label="Material" htmlFor="edit-kid-material">
-                          <Input
-                            id="edit-kid-material"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.material}
-                            onChange={(event) => updateDraft("material", event.target.value)}
-                          />
-                        </CompactField>
+                        <div className="min-w-0 md:col-span-2 xl:col-span-3">
+                          <CompactField label={t.material} htmlFor="edit-kid-material">
+                            <Input
+                              id="edit-kid-material"
+                              className="h-10 rounded-[var(--radius-control)]"
+                              value={editDraft.material}
+                              onChange={(event) => updateDraft("material", event.target.value)}
+                            />
+                          </CompactField>
+                        </div>
                       </div>
                     </SectionCard>
                   </div>
 
                   <SectionCard
                     icon={ImagePlus}
-                    title="Photos"
-                    description="Edit all linked product photos and append multiple new uploads."
+                    title={t.photosTitle}
+                    description={t.photosDescription}
                   >
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_320px]">
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.56fr)] xl:items-start">
                       <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-primary/15 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary">
                             <ImageIcon size={14} />
-                            <span>{editDraft.photoUrls.length} linked photo{editDraft.photoUrls.length === 1 ? "" : "s"}</span>
+                            <span>{t.linkedPhotosCount.replace("{count}", String(editDraft.photoUrls.length))}</span>
                           </div>
                           <Button type="button" variant="outline" size="sm" className="gap-2" onClick={addPhotoUrlRow}>
                             <Plus size={14} />
-                            Add photo URL
+                            {t.addPhotoUrl}
                           </Button>
                         </div>
 
@@ -1115,28 +1168,28 @@ export function SofortListTableShell(props: {
                               <div key={`photo-url-${index}`} className="rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
                                 <div className="mb-3 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[calc(var(--radius-control)-4px)] border border-border/70 bg-muted/25">
                                   {photoUrl.trim() ? (
-                                    <Image src={photoUrl.trim()} alt={`Photo ${index + 1}`} width={240} height={180} unoptimized className="h-full w-full object-cover" />
+                                    <Image src={photoUrl.trim()} alt={t.photoLabel.replace("{index}", String(index + 1))} width={240} height={180} unoptimized className="h-full w-full object-cover" />
                                   ) : (
                                     <div className="flex flex-col items-center gap-1 text-muted-foreground">
                                       <ImageIcon size={18} />
-                                      <span className="text-[11px]">Awaiting URL</span>
+                                      <span className="text-[11px]">{t.awaitingUrl}</span>
                                     </div>
                                   )}
                                 </div>
                                 <div className="space-y-2">
-                                  <CompactField label={`Photo URL ${index + 1}`} htmlFor={`edit-photo-url-${index}`}>
+                                  <CompactField label={t.photoUrlLabel.replace("{index}", String(index + 1))} htmlFor={`edit-photo-url-${index}`}>
                                     <Input
                                       id={`edit-photo-url-${index}`}
                                       className="h-10 rounded-[var(--radius-control)]"
                                       value={photoUrl}
-                                      placeholder="https://..."
+                                      placeholder={t.photoUrlPlaceholder}
                                       onChange={(event) => updatePhotoUrl(index, event.target.value)}
                                     />
                                   </CompactField>
                                   <div className="flex justify-end">
                                     <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => removePhotoUrl(index)}>
                                       <X size={14} />
-                                      Remove
+                                      {t.remove}
                                     </Button>
                                   </div>
                                 </div>
@@ -1144,20 +1197,20 @@ export function SofortListTableShell(props: {
                             ))
                           ) : (
                             <div className="sm:col-span-2 flex min-h-[180px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
-                              No linked photos yet. Add manual URLs or upload several new images below.
+                              {t.noLinkedPhotosHint}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="space-y-3 rounded-[var(--radius-control)] border border-dashed border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] p-3">
+                      <div className="space-y-3 rounded-[var(--radius-control)] border border-dashed border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] p-3 xl:sticky xl:top-0">
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold text-foreground">Upload new photos</p>
-                          <p className="text-xs leading-5 text-muted-foreground">Multiple JPG, PNG or WebP images will be appended to the existing photo set on save.</p>
+                          <p className="text-sm font-semibold text-foreground">{t.uploadNewPhotos}</p>
+                          <p className="text-xs leading-5 text-muted-foreground">{t.uploadNewPhotosHint}</p>
                         </div>
                         <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[var(--radius-control)] border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40">
                           <Upload size={14} className="text-primary" />
-                          <span>Choose files</span>
+                          <span>{t.chooseFiles}</span>
                           <input
                             type="file"
                             multiple
@@ -1192,13 +1245,13 @@ export function SofortListTableShell(props: {
                                   <p className="text-xs text-muted-foreground">{formatFileSize(preview.file.size)}</p>
                                 </div>
                                 <Button type="button" variant="outline" size="sm" onClick={() => removePhotoFile(index)}>
-                                  Remove
+                                  {t.remove}
                                 </Button>
                               </div>
                             ))
                           ) : (
                             <div className="flex min-h-[92px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
-                              Selected uploads will appear here as image previews, not as a plain file list.
+                              {t.photoPreviewUploadsHint}
                             </div>
                           )}
                         </div>
@@ -1208,12 +1261,12 @@ export function SofortListTableShell(props: {
 
                   <SectionCard
                     icon={Package2}
-                    title="Marketplace EAN"
-                    description="Edit the main database EAN and all marketplace mappings without widening the table."
+                    title={t.marketplaceEanTitle}
+                    description={t.marketplaceEanDescription}
                   >
                     <div className="space-y-3">
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        <CompactField label="Main EAN" htmlFor="edit-main-ean">
+                        <CompactField label={t.mainEan} htmlFor="edit-main-ean">
                           <Input
                             id="edit-main-ean"
                             className="h-10 rounded-[var(--radius-control)]"
@@ -1226,13 +1279,13 @@ export function SofortListTableShell(props: {
                       <div className="overflow-x-auto">
                         <div className="min-w-[720px] space-y-2">
                           <div className="grid grid-cols-[120px_minmax(160px,1fr)_minmax(160px,1fr)] gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            <span>Market</span>
+                            <span>{t.market}</span>
                             <span>JV</span>
                             <span>XL</span>
                           </div>
 
                           {[
-                            { label: "Sites", jvKey: "jv", xlKey: "xl" },
+                            { label: t.sites, jvKey: "jv", xlKey: "xl" },
                             { label: "OTTO", jvKey: "ottoJv", xlKey: "ottoXl" },
                             { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl" },
                             { label: "KAUFLAND", jvKey: "kauflandJv", xlKey: "kauflandXl" },
@@ -1244,13 +1297,13 @@ export function SofortListTableShell(props: {
                                 className="h-10 rounded-[var(--radius-control)]"
                                 value={editDraft[market.jvKey as keyof EditDraftState] as string}
                                 onChange={(event) => updateDraft(market.jvKey as keyof EditDraftState, event.target.value as never)}
-                                placeholder="JV EAN"
+                                placeholder={t.jvEanPlaceholder}
                               />
                               <Input
                                 className="h-10 rounded-[var(--radius-control)]"
                                 value={editDraft[market.xlKey as keyof EditDraftState] as string}
                                 onChange={(event) => updateDraft(market.xlKey as keyof EditDraftState, event.target.value as never)}
-                                placeholder="XL EAN"
+                                placeholder={t.xlEanPlaceholder}
                               />
                             </div>
                           ))}
@@ -1261,7 +1314,7 @@ export function SofortListTableShell(props: {
                 </>
               ) : (
                 <div className="flex min-h-[240px] items-center justify-center rounded-[var(--radius-card)] border border-border/70 bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                  Preparing product editor...
+                  {t.preparingProductEditor}
                 </div>
               )}
             </div>
@@ -1271,15 +1324,15 @@ export function SofortListTableShell(props: {
               {loadingDetails ? (
                 <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 size={14} className="animate-spin" />
-                  Loading full product details...
+                  {t.loadingFullProductDetails}
                 </span>
               ) : editError ? (
                 <p className="text-sm text-destructive">{editError}</p>
               ) : null}
             </div>
-            <Button type="button" variant="ghost" onClick={closeEditModal} disabled={savingEdit}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={closeEditModal} disabled={savingEdit}>{t.cancel}</Button>
             <Button type="button" onClick={() => void saveEdit()} disabled={savingEdit || !editDraft}>
-              {savingEdit ? "Saving..." : "Save"}
+              {savingEdit ? t.saving : t.save}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -15,6 +15,20 @@ export function ProductImagePanel() {
   const [mainImageUrl, setMainImageUrl] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  function mapUploadError(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return t.failedUploadImageFiles;
+    }
+    if (error.message.startsWith("product_image_upload_failed_http:")) {
+      const status = error.message.split(":")[1] || "0";
+      return `${t.failedUploadImageFiles}: HTTP ${status}`;
+    }
+    if (error.message === "product_image_upload_no_urls") {
+      return t.uploadNoImageUrls;
+    }
+    return error.message || t.failedUploadImageFiles;
+  }
+
   async function handleUploadFiles(files: FileList | null) {
     if (!files || files.length === 0 || uploading) {
       return;
@@ -39,7 +53,7 @@ export function ProductImagePanel() {
       });
       setUploadStatus(`${t.uploaded} ${urls.length} ${t.imagesToFtp}`);
     } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : t.failedUploadImageFiles);
+      setUploadStatus(mapUploadError(error));
     } finally {
       setUploading(false);
     }
@@ -103,10 +117,10 @@ export function ProductImagePanel() {
                   <Button
                     type="button"
                     variant="secondary"
-                    className="h-8 px-2 text-xs"
-                    onClick={() => setMainImageUrl(url)}
-                  >
-                    {mainImageUrl === url ? "Main image" : "Set main"}
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setMainImageUrl(url)}
+                >
+                    {mainImageUrl === url ? t.productImageMainImage : t.productImageSetMain}
                   </Button>
                   <Button
                     type="button"
@@ -115,7 +129,7 @@ export function ProductImagePanel() {
                     disabled={index === 0}
                     onClick={() => moveImageUp(index)}
                   >
-                    Move up
+                    {t.productImageMoveUp}
                   </Button>
                 </div>
               </div>

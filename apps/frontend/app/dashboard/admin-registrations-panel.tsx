@@ -211,7 +211,7 @@ export function AdminRegistrationsPanel({
       return `${t.noMatches} "${query.trim()}".`;
     }
     if (hasActiveFilters) {
-      return "No users match the current filters.";
+      return t.noUsers;
     }
     return t.noUsers;
   }, [hasActiveFilters, loading, query, t.loading, t.noMatches, t.noUsers]);
@@ -327,23 +327,23 @@ export function AdminRegistrationsPanel({
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <SummaryCard
-          title="Total users"
+          title={t.totalUsers}
           value={totalUsers}
-          description="All loaded application users."
+          description={t.allLoadedApplicationUsers}
           icon={<Users size={18} />}
           loading={loading}
         />
         <SummaryCard
-          title="Pending"
+          title={t.pending}
           value={pendingCount}
-          description="Accounts waiting for approval."
+          description={t.accountsWaitingForApproval}
           icon={<ShieldCheck size={18} />}
           loading={loading}
         />
         <SummaryCard
-          title="Approved"
+          title={t.approved}
           value={approvedCount}
-          description="Users with active access."
+          description={t.usersWithActiveAccess}
           icon={<UserCheck size={18} />}
           loading={loading}
         />
@@ -353,11 +353,11 @@ export function AdminRegistrationsPanel({
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-base">Admin users</CardTitle>
-              <CardDescription>Manage user approvals and roles.</CardDescription>
+              <CardTitle className="text-base">{t.navAdminUsers}</CardTitle>
+              <CardDescription>{t.adminUsersSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{totalUsers} visible</Badge>
+              <Badge variant="outline">{t.visibleCount.replace("{count}", String(totalUsers))}</Badge>
               <Button type="button" variant="outline" size="sm" className="h-10 gap-2" onClick={() => void loadUsers()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? t.loading : t.refresh}
@@ -475,7 +475,7 @@ export function AdminRegistrationsPanel({
 
           {!loading && users.length === 0 ? (
             <EmptyState
-              title="No users found"
+              title={t.noUsers}
               description={emptyMessage}
             />
           ) : null}
@@ -487,13 +487,13 @@ export function AdminRegistrationsPanel({
                   <Table className="text-sm">
                     <TableHeader>
                       <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="px-4">User</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Approved</TableHead>
-                        <TableHead>Approved by</TableHead>
-                        <TableHead className="px-4">Actions</TableHead>
+                        <TableHead className="px-4">{t.user}</TableHead>
+                        <TableHead>{t.role}</TableHead>
+                        <TableHead>{t.status}</TableHead>
+                        <TableHead>{t.created}</TableHead>
+                        <TableHead>{t.approved}</TableHead>
+                        <TableHead>{t.adminTelegramApprovedBy}</TableHead>
+                        <TableHead className="px-4">{t.adminTelegramActions}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -630,17 +630,17 @@ export function AdminRegistrationsPanel({
 
                         <div className="grid gap-2 rounded-2xl border border-border/60 bg-muted/20 p-3 text-sm">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground">Created</span>
+                            <span className="text-muted-foreground">{t.created}</span>
                             <span className="text-right text-foreground">{formatDate(user.created_at)}</span>
                           </div>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground">Approved</span>
+                            <span className="text-muted-foreground">{t.approved}</span>
                             <span className="text-right text-foreground">
                               {user.approved_at ? formatDate(user.approved_at) : "-"}
                             </span>
                           </div>
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground">Approved by</span>
+                            <span className="text-muted-foreground">{t.adminTelegramApprovedBy}</span>
                             <span className="text-right text-foreground">{approver ?? "-"}</span>
                           </div>
                         </div>

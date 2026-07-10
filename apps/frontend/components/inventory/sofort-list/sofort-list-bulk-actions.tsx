@@ -1,6 +1,7 @@
 ﻿import { CheckCircle2, Download, XCircle } from "lucide-react";
 import { useState } from "react";
 
+import { useLabels } from "@/app/use-labels";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -17,6 +18,7 @@ export function SofortListBulkActions(props: {
 }) {
   const [roomValue, setRoomValue] = useState("");
   const [typeValue, setTypeValue] = useState("");
+  const t = useLabels();
 
   if (props.selectedCount < 1) {
     return null;
@@ -24,18 +26,18 @@ export function SofortListBulkActions(props: {
 
   return (
     <div className="wh-sofort-bulkbar">
-      <span className="wh-sofort-bulkbar__label">{props.selectedCount} selected</span>
+      <span className="wh-sofort-bulkbar__label">{t.selectedCount.replace("{count}", String(props.selectedCount))}</span>
       <Button type="button" variant="outline" onClick={props.onSetListed} className="wh-sofort-bulkbar__button">
         <CheckCircle2 />
-        Set listed
+        {t.setListed}
       </Button>
       <Button type="button" variant="outline" onClick={props.onSetUnlisted} className="wh-sofort-bulkbar__button">
         <XCircle />
-        Set unlisted
+        {t.setUnlisted}
       </Button>
       <Button type="button" variant="outline" onClick={props.onExportSelected} className="wh-sofort-bulkbar__button">
         <Download />
-        Export selected CSV
+        {t.exportSelectedCsv}
       </Button>
       <Select
         value={roomValue}
@@ -45,7 +47,7 @@ export function SofortListBulkActions(props: {
         }}
       >
         <SelectTrigger className="wh-select min-w-[150px]">
-          <SelectValue placeholder="Bulk room..." />
+          <SelectValue placeholder={t.bulkRoomPlaceholder} />
         </SelectTrigger>
         <SelectContent>
           {props.roomOptions.map((room) => (
@@ -63,7 +65,7 @@ export function SofortListBulkActions(props: {
         }}
       >
         <SelectTrigger className="wh-select min-w-[150px]">
-          <SelectValue placeholder="Bulk type..." />
+          <SelectValue placeholder={t.bulkTypePlaceholder} />
         </SelectTrigger>
         <SelectContent>
           {props.typeOptions.map((type) => (
@@ -74,7 +76,7 @@ export function SofortListBulkActions(props: {
         </SelectContent>
       </Select>
       <Button type="button" variant="ghost" onClick={props.onClearSelection} className="wh-sofort-bulkbar__ghost">
-        Deselect all
+        {t.deselectAll}
       </Button>
     </div>
   );

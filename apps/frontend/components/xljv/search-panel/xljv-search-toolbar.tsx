@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLabels } from "@/app/use-labels";
 
 import type { Site } from "../xljv-search-utils";
 
@@ -37,16 +38,17 @@ export function XLJVSearchToolbar(props: {
   labels: Record<string, string>;
 }) {
   const { labels } = props;
+  const t = useLabels();
   return (
     <Card>
       <CardHeader className="border-b">
-        <CardTitle>XL/JV Search</CardTitle>
+        <CardTitle>{t.xljvSearchTitle}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         <form className="grid gap-2 md:grid-cols-[1fr_200px_140px_auto_auto_auto]" onSubmit={props.onSearch}>
-          <Input value={props.ean} onChange={(event) => props.onSetEan(event.target.value)} placeholder="EAN" aria-label="EAN" />
+          <Input value={props.ean} onChange={(event) => props.onSetEan(event.target.value)} placeholder={t.ean} aria-label={t.ean} />
           <Select value={props.siteKey} onValueChange={(value) => props.onSetSiteKey(value ?? "")}>
-            <SelectTrigger><SelectValue placeholder="Site key" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t.siteKey} /></SelectTrigger>
             <SelectContent>
               {props.siteKeyOptions.map((option) => (
                 <SelectItem key={option.value || "__auto"} value={option.value}>{option.label}</SelectItem>
@@ -54,7 +56,7 @@ export function XLJVSearchToolbar(props: {
             </SelectContent>
           </Select>
           <Select value={props.site} onValueChange={(value) => props.onSetSite((value as "XL" | "JV") ?? "XL")} disabled={props.siteLocked}>
-            <SelectTrigger><SelectValue placeholder="Site" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t.site} /></SelectTrigger>
             <SelectContent>
               <SelectItem value="XL">XL</SelectItem>
               <SelectItem value="JV">JV</SelectItem>

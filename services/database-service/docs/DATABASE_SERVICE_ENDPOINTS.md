@@ -48,6 +48,20 @@ Split XL/JV write paths:
 - `POST /api/v1/{xl|jv}/products/sync-by-ean/{ean}/`
 - `POST /api/v1/{xl|jv}/batch/update-by-ean/{ean}/apply/`
 
+JV identifier aliases:
+
+- `GET /api/v1/jv/products/by-artikelnr/{artikelnr}/`
+- `GET /api/v1/jv/sites/by-artikelnr/{artikelnr}/`
+- `GET /api/v1/jv/products/local-by-artikelnr/{artikelnr}/`
+- `PATCH /api/v1/jv/products/update-by-artikelnr/{artikelnr}/`
+- `POST /api/v1/jv/products/sync-by-artikelnr/{artikelnr}/`
+- `POST /api/v1/jv/batch/update-by-artikelnr/{artikelnr}/apply/`
+- `POST /api/v1/jv/batch/update-by-artikelnr/{artikelnr}/plan/`
+
+Legacy compatibility:
+
+- The existing JV `*-by-ean` routes remain supported, but for JV they now resolve by `artikelnr` / `source_model`.
+
 ## 4. Plan-only endpoints (non-destructive planning)
 
 - `POST /api/v1/{xl|jv}/batch/update-by-ean/{ean}/plan/`

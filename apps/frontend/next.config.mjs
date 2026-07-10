@@ -45,7 +45,9 @@ const nextConfig = {
   reactStrictMode: true,
   // Emit a self-contained server bundle (.next/standalone) so the runtime image
   // ships only the traced production deps instead of the whole node_modules tree.
-  output: "standalone",
+  // Next standalone tracing can emit `node:*` chunk filenames that Windows cannot
+  // copy into `.next/standalone`, while Linux CI/stage handles them correctly.
+  output: process.platform === "win32" ? undefined : "standalone",
   // Keep the trailing slash so it reaches the rewrite intact. Otherwise Next 308-redirects
   // `/api/v1/services/...rows/` to the slashless form before rewriting, the proxied request
   // hits the Django backend without a trailing slash, and APPEND_SLASH 301s to a Location that

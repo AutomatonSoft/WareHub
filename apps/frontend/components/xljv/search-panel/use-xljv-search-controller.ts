@@ -121,7 +121,7 @@ export function useXLJVSearchController(initialSite?: Site) {
       const { response, payload } = await xljvGetRubricsTree({ site, siteKey: normalizedSiteKey, language: "de" });
       if (!response.ok) throw new Error(payload.detail || `${t.requestFailed}: HTTP ${response.status}`);
       setRubrics(Array.isArray(payload.items) ? payload.items : []);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message || "Failed to load rubrics." : "Failed to load rubrics."); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message || t.xljvFailedLoadRubrics : t.xljvFailedLoadRubrics); }
     finally { setRubricsLoading(false); }
   }
   async function handleLoadDeliveryOptions() {
@@ -135,7 +135,7 @@ export function useXLJVSearchController(initialSite?: Site) {
       const items = Array.isArray(payload.items) ? payload.items : [];
       setDeliveryOptions(items);
       setCreateForm((prev) => { if (!prev) return prev; if (prev.jv_lieferzeitid && items.some((x) => String(x.id) === prev.jv_lieferzeitid)) return prev; const preferred = items.find((x) => x.is_default) || items[0]; return preferred ? { ...prev, jv_lieferzeitid: String(preferred.id) } : prev; });
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message || "Failed to load delivery options." : "Failed to load delivery options."); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message || t.xljvFailedLoadDeliveryOptions : t.xljvFailedLoadDeliveryOptions); }
     finally { setDeliveryOptionsLoading(false); }
   }
 
@@ -159,7 +159,7 @@ export function useXLJVSearchController(initialSite?: Site) {
       const fileList = Array.from(files);
       const concreteSiteKeys = siteKeyOptions.map((option) => String(option.value || "").trim()).filter((value) => Boolean(value) && value !== "ALL_SITES");
       const targetSiteKeys = isAllSitesSelected ? concreteSiteKeys : [siteKey.trim() || concreteSiteKeys[0] || ""].filter(Boolean);
-      if (targetSiteKeys.length === 0) throw new Error("No concrete site keys configured for upload.");
+      if (targetSiteKeys.length === 0) throw new Error(t.xljvNoConcreteSiteKeysForUpload);
       const mergedUrls: string[] = []; const uploadErrors: string[] = [];
       for (const targetSiteKey of targetSiteKeys) {
         const { response, payload: data } = await xljvUploadImages({ site, siteKey: targetSiteKey, ean: createForm.ean, files: fileList });
@@ -170,7 +170,17 @@ export function useXLJVSearchController(initialSite?: Site) {
       }
       if (mergedUrls.length === 0) throw new Error(uploadErrors[0] || t.uploadNoImageUrls);
       setCreateForm((prev) => prev ? { ...prev, image: prev.image || mergedUrls[0], images_json: JSON.stringify(mergedUrls.slice(1).map((url, index) => ({ image: url, sort_order: index }))) } : prev);
-      setSyncStatus(uploadErrors.length > 0 ? `${t.uploaded} ${mergedUrls.length} ${t.imagesToFtp}. Partial errors: ${uploadErrors.join(" | ")}` : isAllSitesSelected ? `${t.uploaded} ${mergedUrls.length} ${t.imagesToFtp} (${targetSiteKeys.length} sites).` : `${t.uploaded} ${mergedUrls.length} ${t.imagesToFtp}`);
+      setSyncStatus(
+        uploadErrors.length > 0
+          ? `${t.uploaded} ${mergedUrls.length} ${t.imagesToFtp}. ${t.xljvUploadPartialErrors.replace("{errors}", uploadErrors.join(" | "))}`
+          : isAllSitesSelected
+            ? t.xljvUploadSummaryWithSites
+              .replace("{uploaded}", t.uploaded)
+              .replace("{count}", String(mergedUrls.length))
+              .replace("{suffix}", t.imagesToFtp)
+              .replace("{sites}", String(targetSiteKeys.length))
+            : `${t.uploaded} ${mergedUrls.length} ${t.imagesToFtp}`
+      );
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message || t.failedUploadImageFiles : t.failedUploadImageFiles); }
     finally { setCreateImageUploadLoading(false); }
   }
@@ -178,24 +188,24 @@ export function useXLJVSearchController(initialSite?: Site) {
   async function handleSendCreatedProductToAllSites() {
     if (!createForm) return setError(t.clickCreateFirst);
     if (!window.confirm(buildXLJVWriteConfirmMessage({ action: "send_all_sites", ean: createForm.ean, labels: t }))) return;
-    await sendCreatedProductToAllSites({ createForm, site, createImageFiles, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateAllSitesLoading, setError, setSyncStatus, setSyncLog });
+    await sendCreatedProductToAllSites({ createForm, site, createImageFiles, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateAllSitesLoading, setError, setSyncStatus, setSyncLog, labels: t });
   }
   async function handleSendCreatedProduct() {
     if (!createForm) return setError(t.clickCreateFirst);
     if (!window.confirm(buildXLJVWriteConfirmMessage({ action: "send_created", ean: createForm.ean, labels: t }))) return;
     if (isAllSitesSelected) return handleSendCreatedProductToAllSites();
-    await sendCreatedProduct({ createForm, site, siteKey, siteKeyOptions, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateProductSendLoading, setError, setSyncStatus, setSyncLog, setEan, setItem, setCreateForm });
+    await sendCreatedProduct({ createForm, site, siteKey, siteKeyOptions, translateTexts, autoDetectSourceLanguage, convertCurrency, setCreateProductSendLoading, setError, setSyncStatus, setSyncLog, setEan, setItem, setCreateForm, labels: t });
   }
   async function handleSendToSelectedSites() {
     const precheckError = getSendToSelectedSitesPrecheckError({ ean, hasOrderDraft: Boolean(orderDraft), selectedSiteKeys, templateSiteKey, labels: t });
     if (precheckError) return setError(precheckError);
     if (!orderDraft) return setError(t.createOrderDraftFirst);
     if (!window.confirm(buildXLJVWriteConfirmMessage({ action: "send_selected_sites", ean, labels: t }))) return;
-    await sendToSelectedSites({ ean, orderDraft, site, selectedSiteKeys, templateSiteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSendSelectedLoading, setBatchLanguageMapsAttempted, setError, setSyncStatus, setSyncLog, setBatchLanguageMaps });
+    await sendToSelectedSites({ ean, orderDraft, site, selectedSiteKeys, templateSiteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSendSelectedLoading, setBatchLanguageMapsAttempted, setError, setSyncStatus, setSyncLog, setBatchLanguageMaps, labels: t });
   }
   async function handleSync() {
     if (!window.confirm(buildXLJVWriteConfirmMessage({ action: "sync", ean, labels: t }))) return;
-    await syncByEan({ ean, site, siteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSyncLoading, setError, setSyncStatus, setSyncLog, onSuccess: (normalizedEan, currentSite, currentSiteKey) => {
+    await syncByEan({ ean, site, siteKey, translateTexts, autoDetectSourceLanguage, convertCurrency, setSyncLoading, setError, setSyncStatus, setSyncLog, labels: t, onSuccess: (normalizedEan, currentSite, currentSiteKey) => {
       const targetSitesQuery = selectedSiteKeys.length > 0 ? `&target_sites=${encodeURIComponent(selectedSiteKeys.join(","))}` : "";
       router.push(`/xl-jv/edit?ean=${encodeURIComponent(normalizedEan)}&site=${encodeURIComponent(currentSite)}${currentSiteKey.trim() ? `&site_key=${encodeURIComponent(currentSiteKey.trim())}` : ""}${targetSitesQuery}`);
     } });
@@ -219,7 +229,7 @@ export function useXLJVSearchController(initialSite?: Site) {
   function handleCreateOrder() {
     const eanError = getRequiredEanError(ean, t);
     if (eanError) return setError(eanError);
-    if (!templateSiteKey) return setError("Choose template site.");
+    if (!templateSiteKey) return setError(t.chooseTemplateSite);
     const targetSitesQuery = selectedSiteKeys.length > 0 ? `&target_sites=${encodeURIComponent(selectedSiteKeys.join(","))}` : "";
     router.push(`/xl-jv/edit?ean=${encodeURIComponent(ean.trim())}&site=${encodeURIComponent(site)}&site_key=${encodeURIComponent(templateSiteKey)}${targetSitesQuery}`);
   }

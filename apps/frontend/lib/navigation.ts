@@ -10,22 +10,22 @@ import {
 } from "lucide-react";
 
 export const navigationItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/sofort-list", label: "Sofort list", icon: List },
-  { href: "/create-product", label: "Create product", icon: PlusSquare },
-  { href: "/product-editor", label: "Product Editor", icon: PencilRuler },
-  { href: "/marketplace", label: "Marketplace", icon: ChartColumnBig },
-  { href: "/warehouse-map", label: "WareHouseMap", icon: Map }
+  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/sofort-list", labelKey: "navSofortList", icon: List },
+  { href: "/create-product", labelKey: "navCreateProduct", icon: PlusSquare },
+  { href: "/product-editor", labelKey: "navProductEditor", icon: PencilRuler },
+  { href: "/marketplace", labelKey: "navMarketplace", icon: ChartColumnBig },
+  { href: "/warehouse-map", labelKey: "navWarehouseMap", icon: Map }
 ] as const;
 
 export const adminNavigationItem = {
   href: "/admin/users",
-  label: "Admin users",
+  labelKey: "navAdminUsers",
   icon: Users
 } as const;
 
 export const telegramAdminNavigationItem = {
   href: "/admin/telegram-access",
-  label: "Telegram access",
+  labelKey: "navTelegramAccess",
   icon: ShieldCheck,
 } as const;

@@ -357,6 +357,7 @@ def _ensure_local_jv_product_from_source(*, ean: str, site_key: str, actor: str)
         site_key=normalized_site_key,
         source_product_id=source_product["product_id"],
         effective_ean=effective_ean,
+        source_model=(source_product.get("model") or "").strip(),
     )
     if conflict_product is not None:
         return None, db_config, {
@@ -454,6 +455,7 @@ def _ensure_local_jv_product_from_snapshot(*, snapshot: dict, fallback_ean: str,
         site_key=normalized_site_key,
         source_product_id=source_product["product_id"],
         effective_ean=effective_ean,
+        source_model=(source_product.get("model") or "").strip(),
     )
     if conflict_product is not None:
         return None, {

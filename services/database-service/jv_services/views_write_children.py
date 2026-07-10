@@ -10,6 +10,10 @@ from .models import (
 )
 
 
+def _bounded_text(value, *, max_length: int) -> str:
+    return str(value or "").strip()[:max_length]
+
+
 def normalize_images_payload(items) -> list[tuple[str, int]]:
     normalized: list[tuple[str, int]] = []
     for item in items or []:
@@ -61,11 +65,11 @@ def bulk_create_descriptions(product: ImportedProduct, descriptions, *, modified
             ImportedProductDescription(
                 product=product,
                 language_id=int(item["language_id"]),
-                name=str(item.get("name") or ""),
+                name=_bounded_text(item.get("name"), max_length=255),
                 description=str(item.get("description") or ""),
                 tag=str(item.get("tag") or ""),
-                meta_title=str(item.get("meta_title") or ""),
-                meta_description=str(item.get("meta_description") or ""),
+                meta_title=_bounded_text(item.get("meta_title"), max_length=255),
+                meta_description=_bounded_text(item.get("meta_description"), max_length=255),
                 meta_keyword=str(item.get("meta_keyword") or ""),
                 is_modified_locally=bool(item.get("is_modified_locally", modified_default)),
             )

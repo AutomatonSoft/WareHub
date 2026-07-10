@@ -25,6 +25,6 @@ export function buildKauflandWriteConfirmMessage(input: {
   });
 }
 
-export function buildKauflandRequiredEanMessage(action: KauflandWriteAction): string {
-  return buildActionEanRequiredMessage(action);
+export function buildKauflandRequiredEanMessage(action: KauflandWriteAction, labels: Labels): string {
+  return buildActionEanRequiredMessage(action, labels);
 }

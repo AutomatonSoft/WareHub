@@ -1,41 +1,58 @@
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, Gauge, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { StatCard as UIStatCard } from "../ui/stat-card";
+import { useLabels } from "../../app/use-labels";
 import { cn } from "../../lib/cn";
 import type { KpiMetric } from "../../lib/mock-data";
+import { StatCard as UIStatCard } from "../ui/stat-card";
 
-const iconByMetricLabel: Record<string, LucideIcon> = {
-  "Total Products": Boxes,
-  "Stock Value": Wallet,
-  "Low Stock Items": AlertTriangle,
-  "Avg Fulfillment Rate": Gauge
+const iconByMetricId: Record<KpiMetric["id"], LucideIcon> = {
+  total_products: Boxes,
+  stock_value: Wallet,
+  low_stock_items: AlertTriangle,
+  avg_fulfillment_rate: Gauge
 };
 
-const descriptionByMetricLabel: Record<string, string> = {
-  "Total Products": "Warehouse catalog footprint",
-  "Stock Value": "Priced inventory exposure",
-  "Low Stock Items": "Orders pending replenishment",
-  "Avg Fulfillment Rate": "Paid orders against total volume"
-};
-
-const accentClassByMetricLabel: Record<string, string> = {
-  "Total Products": "wh-stat-card--products",
-  "Stock Value": "wh-stat-card--value",
-  "Low Stock Items": "wh-stat-card--risk",
-  "Avg Fulfillment Rate": "wh-stat-card--fulfillment"
+const accentClassByMetricId: Record<KpiMetric["id"], string> = {
+  total_products: "wh-stat-card--products",
+  stock_value: "wh-stat-card--value",
+  low_stock_items: "wh-stat-card--risk",
+  avg_fulfillment_rate: "wh-stat-card--fulfillment"
 };
 
 export function StatCard({ metric }: { metric: KpiMetric }) {
-  const MetricIcon = iconByMetricLabel[metric.label] ?? Boxes;
-  const accentClassName = accentClassByMetricLabel[metric.label] ?? "wh-stat-card--products";
+  const t = useLabels();
+  const MetricIcon = iconByMetricId[metric.id] ?? Boxes;
+  const accentClassName = accentClassByMetricId[metric.id] ?? "wh-stat-card--products";
+
+  const localizedMetric = {
+    total_products: {
+      label: t.totalProducts,
+      description: t.warehouseCatalogFootprint
+    },
+    stock_value: {
+      label: t.stockValue,
+      description: t.pricedInventoryExposure
+    },
+    low_stock_items: {
+      label: t.lowStockItems,
+      description: t.ordersPendingReplenishment
+    },
+    avg_fulfillment_rate: {
+      label: t.avgFulfillmentRate,
+      description: t.paidOrdersAgainstTotalVolume
+    }
+  }[metric.id] ?? {
+    label: metric.id,
+    description: ""
+  };
 
   return (
     <UIStatCard
       className={cn("wh-stat-card wh-section-card relative overflow-hidden", accentClassName)}
-      label={metric.label}
+      label={localizedMetric.label}
       value={metric.value}
-      description={descriptionByMetricLabel[metric.label]}
+      description={localizedMetric.description}
       icon={<MetricIcon aria-hidden="true" />}
     >
       <span

@@ -5,6 +5,7 @@ import { Check, ChevronDown, Filter, Search, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FieldGrid } from "@/components/ui/field-grid";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +23,7 @@ function SearchableFilterField(props: {
   ariaLabel: string;
   value: string;
   placeholder: string;
+  emptyLabel: string;
   onValueChange: (value: string) => void;
   options: SelectOption[];
 }) {
@@ -69,8 +71,8 @@ function SearchableFilterField(props: {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={`Search ${props.label.toLowerCase()}`}
-              aria-label={`Search ${props.label}`}
+              placeholder={props.placeholder}
+              aria-label={props.ariaLabel}
               className="wh-sofort-filter-menu__input"
             />
           </div>
@@ -91,7 +93,7 @@ function SearchableFilterField(props: {
                 );
               })
             ) : (
-              <div className="wh-sofort-filter-menu__empty">No matches</div>
+              <div className="wh-sofort-filter-menu__empty">{props.emptyLabel}</div>
             )}
           </div>
         </DropdownMenuContent>
@@ -121,9 +123,21 @@ type SofortListToolbarLabels = {
   color: string;
   material: string;
   listing: string;
+  bWare: string;
+  inTransit: string;
   warehouse: string;
   store: string;
   clear: string;
+  filters: string;
+  hideFilters: string;
+  flags: string;
+  noMatchesFound: string;
+  searchProductsAria: string;
+  actionsAria: string;
+  filtersAria: string;
+  searchFilterPlaceholder: string;
+  searchFilterAria: string;
+  activeSuffix: string;
 };
 
 export function SofortListToolbar(props: {
@@ -142,6 +156,8 @@ export function SofortListToolbar(props: {
   colorFilter: string;
   materialFilter: string;
   listingFilter: string;
+  bWareOnlyFilter: boolean;
+  inTransitOnlyFilter: boolean;
   placeOptions: string[];
   quantityOptions: string[];
   roomOptions: string[];
@@ -162,6 +178,8 @@ export function SofortListToolbar(props: {
   onColorFilterChange: (value: string) => void;
   onMaterialFilterChange: (value: string) => void;
   onListingFilterChange: (value: string) => void;
+  onBWareOnlyFilterChange: (checked: boolean) => void;
+  onInTransitOnlyFilterChange: (checked: boolean) => void;
   onClearSingleFilter: (key: string) => void;
   onReset: () => void;
   labels: SofortListToolbarLabels;
@@ -170,7 +188,7 @@ export function SofortListToolbar(props: {
   void props.onClearSingleFilter;
 
   const { labels } = props;
-  const clearLabel = props.hasActiveFilters ? `${labels.clear} (active)` : labels.clear;
+  const clearLabel = props.hasActiveFilters ? `${labels.clear} ${labels.activeSuffix}` : labels.clear;
 
   const locationOptions: SelectOption[] = [
     { value: "all", label: labels.allLocations },
@@ -201,15 +219,15 @@ export function SofortListToolbar(props: {
               onChange={(event) => props.onQueryChange(event.target.value)}
               placeholder={props.searchPlaceholder}
               className="wh-input w-full"
-              aria-label="Search products"
+              aria-label={labels.searchProductsAria}
             />
           </div>
         </ToolbarGroup>
-        <ToolbarGroup className="wh-sofort-toolbar__actions" role="group" aria-label="Sofort list actions">
+        <ToolbarGroup className="wh-sofort-toolbar__actions" role="group" aria-label={labels.actionsAria}>
           {props.primaryAction ? <div className="wh-sofort-toolbar__primary-action">{props.primaryAction}</div> : null}
           <Button type="button" variant="outline" onClick={props.onToggleFilters} className="wh-sofort-toolbar__button">
             <Filter />
-            {props.showFilters ? "Hide filters" : "Filters"}
+            {props.showFilters ? labels.hideFilters : labels.filters}
           </Button>
           <Button type="button" variant="outline" onClick={props.onReset} className="wh-sofort-toolbar__button">
             <Trash2 />
@@ -221,80 +239,99 @@ export function SofortListToolbar(props: {
         </ToolbarGroup>
       </div>
       {props.showFilters ? (
-        <div className="wh-sofort-toolbar__filters" role="group" aria-label="Sofort list filters">
+        <div className="wh-sofort-toolbar__filters" role="group" aria-label={labels.filtersAria}>
           <FieldGrid className="wh-sofort-toolbar__filter-grid">
             <SearchableFilterField
               label={labels.place}
-              ariaLabel={labels.place}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.place)}
               value={props.placeFilter || "all"}
-              placeholder={labels.allPlaces}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.place.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onPlaceFilterChange}
               options={placeOptions}
             />
             <SearchableFilterField
               label={labels.location}
-              ariaLabel={labels.location}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.location)}
               value={props.locationFilter}
-              placeholder={labels.allLocations}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.location.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onLocationFilterChange}
               options={locationOptions}
             />
             <SearchableFilterField
               label={labels.quantity}
-              ariaLabel={labels.quantity}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.quantity)}
               value={props.quantityFilter || "all"}
-              placeholder={labels.allQuantities}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.quantity.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onQuantityFilterChange}
               options={quantityOptions}
             />
             <SearchableFilterField
               label={labels.room}
-              ariaLabel={labels.room}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.room)}
               value={props.roomFilter || "all"}
-              placeholder={labels.allRooms}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.room.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onRoomFilterChange}
               options={roomOptions}
             />
             <SearchableFilterField
               label={labels.type}
-              ariaLabel={labels.type}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.type)}
               value={props.typeFilter || "all"}
-              placeholder={labels.allTypes}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.type.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onTypeFilterChange}
               options={typeOptions}
             />
             <SearchableFilterField
               label={labels.company}
-              ariaLabel={labels.company}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.company)}
               value={props.companyFilter || "all"}
-              placeholder={labels.allCompanies}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.company.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onCompanyFilterChange}
               options={companyOptions}
             />
             <SearchableFilterField
               label={labels.color}
-              ariaLabel={labels.color}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.color)}
               value={props.colorFilter || "all"}
-              placeholder={labels.allColors}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.color.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onColorFilterChange}
               options={colorOptions}
             />
             <SearchableFilterField
               label={labels.material}
-              ariaLabel={labels.material}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.material)}
               value={props.materialFilter || "all"}
-              placeholder={labels.allMaterials}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.material.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
               onValueChange={props.onMaterialFilterChange}
               options={materialOptions}
             />
-            <SearchableFilterField
-              label={labels.listing}
-              ariaLabel={labels.listing}
-              value={props.listingFilter}
-              placeholder={labels.allListingStatuses}
-              onValueChange={props.onListingFilterChange}
-              options={listingOptions}
-            />
+            <div className="space-y-2">
+              <span className="wh-sofort-filter-field__label">{labels.flags}</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
+                  <span className="text-sm font-medium text-foreground">{labels.bWare}</span>
+                  <Checkbox
+                    checked={props.bWareOnlyFilter}
+                    onCheckedChange={(checked) => props.onBWareOnlyFilterChange(checked === true)}
+                  />
+                </label>
+                <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
+                  <span className="text-sm font-medium text-foreground">{labels.inTransit}</span>
+                  <Checkbox
+                    checked={props.inTransitOnlyFilter}
+                    onCheckedChange={(checked) => props.onInTransitOnlyFilterChange(checked === true)}
+                  />
+                </label>
+              </div>
+            </div>
           </FieldGrid>
         </div>
       ) : null}

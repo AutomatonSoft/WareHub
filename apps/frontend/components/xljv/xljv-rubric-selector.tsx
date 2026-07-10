@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { RubricTreeNode, Site } from "./xljv-search-utils";
@@ -17,6 +18,7 @@ type XLJVRubricSelectorProps = {
 };
 
 export function XLJVRubricSelector(props: XLJVRubricSelectorProps) {
+  const t = useLabels();
   const rubricsTree = useMemo(() => {
     const byParent = new Map<number, RubricTreeNode[]>();
     for (const node of props.rubrics) {
@@ -63,21 +65,21 @@ export function XLJVRubricSelector(props: XLJVRubricSelectorProps) {
   return (
     <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold">{props.site === "JV" ? "JV Rubrics" : "XL Categories"}</span>
+        <span className="text-xs font-semibold">{props.site === "JV" ? t.xljvJvRubrics : t.xljvXlCategories}</span>
         <Button type="button" variant="ghost" onClick={() => void props.onLoadRubrics()} disabled={props.rubricsLoading}>
-          {props.rubricsLoading ? "Loading..." : "Load categories"}
+          {props.rubricsLoading ? t.loading : t.xljvLoadCategories}
         </Button>
       </div>
       <ScrollArea className="h-44 rounded-xl border border-border p-2 text-xs">
         {props.rubrics.length === 0 ? (
-          <div className="text-[color:var(--text-muted)]">No rubrics loaded.</div>
+          <div className="text-[color:var(--text-muted)]">{t.xljvNoRubricsLoaded}</div>
         ) : (
           rubricsTree.map((node) => renderRubricNode(node, 0))
         )}
       </ScrollArea>
       {props.selectedRubricIds.length > 0 ? (
         <div className="mt-2">
-          <div className="mb-1 text-xs font-semibold">Main rubric</div>
+          <div className="mb-1 text-xs font-semibold">{t.xljvMainRubric}</div>
           <select
             className="ui-select w-full rounded-xl border border-border bg-card px-2 py-2 text-xs"
             value={props.mainRubricId ?? props.selectedRubricIds[0]}
@@ -87,7 +89,7 @@ export function XLJVRubricSelector(props: XLJVRubricSelectorProps) {
               const rubric = props.rubrics.find((x) => x.id === id);
               return (
                 <option key={id} value={id}>
-                  {(rubric?.name || "rubrik")} ({id})
+                  {(rubric?.name || t.xljvRubricFallbackName)} ({id})
                 </option>
               );
             })}

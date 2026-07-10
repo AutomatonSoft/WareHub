@@ -2,9 +2,12 @@ from rest_framework import serializers
 
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
 class KidModelSerializer(serializers.ModelSerializer):
+    place = serializers.CharField(required=False, allow_blank=True, allow_null=True, validators=[])
+
     class Meta:
         model = Kid
         fields = "__all__"
@@ -29,6 +32,13 @@ class KidModelSerializer(serializers.ModelSerializer):
                 f"Некорректный account. Допустимые значения: {allowed_text}."
             )
         return value
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return value
+        if is_invalid_multi_letter_pool_place(value):
+            raise serializers.ValidationError("Pool subplace may contain at most one letter from A to Z.")
+        return normalize_place(value)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useLabels } from "../../app/use-labels";
 import { AppShell } from "../layout/app-shell";
 import { Card, CardContent } from "../ui/card";
 import { useToast } from "../shared/toast-provider";
@@ -38,7 +39,7 @@ import {
   removeHoodImage
 } from "./product-editor-hood-sync";
 import { ProductEditorActiveGroupPanel } from "./product-editor-active-group-panel";
-import { PRODUCT_EDITOR_TAB_COPY } from "./product-editor-copy";
+import { getProductEditorTabCopy } from "./product-editor-copy";
 import type {
   ProductEditorApplyResponse,
   ProductEditorDiscoverResponse,
@@ -69,6 +70,8 @@ function isValidProductIdentifier(value: string): boolean {
 
 function ProductEditorContent() {
   const { showToast } = useToast();
+  const t = useLabels();
+  const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
   const [eanInput, setEanInput] = useState("");
   const [tabEanInputs, setTabEanInputs] = useState<Record<string, string>>({});
   const [discovering, setDiscovering] = useState(false);
@@ -187,7 +190,7 @@ function ProductEditorContent() {
       if (activeGroupId === "JV") {
         const loaded = await loadJvDraftByEan(ean);
         if (!loaded) {
-          showToast(`Product ${ean} not found for JV tab.`, "error");
+          showToast(t.productEditorProductNotFoundForTab.replace("{ean}", ean).replace("{tab}", "JV"), "error");
           return;
         }
         showToast(`JV tab loaded for ${ean}.`, "success");
@@ -205,15 +208,15 @@ function ProductEditorContent() {
       if (activeGroupId === "HOOD") {
         const loaded = await loadHoodDraftByEan(ean);
         if (!loaded) {
-          showToast(`Product ${ean} not found for ${activeTabKey.replace("_", " ")} tab.`, "error");
+          showToast(t.productEditorProductNotFoundForTab.replace("{ean}", ean).replace("{tab}", activeTabKey.replace("_", " ")), "error");
           return;
         }
-        showToast(`${activeTabKey.replace("_", " ")} tab loaded for ${ean}.`, "success");
+        showToast(t.productEditorTabLoadedForEan.replace("{tab}", activeTabKey.replace("_", " ")).replace("{ean}", ean), "success");
         return;
       }
       showToast("Local tab search is currently available for JV, XL, and HOOD tabs.", "error");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Tab search failed.";
+      const message = error instanceof Error ? error.message : t.productEditorTabSearchFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -232,9 +235,9 @@ function ProductEditorContent() {
       setDiscover(normalizedResponse);
       setActiveGroupId(nextActiveGroup);
       setActiveTabKey(getDefaultTabKeyForGroup(nextActiveGroup));
-      showToast(`Product Editor discover completed for ${ean}.`, "success");
+      showToast(t.productEditorDiscoverCompleted.replace("{ean}", ean), "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Product Editor discover failed.";
+      const message = error instanceof Error ? error.message : t.productEditorDiscoverFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -250,7 +253,7 @@ function ProductEditorContent() {
       const account = getHoodAccountFromTab(tabKey);
       const { response, payload } = await fetchHoodByEan(currentDiscover.ean, account);
       if (!response.ok) {
-        throw new Error(payload.detail || `HOOD load failed: HTTP ${response.status}`);
+        throw new Error(payload.detail || t.productEditorHoodLoadFailedHttp.replace("{status}", String(response.status)));
       }
       const firstItem = extractFirstItemFromPayload(payload.external_payload);
       const hydrated = buildHoodDraftFromApiItem({
@@ -261,14 +264,14 @@ function ProductEditorContent() {
         rawPayload: (payload.external_payload && typeof payload.external_payload === "object" ? payload.external_payload : {}) as Record<string, unknown>
       });
       if (!hydrated) {
-        throw new Error(`No HOOD item found for ${currentDiscover.ean} (${account.toUpperCase()}).`);
+        throw new Error(t.productEditorNoHoodItemFound.replace("{ean}", currentDiscover.ean).replace("{account}", account.toUpperCase()));
       }
       setHoodTabDraft(tabKey, hydrated);
       setInitialHoodTabDraft(tabKey, hydrated);
       setHoodTabWarnings(tabKey, []);
       clearPlanAndJobState();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Hood draft load failed.";
+      const message = error instanceof Error ? error.message : t.productEditorHoodDraftLoadFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -368,7 +371,7 @@ function ProductEditorContent() {
       const account = getHoodAccountFromTab(tabKey);
       const { response, payload } = await fetchHoodByEan(ean, account);
       if (!response.ok) {
-        throw new Error(payload.detail || `HOOD load failed: HTTP ${response.status}`);
+        throw new Error(payload.detail || t.productEditorHoodLoadFailedHttp.replace("{status}", String(response.status)));
       }
       const firstItem = extractFirstItemFromPayload(payload.external_payload);
       const hydrated = buildHoodDraftFromApiItem({
@@ -437,14 +440,14 @@ function ProductEditorContent() {
           imageRole: input.imageRole
         });
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error("JV image upload failed.");
+        lastError = error instanceof Error ? error : new Error(t.productEditorJvImageUploadFailed);
         if (attempt >= JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE) {
           break;
         }
         await new Promise<void>((resolve) => window.setTimeout(resolve, JV_IMAGE_UPLOAD_RETRY_DELAY_MS));
       }
     }
-    throw lastError ?? new Error("JV image upload failed.");
+    throw lastError ?? new Error(t.productEditorJvImageUploadFailed);
   }
 
   type JvGalleryUploadSource = {
@@ -590,15 +593,15 @@ function ProductEditorContent() {
         currentMainUpload &&
         JSON.stringify(currentMainUpload.uploaded_image_urls) !== JSON.stringify(baselineMainUpload.uploaded_image_urls)
       ) {
-        throw new Error(`JV image upload path mismatch for ${siteKey}. Upload aborted before batch save.`);
+        throw new Error(t.productEditorJvUploadPathMismatch.replace("{siteKey}", siteKey));
       }
 
       if (currentAdditionalUploads.length !== baselineAdditionalUploads.length) {
-        throw new Error(`JV gallery upload count mismatch for ${siteKey}. Upload aborted before batch save.`);
+        throw new Error(t.productEditorJvUploadCountMismatch.replace("{siteKey}", siteKey));
       }
       for (let index = 0; index < currentAdditionalUploads.length; index += 1) {
         if (String(currentAdditionalUploads[index]?.image || "").trim() !== String(baselineAdditionalUploads[index]?.image || "").trim()) {
-          throw new Error(`JV gallery upload path mismatch for ${siteKey}. Upload aborted before batch save.`);
+          throw new Error(t.productEditorJvUploadPathMismatch.replace("{siteKey}", siteKey));
         }
       }
     }
@@ -629,12 +632,12 @@ function ProductEditorContent() {
   async function handleReviewChanges() {
     const { activeDraft, changedFields, selectedTargetIds } = getPlanContext();
     if (!activeDraft || changedFields.length === 0) {
-      showToast("No draft changes to review.", "error");
+      showToast(t.productEditorNoDraftChanges, "error");
       return;
     }
     const planEan = getPlanEan(activeDraft);
     if (!isValidProductIdentifier(planEan)) {
-      showToast("Active tab product identifier is invalid.", "error");
+      showToast(t.productEditorInvalidIdentifier, "error");
       return;
     }
     setPlanLoading(true);
@@ -651,9 +654,9 @@ function ProductEditorContent() {
       setApplyResponse(null);
       setJobResponse(null);
       setApplyConfirmed(false);
-      showToast(`Plan generated for ${response.targets.map((target) => target.label).join(", ")}.`, "success");
+      showToast(t.productEditorPlanGenerated.replace("{targets}", response.targets.map((target) => target.label).join(", ")), "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Product Editor plan failed.";
+      const message = error instanceof Error ? error.message : t.productEditorPlanFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -698,7 +701,7 @@ function ProductEditorContent() {
         applied: 0,
         skipped: 0,
         progress_phase: "planning",
-        progress_message: "Preparing orchestrator plan."
+        progress_message: t.productEditorPreparingOrchestratorPlan
       },
       targets: [],
       error: null
@@ -784,7 +787,7 @@ function ProductEditorContent() {
         payload && typeof payload === "object" && "detail" in (payload as Record<string, unknown>)
           ? String((payload as Record<string, unknown>).detail || "")
           : "";
-      throw new Error(detail || `HOOD FTP upload failed: HTTP ${response.status}`);
+      throw new Error(detail || `${t.productEditorFtpUploadFailed} HTTP ${response.status}`);
     }
 
     const uploadedUrls =
@@ -792,7 +795,7 @@ function ProductEditorContent() {
         ? (payload as { uploaded_image_urls?: unknown[] }).uploaded_image_urls!.map((item) => String(item || "").trim()).filter(Boolean)
         : [];
     if (uploadedUrls.length === 0) {
-      throw new Error("FTP upload finished but no URLs were returned.");
+      throw new Error(t.productEditorFtpUploadNoUrls);
     }
 
     return uploadedUrls;
@@ -804,7 +807,7 @@ function ProductEditorContent() {
 
     const ean = hoodDraft.ean.trim();
     if (!isValidProductIdentifier(ean)) {
-      showToast("Load HOOD product first, then upload images.", "error");
+      showToast(t.productEditorLoadHoodBeforeUpload, "error");
       return;
     }
 
@@ -848,9 +851,9 @@ function ProductEditorContent() {
       }
 
       applyHoodImagesUpdate(nextImages);
-      showToast(`Uploaded ${uploadedCount} image(s) to HOOD FTP.`, "success");
+      showToast(t.productEditorUploadedHoodImages.replace("{count}", String(uploadedCount)), "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "HOOD FTP upload failed.";
+      const message = error instanceof Error ? error.message : t.productEditorFtpUploadFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -864,13 +867,13 @@ function ProductEditorContent() {
 
     const ean = hoodDraft.ean.trim();
     if (!isValidProductIdentifier(ean)) {
-      showToast("HOOD product identifier is invalid.", "error");
+      showToast(t.productEditorHoodIdentifierInvalid, "error");
       return;
     }
 
     const patchFiles = extractPendingUploadFiles(hoodDraft.pending_uploads);
     if (hoodChangedFields.length === 0 && patchFiles.length === 0) {
-      showToast("No edited HOOD fields to apply.", "error");
+      showToast(t.productEditorNoEditedHoodFields, "error");
       return;
     }
 
@@ -890,16 +893,16 @@ function ProductEditorContent() {
           payload && typeof payload === "object" && "detail" in (payload as Record<string, unknown>)
             ? String((payload as Record<string, unknown>).detail || "")
             : "";
-        throw new Error(detail || `HOOD update failed: HTTP ${response.status}`);
+        throw new Error(detail || t.productEditorHoodUpdateFailedHttp.replace("{status}", String(response.status)));
       }
       const reloaded = await loadHoodDraftByEan(ean);
       if (!reloaded) {
-        showToast("HOOD updated, but automatic reload returned no item.", "success");
+        showToast(t.productEditorHoodUpdatedReloadMissing, "success");
       } else {
-        showToast("HOOD item updated successfully.", "success");
+        showToast(t.productEditorHoodUpdatedSuccess, "success");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "HOOD update failed.";
+      const message = error instanceof Error ? error.message : t.productEditorHoodUpdateFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -924,7 +927,7 @@ function ProductEditorContent() {
       await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
     }
 
-    throw new Error(`Orchestrator job ${jobId} polling timed out.`);
+    throw new Error(t.productEditorOrchestratorPollingTimedOut.replace("{jobId}", jobId));
   }
 
   async function handleApplyPlan() {
@@ -934,10 +937,10 @@ function ProductEditorContent() {
     try {
       const response = await applyProductEditorPlan(planResponse.plan_id);
       setApplyResponse(response);
-      showToast(`Apply accepted for job ${response.job_id.slice(0, 8)}.`, "success");
+      showToast(t.productEditorApplyAcceptedShort.replace("{jobId}", response.job_id.slice(0, 8)), "success");
       await refreshJob(response.job_id, true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Product Editor apply failed.";
+      const message = error instanceof Error ? error.message : t.productEditorApplyFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -951,10 +954,15 @@ function ProductEditorContent() {
       const response = await getProductEditorJob(jobId);
       setJobResponse(response);
       if (showSuccessToast) {
-        showToast(`Job ${jobId.slice(0, 8)} loaded with status ${response.status}.`, "success");
+        showToast(
+          t.productEditorJobLoadedStatus
+            .replace("{jobId}", jobId.slice(0, 8))
+            .replace("{status}", String(response.status)),
+          "success"
+        );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Product Editor job refresh failed.";
+      const message = error instanceof Error ? error.message : t.productEditorJobRefreshFailed;
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1038,7 +1046,7 @@ function ProductEditorContent() {
   }
 
   return (
-    <AppShell title="Product Editor" subtitle="Orchestrator-only draft workspace for centralized product editing.">
+    <AppShell title={t.navProductEditor} subtitle={t.productEditorWorkspaceSubtitle}>
       <div className="wh-product-editor-page flex w-full flex-col gap-4">
         <ProductEditorHeaderCard
           eanInput={eanInput}
@@ -1059,7 +1067,7 @@ function ProductEditorContent() {
                   value={tab.key}
                   className="relative h-10 min-w-[110px] rounded-[var(--radius-control)] border border-transparent px-3 text-xs font-semibold uppercase tracking-normal transition-colors hover:border-border/80 hover:bg-background/70 data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
                 >
-                  {tab.label}
+                  {getProductEditorDisplayTabLabel(tab.key, t)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -1075,7 +1083,9 @@ function ProductEditorContent() {
         <ProductEditorActiveGroupPanel
           discover={discover}
           activeGroupId={activeGroupId}
-          activeTabLabel={PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => tab.key === activeTabKey)?.label ?? PRODUCT_EDITOR_TAB_COPY[activeGroupId].label}
+          activeTabLabel={PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => tab.key === activeTabKey)
+            ? getProductEditorDisplayTabLabel(activeTabKey, t)
+            : PRODUCT_EDITOR_TAB_COPY[activeGroupId].label}
           hoodDraft={hoodDraft}
           initialHoodDraft={initialHoodDraft}
           hoodWarnings={hoodWarnings}
@@ -1188,18 +1198,45 @@ function getPlanEan(activeDraft: ProductEditorHoodDraft | ProductEditorJvDraft):
   return String(activeDraft.ean || "").trim();
 }
 
-const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; label: string; groupId: ProductEditorGroupId }> = [
-  { key: "JV", label: "JV", groupId: "JV" },
-  { key: "XL", label: "XL", groupId: "XL" },
-  { key: "HOOD_JV", label: "HOOD JV", groupId: "HOOD" },
-  { key: "HOOD_XL", label: "HOOD XL", groupId: "HOOD" },
-  { key: "OTTO_JV", label: "OTTO JV", groupId: "OTTO" },
-  { key: "OTTO_XL", label: "OTTO XL", groupId: "OTTO" },
-  { key: "KAUFLAND_JV", label: "KAUFLAND JV", groupId: "KAUFLAND" },
-  { key: "KAUFLAND_XL", label: "KAUFLAND XL", groupId: "KAUFLAND" },
-  { key: "EBAY_JV", label: "EBAY JV", groupId: "EBAY" },
-  { key: "EBAY_XL", label: "EBAY XL", groupId: "EBAY" }
+const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGroupId }> = [
+  { key: "JV", groupId: "JV" },
+  { key: "XL", groupId: "XL" },
+  { key: "HOOD_JV", groupId: "HOOD" },
+  { key: "HOOD_XL", groupId: "HOOD" },
+  { key: "OTTO_JV", groupId: "OTTO" },
+  { key: "OTTO_XL", groupId: "OTTO" },
+  { key: "KAUFLAND_JV", groupId: "KAUFLAND" },
+  { key: "KAUFLAND_XL", groupId: "KAUFLAND" },
+  { key: "EBAY_JV", groupId: "EBAY" },
+  { key: "EBAY_XL", groupId: "EBAY" }
 ];
+
+function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof useLabels>): string {
+  switch (tabKey) {
+    case "JV":
+      return t.channelJv;
+    case "XL":
+      return t.channelXl;
+    case "HOOD_JV":
+      return `${t.channelHood} ${t.channelJv}`;
+    case "HOOD_XL":
+      return `${t.channelHood} ${t.channelXl}`;
+    case "OTTO_JV":
+      return `${t.channelOtto} ${t.channelJv}`;
+    case "OTTO_XL":
+      return `${t.channelOtto} ${t.channelXl}`;
+    case "KAUFLAND_JV":
+      return `${t.channelKaufland} ${t.channelJv}`;
+    case "KAUFLAND_XL":
+      return `${t.channelKaufland} ${t.channelXl}`;
+    case "EBAY_JV":
+      return `${t.channelEbay} ${t.channelJv}`;
+    case "EBAY_XL":
+      return `${t.channelEbay} ${t.channelXl}`;
+    default:
+      return tabKey;
+  }
+}
 
 function createEmptyHoodDraftsByTab(): HoodDraftsByTab {
   return {
@@ -1282,7 +1319,7 @@ function getPreferredTargetIdForTab(discover: ProductEditorDiscoverResponse, tab
 
 export function ProductEditorShell() {
   return (
-    <Suspense fallback={<LoadingState title="Loading product editor workspace..." />}>
+    <Suspense fallback={<LoadingState titleKey="productEditorLoadingWorkspace" />}>
       <ProductEditorContent />
     </Suspense>
   );

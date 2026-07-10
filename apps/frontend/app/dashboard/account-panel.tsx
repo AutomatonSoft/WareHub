@@ -52,7 +52,7 @@ export function AccountPanel({ apiBase, token, lang, user, onUserUpdated }: Acco
       const profile = await fetchCurrentUser(apiBase, token);
       onUserUpdated(profile);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Profile refresh failed");
+      setMessage(error instanceof Error ? error.message : t.failedLoadProfile);
     } finally {
       setLoadingProfile(false);
     }

@@ -68,17 +68,24 @@ from otto_service.views import (
     OttoProductUpsertAPIView,
 )
 from jv_services.split_views import (
+    JVBatchApplyByArtikelnrAPIView,
     JVBatchApplyByEANAPIView,
     JVBatchJobStatusAPIView,
+    JVBatchPlanByArtikelnrAPIView,
     JVBatchPlanByEANAPIView,
     JVDeliveryOptionsAPIView,
+    JVLocalProductByArtikelnrAPIView,
     JVLocalProductByEANAPIView,
+    JVProductByArtikelnrAPIView,
     JVProductByEANAPIView,
     JVProductCreateAndPushAPIView,
     JVProductCreateJobEnqueueAPIView,
+    JVProductSyncByArtikelnrAPIView,
     JVProductSyncByEANAPIView,
+    JVProductUpdateByArtikelnrAPIView,
     JVProductUpdateByEANAPIView,
     JVRubricsTreeAPIView,
+    JVSitesByArtikelnrAPIView,
     JVSitesByEANAPIView,
 )
 from xl_services.views import (
@@ -253,8 +260,10 @@ api_v1_patterns = [
     ),
     path("api/v1/xl/products/by-ean/<str:ean>/", XLProductByEANAPIView.as_view(), name="xl-product-by-ean-v1"),
     path("api/v1/jv/products/by-ean/<str:ean>/", JVProductByEANAPIView.as_view(), name="jv-product-by-ean-v1"),
+    path("api/v1/jv/products/by-artikelnr/<str:ean>/", JVProductByArtikelnrAPIView.as_view(), name="jv-product-by-artikelnr-v1"),
     path("api/v1/xl/sites/by-ean/<str:ean>/", XLSitesByEANAPIView.as_view(), name="xl-sites-by-ean-v1"),
     path("api/v1/jv/sites/by-ean/<str:ean>/", JVSitesByEANAPIView.as_view(), name="jv-sites-by-ean-v1"),
+    path("api/v1/jv/sites/by-artikelnr/<str:ean>/", JVSitesByArtikelnrAPIView.as_view(), name="jv-sites-by-artikelnr-v1"),
     path("api/v1/xl/rubrics/tree/", XLRubricsTreeAPIView.as_view(), name="xl-rubrics-tree-v1"),
     path("api/v1/jv/rubrics/tree/", JVRubricsTreeAPIView.as_view(), name="jv-rubrics-tree-v1"),
     path("api/v1/xl/delivery-options/", XLDeliveryOptionsAPIView.as_view(), name="xl-delivery-options-v1"),
@@ -280,6 +289,11 @@ api_v1_patterns = [
         name="jv-product-local-by-ean-v1",
     ),
     path(
+        "api/v1/jv/products/local-by-artikelnr/<str:ean>/",
+        JVLocalProductByArtikelnrAPIView.as_view(),
+        name="jv-product-local-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/products/update-by-ean/<str:ean>/",
         XLProductUpdateByEANAPIView.as_view(),
         name="xl-product-update-by-ean-v1",
@@ -288,6 +302,11 @@ api_v1_patterns = [
         "api/v1/jv/products/update-by-ean/<str:ean>/",
         JVProductUpdateByEANAPIView.as_view(),
         name="jv-product-update-by-ean-v1",
+    ),
+    path(
+        "api/v1/jv/products/update-by-artikelnr/<str:ean>/",
+        JVProductUpdateByArtikelnrAPIView.as_view(),
+        name="jv-product-update-by-artikelnr-v1",
     ),
     path(
         "api/v1/xl/products/sync-by-ean/<str:ean>/",
@@ -300,6 +319,11 @@ api_v1_patterns = [
         name="jv-product-sync-by-ean-v1",
     ),
     path(
+        "api/v1/jv/products/sync-by-artikelnr/<str:ean>/",
+        JVProductSyncByArtikelnrAPIView.as_view(),
+        name="jv-product-sync-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/batch/update-by-ean/<str:ean>/apply/",
         XLBatchApplyByEANAPIView.as_view(),
         name="xl-batch-apply-by-ean-v1",
@@ -310,6 +334,11 @@ api_v1_patterns = [
         name="jv-batch-apply-by-ean-v1",
     ),
     path(
+        "api/v1/jv/batch/update-by-artikelnr/<str:ean>/apply/",
+        JVBatchApplyByArtikelnrAPIView.as_view(),
+        name="jv-batch-apply-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/batch/update-by-ean/<str:ean>/plan/",
         XLBatchPlanByEANAPIView.as_view(),
         name="xl-batch-plan-by-ean-v1",
@@ -318,6 +347,11 @@ api_v1_patterns = [
         "api/v1/jv/batch/update-by-ean/<str:ean>/plan/",
         JVBatchPlanByEANAPIView.as_view(),
         name="jv-batch-plan-by-ean-v1",
+    ),
+    path(
+        "api/v1/jv/batch/update-by-artikelnr/<str:ean>/plan/",
+        JVBatchPlanByArtikelnrAPIView.as_view(),
+        name="jv-batch-plan-by-artikelnr-v1",
     ),
     path(
         "api/v1/jv/batch/jobs/<int:job_id>/",

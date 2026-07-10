@@ -3,11 +3,13 @@
 import * as React from "react"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, MoreHorizontalIcon } from "lucide-react"
 
+import { useLabels } from "@/app/use-labels"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
-  return <nav aria-label="Pagination" className={cn("mx-auto flex w-full justify-center", className)} {...props} />
+  const t = useLabels()
+  return <nav aria-label={t.pagination} className={cn("mx-auto flex w-full justify-center", className)} {...props} />
 }
 
 function PaginationContent({ className, ...props }: React.ComponentProps<"ul">) {
@@ -45,9 +47,10 @@ function PaginationPrevious({
   className,
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const t = useLabels()
   return (
     <PaginationLink
-      aria-label="Go to previous page"
+      aria-label={t.goToPreviousPage}
       size="icon-xs"
       className={cn("rounded-xl", className)}
       {...props}
@@ -61,9 +64,10 @@ function PaginationNext({
   className,
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  const t = useLabels()
   return (
     <PaginationLink
-      aria-label="Go to next page"
+      aria-label={t.goToNextPage}
       size="icon-xs"
       className={cn("rounded-xl", className)}
       {...props}
@@ -74,9 +78,10 @@ function PaginationNext({
 }
 
 function PaginationFirst({ className, ...props }: React.ComponentProps<typeof PaginationLink>) {
+  const t = useLabels()
   return (
     <PaginationLink
-      aria-label="Go to first page"
+      aria-label={t.goToFirstPage}
       size="icon-xs"
       className={cn("rounded-xl", className)}
       {...props}
@@ -87,9 +92,10 @@ function PaginationFirst({ className, ...props }: React.ComponentProps<typeof Pa
 }
 
 function PaginationLast({ className, ...props }: React.ComponentProps<typeof PaginationLink>) {
+  const t = useLabels()
   return (
     <PaginationLink
-      aria-label="Go to last page"
+      aria-label={t.goToLastPage}
       size="icon-xs"
       className={cn("rounded-xl", className)}
       {...props}
@@ -100,10 +106,11 @@ function PaginationLast({ className, ...props }: React.ComponentProps<typeof Pag
 }
 
 function PaginationEllipsis({ className, ...props }: React.ComponentProps<"span">) {
+  const t = useLabels()
   return (
     <span aria-hidden className={cn("flex size-8 items-center justify-center text-muted-foreground", className)} {...props}>
       <MoreHorizontalIcon className="size-4" />
-      <span className="sr-only">More pages</span>
+      <span className="sr-only">{t.morePages}</span>
     </span>
   )
 }

@@ -1,16 +1,18 @@
 "use client";
 
+import { useLabels } from "../../../app/use-labels";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card";
 
 export function XLJVEmptyState({ message }: { message: string }) {
+  const t = useLabels();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>No Result</CardTitle>
+        <CardTitle>{t.xljvNoResult}</CardTitle>
         <CardDescription>{message}</CardDescription>
       </CardHeader>
       <CardContent className="text-xs text-muted-foreground">
-        Search by EAN to load XL/JV product data.
+        {t.xljvSearchByEanHint}
       </CardContent>
     </Card>
   );

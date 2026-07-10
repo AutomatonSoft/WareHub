@@ -35,15 +35,18 @@ function pretty(value: unknown): string {
   }
 }
 
-function parseStringArrayJson(raw: string): { ok: true; value: string[] } | { ok: false; message: string } {
+function parseStringArrayJson(
+  raw: string,
+  labels: { pictureMustBeJsonArray: string; invalidPictureJson: string }
+): { ok: true; value: string[] } | { ok: false; message: string } {
   try {
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) {
-      return { ok: false, message: "Picture must be a JSON array of strings." };
+      return { ok: false, message: labels.pictureMustBeJsonArray };
     }
     return { ok: true, value: parsed.map((item) => String(item ?? "")).filter(Boolean) };
   } catch {
-    return { ok: false, message: "Invalid picture JSON." };
+    return { ok: false, message: labels.invalidPictureJson };
   }
 }
 
@@ -125,6 +128,9 @@ export function KauflandSearchPanel() {
     mutationFn: (payload: { ean: string; controller: "jv" | "xl" }) => deleteKauflandByEan(payload)
   });
 
+  const buildRequestFailedStatusMessage = (status: number) =>
+    t.requestFailedHttpStatus.replace("{status}", String(status));
+
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedEan = ean.trim();
@@ -142,7 +148,7 @@ export function KauflandSearchPanel() {
     try {
       const { response, payload } = await searchMutation.mutateAsync({ ean: normalizedEan, site });
       if (!response.ok) {
-        throw new Error(payload.detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(payload.detail || buildRequestFailedStatusMessage(response.status));
       }
 
       setResult(payload);
@@ -192,7 +198,7 @@ export function KauflandSearchPanel() {
 
     const normalizedEan = deleteForm.ean.trim();
     if (!normalizedEan) {
-      setError(buildKauflandRequiredEanMessage("delete"));
+      setError(buildKauflandRequiredEanMessage("delete", t));
       return;
     }
     const deleteConfirmed = window.confirm(
@@ -219,11 +225,11 @@ export function KauflandSearchPanel() {
           parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
             ? String((parsed as Record<string, unknown>).detail ?? "")
             : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(detail || buildRequestFailedStatusMessage(response.status));
       }
-      setDeleteStatus("Kaufland product deleted successfully.");
+      setDeleteStatus(t.kauflandDeleteSuccess);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to delete Kaufland product.");
+      setError(requestError instanceof Error ? requestError.message : t.failedDeleteKauflandProduct);
     } finally {
       setDeleteLoading(false);
     }
@@ -237,7 +243,7 @@ export function KauflandSearchPanel() {
 
     const normalizedEan = createForm.ean.trim();
     if (!normalizedEan) {
-      setError(buildKauflandRequiredEanMessage("create"));
+      setError(buildKauflandRequiredEanMessage("create", t));
       return;
     }
     const createConfirmed = window.confirm(
@@ -246,7 +252,10 @@ export function KauflandSearchPanel() {
     if (!createConfirmed) {
       return;
     }
-    const parsedPicture = parseStringArrayJson(createForm.picture);
+    const parsedPicture = parseStringArrayJson(createForm.picture, {
+      pictureMustBeJsonArray: t.kauflandPictureMustBeJsonArray,
+      invalidPictureJson: t.kauflandInvalidPictureJson,
+    });
     const picturePayload: unknown = parsedPicture.ok ? parsedPicture.value : createForm.picture;
 
     setCreateLoading(true);
@@ -280,11 +289,11 @@ export function KauflandSearchPanel() {
           parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
             ? String((parsed as Record<string, unknown>).detail ?? "")
             : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(detail || buildRequestFailedStatusMessage(response.status));
       }
-      setCreateStatus("Kaufland product created successfully.");
+      setCreateStatus(t.kauflandCreateSuccess);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to create Kaufland product.");
+      setError(requestError instanceof Error ? requestError.message : t.failedCreateKauflandProduct);
     } finally {
       setCreateLoading(false);
     }
@@ -370,7 +379,7 @@ export function KauflandSearchPanel() {
           parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
             ? String((parsed as Record<string, unknown>).detail ?? "")
             : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(detail || buildRequestFailedStatusMessage(response.status));
       }
       setChangeStatus(t.updateSuccessKaufland);
     } catch (requestError) {
@@ -384,8 +393,8 @@ export function KauflandSearchPanel() {
     <div className="space-y-4">
       <KauflandSearchCard ean={ean} site={site} loading={loading} onSetEan={setEan} onSetSite={setSite} onSubmit={handleSearch} />
       {loading ? <KauflandLoadingState /> : null}
-      {error ? <KauflandErrorState title="Kaufland request failed" description={error} /> : null}
-      {!loading && !error && !result ? <KauflandEmptyState title="No response yet" description="Search by EAN to load Kaufland state." /> : null}
+      {error ? <KauflandErrorState title={t.kauflandRequestFailed} description={error} /> : null}
+      {!loading && !error && !result ? <KauflandEmptyState title={t.kauflandNoResponseYet} description={t.kauflandSearchByEanHint} /> : null}
       {result ? <KauflandResponseCard title={t.kauflandResponse} payload={result} /> : null}
       <KauflandCreateCard form={createForm} loading={createLoading} onSetForm={setCreateForm} onSubmit={handleCreateProduct} />
       <KauflandUpdateCard form={changeForm} loading={changeLoading} onSetForm={setChangeForm} onSubmit={handleChangeProduct} />
@@ -393,9 +402,9 @@ export function KauflandSearchPanel() {
       {changeStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{changeStatus}</CardContent></Card> : null}
       {createStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{createStatus}</CardContent></Card> : null}
       {deleteStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{deleteStatus}</CardContent></Card> : null}
-      {createResult ? <KauflandResponseCard title="Create response" payload={createResult} /> : null}
+      {createResult ? <KauflandResponseCard title={t.kauflandCreateResponse} payload={createResult} /> : null}
       {changeResult ? <KauflandResponseCard title={t.changeResponse} payload={changeResult} /> : null}
-      {deleteResult ? <KauflandResponseCard title="Delete response" payload={deleteResult} /> : null}
+      {deleteResult ? <KauflandResponseCard title={t.kauflandDeleteResponse} payload={deleteResult} /> : null}
     </div>
   );
 }

@@ -19,7 +19,7 @@ export function ProfilePendingApprovalsCard(props: PendingApprovalsProps) {
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Approval queue</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t.approvalQueue}</p>
             <CardTitle className="mt-2">{t.pendingRegistrations}</CardTitle>
             <CardDescription>{t.approveOrRejectFromProfile}</CardDescription>
           </div>
@@ -33,7 +33,7 @@ export function ProfilePendingApprovalsCard(props: PendingApprovalsProps) {
         </div>
         {filteredPendingUsers.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title={pendingUsers.length === 0 ? t.noPendingRegistrations : t.noMatchesForSearch} description="Pending registration requests will appear here for review." />
+            <EmptyState title={pendingUsers.length === 0 ? t.noPendingRegistrations : t.noMatchesForSearch} description={t.pendingRegistrationRequestsAppearHere} />
           </div>
         ) : (
           <div className="mt-4 flex flex-col gap-3">
@@ -47,11 +47,11 @@ export function ProfilePendingApprovalsCard(props: PendingApprovalsProps) {
                   <p className="mt-1 truncate text-xs text-muted-foreground">{pending.email ?? t.noEmail}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" size="sm" aria-label={`Approve ${pending.username}`} title={t.approve} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("approve", pending.id)}>
+                  <Button type="button" variant="secondary" size="sm" aria-label={t.approveUser.replace("{user}", pending.username)} title={t.approve} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("approve", pending.id)}>
                     <Check data-icon="inline-start" />
                     {t.approve}
                   </Button>
-                  <Button type="button" variant="destructive" size="sm" aria-label={`Reject ${pending.username}`} title={t.reject} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("reject", pending.id)}>
+                  <Button type="button" variant="destructive" size="sm" aria-label={t.rejectUser.replace("{user}", pending.username)} title={t.reject} disabled={pendingActionId === pending.id} onClick={() => void onPendingAction("reject", pending.id)}>
                     <X data-icon="inline-start" />
                     {t.reject}
                   </Button>

@@ -3,9 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { readAuth } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
+import { type labels } from "../../app/i18n";
+import { useLabels } from "../../app/use-labels";
 import { AppSidebar } from "./app-sidebar";
 import { MobileNavigation } from "./mobile-navigation";
 import { PageShell } from "../ui/page-shell";
+
+type LabelKey = keyof (typeof labels)["en"];
 
 function applySidebarPreference(collapsed: boolean) {
   if (typeof document === "undefined") return;
@@ -15,20 +19,28 @@ function applySidebarPreference(collapsed: boolean) {
 
 export function AppShell({
   title,
+  titleKey,
   subtitle,
+  subtitleKey,
   children
 }: {
-  title: string;
-  subtitle: string;
+  title?: string;
+  titleKey?: LabelKey;
+  subtitle?: string;
+  subtitleKey?: LabelKey;
   children: React.ReactNode;
 }) {
+  const t = useLabels();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  void title;
-  void subtitle;
+  const resolvedTitle = titleKey ? t[titleKey] : (title ?? "");
+  const resolvedSubtitle = subtitleKey ? t[subtitleKey] : (subtitle ?? "");
+
+  void resolvedTitle;
+  void resolvedSubtitle;
 
   useEffect(() => {
     const collapsed = window.localStorage.getItem("wh:sidebar-collapsed") === "1";

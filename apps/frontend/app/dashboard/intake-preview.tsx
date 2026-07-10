@@ -51,11 +51,11 @@ export function IntakePreview({ photos, t }: IntakePreviewProps) {
         setIndex((prev) => (prev === 0 ? photos.length - 1 : prev - 1));
       }}
     >
-      <a href={src} target="_blank" rel="noreferrer" title="Open full photo">
+      <a href={src} target="_blank" rel="noreferrer" title={t.openFullPhoto}>
         <Image
           className="intake-image"
           src={src}
-          alt="Intake preview"
+          alt={t.intakePreviewAlt}
           width={140}
           height={105}
           unoptimized
@@ -67,7 +67,7 @@ export function IntakePreview({ photos, t }: IntakePreviewProps) {
           <button
             type="button"
             className="intake-nav intake-nav-left"
-            aria-label="Previous photo"
+            aria-label={t.previousPhoto}
             onClick={() => setIndex((prev) => (prev === 0 ? photos.length - 1 : prev - 1))}
           >
             <ChevronLeft size={16} aria-hidden="true" />
@@ -75,7 +75,7 @@ export function IntakePreview({ photos, t }: IntakePreviewProps) {
           <button
             type="button"
             className="intake-nav intake-nav-right"
-            aria-label="Next photo"
+            aria-label={t.nextPhoto}
             onClick={() => setIndex((prev) => (prev + 1) % photos.length)}
           >
             <ChevronRight size={16} aria-hidden="true" />

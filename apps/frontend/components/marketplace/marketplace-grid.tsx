@@ -51,10 +51,6 @@ type CachedSiteStatus = {
   lastSync: string;
 };
 
-function formatCheckTime(now: Date): string {
-  return `Checked ${now.toLocaleTimeString()}`;
-}
-
 const endpointHealthPaths: Partial<Record<SiteFamily, string>> = {
   // Otto is frozen and eBay is planned; do not call unsupported backend health routes yet.
   KAUFLAND: "/api/v1/services/marketplace/kaufland/health/",
@@ -177,17 +173,18 @@ export function MarketplaceGrid() {
     queryFn: async () => {
       const hasDatabaseAccess = await checkDatabaseAccess();
       const now = new Date();
+      const checkedAt = t.checkedAt.replace("{time}", now.toLocaleTimeString());
       const checks = await Promise.all(
         allMarketplaceSites.map(async (site) => {
           if (databaseHealthFamilies.includes(site.family)) {
-            return [site.id, { status: hasDatabaseAccess ? "CONNECTED" : "DISCONNECTED", lastSync: formatCheckTime(now) }] as const;
+            return [site.id, { status: hasDatabaseAccess ? "CONNECTED" : "DISCONNECTED", lastSync: checkedAt }] as const;
           }
           const path = endpointHealthPaths[site.family];
           if (!path) {
-            return [site.id, { status: "NOT_FOUND", lastSync: formatCheckTime(now) }] as const;
+            return [site.id, { status: "NOT_FOUND", lastSync: checkedAt }] as const;
           }
           const result = await fetchMarketplaceHealth(path);
-          return [site.id, { status: result.status, lastSync: formatCheckTime(now) }] as const;
+          return [site.id, { status: result.status, lastSync: checkedAt }] as const;
         })
       );
       return Object.fromEntries(checks) as Record<string, CachedSiteStatus>;
@@ -292,12 +289,12 @@ export function MarketplaceGrid() {
       <Surface className="wh-command-panel ui-desktop-rhythm-section overflow-visible">
         <div className="space-y-3">
           <SectionHeader
-            title="Marketplace Health"
-            description="Filter connection state, product sync coverage, and site family availability."
+            title={t.marketplaceHealthTitle}
+            description={t.marketplaceHealthDescription}
             actions={
               <>
-                <Badge variant="secondary">{cards.length} sites</Badge>
-                <Badge variant="outline">{filteredSites.length} visible</Badge>
+                <Badge variant="secondary">{t.marketplaceSitesCount.replace("{count}", String(cards.length))}</Badge>
+                <Badge variant="outline">{t.marketplaceVisibleCount.replace("{count}", String(filteredSites.length))}</Badge>
               </>
             }
           />
@@ -306,7 +303,7 @@ export function MarketplaceGrid() {
             <div className="relative">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
-                aria-label="Search marketplaces"
+                aria-label={t.searchMarketplacesAria}
                 className="h-10 pl-9"
                 placeholder={t.searchMarketplacePlaceholder}
                 value={query}
@@ -327,7 +324,7 @@ export function MarketplaceGrid() {
                   setKindFilter(value as "ALL" | SiteKind);
                 }}
               >
-                <SelectTrigger aria-label="Filter by marketplace type" className="h-10">
+                <SelectTrigger aria-label={t.filterMarketplaceTypeAria} className="h-10">
                   <SelectValue placeholder={t.allMarketplaceTypes} />
                 </SelectTrigger>
                 <SelectContent>
@@ -344,7 +341,7 @@ export function MarketplaceGrid() {
                   setStatusFilter(value as "ALL" | SiteConnectionStatus);
                 }}
               >
-                <SelectTrigger aria-label="Filter by connection status" className="h-10">
+                <SelectTrigger aria-label={t.filterConnectionStatusAria} className="h-10">
                   <SelectValue placeholder={t.allConnectionStatuses} />
                 </SelectTrigger>
                 <SelectContent>
@@ -428,7 +425,7 @@ export function MarketplaceGrid() {
                   <div className="relative flex h-10 w-10 flex-none items-center justify-center overflow-hidden rounded-[var(--radius-control)] border border-border bg-card">
                     <Image
                       src={logoByFamily[site.logo]}
-                      alt={`${site.family} logo`}
+                      alt={t.marketplaceLogoAlt.replace("{family}", site.family)}
                       width={40}
                       height={40}
                       className="relative z-10 h-full w-full object-contain p-1"
@@ -443,7 +440,7 @@ export function MarketplaceGrid() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="wh-marketplace-name leading-6 text-foreground" title={site.name}>{site.name}</h3>
-                    <p className="truncate text-xs text-muted-foreground">{site.family} Marketplace</p>
+                    <p className="truncate text-xs text-muted-foreground">{t.marketplaceFamilyLabel.replace("{family}", site.family)}</p>
                   </div>
                 </div>
                 <Badge
@@ -465,7 +462,7 @@ export function MarketplaceGrid() {
               <div className="mt-auto p-0 text-sm text-muted-foreground">
                 <p className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{t.lastSync}</span>
-                  <strong className="truncate text-xs font-semibold text-foreground">{site.lastSync}</strong>
+                  <strong className="truncate text-xs font-semibold text-foreground">{site.lastSync || t.notAvailable}</strong>
                 </p>
                 <p className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{t.productsInDb}</span>
@@ -478,8 +475,8 @@ export function MarketplaceGrid() {
       </div>
       {!initialLoading && filteredSites.length === 0 ? (
         <EmptyState
-          title="No marketplaces found"
-          description="Try changing the search query or clearing the current filters."
+          title={t.noMarketplacesFound}
+          description={t.adjustMarketplaceFilters}
         />
       ) : null}
     </div>

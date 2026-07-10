@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -61,6 +62,7 @@ const HOOD_CATEGORY_OPTIONS = [
 ] as const;
 
 export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
+  const t = useLabels();
   const ean = props.draft.ean.trim();
   const canApply = props.changedFields.length > 0 || props.draft.pending_uploads.length > 0;
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
@@ -93,7 +95,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
             <Input
               value={props.eanValue}
               onChange={(event) => props.onChangeEan(event.target.value)}
-              placeholder="Enter EAN, SKU or product ID"
+              placeholder={t.enterEanSkuOrProductId}
               maxLength={100}
               className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
               onKeyDown={(event) => {
@@ -110,10 +112,10 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
               disabled={!props.isEanValid || props.searching}
               onClick={props.onSearch}
             >
-              {props.searching ? "Searching..." : "Discover"}
+              {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
             </Button>
           </div>
-          {ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {ean}</p> : null}
+          {ean ? <p className="mt-2 text-xs text-muted-foreground">{t.loadedProduct.replace("{ean}", ean)}</p> : null}
         </div>
       }
       headerActions={
@@ -124,7 +126,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
           disabled={props.applyLoading || !canApply || !ean}
           onClick={props.onApplyEditedProducts}
         >
-          {props.applyLoading ? "Updating..." : "Update Edited Products"}
+          {props.applyLoading ? t.updating : t.updateEditedProducts}
         </Button>
       }
       topLeft={<HoodMainColumn draft={props.draft} onChange={props.onChange} />}
@@ -144,7 +146,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
       bottom={
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">description</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.descriptionLabel}</p>
             <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
               <button
                 type="button"
@@ -154,7 +156,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
                   descriptionMode === "code" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Code
+                {t.codeLabel}
               </button>
               <button
                 type="button"
@@ -164,7 +166,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
                   descriptionMode === "preview" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Preview
+                {t.previewLabel}
               </button>
             </div>
           </div>
@@ -197,7 +199,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
                   suppressContentEditableWarning
                   onBlur={(event) => props.onChange({ description: event.currentTarget.innerHTML })}
                 >
-                  No description
+                  {t.noDescription}
                 </div>
               )}
             </div>
@@ -215,6 +217,7 @@ function EditableHoodDescriptionPreview({
   srcDoc: string;
   onSave: (nextDescription: string) => void;
 }) {
+  const t = useLabels();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const editingRef = useRef(false);
   const lastSavedHtmlRef = useRef("");
@@ -263,14 +266,14 @@ function EditableHoodDescriptionPreview({
         }}
       />
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Preview is editable. Manual changes are tracked automatically while you type.</p>
+        <p className="text-xs text-muted-foreground">{t.previewEditableTracked}</p>
         <Button
           type="button"
           variant="secondary"
           className="h-8 rounded-lg text-xs font-semibold"
           onClick={syncFrameToDraft}
         >
-          Save Preview Edits
+          {t.savePreviewEdits}
         </Button>
       </div>
     </div>
@@ -278,12 +281,13 @@ function EditableHoodDescriptionPreview({
 }
 
 function HoodMainColumn({ draft, onChange }: { draft: ProductEditorHoodDraft; onChange: (patch: Partial<ProductEditorHoodDraft>) => void }) {
+  const t = useLabels();
   return (
     <div className="space-y-4">
       <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Product name</p>
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
         <Input value={draft.title} onChange={(event) => onChange({ title: event.target.value })} className="h-11 rounded-xl border-border bg-white text-sm" />
-        <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</p>
+        <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.priceLabel}</p>
         <Input value={draft.price} onChange={(event) => onChange({ price: event.target.value })} className="h-11 rounded-xl border-border bg-white text-sm" />
       </div>
       <div className="pt-4">
@@ -300,14 +304,15 @@ function HoodCategoryPanel({
   draft: ProductEditorHoodDraft;
   onChange: (patch: Partial<ProductEditorHoodDraft>) => void;
 }) {
+  const t = useLabels();
   const selectedCategory = HOOD_CATEGORY_OPTIONS.find((item) => item.category_id === draft.categoryID);
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</p>
-          <p className="mt-1 text-xs text-muted-foreground">Fixed HOOD categories. Current product category is selected below.</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.categoryLabel}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t.fixedHoodCategoriesHint}</p>
         </div>
         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
           {selectedCategory ? selectedCategory.category_id : draft.categoryID || "None"}
@@ -315,7 +320,7 @@ function HoodCategoryPanel({
       </div>
       <div className="mt-3 overflow-hidden rounded-xl border border-border bg-white">
         <div className="border-b border-border/70 bg-muted/20 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          HOOD category tree
+          {t.hoodCategoryTree}
         </div>
         <div className="max-h-72 overflow-auto">
           {HOOD_CATEGORY_OPTIONS.map((item) => {
@@ -341,7 +346,7 @@ function HoodCategoryPanel({
                 </span>
                 {checked ? (
                   <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-700">
-                    Selected
+                    {t.selectedLabel}
                   </span>
                 ) : null}
               </label>

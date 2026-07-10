@@ -1,6 +1,7 @@
 import type { AfterbuyOrderData, IntakeDto } from "../client-api";
 import { intakeIsActive } from "./intake-status";
 import type { IntakeGroup } from "./types";
+import { labels, type Lang } from "../i18n";
 
 export function buildIntakeWsUrl(apiBase: string): string | null {
   if (typeof window === "undefined") {
@@ -40,7 +41,8 @@ export function withBaseHref(html: string, baseHref: string): string {
   return `<!doctype html><html><head><base href="${safeBase}"></head><body>${html}</body></html>`;
 }
 
-export function buildAfterbuyPreviewDoc(data: AfterbuyOrderData): string {
+export function buildAfterbuyPreviewDoc(data: AfterbuyOrderData, lang: Lang = "en"): string {
+  const t = labels[lang];
   const fullHtml = data.page_html?.trim() ?? "";
   const baseHref = data.final_url?.trim() || data.url?.trim() || "https://farm01.afterbuy.de/";
   if (fullHtml.length > 0) {
@@ -48,7 +50,7 @@ export function buildAfterbuyPreviewDoc(data: AfterbuyOrderData): string {
   }
 
   const previewText = (data.page_preview?.trim() ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const title = (data.page_title ?? "Afterbuy preview").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const title = (data.page_title ?? t.afterbuyPreviewTitle).replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const finalUrl = (data.final_url ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   return `<!doctype html>
@@ -63,8 +65,8 @@ export function buildAfterbuyPreviewDoc(data: AfterbuyOrderData): string {
   </style>
 </head>
 <body>
-  <div class="meta"><b>HTTP:</b> ${data.http_status} | <b>Final URL:</b> ${finalUrl}</div>
-  <pre>${previewText || "No HTML body received from Afterbuy for this response."}</pre>
+  <div class="meta"><b>HTTP:</b> ${data.http_status} | <b>${t.afterbuyFinalUrl}:</b> ${finalUrl}</div>
+  <pre>${previewText || t.afterbuyNoHtmlBody}</pre>
 </body>
 </html>`;
 }

@@ -6,10 +6,10 @@ export function getHoodPatchPrecheckError(input) {
   const eanError = getRequiredEanError(input?.ean, labels);
   if (eanError) return eanError;
   if (Boolean(input?.uploadOnly) && !Boolean(input?.hasPatchFiles)) {
-    return labels.selectImageFilesForUpload || "Select image files for upload.";
+    return labels.selectImageFilesForUpload || "";
   }
   if (!Boolean(input?.uploadOnly) && Number(input?.payloadFieldCount || 0) === 0 && !Boolean(input?.hasPatchFiles)) {
-    return labels.fillOneFieldOrSelectImages || "Fill at least one field or select image files.";
+    return labels.fillOneFieldOrSelectImages || "";
   }
   return null;
 }

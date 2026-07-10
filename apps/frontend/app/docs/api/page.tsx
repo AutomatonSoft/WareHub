@@ -1,3 +1,7 @@
+"use client";
+
+import { useLabels } from "../../use-labels";
+
 function escapeHtmlAttribute(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -7,18 +11,20 @@ function escapeHtmlAttribute(value: string): string {
 }
 
 export default function ApiDocsPage() {
+  const t = useLabels();
   const scalarConfig = {
     theme: "purple",
     layout: "modern",
     showSidebar: true,
   };
   const configuration = escapeHtmlAttribute(JSON.stringify(scalarConfig));
+  const iframeDocumentTitle = escapeHtmlAttribute(t.apiDocsPageTitle);
   const html = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WareHub API v1 - Scalar</title>
+    <title>${iframeDocumentTitle}</title>
     <style>
       html, body { margin: 0; background: #0b1020; }
     </style>
@@ -107,5 +113,5 @@ export default function ApiDocsPage() {
   </body>
 </html>`;
 
-  return <iframe title="API Docs" srcDoc={html} className="h-[calc(100vh-2rem)] w-full border-0" />;
+  return <iframe title={t.apiDocs} srcDoc={html} className="h-[calc(100vh-2rem)] w-full border-0" />;
 }

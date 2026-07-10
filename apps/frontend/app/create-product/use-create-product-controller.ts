@@ -121,7 +121,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       })
       .catch((error) => {
         if (!active) return;
-        const message = normalizeCreateProductRuntimeError(error, "Failed to load kid context.");
+        const message = normalizeCreateProductRuntimeError(error, t.failedLoadKidContext);
         setKidContext(null);
         setKidContextError(message);
         showToast(message, "error");
@@ -133,7 +133,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [showToast, sourceKidId]);
+  }, [showToast, sourceKidId, t.failedLoadKidContext]);
 
   useEffect(() => {
     if (!kidContext?.mainEan) {

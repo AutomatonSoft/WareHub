@@ -1,4 +1,5 @@
 import { AlertTriangle, Boxes } from "lucide-react";
+import { useLabels } from "../../app/use-labels";
 import { Badge } from "../ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
@@ -21,6 +22,7 @@ export function LowStockCard({
   loading?: boolean;
   error?: string | null;
 }) {
+  const t = useLabels();
   const displayAlerts = alerts ?? [];
   const resolvedTotalAlerts = totalAlerts ?? displayAlerts.length;
   const hasHiddenAlerts = resolvedTotalAlerts > displayAlerts.length;
@@ -31,15 +33,15 @@ export function LowStockCard({
         <div className="min-w-0">
           <CardTitle className="title-with-icon wh-section-card__title">
             <span className="title-icon-chip"><Boxes aria-hidden="true" size={14} /></span>
-            Low Stock Alerts
+            {t.lowStockAlerts}
           </CardTitle>
-          <CardDescription className="wh-section-card__subtitle">Products that need replenishment attention.</CardDescription>
+          <CardDescription className="wh-section-card__subtitle">{t.productsNeedReplenishmentAttention}</CardDescription>
         </div>
         <CardAction>
           {loading ? (
             <Skeleton className="h-7 w-20 rounded-full" />
           ) : (
-            <Badge variant={error ? "warning" : "secondary"}>{resolvedTotalAlerts} Items</Badge>
+            <Badge variant={error ? "warning" : "secondary"}>{t.itemCount.replace("{count}", String(resolvedTotalAlerts))}</Badge>
           )}
         </CardAction>
       </CardHeader>
@@ -59,14 +61,14 @@ export function LowStockCard({
       ) : error ? (
         <div className="wh-empty-state wh-empty-state--dashboard wh-dashboard-empty-state">
           <AlertTriangle className="size-5 text-muted-foreground" />
-          <p className="text-sm font-medium text-foreground">Low stock feed unavailable</p>
+          <p className="text-sm font-medium text-foreground">{t.lowStockFeedUnavailable}</p>
           <p className="text-xs text-muted-foreground">{error}</p>
         </div>
       ) : displayAlerts.length === 0 ? (
         <div className="wh-empty-state wh-empty-state--dashboard">
           <AlertTriangle className="size-5 text-muted-foreground" />
-          <p className="text-sm font-medium text-foreground">No low stock alerts yet</p>
-          <p className="text-xs text-muted-foreground">Restock recommendations are generated every 4 hours.</p>
+          <p className="text-sm font-medium text-foreground">{t.noLowStockAlertsYet}</p>
+          <p className="text-xs text-muted-foreground">{t.restockRecommendationsGenerated}</p>
         </div>
       ) : (
         <div className={`wh-low-stock-list scrollbar-thin ${hasHiddenAlerts ? "wh-low-stock-list--with-footer" : ""}`}>
@@ -77,7 +79,7 @@ export function LowStockCard({
                 <p className="wh-low-stock-row__meta" title={alert.sku}>{alert.sku}</p>
               </div>
               <Badge className="wh-low-stock-row__qty" variant={alert.qty < 6 ? "destructive" : "secondary"}>
-                {alert.qty} left
+                {t.itemCountLeft.replace("{count}", String(alert.qty))}
               </Badge>
             </div>
           ))}
@@ -86,7 +88,7 @@ export function LowStockCard({
       {!loading && hasHiddenAlerts ? (
         <div className="wh-card-footer">
           <p className="wh-card-footer__text">
-            {displayAlerts.length} of {resolvedTotalAlerts} shown
+            {t.shownOfTotal.replace("{shown}", String(displayAlerts.length)).replace("{total}", String(resolvedTotalAlerts))}
           </p>
         </div>
       ) : null}

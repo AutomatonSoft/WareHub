@@ -8,6 +8,6 @@ export default function SofortListError({ error, reset }: { error: Error & { dig
     console.error("Sofort list route error", error);
   }, [error]);
 
-  return <RouteErrorState title="Sofort list error" reset={reset} />;
+  return <RouteErrorState titleKey="sofortListErrorTitle" descriptionKey="routeErrorDescription" reset={reset} />;
 }
 

@@ -41,7 +41,7 @@ def resolve_product_by_ean(ean: str, site_raw: str | None, site_key_raw: str | N
         )
     site_key = normalize_site_key(site_key_raw) or ""
 
-    queryset = ImportedProduct.objects.filter(ean=ean.strip())
+    queryset = ImportedProduct.objects.all()
     if site:
         queryset = queryset.filter(site=site)
     queryset = queryset.filter(site_key=site_key)
@@ -49,13 +49,12 @@ def resolve_product_by_ean(ean: str, site_raw: str | None, site_key_raw: str | N
     # One EAN can carry many products (a main item + Sofort colour variants). When the caller
     # knows the article number (artikelnr / source_model), target that exact product instead
     # of an arbitrary one.
-    artikelnr = str(source_model or "").strip()
-    if artikelnr:
-        queryset = queryset.filter(source_model=artikelnr)
+    artikelnr = str(source_model or "").strip() or ean.strip()
+    queryset = queryset.filter(source_model=artikelnr)
 
     if not queryset.exists():
         return None, Response(
-            {"detail": "Товар с таким ean не найден."},
+            {"detail": "Товар с таким artikelnr не найден."},
             status=status.HTTP_404_NOT_FOUND,
         )
     return queryset.first(), None

@@ -2,6 +2,8 @@
 
 import { Languages, LayoutDashboard, LogOut, Menu, Moon, Settings2, ShieldCheck, Sun, X } from "lucide-react";
 import React from "react";
+
+import { useLabels } from "../use-labels";
 import styles from "./dashboard-nav.module.css";
 
 type DashboardViewName = "dashboard" | "admin" | "account";
@@ -51,6 +53,10 @@ export function DashboardChrome({
   onCloseNav,
   onSwitchView
 }: DashboardChromeProps) {
+  const t = useLabels();
+  const localizedRole = role === "admin" ? t.adminTitle : t.user;
+  const localizedStatus = status === "approved" ? t.approved : status === "pending" ? t.pending : t.rejected;
+
   return (
     <>
       <div className={styles.pageToolsLeft}>
@@ -59,7 +65,7 @@ export function DashboardChrome({
           className="icon-button small-icon"
           ref={navToggleButtonRef}
           onClick={onOpenNav}
-          aria-label="Open menu"
+          aria-label={t.openNavigation}
           aria-expanded={navOpen}
           aria-controls="dashboard-nav"
         >
@@ -67,19 +73,19 @@ export function DashboardChrome({
         </button>
       </div>
       <div className="page-tools">
-        <button type="button" className="icon-button small-icon" onClick={onToggleTheme} aria-label="Toggle theme">
+        <button type="button" className="icon-button small-icon" onClick={onToggleTheme} aria-label={t.toggleTheme}>
           {theme === "light" ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
         </button>
         <button
           type="button"
           className="icon-button small-icon lang-icon"
           onClick={onSwitchLanguage}
-          aria-label="Switch language"
-          title={`Language: ${lang.toUpperCase()}`}
+          aria-label={t.languageSwitcherAria}
+          title={t.languageTitle.replace("{lang}", lang.toUpperCase())}
         >
           <Languages size={18} aria-hidden="true" />
         </button>
-        <button className="icon-button small-icon" onClick={onLogout} title="Logout" aria-label="Logout">
+        <button className="icon-button small-icon" onClick={onLogout} title={t.logout} aria-label={t.logout}>
           <LogOut size={18} aria-hidden="true" />
         </button>
       </div>
@@ -95,13 +101,13 @@ export function DashboardChrome({
         id="dashboard-nav"
         ref={navDrawerRef}
         aria-hidden={!navOpen}
-        aria-label="Primary"
+        aria-label={t.primaryNavigation}
       >
         <div className={styles.navHeader}>
           <div className="brand-row">
-            <span className={styles.navTitle}>SofortBot</span>
+            <span className={styles.navTitle}>{t.brandName}</span>
           </div>
-          <button type="button" className="icon-button small-icon" onClick={onCloseNav} aria-label="Close menu">
+          <button type="button" className="icon-button small-icon" onClick={onCloseNav} aria-label={t.closeMenu}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>
@@ -133,13 +139,13 @@ export function DashboardChrome({
           >
             <ShieldCheck size={16} aria-hidden="true" />
             <span>{navLabels.admin}</span>
-            {!canApprove ? <span className={styles.navBadge}>Admin</span> : null}
+            {!canApprove ? <span className={styles.navBadge}>{t.adminTitle}</span> : null}
           </button>
         </nav>
         <div className={styles.navFooter}>
           <span>{username}</span>
           <span className={styles.navMuted}>
-            {role} · {status}
+            {localizedRole} · {localizedStatus}
           </span>
         </div>
       </aside>

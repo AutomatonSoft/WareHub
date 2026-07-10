@@ -29,7 +29,7 @@ export function ProfilePasswordCard(props: Props) {
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Security posture</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t.profileSecurityPosture}</p>
             <CardTitle className="mt-2 text-base">{t.changePasswordTitle}</CardTitle>
           </div>
           <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-primary/20 bg-primary/10 text-primary">
@@ -43,7 +43,7 @@ export function ProfilePasswordCard(props: Props) {
           <div className="rounded-[calc(var(--radius-card)-0.2rem)] border border-border/70 bg-muted/20 p-4">
             <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               <LockKeyhole className="size-3.5" />
-              Credential rotation
+              {t.profileCredentialRotation}
             </div>
             <div className="flex flex-col gap-4">
               <FormField label={t.currentPassword} error={passwordFieldErrors.currentPassword}>

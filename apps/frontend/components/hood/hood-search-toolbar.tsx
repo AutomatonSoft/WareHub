@@ -56,7 +56,7 @@ export function HoodSearchToolbar({
       </div>
 
       <form className="grid gap-3 md:grid-cols-[1fr_auto_auto]" onSubmit={onSubmit}>
-        <FormField label="EAN">
+        <FormField label={t.ean}>
           {(fieldProps) => (
             <Input
               {...fieldProps}
