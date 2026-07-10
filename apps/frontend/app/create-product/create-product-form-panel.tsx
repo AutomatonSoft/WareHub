@@ -12,12 +12,15 @@ type Props = {
   price: string;
   productName: string;
   imagesText: string;
+  imageFiles?: File[];
   fieldErrors: Partial<Record<CreateProductFieldKey, string>>;
   submitting: boolean;
+  allowFileUpload?: boolean;
   onEanChange: (value: string) => void;
   onPriceChange: (value: string) => void;
   onProductNameChange: (value: string) => void;
   onImagesTextChange: (value: string) => void;
+  onImageFilesChange?: (files: File[]) => void;
   onSubmit: () => void;
   onReset: () => void;
 };
@@ -29,12 +32,15 @@ export function CreateProductFormPanel(props: Props) {
     price,
     productName,
     imagesText,
+    imageFiles = [],
     fieldErrors,
     submitting,
+    allowFileUpload = false,
     onEanChange,
     onPriceChange,
     onProductNameChange,
     onImagesTextChange,
+    onImageFilesChange,
     onSubmit,
     onReset
   } = props;
@@ -71,6 +77,25 @@ export function CreateProductFormPanel(props: Props) {
             className="min-h-[120px]"
           />
         </FormField>
+        {allowFileUpload ? (
+          <FormField label="Image files" className="md:col-span-2">
+            <Input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => onImageFilesChange?.(Array.from(event.target.files ?? []))}
+            />
+            {imageFiles.length > 0 ? (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {imageFiles.length} file(s): {imageFiles.map((file) => file.name).join(", ")}
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-muted-foreground">
+                No local image files selected.
+              </div>
+            )}
+          </FormField>
+        ) : null}
       </div>
       <div className="wh-secondary-toolbar mt-4 flex flex-wrap gap-2">
         <Button className="min-w-[170px]" onClick={onSubmit} disabled={submitting}>

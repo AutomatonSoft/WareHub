@@ -439,8 +439,12 @@ async function galleryItemToFile(item: GalleryItem, index: number): Promise<File
 export default function CreateProductPage() {
   const t = useLabels();
   const { showToast } = useToast();
-  const controller = useCreateProductController({ t, showToast });
   const [activeTab, setActiveTab] = useState<(typeof PAGE_TABS)[number]>("main");
+  const controller = useCreateProductController({
+    t,
+    showToast,
+    sourceSite: activeTab === "xl" ? "XL" : "JV",
+  });
   const [jvName, setJvName] = useState("");
   const [jvArtikelnr, setJvArtikelnr] = useState("");
   const [jvPrice, setJvPrice] = useState("");
@@ -1369,6 +1373,10 @@ export default function CreateProductPage() {
       return void handleSendToAllJvSites();
     }
 
+    if (activeTab === "xl") {
+      return void controller.handleCreateProductForXlDefaultSite();
+    }
+
     if (activeTab === "main") {
       return void controller.handleCreateProduct();
     }
@@ -1933,12 +1941,15 @@ export default function CreateProductPage() {
                     price={controller.price}
                     productName={controller.productName}
                     imagesText={controller.imagesText}
+                    imageFiles={controller.imageFiles}
                     fieldErrors={controller.fieldErrors}
                     submitting={controller.submitting}
+                    allowFileUpload={false}
                     onEanChange={controller.setEan}
                     onPriceChange={controller.setPrice}
                     onProductNameChange={controller.setProductName}
                     onImagesTextChange={controller.setImagesText}
+                    onImageFilesChange={controller.setImageFiles}
                     onSubmit={controller.handleCreateProduct}
                     onReset={controller.resetFields}
                   />
@@ -1983,10 +1994,15 @@ export default function CreateProductPage() {
                       Target Scope
                     </div>
                     <div className="mt-2 text-sm text-foreground">
-                      {activeTab.toUpperCase()} create product will run only for the sites on this tab.
+                      {activeTab === "xl"
+                        ? "XL create product currently runs through XL DE only."
+                        : `${activeTab.toUpperCase()} create product will run only for the sites on this tab.`}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {activeMarketplaceSites.map((site) => (
+                      {(activeTab === "xl"
+                        ? activeMarketplaceSites.filter((site) => site.id === "xlmoebel_de")
+                        : activeMarketplaceSites
+                      ).map((site) => (
                         <span
                           key={site.id}
                           className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground"
@@ -2003,13 +2019,20 @@ export default function CreateProductPage() {
                     price={controller.price}
                     productName={controller.productName}
                     imagesText={controller.imagesText}
+                    imageFiles={controller.imageFiles}
                     fieldErrors={controller.fieldErrors}
                     submitting={controller.submitting}
+                    allowFileUpload={activeTab === "xl"}
                     onEanChange={controller.setEan}
                     onPriceChange={controller.setPrice}
                     onProductNameChange={controller.setProductName}
                     onImagesTextChange={controller.setImagesText}
-                    onSubmit={() => void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds)}
+                    onImageFilesChange={controller.setImageFiles}
+                    onSubmit={
+                      activeTab === "xl"
+                        ? () => void controller.handleCreateProductForXlDefaultSite()
+                        : () => void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds)
+                    }
                     onReset={controller.resetFields}
                   />
                   <CreateProductJobPanel

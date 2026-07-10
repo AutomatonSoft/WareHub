@@ -106,7 +106,7 @@ export type ProductEditorJvCategory = {
   main_category?: boolean;
 };
 
-export type ProductEditorJvSiteKey = "JV_DE" | "JV_CO_UK" | "JV_CH" | "JV_AT";
+export type ProductEditorJvSiteKey = "JV_DE" | "JV_CO_UK" | "JV_CH" | "JV_AT" | "XLMOEBEL_DE";
 
 export type ProductEditorJvCategoriesBySiteKey = Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>>;
 
@@ -116,6 +116,21 @@ export type ProductEditorJvImage = {
   image: string;
   public_url?: string;
   sort_order?: number;
+};
+
+export type ProductEditorXlStore = {
+  id?: number;
+  store_id: number;
+};
+
+export type ProductEditorXlSpecial = {
+  id?: number;
+  customer_group_id: number;
+  priority?: number;
+  price: string;
+  date_start?: string | null;
+  date_end?: string | null;
+  is_modified_locally?: boolean;
 };
 
 export type ProductEditorJvDraft = {
@@ -132,7 +147,12 @@ export type ProductEditorJvDraft = {
   descriptions: ProductEditorJvDescription[];
   categories: ProductEditorJvCategory[];
   categories_by_site_key: ProductEditorJvCategoriesBySiteKey;
+  stores: ProductEditorXlStore[];
   images: ProductEditorJvImage[];
+  specials: ProductEditorXlSpecial[];
+  xl_option_fields: Array<Record<string, unknown>>;
+  xl_attribute_fields: Array<Record<string, unknown>>;
+  xl_delivery_label: string;
   jv_fields: Record<string, unknown>;
   jv_fields_by_site_key: ProductEditorJvFieldsBySiteKey;
   pending_uploads: ProductEditorPendingUpload[];

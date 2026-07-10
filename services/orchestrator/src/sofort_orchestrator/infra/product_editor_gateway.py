@@ -67,10 +67,13 @@ class ProductEditorGateway:
         response = self.http.request("GET", url, headers=headers)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
-    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
+    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str, site_key: str | None = None) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/xl/sites/by-ean/{ean}/"
-        response = self.http.request("GET", url, headers=headers, params={"site": "XL"})
+        params = {"site": "XL"}
+        if site_key:
+            params["site_key"] = site_key
+        response = self.http.request("GET", url, headers=headers, params=params)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_xl_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:

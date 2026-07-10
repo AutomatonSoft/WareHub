@@ -79,7 +79,8 @@ def add_jv_public_image_urls(payload: dict, *, site_key: str) -> dict:
 
 
 def effective_ean_from_source(product_row: dict, fallback: str) -> str:
-    source_ean = str(product_row.get("ean") or "").strip()
+    source_ean = str(product_row.get("artikelnr") or "").strip()
+    print(source_ean)
     source_model = str(product_row.get("model") or "").strip()
 
     if source_ean and source_ean not in {"0", "1"}:

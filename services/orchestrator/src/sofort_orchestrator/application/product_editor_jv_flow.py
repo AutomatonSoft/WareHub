@@ -369,11 +369,8 @@ class ProductEditorJvFlow:
         return [target_id for target_id, state in results.items() if state["status"] is ProductEditorTargetStatus.FOUND]
 
     def _load_local_draft_for_site(self, *, ean: str, request_id: str, site_key: str):
-        local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
-        if local.status_code == 404:
-            self.gateway.sync_jv_by_ean(ean=ean, site_key=site_key, request_id=request_id)
-            local = self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
-        return local
+        self.gateway.sync_jv_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+        return self.gateway.fetch_jv_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
 
 
 class ProductEditorJvFlowError(RuntimeError):

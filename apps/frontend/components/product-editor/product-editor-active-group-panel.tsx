@@ -1,6 +1,7 @@
 import { findGroup, hasActionableHoodTarget, hasActionableJvTarget } from "./product-editor-model";
 import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
+import { ProductEditorXlPanel } from "./product-editor-xl-panel";
 import { PRODUCT_EDITOR_PLACEHOLDER_DETAILS, PRODUCT_EDITOR_TAB_COPY } from "./product-editor-copy";
 import { ProductEditorEmptyPanel } from "./product-editor-shared-panels";
 import type {
@@ -146,22 +147,41 @@ export function ProductEditorActiveGroupPanel(input: {
     }
     return (
       <div className="space-y-2.5">
-        <ProductEditorJvPanel
-          draft={input.jvDraft}
-          initialDraft={input.initialJvDraft}
-          loading={input.jvLoading}
-          warnings={input.jvWarnings}
-          onChange={input.onPatchJv}
-          activeTabLabel={input.activeTabLabel}
-          batchApplyLoading={input.jvBatchApplyLoading}
-          jobResponse={input.jobResponse}
-          onApplyEditedProducts={input.onApplyJvEditedProducts}
-          eanValue={input.eanValue}
-          isEanValid={input.isEanValid}
-          searching={input.searching}
-          onChangeEan={input.onChangeEan}
-          onSearch={input.onSearch}
-        />
+        {structuredGroup === "XL" ? (
+          <ProductEditorXlPanel
+            draft={input.jvDraft}
+            initialDraft={input.initialJvDraft}
+            loading={input.jvLoading}
+            warnings={input.jvWarnings}
+            onChange={input.onPatchJv}
+            batchApplyLoading={input.jvBatchApplyLoading}
+            jobResponse={input.jobResponse}
+            onApplyEditedProducts={input.onApplyJvEditedProducts}
+            eanValue={input.eanValue}
+            isEanValid={input.isEanValid}
+            searching={input.searching}
+            onChangeEan={input.onChangeEan}
+            onSearch={input.onSearch}
+          />
+        ) : (
+          <ProductEditorJvPanel
+            groupId={structuredGroup}
+            draft={input.jvDraft}
+            initialDraft={input.initialJvDraft}
+            loading={input.jvLoading}
+            warnings={input.jvWarnings}
+            onChange={input.onPatchJv}
+            activeTabLabel={input.activeTabLabel}
+            batchApplyLoading={input.jvBatchApplyLoading}
+            jobResponse={input.jobResponse}
+            onApplyEditedProducts={input.onApplyJvEditedProducts}
+            eanValue={input.eanValue}
+            isEanValid={input.isEanValid}
+            searching={input.searching}
+            onChangeEan={input.onChangeEan}
+            onSearch={input.onSearch}
+          />
+        )}
       </div>
     );
   }

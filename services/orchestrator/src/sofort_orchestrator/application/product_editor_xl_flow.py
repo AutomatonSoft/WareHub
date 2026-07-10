@@ -69,7 +69,7 @@ class ProductEditorXlFlow:
         self.orchestrator_job_store = orchestrator_job_store
 
     def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
-        fetch = self.gateway.fetch_xl_sites_by_ean(ean=ean, request_id=request_id)
+        fetch = self.gateway.fetch_xl_sites_by_ean(ean=ean, request_id=request_id, site_key="XLMOEBEL_DE")
         if not (200 <= fetch.status_code < 300):
             return {
                 site_key: {
@@ -132,18 +132,6 @@ class ProductEditorXlFlow:
                 "warnings": [],
             }
 
-        for site_key in _XL_READ_ONLY_SITE_KEYS:
-            row = found_by_key.get(site_key) or missing_by_key.get(site_key) or {}
-            results[site_key] = {
-                "status": ProductEditorTargetStatus.PLANNED,
-                "metadata": {"domain": row.get("domain"), "reason": "planned_read_only"},
-                "warnings": [
-                    ProductEditorWarning(
-                        code="product_editor_xl_placeholder",
-                        message="XL editing is enabled only for XLMOEBEL_DE in current runtime.",
-                    )
-                ],
-            }
         return results
 
     def recommended_baseline_from_results(self, results: dict[str, dict]) -> str | None:
@@ -166,10 +154,8 @@ class ProductEditorXlFlow:
                 warnings=[ProductEditorWarning(code="product_editor_xl_target_not_found", message="No editable XL target was found for this EAN.")],
             )
 
+        self.gateway.sync_xl_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
         local = self.gateway.fetch_xl_local_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
-        if local.status_code == 404:
-            self.gateway.sync_xl_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
-            local = self.gateway.fetch_xl_local_by_ean(ean=ean, site_key=baseline_site_key, request_id=request_id)
 
         if not (200 <= local.status_code < 300):
             return ProductEditorLoadResponse(
@@ -370,6 +356,7 @@ def _normalize_xl_draft(payload: dict, baseline_site_key: str) -> dict:
         "stores": stores,
         "images": images,
         "specials": specials,
+        "xl_attribute_fields": payload.get("xl_attribute_fields") if isinstance(payload.get("xl_attribute_fields"), list) else [],
     }
 
 

@@ -183,8 +183,15 @@ class FakeProductEditorGateway:
         }
         return type("R", (), {"status_code": 200, "body": body})()
 
-    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str):
+    def fetch_xl_sites_by_ean(self, *, ean: str, request_id: str, site_key: str | None = None):
         self.xl_sites_calls += 1
+        if site_key:
+            body = {
+                **self.xl_sites,
+                "found": [row for row in self.xl_sites.get("found", []) if row.get("site_key") == site_key],
+                "missing": [row for row in self.xl_sites.get("missing", []) if row.get("site_key") == site_key],
+            }
+            return type("R", (), {"status_code": 200, "body": body})()
         return type("R", (), {"status_code": 200, "body": self.xl_sites})()
 
     def fetch_xl_local_by_ean(self, *, ean: str, site_key: str, request_id: str):
@@ -274,7 +281,9 @@ def test_product_editor_discover_respects_active_group_xl(tmp_path):
     payload = response.json()
     assert payload["selected_group_id"] == "XL"
     assert payload["selected_target_ids"] == ["XLMOEBEL_DE"]
+    assert [group["id"] for group in payload["groups"]] == ["XL"]
     xl_group = next(group for group in payload["groups"] if group["id"] == "XL")
+    assert [target["id"] for target in xl_group["targets"]] == ["XLMOEBEL_DE"]
     targets = {target["id"]: target for target in xl_group["targets"]}
     assert targets["XLMOEBEL_DE"]["status"] == "found"
 

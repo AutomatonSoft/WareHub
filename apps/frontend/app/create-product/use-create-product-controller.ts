@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { allMarketplaceSites } from "../../lib/marketplace-sites";
 import {
+  xljvCreateAndPush,
+  xljvUpdateByEan,
+  xljvUploadImages,
+} from "../../components/xljv/xljv-api";
+import {
   createOrchestratorJob,
   getReconciliationReport,
   getOrchestratorJob,
@@ -25,9 +30,11 @@ import {
 } from "./create-product-controller-model";
 import { normalizeCreateProductRuntimeError } from "./create-product-api-errors";
 import {
-  fetchCreateProductJvSitesByMainEan,
-  fetchCreateProductJvSourceSnapshot,
+  CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+  fetchCreateProductSourceSitesByMainEan,
+  fetchCreateProductSourceSnapshot,
   fetchCreateProductKidContext,
+  type CreateProductSourceSiteKind,
   type CreateProductJvSourceSite,
   type CreateProductJvSourceSnapshot,
   type CreateProductKidContext,
@@ -40,10 +47,11 @@ type ToastTone = "success" | "info" | "error";
 type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
+  sourceSite: CreateProductSourceSiteKind;
 };
 
 export function useCreateProductController(input: UseCreateProductControllerInput) {
-  const { t, showToast } = input;
+  const { t, showToast, sourceSite } = input;
   const searchParams = useSearchParams();
 
   const [selectedSites, setSelectedSites] = useState<string[]>(() => allMarketplaceSites.map((site) => site.id));
@@ -53,6 +61,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [price, setPrice] = useState("");
   const [productName, setProductName] = useState("");
   const [imagesText, setImagesText] = useState("");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CreateProductFieldKey, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [useControlledJob, setUseControlledJob] = useState(true);
@@ -97,6 +106,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setSourceSnapshotError(null);
       setSourceSnapshotLoading(false);
       setPrefillSnapshot(null);
+      setImageFiles([]);
       return;
     }
 
@@ -138,7 +148,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSitesLoading(true);
     setSourceSitesError(null);
 
-    void fetchCreateProductJvSitesByMainEan(kidContext.mainEan)
+    void fetchCreateProductSourceSitesByMainEan({ mainEan: kidContext.mainEan, site: sourceSite })
       .then((sites) => {
         if (!active) return;
         setSourceSites(sites);
@@ -150,7 +160,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       .catch((error) => {
         if (!active) return;
         setSourceSites([]);
-        setSourceSitesError(normalizeCreateProductRuntimeError(error, "Failed to load JV source sites."));
+        setSourceSitesError(normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source sites.`));
       })
       .finally(() => {
         if (active) setSourceSitesLoading(false);
@@ -159,7 +169,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan]);
+  }, [kidContext?.mainEan, sourceSite]);
 
   useEffect(() => {
     if (!kidContext?.mainEan || !selectedSourceSiteKey) {
@@ -173,8 +183,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSnapshotLoading(true);
     setSourceSnapshotError(null);
 
-    void fetchCreateProductJvSourceSnapshot({
+    void fetchCreateProductSourceSnapshot({
       mainEan: kidContext.mainEan,
+      site: sourceSite,
       siteKey: selectedSourceSiteKey,
     })
       .then((snapshot) => {
@@ -194,7 +205,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       .catch((error) => {
         if (!active) return;
         setSourceSnapshot(null);
-        setSourceSnapshotError(normalizeCreateProductRuntimeError(error, "Failed to load JV source product."));
+        setSourceSnapshotError(normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source product.`));
       })
       .finally(() => {
         if (active) setSourceSnapshotLoading(false);
@@ -203,7 +214,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, selectedSourceSiteKey]);
+  }, [kidContext?.mainEan, selectedSourceSiteKey, sourceSite]);
 
   function toggleSite(siteId: string) {
     setSelectedSites((prev) =>
@@ -232,6 +243,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setImagesText("");
     }
     setFieldErrors({});
+    setImageFiles([]);
     showToast(t.fieldsReset, "info");
   }
 
@@ -311,6 +323,94 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
   async function handleCreateProductForSiteIds(siteIds: string[]) {
     await submitCreateProduct(siteIds);
+  }
+
+  async function handleCreateProductForXlDefaultSite() {
+    if (!validateCreateFields()) {
+      showToast(t.fixFormErrorsBeforeCreate, "error");
+      return;
+    }
+
+    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    const defaultSiteKey = CREATE_PRODUCT_XL_DEFAULT_SITE_KEY;
+
+    setSubmitting(true);
+    try {
+      let uploadedUrls: string[] = [];
+      if (imageFiles.length > 0 || normalized.imageUrls.length > 0) {
+        const uploadResult = await xljvUploadImages({
+          site: "XL",
+          siteKey: defaultSiteKey,
+          ean: normalized.ean,
+          files: imageFiles,
+          sourceUrls: imageFiles.length === 0 ? normalized.imageUrls : [],
+        });
+        if (!uploadResult.response.ok) {
+          throw new Error(
+            String(uploadResult.payload.detail || `XL image upload failed: HTTP ${uploadResult.response.status}`),
+          );
+        }
+        uploadedUrls = Array.isArray(uploadResult.payload.uploaded_image_urls)
+          ? uploadResult.payload.uploaded_image_urls
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+          : [];
+      }
+
+      const payload: Record<string, unknown> = {
+        ean: normalized.ean,
+        source_model: normalized.ean,
+        source_ean_field: normalized.ean,
+        price: normalized.price,
+        quantity: 0,
+        status: true,
+        image: uploadedUrls[0] || undefined,
+        images: uploadedUrls.slice(1).map((url, index) => ({ image: url, sort_order: index })),
+        descriptions: [
+          {
+            language_id: 1,
+            name: normalized.productName,
+            description: normalized.productName,
+            tag: "",
+            meta_title: normalized.productName,
+            meta_description: normalized.productName,
+            meta_keyword: "",
+          },
+        ],
+      };
+
+      const createResult = await xljvCreateAndPush({
+        site: "XL",
+        siteKey: defaultSiteKey,
+        payload,
+      });
+      if (!createResult.response.ok) {
+        if (String(createResult.payload.code || "") === "xl_create_ean_conflict") {
+          const updateResult = await xljvUpdateByEan({
+            ean: normalized.ean,
+            site: "XL",
+            siteKey: defaultSiteKey,
+            payload,
+          });
+          if (!updateResult.response.ok) {
+            throw new Error(
+              String(updateResult.payload.detail || `XL update failed: HTTP ${updateResult.response.status}`),
+            );
+          }
+          showToast(`XL DE product updated: ${normalized.ean}`, "success");
+          return;
+        }
+        throw new Error(
+          String(createResult.payload.detail || `XL create failed: HTTP ${createResult.response.status}`),
+        );
+      }
+
+      showToast(`XL DE product created: ${normalized.ean}`, "success");
+    } catch (error) {
+      showToast(normalizeCreateProductRuntimeError(error, "Failed to create XL DE product."), "error");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function loadJobStatus() {
@@ -409,6 +509,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     price,
     productName,
     imagesText,
+    imageFiles,
     fieldErrors,
     submitting,
     useControlledJob,
@@ -438,6 +539,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setPrice,
     setProductName,
     setImagesText,
+    setImageFiles,
     setFieldErrors,
     setUseControlledJob,
     setLatestJobId,
@@ -449,6 +551,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     resetFields,
     handleCreateProduct,
     handleCreateProductForSiteIds,
+    handleCreateProductForXlDefaultSite,
     loadJobStatus,
     loadReconciliationReports,
     loadReconciliationReportById

@@ -87,6 +87,14 @@ class ProductEditorService:
             recommended_baseline = self.xl_flow.recommended_baseline_from_results(xl_results) or "XLMOEBEL_DE"
         else:
             recommended_baseline = self.jv_flow.recommended_baseline_from_results(jv_results) or "JV_DE"
+        if active_group is ProductEditorGroupId.XL:
+            groups = [
+                group.model_copy(update={"targets": [target for target in group.targets if target.id == "XLMOEBEL_DE"]})
+                if group.id is ProductEditorGroupId.XL
+                else group
+                for group in groups
+                if group.id is ProductEditorGroupId.XL
+            ]
         return ProductEditorDiscoverResponse(
             request_id=request_id,
             ean=ean,

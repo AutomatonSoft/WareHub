@@ -110,8 +110,8 @@ function ProductEditorContent() {
   const hoodLoading = activeHoodTabKey ? hoodLoadingByTab[activeHoodTabKey] : false;
   const hoodApplyLoading = activeHoodTabKey ? hoodApplyLoadingByTab[activeHoodTabKey] : false;
   const hoodImageUploadLoading = activeHoodTabKey ? hoodImageUploadLoadingByTab[activeHoodTabKey] : false;
-  const isGlobalEanValid = /^\d{13}$/.test(eanInput.trim());
-  const isEffectiveTabEanValid = /^\d{13}$/.test(effectiveTabEanInput);
+  const isGlobalEanValid = isValidProductIdentifier(eanInput);
+  const isEffectiveTabEanValid = isValidProductIdentifier(effectiveTabEanInput);
   const hasLocalLoadedJv =
     (activeGroupId === "JV" || activeGroupId === "XL") &&
     isLoadedJvDraft(jvDraft, effectiveTabEanInput);
@@ -283,7 +283,7 @@ function ProductEditorContent() {
   ) {
     setJvLoading(true);
     setPageError(null);
-    const resolvedAutoLoadKey = autoLoadKey ?? buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId);
+    const resolvedAutoLoadKey = buildJvAutoLoadKey(currentDiscover.ean, preferredTargetId);
     try {
       const response = await loadProductEditorGroup({
         ean: currentDiscover.ean,
@@ -673,10 +673,12 @@ function ProductEditorContent() {
       showToast(`No edited ${activeStructuredLabel} fields to apply.`, "error");
       return;
     }
-    const selectedTargetIds = discover?.groups
-      .find((group) => group.id === activeStructuredGroup)
-      ?.targets.filter((target) => target.status === "found")
-      .map((target) => target.id) ?? []) as ProductEditorJvSiteKey[];
+    const selectedTargetIds = (
+      discover?.groups
+        .find((group) => group.id === activeStructuredGroup)
+        ?.targets.filter((target) => target.status === "found")
+        .map((target) => target.id) ?? []
+    ) as ProductEditorJvSiteKey[];
     if (selectedTargetIds.length === 0) {
       showToast(`No found ${activeStructuredLabel} targets are available for orchestrator apply.`, "error");
       return;
@@ -1123,13 +1125,19 @@ function limitDiscoverToActiveGroup(
   response: ProductEditorDiscoverResponse,
   activeGroup: ProductEditorGroupId | null
 ): ProductEditorDiscoverResponse {
-  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD")) {
+  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD" && activeGroup !== "XL")) {
     return response;
   }
   const activeGroupResponse = response.groups.find((group) => group.id === activeGroup);
+  const normalizedGroup = activeGroup === "XL" && activeGroupResponse
+    ? {
+        ...activeGroupResponse,
+        targets: activeGroupResponse.targets.filter((target) => target.id === "XLMOEBEL_DE"),
+      }
+    : activeGroupResponse;
   return {
     ...response,
-    groups: activeGroupResponse ? [activeGroupResponse] : [],
+    groups: normalizedGroup ? [normalizedGroup] : [],
     selected_group_id: activeGroup
   };
 }
