@@ -14,6 +14,7 @@ import requests
 from django.db import transaction
 
 from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .place_rules import find_place_conflict, normalize_place, suggest_next_free_base_place
 from orders_pars.service import (
     collapse_items_to_orders,
     parse_afterbuy_datetime,
@@ -306,7 +307,7 @@ def load_kid_payloads_from_bytes(raw_bytes: bytes) -> dict[tuple[str, str], KidP
         kid_number = _normalize_text(row.get("kid"))
         if not kid_number:
             continue
-        place = _normalize_text(row.get("place") or row.get("stoyanka"))
+        place = normalize_place(row.get("place") or row.get("stoyanka"))
         photo = _normalize_text(row.get("photo"))
         key = (kid_number, place)
         if key not in grouped:
@@ -342,13 +343,16 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
 
     for payload in payloads.values():
         kid_number = payload.kid_number
-        target_place = payload.place
+        target_place = payload.place or (suggest_next_free_base_place() or "")
         existing = _find_kid_by_number_and_place(kid_number, target_place)
 
         if existing is not None:
             kid = existing
             skipped += 1
         else:
+            if find_place_conflict(target_place) is not None:
+                skipped += 1
+                continue
             with transaction.atomic():
                 kid = Kid.objects.create(
                     kid_number=[kid_number],

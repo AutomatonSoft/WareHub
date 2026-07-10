@@ -7,6 +7,7 @@ import type {
 } from "./client-api-types";
 import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
 import { authorizedFetch, parseError } from "./client-api-shared";
+import { readStoredLabel } from "./i18n";
 
 export async function fetchPendingRegistrations(
   apiBase: string,
@@ -15,7 +16,7 @@ export async function fetchPendingRegistrations(
   const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.admin.pendingRegistrations), {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Pending registrations failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("failedLoadPending", "Failed to load pending registrations.")}: HTTP ${response.status}`));
   }
   return (await response.json()) as PendingUser[];
 }
@@ -30,7 +31,7 @@ export async function approveRegistration(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Approve failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("approveFailed", "Approve failed")}: HTTP ${response.status}`));
   }
   return (await response.json()) as AdminUser;
 }
@@ -45,7 +46,7 @@ export async function rejectRegistration(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Reject failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("rejectFailed", "Reject failed")}: HTTP ${response.status}`));
   }
 }
 
@@ -77,7 +78,7 @@ export async function fetchAdminUsers(
   const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.admin.users)}${suffix}`, {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Users request failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("failedLoadAdminUsers", "Failed to load users.")}: HTTP ${response.status}`));
   }
   return (await response.json()) as AdminUser[];
 }
@@ -97,7 +98,7 @@ export async function updateUserRole(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Role update failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("roleUpdateFailed", "Role update failed")}: HTTP ${response.status}`));
   }
   return (await response.json()) as AdminUser;
 }
@@ -112,7 +113,7 @@ export async function deleteUser(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Delete user failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("deleteFailed", "Delete failed")}: HTTP ${response.status}`));
   }
 }
 
@@ -144,7 +145,7 @@ export async function fetchIntakeDeleteAuditLogs(
   const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.admin.intakeDeleteAudit)}${suffix}`, {}, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Delete audit request failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("failedLoadDeleteAudit", "Failed to load delete audit.")}: HTTP ${response.status}`));
   }
   return (await response.json()) as IntakeDeleteAuditEntry[];
 }

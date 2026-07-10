@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { writeStoredLang } from "../../app/i18n";
 import type { AuthUser } from "../../app/client-api-types";
-import { useLanguage } from "../../app/use-labels";
+import { useLabels } from "../../app/use-labels";
 import { adminNavigationItem, navigationItems, telegramAdminNavigationItem } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
-import { Button, buttonVariants } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 import {
   Sheet,
   SheetContent,
@@ -15,6 +14,7 @@ import {
   SheetHeader,
   SheetTitle
 } from "../ui/sheet";
+import { GlobalLanguageSwitcher } from "../providers/global-language-switcher";
 import { AppUserMenu } from "./app-user-menu";
 
 export function MobileNavigation({
@@ -29,20 +29,20 @@ export function MobileNavigation({
   onUserCleared: () => void;
 }) {
   const pathname = usePathname();
-  const lang = useLanguage();
+  const t = useLabels();
   const visibleNavigationItems = currentUser?.role === "admin"
     ? [...navigationItems, adminNavigationItem, telegramAdminNavigationItem]
     : navigationItems;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="wh-mobile-nav w-[min(88vw,360px)] border-r border-border bg-[var(--wh-color-surface)] p-0 xl:hidden">
+        <SheetContent side="left" className="wh-mobile-nav w-[min(88vw,360px)] border-r border-border bg-[var(--wh-color-surface)] p-0 xl:hidden">
         <SheetHeader className="border-b border-border p-4">
-          <SheetTitle className="text-base font-semibold">WareHub</SheetTitle>
-          <SheetDescription>Navigation and account controls</SheetDescription>
+          <SheetTitle className="text-base font-semibold">{t.brandName}</SheetTitle>
+          <SheetDescription>{t.mobileNavigationDescription}</SheetDescription>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-          <nav className="flex flex-col gap-1" aria-label="Mobile navigation">
+          <nav className="flex flex-col gap-1" aria-label={t.mobileNavigationAria}>
             {visibleNavigationItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
@@ -59,27 +59,13 @@ export function MobileNavigation({
                   aria-current={isActive ? "page" : undefined}
                 >
                   <Icon size={16} aria-hidden="true" />
-                  <span>{item.label}</span>
+                  <span>{t[item.labelKey]}</span>
                 </Link>
               );
             })}
           </nav>
           <div className="mt-auto space-y-3 border-t border-border pt-4">
-            <div className="grid grid-cols-3 gap-2" aria-label="Language switcher">
-              {(["en", "ru", "de"] as const).map((code) => (
-                <Button
-                  key={code}
-                  type="button"
-                  variant={lang === code ? "default" : "outline"}
-                  size="sm"
-                  aria-pressed={lang === code}
-                  onClick={() => writeStoredLang(code)}
-                  className="h-10 rounded-lg text-xs font-semibold uppercase"
-                >
-                  {code}
-                </Button>
-              ))}
-            </div>
+            <GlobalLanguageSwitcher compact />
             <AppUserMenu currentUser={currentUser} onUserCleared={onUserCleared} />
           </div>
         </div>

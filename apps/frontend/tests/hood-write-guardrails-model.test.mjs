@@ -8,7 +8,7 @@ test("buildHoodWriteConfirmMessage builds patch confirmation", () => {
     ean: " 4006381333931 ",
     labels: { patchAction: "Patch", deleteUserConfirmTail: "This action cannot be undone." }
   });
-  assert.equal(msg, "Patch HOOD item 4006381333931? This action cannot be undone.");
+  assert.equal(msg, "Patch HOOD 4006381333931? This action cannot be undone.");
 });
 
 test("buildHoodWriteConfirmMessage builds delete image confirmation", () => {
@@ -17,5 +17,5 @@ test("buildHoodWriteConfirmMessage builds delete image confirmation", () => {
     ean: "4006381333931",
     labels: { deleteFromFtp: "Delete from FTP", deleteUserConfirmTail: "Cannot be undone." }
   });
-  assert.equal(msg, "Delete from FTP HOOD item 4006381333931? Cannot be undone.");
+  assert.equal(msg, "Delete from FTP HOOD 4006381333931? Cannot be undone.");
 });

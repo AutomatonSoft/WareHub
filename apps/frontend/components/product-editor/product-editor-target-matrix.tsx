@@ -1,5 +1,6 @@
 "use client";
 
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { StatusBadge } from "../ui/status-badge";
@@ -17,6 +18,8 @@ type ProductEditorTargetMatrixProps = {
 };
 
 export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGroup, compact = false, className }: ProductEditorTargetMatrixProps) {
+  const t = useLabels();
+  const getStatusLabel = (status: ProductEditorTarget["status"]) => getTargetStatusLabel(status, t);
   const targets = (discover?.groups ?? [])
     .flatMap((group) => group.targets.map((target) => ({ groupId: group.id, groupLabel: group.label, target })))
     .filter((row) => row.target.id !== "JV_MAIN");
@@ -29,15 +32,15 @@ export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGro
       <CardHeader className={cn("border-b border-border", compact ? "pb-2" : "pb-4")}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className={cn(compact ? "text-sm" : "text-base")}>Target Matrix</CardTitle>
+            <CardTitle className={cn(compact ? "text-sm" : "text-base")}>{t.productEditorTargetMatrixTitle}</CardTitle>
             <CardDescription className={cn(compact ? "text-xs" : "")}>
-              {discover ? `Marketplace availability for EAN ${discover.ean}` : "Run discover first"}
+              {discover ? t.productEditorTargetMatrixSubtitle.replace("{ean}", discover.ean) : t.productEditorRunDiscoverFirst}
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-            <StatusBadge tone="found">Found {foundCount}</StatusBadge>
-            <StatusBadge tone="planned">Planned {plannedCount}</StatusBadge>
-            <StatusBadge tone="missing">Missing {missingCount}</StatusBadge>
+            <StatusBadge tone="found">{t.found}: {foundCount}</StatusBadge>
+            <StatusBadge tone="planned">{t.planned}: {plannedCount}</StatusBadge>
+            <StatusBadge tone="missing">{t.missing}: {missingCount}</StatusBadge>
           </div>
         </div>
       </CardHeader>
@@ -46,12 +49,12 @@ export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGro
       {!discover ? (
         compact ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 px-3 py-4 text-xs text-muted-foreground">
-            No product loaded yet.
+            {t.productEditorNoProductLoadedCompact}
           </div>
         ) : (
           <EmptyState
-            title="No product loaded"
-            description="Start with a product identifier in the command block, run Discover, then review JV/XL and marketplace targets."
+            title={t.productEditorNoProductLoaded}
+            description={t.productEditorEmptyDescription}
             className="wh-target-matrix-empty py-8"
           />
         )
@@ -69,11 +72,11 @@ export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGro
                     groupId === activeGroupId ? "border-primary/40 bg-primary/10 ring-1 ring-primary/50 ring-offset-1 ring-offset-background" : ""
                   )}
                   variant="outline"
-                  title={`${groupLabel}: ${target.label} - ${getTargetStatusLabel(target.status)}`}
+                  title={`${groupLabel}: ${target.label} - ${getStatusLabel(target.status)}`}
                 >
                   <div className="w-full space-y-1">
                     <div className="truncate text-[9px] font-semibold uppercase tracking-[0.06em]">{target.label}</div>
-                    <StatusBadge tone={target.status}>{getTargetStatusLabel(target.status)}</StatusBadge>
+                    <StatusBadge tone={target.status}>{getStatusLabel(target.status)}</StatusBadge>
                   </div>
                 </Button>
               ))}
@@ -91,11 +94,11 @@ export function ProductEditorTargetMatrix({ discover, activeGroupId, onSelectGro
                   groupId === activeGroupId ? "border-primary/40 bg-primary/10 ring-1 ring-primary/50 ring-offset-1 ring-offset-background" : ""
                 )}
                 variant="outline"
-                title={`${groupLabel}: ${target.label} - ${getTargetStatusLabel(target.status)}`}
+                title={`${groupLabel}: ${target.label} - ${getStatusLabel(target.status)}`}
               >
                 <div className="w-full space-y-1">
                   <div className="truncate text-[10px] font-semibold uppercase tracking-[0.06em]">{target.label}</div>
-                  <StatusBadge tone={target.status}>{getTargetStatusLabel(target.status)}</StatusBadge>
+                  <StatusBadge tone={target.status}>{getStatusLabel(target.status)}</StatusBadge>
                 </div>
               </Button>
             ))}

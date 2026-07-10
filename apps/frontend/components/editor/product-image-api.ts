@@ -22,13 +22,13 @@ export async function uploadProductImages(files: File[]): Promise<string[]> {
     body: formData
   });
   if (!response.ok) {
-    throw new Error(`Image upload failed: HTTP ${response.status}`);
+    throw new Error(`product_image_upload_failed_http:${response.status}`);
   }
 
   const payload = (await response.json()) as unknown;
   const urls = extractUploadedImageUrls(payload);
   if (urls.length === 0) {
-    throw new Error("Upload completed but no image URLs returned.");
+    throw new Error("product_image_upload_no_urls");
   }
   return urls;
 }

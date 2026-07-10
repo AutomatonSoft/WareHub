@@ -10,8 +10,17 @@ export function buildWriteConfirmMessage(input) {
   return `${actionLabel} ${entityLabel} ${entityId}? ${confirmTail}`;
 }
 
-export function buildActionEanRequiredMessage(action) {
+export function buildActionEanRequiredMessage(action, labels) {
   const value = String(action || "");
-  if (!value) return "Form: ean is required.";
-  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)} form: ean is required.`;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "create") {
+    return labels?.createFormEanRequired || "Create form: EAN is required.";
+  }
+  if (normalized === "change" || normalized === "update") {
+    return labels?.changeFormEanRequired || "Change form: ean is required.";
+  }
+  if (normalized === "delete") {
+    return labels?.deleteFormEanRequired || "Delete form: EAN is required.";
+  }
+  return labels?.formEanRequired || "Form: EAN is required.";
 }

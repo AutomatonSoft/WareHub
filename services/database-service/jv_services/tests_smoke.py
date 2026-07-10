@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import resolve, Resolver404
 
 
@@ -9,8 +9,16 @@ class JVRoutesSmokeTest(SimpleTestCase):
         match = resolve('/api/v1/jv/products/sync-by-ean/4071489201321/')
         self.assertIsNotNone(match.func)
 
+    def test_jv_sync_by_artikelnr_route_resolves(self):
+        match = resolve('/api/v1/jv/products/sync-by-artikelnr/JVM4071489201321/')
+        self.assertIsNotNone(match.func)
+
     def test_jv_batch_plan_route_resolves(self):
         match = resolve('/api/v1/jv/batch/update-by-ean/4071489201321/plan/')
+        self.assertIsNotNone(match.func)
+
+    def test_jv_batch_plan_by_artikelnr_route_resolves(self):
+        match = resolve('/api/v1/jv/batch/update-by-artikelnr/JVM4071489201321/plan/')
         self.assertIsNotNone(match.func)
 
     def test_legacy_xljv_v1_route_does_not_resolve(self):
@@ -873,3 +881,28 @@ class JVRoutesSmokeTest(SimpleTestCase):
         from jv_services.views_create_prepare import prepare_create_identity
 
         self.assertTrue(callable(prepare_create_identity))
+
+
+class JVSyncUtilsTest(TestCase):
+    def test_resolve_local_product_for_source_matches_by_artikelnr_before_ean(self):
+        from jv_services.models import ImportedProduct
+        from jv_services.sync_utils import resolve_local_product_for_source
+
+        product = ImportedProduct.all_objects.create(
+            site="JV",
+            site_key="JV_DE",
+            ean="legacy-ean-value",
+            source_model="4260174428871A",
+            source_product_id=86313,
+        )
+
+        resolved, conflict = resolve_local_product_for_source(
+            site="JV",
+            site_key="JV_DE",
+            source_product_id=86313,
+            effective_ean="different-ean-value",
+            source_model="4260174428871A",
+        )
+
+        self.assertEqual(resolved.id, product.id)
+        self.assertIsNone(conflict)

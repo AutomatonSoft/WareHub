@@ -51,7 +51,7 @@ export function MarketplaceSiteSelectorPanel(props: Props) {
           onChange={(event) => onSitesQueryChange(event.target.value)}
           placeholder={t.searchMarketplacePlaceholder}
           className="h-11"
-          aria-label="Search marketplace sites"
+          aria-label={t.searchMarketplaceSitesAria}
         />
       <div className="wh-secondary-toolbar flex flex-wrap gap-2">
         <Button variant="outline" className="h-10 px-4 text-sm" onClick={onSelectAllSites}>{t.selectAll}</Button>
@@ -76,7 +76,7 @@ export function MarketplaceSiteSelectorPanel(props: Props) {
         {visibleSites.length === 0 ? (
           <EmptyState
             title={t.noSitesFound}
-            description="Adjust the marketplace search or show all available sites."
+            description={t.noSitesFoundDescription}
             className="border-none bg-transparent p-4"
           />
         ) : null}

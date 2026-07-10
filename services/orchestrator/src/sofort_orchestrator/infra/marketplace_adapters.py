@@ -50,7 +50,7 @@ class MarketplaceAdapters:
             route_site = "jv" if site == "JV" else "xl"
             product_editor_mode = str(payload.get("__product_editor_mode") or "").strip().lower()
             if product_editor_mode == "jv_batch_apply":
-                url = f"{self.base_url}/api/v1/jv/batch/update-by-ean/{ean}/apply/"
+                url = f"{self.base_url}/api/v1/jv/batch/update-by-artikelnr/{ean}/apply/"
                 batch_payload = {key: value for key, value in payload.items() if not str(key).startswith("__product_editor_")}
                 response = self.http.request("POST", url, headers=headers, json=batch_payload)
                 return AdapterResult(status_code=response.status_code, body=_json_or_text(response))

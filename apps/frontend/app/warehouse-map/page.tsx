@@ -6,8 +6,8 @@ import { Surface } from "../../components/ui/surface";
 export default function WarehouseMapPage() {
   return (
     <AppShell
-      title="Warehouse Map"
-      subtitle="Smart logistics control center with digital twin occupancy and active location overlays"
+      titleKey="navWarehouseMap"
+      subtitleKey="warehouseMapSubtitle"
     >
       <div className="grid gap-4 xl:grid-cols-[1.5fr_0.8fr]">
         <Surface className="p-0">

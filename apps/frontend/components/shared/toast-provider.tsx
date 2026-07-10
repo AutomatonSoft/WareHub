@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+import { useLabels } from "../../app/use-labels";
 
 type ToastVariant = "success" | "error" | "info";
 
@@ -38,6 +39,7 @@ function toastIconByVariant(variant: ToastVariant) {
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const t = useLabels();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextIdRef = useRef(1);
   const removeToast = useCallback((id: number) => {
@@ -72,7 +74,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               type="button"
               className="rounded-xl p-1 text-[color:var(--text-secondary)] hover:bg-black/5"
               onClick={() => removeToast(toast.id)}
-              aria-label="Close notification"
+              aria-label={t.closeNotification}
             >
               <X size={14} aria-hidden="true" />
             </button>

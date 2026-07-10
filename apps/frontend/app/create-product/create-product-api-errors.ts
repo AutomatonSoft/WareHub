@@ -24,6 +24,17 @@ export function normalizeCreateProductRuntimeError(error: unknown, fallbackMessa
     return error.message;
   }
   if (error instanceof Error && error.message.trim()) {
+    if (error.message === "create_product_main_ean_empty") {
+      return fallbackMessage;
+    }
+    if (error.message.startsWith("create_product_jv_source_sites_http:")) {
+      const status = error.message.split(":")[1] || "0";
+      return `${fallbackMessage}: HTTP ${status}`;
+    }
+    if (error.message.startsWith("create_product_jv_source_product_http:")) {
+      const status = error.message.split(":")[1] || "0";
+      return `${fallbackMessage}: HTTP ${status}`;
+    }
     return error.message;
   }
   return fallbackMessage;

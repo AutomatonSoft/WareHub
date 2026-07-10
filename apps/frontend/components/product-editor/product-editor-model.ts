@@ -210,22 +210,22 @@ export function getGroupStatusCopy(group: ProductEditorGroup | null): string {
   return "Active";
 }
 
-export function getTargetStatusLabel(status: ProductEditorTargetStatus): string {
+export function getTargetStatusLabel(status: ProductEditorTargetStatus, labels?: Record<string, string>): string {
   switch (status) {
     case "found":
-      return "Found";
+      return labels?.found || "Found";
     case "missing":
-      return "Missing";
+      return labels?.missing || "Missing";
     case "error":
-      return "Error";
+      return labels?.error || "Error";
     case "planned":
-      return "Planned";
+      return labels?.planned || "Planned";
     case "unsupported":
-      return "Unsupported";
+      return labels?.unsupported || "Unsupported";
     case "read_only":
-      return "Read-only";
+      return labels?.readOnly || "Read-only";
     default:
-      return "Unknown";
+      return labels?.unknown || "Unknown";
   }
 }
 

@@ -46,24 +46,24 @@ export default function AdminUsersPage() {
   const isAllowed = auth?.user.role === "admin" && auth.user.status === "approved";
 
   return (
-    <AppShell title="Admin users" subtitle="Manage user approvals and roles.">
+    <AppShell title={t.adminUsersTitle} subtitle={t.adminUsersSubtitle}>
       <div className="space-y-4">
         {auth === undefined ? (
-        <SectionCard title="Admin users" subtitle={t.loading}>
+        <SectionCard title={t.adminUsersTitle} subtitle={t.loading}>
           <div />
         </SectionCard>
       ) : null}
 
       {auth === null ? (
-        <SectionCard title="Admin users" subtitle={t.redirecting}>
+        <SectionCard title={t.adminUsersTitle} subtitle={t.redirecting}>
           <div />
         </SectionCard>
       ) : null}
 
       {auth && !isAllowed ? (
-        <SectionCard title="Access denied" subtitle="Access denied">
+        <SectionCard title={t.accessDeniedTitle} subtitle={t.accessDeniedTitle}>
           <p className="text-sm text-muted-foreground">
-            This page is available only to approved admin accounts.
+            {t.approvedAdminsOnly}
           </p>
         </SectionCard>
       ) : null}

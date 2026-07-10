@@ -8,6 +8,7 @@ export type MarketplaceMatrixCellState = {
   status: boolean | null;
   matches: boolean;
   isEmpty: boolean;
+  isBWare: boolean;
 };
 
 export type MarketplaceMatrixRowState = {
@@ -35,20 +36,29 @@ function buildCellState(
   value: string,
   status: boolean | null,
   placeholderEan: string,
-  tokens: string[]
+  tokens: string[],
+  isBWare: boolean
 ): MarketplaceMatrixCellState {
-  const normalized = value.trim();
+  const normalized = isBWare ? "B_WARE" : value.trim();
   const isEmpty = !isMeaningfulValue(normalized, placeholderEan);
   const searchable = normalized.toLowerCase();
   const matches = !isEmpty && tokens.length > 0 && tokens.every((token) => searchable.includes(token));
-  return { key, value, status, matches, isEmpty };
+  return { key, value: normalized, status, matches, isEmpty, isBWare };
+}
+
+function shouldRenderBWareValue(key: MarketplaceKey, bWare: boolean): boolean {
+  if (!bWare) {
+    return false;
+  }
+  return key === "ottoJv" || key === "ottoXl";
 }
 
 export function buildMarketplaceMatrixRows(
   siteEans: SofortListRow["siteEans"],
   siteEanStatuses: SofortListRow["siteEanStatuses"],
   query: string,
-  placeholderEan: string
+  placeholderEan: string,
+  bWare: boolean
 ): MarketplaceMatrixRowState[] {
   const tokens = tokenizeQuery(query);
   const rows: Array<{ market: string; keys: [MarketplaceKey, MarketplaceKey] }> = [
@@ -61,8 +71,22 @@ export function buildMarketplaceMatrixRows(
 
   return rows.map(({ market, keys }) => {
     const cells: [MarketplaceMatrixCellState, MarketplaceMatrixCellState] = [
-      buildCellState(keys[0], siteEans[keys[0]], siteEanStatuses[keys[0]], placeholderEan, tokens),
-      buildCellState(keys[1], siteEans[keys[1]], siteEanStatuses[keys[1]], placeholderEan, tokens)
+      buildCellState(
+        keys[0],
+        siteEans[keys[0]],
+        siteEanStatuses[keys[0]],
+        placeholderEan,
+        tokens,
+        shouldRenderBWareValue(keys[0], bWare),
+      ),
+      buildCellState(
+        keys[1],
+        siteEans[keys[1]],
+        siteEanStatuses[keys[1]],
+        placeholderEan,
+        tokens,
+        shouldRenderBWareValue(keys[1], bWare),
+      )
     ];
     return {
       market,

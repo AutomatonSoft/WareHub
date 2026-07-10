@@ -112,11 +112,11 @@ export function ProductFormPanel() {
   async function handleReserveCurrentEan() {
     const ean = form.ean.trim();
     if (!ean) {
-      setStatusText("EAN is required for reserve.");
+      setStatusText(t.reserveEanInputRequired);
       return;
     }
     if (!isEan13(ean)) {
-      setStatusText("EAN must contain exactly 13 digits for reserve.");
+      setStatusText(t.reserveEanMustBe13Digits);
       return;
     }
     if (eanActionLoading) {
@@ -126,10 +126,10 @@ export function ProductFormPanel() {
     try {
       const { response, errorText } = await reserveEan(ean);
       if (!response.ok) {
-        setStatusText(`Reserve failed: HTTP ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+        setStatusText(`${t.reserveEanFailed} HTTP ${response.status}${errorText ? ` - ${errorText}` : ""}`);
         return;
       }
-      setStatusText(`EAN reserved: ${ean}`);
+      setStatusText(t.eanReservedInPool.replace("{ean}", ean));
       await loadPoolStats();
     } finally {
       setEanActionLoading(false);
@@ -144,11 +144,11 @@ export function ProductFormPanel() {
     try {
       const { response, ean, errorText } = await takeNextFreeEan();
       if (!response.ok || !ean) {
-        setStatusText(`Take next failed: HTTP ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+        setStatusText(`${t.takeNextEanFailed} HTTP ${response.status}${errorText ? ` - ${errorText}` : ""}`);
         return;
       }
       setForm((current) => ({ ...current, ean }));
-      setStatusText(`Next free EAN assigned: ${ean}`);
+      setStatusText(t.nextFreeEanAssigned.replace("{ean}", ean));
       await loadPoolStats();
     } finally {
       setEanActionLoading(false);
@@ -229,9 +229,9 @@ export function ProductFormPanel() {
       </div>
 
       <div className="mt-4 rounded-xl border border-[color:var(--outline)] p-3 text-sm">
-        <div className="font-semibold">Completeness score: {completenessPercent}%</div>
+        <div className="font-semibold">{t.completenessScore}: {completenessPercent}%</div>
         <div className="mt-1 text-xs text-[color:var(--text-secondary)]">
-          {missingRequired.length === 0 ? "All required fields are filled." : `Missing: ${missingRequired.join(", ")}`}
+          {missingRequired.length === 0 ? t.allRequiredFieldsFilled : `${t.readinessMissing}: ${missingRequired.join(", ")}`}
         </div>
       </div>
 
@@ -240,10 +240,10 @@ export function ProductFormPanel() {
         <Button variant="secondary">{t.publish}</Button>
         <Button variant="secondary">{t.pushToMarketplaces}</Button>
         <Button variant="secondary" onClick={() => void handleTakeNextEan()} disabled={eanActionLoading}>
-          Take next EAN
+          {t.takeNextEan}
         </Button>
         <Button variant="secondary" onClick={() => void handleReserveCurrentEan()} disabled={eanActionLoading}>
-          Reserve current EAN
+          {t.reserveDraftEan}
         </Button>
       </div>
       <div className="mt-4 rounded-xl border border-[color:var(--outline)] p-3">

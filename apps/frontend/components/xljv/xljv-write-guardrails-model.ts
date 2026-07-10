@@ -3,10 +3,10 @@ import { buildWriteConfirmMessage, type Labels } from "../shared/write-guardrail
 export type XLJVWriteAction = "sync" | "send_created" | "send_all_sites" | "send_selected_sites";
 
 function actionLabel(action: XLJVWriteAction, labels: Labels): string {
-  if (action === "send_all_sites") return labels.sendToAllSites || "Send to all sites";
-  if (action === "send_selected_sites") return labels.send || "Send";
-  if (action === "send_created") return labels.send || "Send";
-  return labels.sync || "Sync";
+  if (action === "send_all_sites") return labels.sendToAllSites || "";
+  if (action === "send_selected_sites") return labels.send || "";
+  if (action === "send_created") return labels.send || "";
+  return labels.sync || "";
 }
 
 export function buildXLJVWriteConfirmMessage(input: {
@@ -16,7 +16,7 @@ export function buildXLJVWriteConfirmMessage(input: {
 }): string {
   return buildWriteConfirmMessage({
     actionLabel: actionLabel(input.action, input.labels),
-    entityLabel: "XL/JV item",
+    entityLabel: input.labels.xljvItem || "XL/JV",
     entityId: input.ean,
     confirmTail: input.labels.deleteUserConfirmTail
   });

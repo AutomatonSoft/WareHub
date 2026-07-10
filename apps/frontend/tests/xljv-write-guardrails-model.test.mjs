@@ -8,7 +8,7 @@ test("buildXLJVWriteConfirmMessage builds sync confirmation", () => {
     ean: " 4006381333931 ",
     labels: { sync: "Sync", deleteUserConfirmTail: "This action cannot be undone." }
   });
-  assert.equal(msg, "Sync XL/JV item 4006381333931? This action cannot be undone.");
+  assert.equal(msg, "Sync XL/JV 4006381333931? This action cannot be undone.");
 });
 
 test("buildXLJVWriteConfirmMessage builds send-to-all confirmation", () => {
@@ -17,5 +17,5 @@ test("buildXLJVWriteConfirmMessage builds send-to-all confirmation", () => {
     ean: "4006381333931",
     labels: { sendToAllSites: "Send to all sites", deleteUserConfirmTail: "Cannot be undone." }
   });
-  assert.equal(msg, "Send to all sites XL/JV item 4006381333931? Cannot be undone.");
+  assert.equal(msg, "Send to all sites XL/JV 4006381333931? Cannot be undone.");
 });

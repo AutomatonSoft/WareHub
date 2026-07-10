@@ -1,5 +1,6 @@
 import { RubricTreeNode, Site, XLAllSitesResult, XLJVResponse } from "./xljv-search-utils";
 import { XLJVProduct } from "./xljv-edit-utils";
+import { readStoredLabel } from "../../app/i18n";
 import { apiFetch } from "../../lib/api/client";
 
 type TakeNextFreeBody = Record<string, unknown>;
@@ -18,6 +19,26 @@ function buildQuery(params: Record<string, string>): string {
 
 function xljvBasePath(site: Site): string {
   return site === "JV" ? "/api/v1/jv" : "/api/v1/xl";
+}
+
+function xljvIdentifierSegment(site: Site): "by-artikelnr" | "by-ean" {
+  return site === "JV" ? "by-artikelnr" : "by-ean";
+}
+
+function xljvLocalIdentifierSegment(site: Site): "local-by-artikelnr" | "local-by-ean" {
+  return site === "JV" ? "local-by-artikelnr" : "local-by-ean";
+}
+
+function xljvUpdateIdentifierSegment(site: Site): "update-by-artikelnr" | "update-by-ean" {
+  return site === "JV" ? "update-by-artikelnr" : "update-by-ean";
+}
+
+function xljvSyncIdentifierSegment(site: Site): "sync-by-artikelnr" | "sync-by-ean" {
+  return site === "JV" ? "sync-by-artikelnr" : "sync-by-ean";
+}
+
+function xljvBatchIdentifierSegment(site: Site): "update-by-artikelnr" | "update-by-ean" {
+  return site === "JV" ? "update-by-artikelnr" : "update-by-ean";
 }
 
 async function parseJsonSafe(response: Response): Promise<Record<string, unknown>> {
@@ -54,7 +75,7 @@ async function postJsonWithFallback(
     lastPayload = payload;
   }
   if (!lastResponse) {
-    throw new Error("No fallback endpoint responded.");
+    throw new Error(readStoredLabel("noFallbackEndpointResponded", "No fallback endpoint responded."));
   }
   return { response: lastResponse, payload: lastPayload };
 }
@@ -76,7 +97,7 @@ async function postFormDataWithFallback(
     lastPayload = payload;
   }
   if (!lastResponse) {
-    throw new Error("No fallback endpoint responded.");
+    throw new Error(readStoredLabel("noFallbackEndpointResponded", "No fallback endpoint responded."));
   }
   return { response: lastResponse, payload: lastPayload };
 }
@@ -86,7 +107,7 @@ export async function xljvGetProductByEan(params: {
   site: Site;
   siteKey?: string;
 }): Promise<{ response: Response; payload: XLJVResponse }> {
-  const url = `${xljvBasePath(params.site)}/products/by-ean/${encodeURIComponent(params.ean)}${buildQuery({
+  const url = `${xljvBasePath(params.site)}/products/${xljvIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
     site: params.site,
     ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
   })}`;
@@ -99,7 +120,7 @@ export async function xljvGetSitesByEan(params: {
   ean: string;
   site: Site;
 }): Promise<{ response: Response; payload: XLAllSitesResult & { detail?: string } }> {
-  const url = `${xljvBasePath(params.site)}/sites/by-ean/${encodeURIComponent(params.ean)}${buildQuery({
+  const url = `${xljvBasePath(params.site)}/sites/${xljvIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
     site: params.site
   })}`;
   const response = await apiFetch(url);
@@ -227,8 +248,8 @@ export async function xljvSyncByEan(params: {
   batch?: boolean;
 }): Promise<{ response: Response; text: string }> {
   const url = params.batch
-    ? `${xljvBasePath(params.site)}/batch/update-by-ean/${encodeURIComponent(params.ean)}/apply/${buildQuery({})}`
-    : `${xljvBasePath(params.site)}/products/sync-by-ean/${encodeURIComponent(params.ean)}${buildQuery({
+    ? `${xljvBasePath(params.site)}/batch/${xljvBatchIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}/apply/${buildQuery({})}`
+    : `${xljvBasePath(params.site)}/products/${xljvSyncIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
         site: params.site,
         ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
       })}`;
@@ -247,7 +268,7 @@ export async function xljvBatchApplyByEan(params: {
   requestBody: BatchApplyBody;
 }): Promise<{ response: Response; payload: Record<string, unknown> }> {
   const response = await apiFetch(
-    `${xljvBasePath(params.site)}/batch/update-by-ean/${encodeURIComponent(params.ean)}/apply/`,
+    `${xljvBasePath(params.site)}/batch/${xljvBatchIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}/apply/`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -264,7 +285,7 @@ export async function xljvLocalByEan(params: {
   siteKey?: string;
 }): Promise<{ response: Response; payload: XLJVProduct }> {
   const response = await apiFetch(
-    `${xljvBasePath(params.site)}/products/local-by-ean/${encodeURIComponent(params.ean)}${buildQuery({
+    `${xljvBasePath(params.site)}/products/${xljvLocalIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
       site: params.site,
       ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
     })}`,
@@ -281,7 +302,7 @@ export async function xljvUpdateByEan(params: {
   payload: UpdateByEanBody;
 }): Promise<{ response: Response; payload: XLJVProduct }> {
   const response = await apiFetch(
-    `${xljvBasePath(params.site)}/products/update-by-ean/${encodeURIComponent(params.ean)}${buildQuery({
+    `${xljvBasePath(params.site)}/products/${xljvUpdateIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
       site: params.site,
       ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
     })}`,

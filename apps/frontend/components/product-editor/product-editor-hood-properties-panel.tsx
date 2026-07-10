@@ -1,5 +1,6 @@
 "use client";
 
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import type { ProductEditorHoodDraft, ProductEditorHoodProperty } from "./product-editor-types";
@@ -10,6 +11,7 @@ type ProductEditorHoodPropertiesPanelProps = {
 };
 
 export function ProductEditorHoodPropertiesPanel(props: ProductEditorHoodPropertiesPanelProps) {
+  const t = useLabels();
   const properties = props.draft.productProperties;
 
   function patchProperty(index: number, patch: Partial<ProductEditorHoodProperty>) {
@@ -36,7 +38,7 @@ export function ProductEditorHoodPropertiesPanel(props: ProductEditorHoodPropert
     <div className="flex h-full flex-col rounded-2xl border border-border bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,1))] p-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.35)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Product properties</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t.productProperties}</p>
         </div>
         <Button
           type="button"
@@ -44,13 +46,13 @@ export function ProductEditorHoodPropertiesPanel(props: ProductEditorHoodPropert
           className="h-9 rounded-xl border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
           onClick={addProperty}
         >
-          Add property
+          {t.addProperty}
         </Button>
       </div>
 
       {properties.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-sm text-slate-500">
-          No product properties yet.
+          {t.noProductPropertiesYet}
         </div>
       ) : (
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -60,14 +62,14 @@ export function ProductEditorHoodPropertiesPanel(props: ProductEditorHoodPropert
               className="group rounded-2xl border border-slate-200 bg-white p-2.5 shadow-[0_8px_20px_-20px_rgba(15,23,42,0.45)] transition hover:border-slate-300 hover:shadow-[0_14px_28px_-24px_rgba(15,23,42,0.45)]"
             >
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Property</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{t.propertyLabel}</span>
                 <Button
                   type="button"
                   variant="ghost"
                   className="h-7 rounded-lg px-2 text-[10px] font-semibold text-rose-500 hover:bg-rose-50 hover:text-rose-600"
                   onClick={() => removeProperty(index)}
                 >
-                  Remove
+                  {t.removeProperty}
                 </Button>
               </div>
               <div className="space-y-2">
@@ -75,13 +77,13 @@ export function ProductEditorHoodPropertiesPanel(props: ProductEditorHoodPropert
                   value={property.name}
                   onChange={(event) => patchProperty(index, { name: event.target.value })}
                   className="h-9 rounded-xl border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-900 placeholder:text-slate-400"
-                  placeholder="Property name"
+                  placeholder={t.propertyName}
                 />
                 <Input
                   value={property.value}
                   onChange={(event) => patchProperty(index, { value: event.target.value })}
                   className="h-9 rounded-xl border-slate-200 bg-white px-3 text-xs text-slate-700 placeholder:text-slate-400"
-                  placeholder="Property value"
+                  placeholder={t.propertyValue}
                 />
               </div>
             </div>

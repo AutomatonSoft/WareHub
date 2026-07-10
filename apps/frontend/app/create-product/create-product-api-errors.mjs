@@ -18,7 +18,19 @@ export function extractErrorTextFromBody(body) {
 
 export function normalizeCreateProductRuntimeError(error, fallbackMessage) {
   if (error && typeof error.message === "string" && String(error.message).trim()) {
-    return String(error.message);
+    const message = String(error.message);
+    if (message === "create_product_main_ean_empty") {
+      return fallbackMessage;
+    }
+    if (message.startsWith("create_product_jv_source_sites_http:")) {
+      const status = message.split(":")[1] || "0";
+      return `${fallbackMessage}: HTTP ${status}`;
+    }
+    if (message.startsWith("create_product_jv_source_product_http:")) {
+      const status = message.split(":")[1] || "0";
+      return `${fallbackMessage}: HTTP ${status}`;
+    }
+    return message;
   }
   return fallbackMessage;
 }

@@ -43,7 +43,7 @@ export async function fetchDashboardOverviewData(): Promise<{
   if (!kidsResponse.ok || !ordersResponse.ok) {
     const code = !kidsResponse.ok ? kidsResponse.status : ordersResponse.status;
     console.error("DASHBOARD_OVERVIEW_REQUEST_FAILED", { code });
-    throw new Error("Unable to load dashboard data right now. Please try again later.");
+    throw new Error("dashboard_overview_request_failed");
   }
 
   return {

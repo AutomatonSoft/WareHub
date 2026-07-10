@@ -1,7 +1,9 @@
 "use client";
 
+import { useLabels } from "../../../app/use-labels";
 import { ErrorState } from "../../ui/error-state";
 
 export function XLJVErrorState({ message }: { message: string }) {
-  return <ErrorState title="Request failed" description={message} />;
+  const t = useLabels();
+  return <ErrorState title={t.xljvRequestFailed} description={message} />;
 }

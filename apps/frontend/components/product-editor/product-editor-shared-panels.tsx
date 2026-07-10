@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useLabels } from "../../app/use-labels";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -25,6 +26,7 @@ export function ProductEditorPlaceholderPanel({
   subtitle: string;
   details: string[];
 }) {
+  const t = useLabels();
   const group = findGroup(discover, groupId);
   const foundCount = group?.targets.filter((target) => target.status === "found").length ?? 0;
   const totalCount = group?.targets.length ?? 0;
@@ -34,7 +36,7 @@ export function ProductEditorPlaceholderPanel({
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
           <h2 className="text-lg font-semibold text-foreground">{subtitle}</h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">This tab is intentionally non-actionable in the current rollout.</p>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{t.productEditorPlaceholderNonActionable}</p>
           <div className="mt-3 flex flex-col gap-2">
             {details.map((detail) => (
               <div key={detail} className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
@@ -44,13 +46,13 @@ export function ProductEditorPlaceholderPanel({
           </div>
         </div>
         <div className="rounded-xl border border-border bg-muted/50 p-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Current rollout</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t.productEditorCurrentRollout}</div>
           <div className="mt-2 text-sm font-medium text-foreground">{getGroupStatusCopy(group)}</div>
           <div className="mt-2 text-sm text-muted-foreground">
-            {group ? `${foundCount} found / ${totalCount} total targets` : "Discover first to inspect targets."}
+            {group ? t.productEditorFoundTargets.replace("{found}", String(foundCount)).replace("{total}", String(totalCount)) : t.productEditorDiscoverTargetsFirst}
           </div>
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-            Apply is intentionally unavailable for this tab in the current phase.
+            {t.productEditorApplyUnavailable}
           </div>
           <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground">
             {group?.targets.map((target) => (
@@ -58,7 +60,7 @@ export function ProductEditorPlaceholderPanel({
                 <span className="font-medium text-foreground">{target.label}</span>
                 <span>{target.status}</span>
               </div>
-            )) ?? "After search, target cards for this tab will appear here."}
+            )) ?? t.productEditorTargetsAppearAfterSearch}
           </div>
         </div>
       </CardContent>
@@ -83,6 +85,7 @@ export function ProductEditorEmptyPanel({
   onChangeEan: (value: string) => void;
   onSearch: () => void;
 }) {
+  const t = useLabels();
   return (
     <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
       <CardContent className="py-8">
@@ -91,7 +94,7 @@ export function ProductEditorEmptyPanel({
             <Input
               value={eanValue}
               onChange={(event) => onChangeEan(event.target.value)}
-              placeholder="Enter product identifier for this tab"
+              placeholder={t.productEditorSearchPlaceholder}
               maxLength={100}
               className="h-11 rounded-[var(--radius-control)] border-border bg-background"
               onKeyDown={(event) => {
@@ -108,22 +111,22 @@ export function ProductEditorEmptyPanel({
               variant="outline"
               className="h-11 shrink-0 rounded-[var(--radius-control)] px-4 text-sm font-semibold"
             >
-              {searching ? "Searching..." : "Discover"}
+              {searching ? t.searching : t.productEditorDiscoverAction}
             </Button>
           </div>
           <div className="flex flex-col gap-1.5">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
-            <h2 className="text-2xl font-semibold leading-tight text-foreground">No product loaded</h2>
-            <p className="mx-auto max-w-xl text-sm leading-6 text-muted-foreground">Enter a product identifier here and run discovery to resolve marketplace targets for this tab.</p>
+            <h2 className="text-2xl font-semibold leading-tight text-foreground">{t.productEditorNoProductLoaded}</h2>
+            <p className="mx-auto max-w-xl text-sm leading-6 text-muted-foreground">{t.productEditorEmptyDescription}</p>
             <p className="mx-auto max-w-xl text-xs leading-5 text-muted-foreground">{body}</p>
           </div>
           <div className="grid gap-2 rounded-[var(--radius-card)] border border-border bg-muted/25 p-3 text-left text-xs text-muted-foreground sm:grid-cols-3">
-            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">1 Enter identifier - Input product identifier</span>
-            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">2 Discover targets - Resolve across marketplaces</span>
-            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">3 Apply through Orchestrator - Edit and publish changes</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">{t.productEditorEmptyStep1}</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">{t.productEditorEmptyStep2}</span>
+            <span className="rounded-[var(--radius-control)] border border-border/80 bg-background px-3 py-2">{t.productEditorEmptyStep3}</span>
           </div>
           <div className="grid gap-3 pt-1 md:grid-cols-3">
-            {["Product Summary", "Marketplace Matrix", "Editable Fields"].map((section) => (
+            {[t.productEditorSummarySection, t.productEditorMarketplaceMatrixSection, t.productEditorEditableFieldsSection].map((section) => (
               <div key={section} className="rounded-[var(--radius-control)] border border-border bg-muted/20 p-3 text-left">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{section}</p>
                 <div className="mt-2 flex flex-col gap-2">
@@ -166,6 +169,8 @@ export function ProductEditorPanelLayout(props: {
   description: ReactNode;
   bottom: ReactNode;
 }) {
+  const t = useLabels();
+
   return (
     <Card className="wh-product-editor-card border-border bg-card shadow-[var(--wh-shadow-card)]">
       <CardHeader className="wh-card-header-divider pb-4">
@@ -183,7 +188,7 @@ export function ProductEditorPanelLayout(props: {
             <div className="flex flex-wrap items-center gap-1.5">{props.headerActions}</div>
           ) : !props.hideHeaderBadges ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="secondary">Changed {props.changedCount}</Badge>
+              <Badge variant="secondary">{t.productEditorChangedBadge.replace("{count}", String(props.changedCount))}</Badge>
               {props.status ? <Badge variant="outline">{props.status}</Badge> : null}
             </div>
           ) : null}

@@ -43,7 +43,7 @@ export function SelectedSitesCard({
 }) {
   return (
     <Card className="rounded-xl p-5 shadow-sm">
-      <SectionHeader title="Target Site Review" badge="Publish" description="Review template and target sites before pushing product updates." />
+      <SectionHeader title={t.xljvEditTargetSiteReview} badge={t.xljvEditPublishBadge} description={t.xljvEditReviewTargetsHint} />
       <Button type="button" variant="secondary" onClick={() => void onHandleLoadAllSites()} disabled={sitesLoading}>
         {sitesLoading ? t.loadingSites : t.loadSites}
       </Button>
@@ -66,7 +66,7 @@ export function SelectedSitesCard({
                 {allSitesResult.found.map((row) => (
                   <tr key={`${row.site_key}-${row.product_id}`} className="border-t border-[color:var(--outline)]">
                     <td className="px-3 py-2">
-                      <Checkbox checked={selectedSiteKeys.includes(row.site_key)} onChange={() => onToggleSelectedSite(row.site_key)} aria-label={`Use ${row.site_key}`} />
+                      <Checkbox checked={selectedSiteKeys.includes(row.site_key)} onChange={() => onToggleSelectedSite(row.site_key)} aria-label={t.xljvUseSiteKeyAria.replace("{siteKey}", row.site_key)} />
                     </td>
                     <td className="px-3 py-2">
                       <input
@@ -100,11 +100,13 @@ export function SelectedSitesCard({
 }
 
 export function ProductEditorActionBar({
+  t,
   saving,
   batchSending,
   onReset,
   onSendToSelectedSites
 }: {
+  t: Record<string, string>;
   saving: boolean;
   batchSending: boolean;
   onReset: () => void;
@@ -113,15 +115,15 @@ export function ProductEditorActionBar({
   return (
     <Card className="rounded-xl border border-[color:var(--outline)] bg-white px-4 py-3 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-xs text-[color:var(--text-secondary)]">Review changes before publishing.</div>
+        <div className="text-xs text-[color:var(--text-secondary)]">{t.xljvReviewBeforePublishing}</div>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="ghost" className="h-10 whitespace-nowrap px-4" onClick={onReset}>
             <RotateCcw size={16} className="shrink-0" aria-hidden="true" />
-            Reset Changes
+            {t.xljvResetChanges}
           </Button>
           <Button type="submit" variant="secondary" className="h-10 whitespace-nowrap px-5" loading={saving}>
             <Save size={16} className="shrink-0" aria-hidden="true" />
-            Save Draft
+            {t.xljvSaveDraft}
           </Button>
           <Button
             type="button"
@@ -130,7 +132,7 @@ export function ProductEditorActionBar({
             onClick={() => void onSendToSelectedSites()}
           >
             <Send size={16} className="shrink-0" aria-hidden="true" />
-            Update Selected Sites
+            {t.xljvUpdateSelectedSites}
           </Button>
         </div>
       </div>

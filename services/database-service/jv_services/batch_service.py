@@ -1266,6 +1266,7 @@ def _apply_batch_item(
                 site_key=item.site_key or "",
                 source_product_id=product_row["product_id"],
                 effective_ean=effective_ean,
+                source_model=(product_row.get("model") or "").strip(),
             )
             if conflict_product is not None:
                 mark_item_failed(

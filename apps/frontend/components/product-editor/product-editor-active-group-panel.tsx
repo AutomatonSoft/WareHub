@@ -1,8 +1,9 @@
+import { useLabels } from "../../app/use-labels";
 import { findGroup, hasActionableHoodTarget, hasActionableJvTarget } from "./product-editor-model";
 import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
 import { ProductEditorXlPanel } from "./product-editor-xl-panel";
-import { PRODUCT_EDITOR_PLACEHOLDER_DETAILS, PRODUCT_EDITOR_TAB_COPY } from "./product-editor-copy";
+import { getProductEditorPlaceholderDetails, getProductEditorTabCopy } from "./product-editor-copy";
 import { ProductEditorEmptyPanel } from "./product-editor-shared-panels";
 import type {
   ProductEditorDiscoverResponse,
@@ -55,6 +56,11 @@ export function ProductEditorActiveGroupPanel(input: {
   onApplyHoodEditedProducts: () => void;
   onApplyJvEditedProducts: () => void;
 }) {
+  const t = useLabels();
+  const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
+  const PRODUCT_EDITOR_PLACEHOLDER_DETAILS = getProductEditorPlaceholderDetails(t);
+  const formatLabel = (template: string | undefined, fallback: string, value: string) =>
+    (template ?? fallback).replace("{tab}", value);
   const activeTabUpper = input.activeTabLabel.toUpperCase();
   const activeVariant = activeTabUpper.endsWith(" XL")
     ? "XL"
@@ -67,8 +73,8 @@ export function ProductEditorActiveGroupPanel(input: {
     if (!input.discover && !input.hasLocalLoadedHood) {
       return (
         <ProductEditorEmptyPanel
-          title={`${input.activeTabLabel} tab`}
-          body={`Run discover first so orchestrator can resolve ${input.activeTabLabel} targets.`}
+          title={formatLabel(t.productEditorEmptyPanelTitle, input.activeTabLabel, input.activeTabLabel)}
+          body={t.productEditorRunDiscoverFirst}
           eanValue={input.eanValue}
           isEanValid={input.isEanValid}
           searching={input.searching}
@@ -80,8 +86,8 @@ export function ProductEditorActiveGroupPanel(input: {
     if (input.discover && !hasActionableHoodTarget(hoodGroup) && !input.hasLocalLoadedHood) {
       return (
         <ProductEditorEmptyPanel
-          title={`${input.activeTabLabel} target not found`}
-          body={`For this EAN, orchestrator did not find ${input.activeTabLabel} targets. The tab remains read-only and sends nothing.`}
+          title={formatLabel(t.productEditorEmptyPanelTargetNotFound, input.activeTabLabel, input.activeTabLabel)}
+          body={formatLabel(t.productEditorTargetNotFoundBody, t.productEditorRunDiscoverFirst, input.activeTabLabel)}
           eanValue={input.eanValue}
           isEanValid={input.isEanValid}
           searching={input.searching}
@@ -188,13 +194,13 @@ export function ProductEditorActiveGroupPanel(input: {
 
   const details =
     PRODUCT_EDITOR_PLACEHOLDER_DETAILS[input.activeGroupId as keyof typeof PRODUCT_EDITOR_PLACEHOLDER_DETAILS] ??
-    ["This tab is intentionally non-actionable in the current phase."];
-  const variantHint = activeVariant ? `Active source variant: ${activeVariant}.` : "";
-  const tabHint = `Active tab: ${input.activeTabLabel}.`;
+    [t.productEditorPlaceholderNonActionable];
+  const variantHint = activeVariant ? t.productEditorActiveSourceVariant.replace("{variant}", activeVariant) : "";
+  const tabHint = t.productEditorActiveTab.replace("{tab}", input.activeTabLabel);
   const body = [tabHint, details[0], variantHint].filter(Boolean).join(" ");
   return (
     <ProductEditorEmptyPanel
-      title={`${input.activeTabLabel} tab`}
+      title={formatLabel(t.productEditorEmptyPanelTitle, input.activeTabLabel, input.activeTabLabel)}
       body={body || PRODUCT_EDITOR_TAB_COPY[input.activeGroupId].subtitle}
       eanValue={input.eanValue}
       isEanValid={input.isEanValid}

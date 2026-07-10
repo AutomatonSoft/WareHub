@@ -1,4 +1,5 @@
 import { Button } from "../button";
+import { useLabels } from "@/app/use-labels";
 
 type TablePaginationProps = {
   page: number;
@@ -17,6 +18,8 @@ export function TablePagination({
   onNext,
   pageSizeText
 }: TablePaginationProps) {
+  const t = useLabels();
+
   return (
     <div className="ui-table-footer">
       <div className="text-sm text-[color:var(--text-secondary)]">{pageSizeText ?? ""}</div>
@@ -25,22 +28,22 @@ export function TablePagination({
           type="button"
           onClick={onPrev}
           disabled={!hasPrevPage}
-          aria-label="Go to previous page"
+          aria-label={t.goToPreviousPage}
           variant="secondary"
           className="h-8 rounded-xl px-3 text-[color:var(--text-primary)]"
         >
-          Prev
+          {t.previous}
         </Button>
-        <p aria-live="polite" className="min-w-[100px] text-center text-sm text-[color:var(--text-secondary)]">Page {page}</p>
+        <p aria-live="polite" className="min-w-[100px] text-center text-sm text-[color:var(--text-secondary)]">{t.page} {page}</p>
         <Button
           type="button"
           onClick={onNext}
           disabled={!hasNextPage}
-          aria-label="Go to next page"
+          aria-label={t.goToNextPage}
           variant="secondary"
           className="h-8 rounded-xl px-3 text-[color:var(--text-primary)]"
         >
-          Next
+          {t.next}
         </Button>
       </div>
     </div>

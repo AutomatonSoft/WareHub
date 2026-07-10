@@ -8,6 +8,6 @@ export default function ProductEditorError({ error, reset }: { error: Error & { 
     console.error("Product editor route error", error);
   }, [error]);
 
-  return <RouteErrorState title="Product editor error" reset={reset} />;
+  return <RouteErrorState titleKey="productEditorErrorTitle" descriptionKey="routeErrorDescription" reset={reset} />;
 }
 

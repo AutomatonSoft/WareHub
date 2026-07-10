@@ -1,8 +1,6 @@
 import React from "react";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import type { AuthMode, LoginLabels } from "./login-types";
-import { PASSWORD_REQUIREMENTS } from "./login-validators";
-
 type RegisterFormProps = {
   t: LoginLabels;
   regEmail: string;
@@ -94,12 +92,12 @@ function RegisterForm(props: RegisterFormProps) {
             type="button"
             className="field-action"
             onClick={() => setRegisterPasswordVisible((prev) => !prev)}
-            aria-label={registerPasswordVisible ? "Hide password" : "Show password"}
+            aria-label={registerPasswordVisible ? t.hidePassword : t.showPassword}
           >
             {registerPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <p className="field-hint">{PASSWORD_REQUIREMENTS}</p>
+        <p className="field-hint">{t.passwordRequirements}</p>
       </div>
       <div className="field has-icon has-action">
         <span className="field-label">{t.confirmPassword}</span>
@@ -120,7 +118,7 @@ function RegisterForm(props: RegisterFormProps) {
             type="button"
             className="field-action"
             onClick={() => setRegisterPasswordVisible((prev) => !prev)}
-            aria-label={registerPasswordVisible ? "Hide password" : "Show password"}
+            aria-label={registerPasswordVisible ? t.hidePassword : t.showPassword}
           >
             {registerPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -202,7 +200,7 @@ function LoginForm(props: LoginFormProps) {
             type="button"
             className="field-action"
             onClick={() => setLoginPasswordVisible((prev) => !prev)}
-            aria-label={loginPasswordVisible ? "Hide password" : "Show password"}
+            aria-label={loginPasswordVisible ? t.hidePassword : t.showPassword}
           >
             {loginPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>

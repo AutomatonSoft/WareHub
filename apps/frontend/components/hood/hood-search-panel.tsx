@@ -172,9 +172,9 @@ export function HoodSearchPanel(props: HoodSearchPanelProps = {}) {
       });
       if (!response.ok) {
         if (response.status === 403) {
-          throw new Error("No access to hood endpoint. Admin session is required in database_service.");
+          throw new Error(t.hoodAdminSessionRequired);
         }
-        const detail = payload.detail || "Hood request failed.";
+        const detail = payload.detail || t.hoodRequestFailed;
         const statusCodeText =
           typeof payload.status_code === "number" ? ` status=${payload.status_code}` : "";
         const bodyText = payload.body ? ` body=${payload.body}` : "";
@@ -286,7 +286,7 @@ export function HoodSearchPanel(props: HoodSearchPanelProps = {}) {
 
       if (!response.ok) {
         const parsed = (payload ?? {}) as HoodResponse;
-        const detail = parsed.detail || `PATCH failed: HTTP ${response.status}`;
+        const detail = parsed.detail || `${t.patchFailed} HTTP ${response.status}`;
         const statusCodeText =
           typeof parsed.status_code === "number" ? ` status=${parsed.status_code}` : "";
         const bodyText = parsed.body ? ` body=${parsed.body}` : "";
@@ -347,7 +347,7 @@ export function HoodSearchPanel(props: HoodSearchPanelProps = {}) {
         url
       });
       if (!response.ok) {
-        const detail = payload.detail || `Delete failed: HTTP ${response.status}`;
+        const detail = payload.detail || `${t.deleteFailed}: HTTP ${response.status}`;
         throw new Error(detail);
       }
 
@@ -384,11 +384,11 @@ export function HoodSearchPanel(props: HoodSearchPanelProps = {}) {
         />
       ) : null}
 
-      {activeTab === "search" && error ? <HoodErrorState title="Hood search failed" description={error} /> : null}
-      {activeTab === "patch" && patchError ? <HoodErrorState title="Hood patch failed" description={patchError} /> : null}
+      {activeTab === "search" && error ? <HoodErrorState title={t.hoodSearchFailed} description={error} /> : null}
+      {activeTab === "patch" && patchError ? <HoodErrorState title={t.hoodPatchFailed} description={patchError} /> : null}
 
       {activeTab === "search" && loading ? <HoodLoadingState /> : null}
-      {activeTab === "search" && searched && !loading && !error && items.length === 0 ? <HoodEmptyState title={t.noItemsFound} description="Try another EAN or switch the active account." /> : null}
+      {activeTab === "search" && searched && !loading && !error && items.length === 0 ? <HoodEmptyState title={t.noItemsFound} description={t.tryAnotherEanOrSwitchAccount} /> : null}
 
       {statusMeta ? <HoodStatusCard statusMeta={statusMeta} /> : null}
 

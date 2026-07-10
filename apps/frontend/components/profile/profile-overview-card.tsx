@@ -1,18 +1,23 @@
 import { ShieldCheck } from "lucide-react";
 import { useLabels } from "../../app/use-labels";
-import { permissionRows } from "../../lib/mock-data";
 import { Button } from "../shared/button";
 import { Card } from "../shared/card";
 
 export function ProfileOverviewCard() {
   const t = useLabels();
+  const permissionRows = [
+    { scope: t.permissionInventory, access: t.permissionReadWrite },
+    { scope: t.permissionMarketplace, access: t.permissionAdmin },
+    { scope: t.permissionWarehouseMap, access: t.permissionRead },
+    { scope: t.permissionApiManagement, access: t.permissionOwner }
+  ];
   return (
     <Card>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="h-16 w-16 rounded-xl bg-[linear-gradient(135deg,rgba(16,185,129,0.35),rgba(13,148,136,0.26))]" />
           <div>
-            <h3 className="page-title text-xl">Maksim Rudinov</h3>
+            <h3 className="page-title text-xl">{t.profileDemoName}</h3>
             <p className="text-sm text-[color:var(--text-secondary)]">{t.headOfOperationsWarehubEurope}</p>
             <p className="mt-1 text-xs text-[color:var(--text-muted)]">{t.workspaceAccessTeams}</p>
           </div>

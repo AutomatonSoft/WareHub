@@ -25,17 +25,22 @@ import { useToast } from "../../components/shared/toast-provider";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { useLabels } from "../use-labels";
 
 function ProfileAvatar({
   user,
   apiBase,
   uploading,
-  onPickAvatar
+  onPickAvatar,
+  actionLabel,
+  avatarAlt
 }: {
   user: AuthUser | null;
   apiBase: string;
   uploading: boolean;
   onPickAvatar: () => void;
+  actionLabel: string;
+  avatarAlt: string;
 }) {
   const [hasLoadError, setHasLoadError] = useState(false);
   const avatarSrc = user?.avatar_url && !hasLoadError ? resolvePhotoUrl(apiBase, user.avatar_url) : null;
@@ -48,12 +53,12 @@ function ProfileAvatar({
         onClick={onPickAvatar}
         disabled={uploading}
         className="group relative shrink-0 overflow-hidden rounded-[var(--radius-card)] border border-border bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-        aria-label="Change avatar"
-        title="Change avatar"
+        aria-label={actionLabel}
+        title={actionLabel}
       >
         <Image
           src={avatarSrc}
-          alt="User avatar"
+          alt={avatarAlt}
           width={80}
           height={80}
           unoptimized
@@ -73,8 +78,8 @@ function ProfileAvatar({
       onClick={onPickAvatar}
       disabled={uploading}
       className="group relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-border bg-primary/10 text-xl font-semibold text-primary shadow-[var(--wh-shadow-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-      aria-label="Change avatar"
-      title="Change avatar"
+      aria-label={actionLabel}
+      title={actionLabel}
     >
       {initials}
       <span className="absolute inset-0 flex items-center justify-center bg-foreground/0 text-transparent transition-all group-hover:bg-foreground/45 group-hover:text-background">
@@ -111,39 +116,38 @@ function ProfileField({
   );
 }
 
-function mapProfileValidationError(errorCode: string): string {
+function mapProfileValidationError(errorCode: string, messages: { name: string; phone: string; email: string }): string {
   if (errorCode.startsWith("First name:") || errorCode.startsWith("Last name:")) {
-    return "Name must be between 1 and 64 characters.";
+    return messages.name;
   }
   if (errorCode.startsWith("phone_")) {
-    return "Phone must be 7-24 characters and contain only digits or + - ( ).";
+    return messages.phone;
   }
-  return "Enter a valid email address.";
+  return messages.email;
 }
 
-function ProfileHistoryPanel() {
+function ProfileHistoryPanel({ t }: { t: Record<string, string> }) {
   return (
     <section className="wh-content-card w-full">
       <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Change History</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.changeHistory}</h2>
         <p className="text-sm text-muted-foreground">
-          Profile and security updates will appear here with date, time, and change details.
+          {t.profileHistoryHint}
         </p>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-[var(--radius-card)] border border-border">
         <div className="grid min-w-[720px] grid-cols-[140px_120px_minmax(180px,1fr)_minmax(260px,1.4fr)] gap-4 border-b border-border bg-muted/20 px-5 py-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-          <div>Date</div>
-          <div>Time</div>
-          <div>Changed</div>
-          <div>Details</div>
+          <div>{t.orderDate}</div>
+          <div>{t.timelineWhen}</div>
+          <div>{t.changed}</div>
+          <div>{t.auditDetails}</div>
         </div>
         <div className="grid min-h-36 min-w-[720px] place-items-center px-6 py-10 text-center">
           <div className="max-w-xl">
-            <p className="text-sm font-medium text-foreground">No profile history available yet.</p>
+            <p className="text-sm font-medium text-foreground">{t.noProfileHistoryYet}</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              This block is ready, but the current profile API does not return audit entries for name,
-              email, phone, avatar, or password changes.
+              {t.profileHistoryApiMissing}
             </p>
           </div>
         </div>
@@ -155,6 +159,7 @@ function ProfileHistoryPanel() {
 export default function ProfilePage() {
   const apiBase = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE, []);
   const { showToast } = useToast();
+  const t = useLabels();
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -193,8 +198,15 @@ export default function ProfilePage() {
   }, [selectedAvatarUrl]);
 
   const displayName = [firstName, lastName].map((value) => value.trim()).filter(Boolean).join(" ");
-  const roleLabel = user?.role ? user.role[0].toUpperCase() + user.role.slice(1) : "User";
-  const statusLabel = user?.status ? user.status[0].toUpperCase() + user.status.slice(1) : "Unknown";
+  const roleLabel = user?.role === "admin" ? t.adminTitle : t.user;
+  const statusLabel =
+    user?.status === "approved"
+      ? t.approved
+      : user?.status === "rejected"
+        ? t.rejected
+        : user?.status === "pending"
+          ? t.pending
+          : t.status;
   const isProfileDirty =
     !!user &&
     (
@@ -211,7 +223,7 @@ export default function ProfilePage() {
 
     const auth = readAuth();
     if (!auth?.token || !auth.user) {
-      showToast("Login again to change your avatar.", "error");
+      showToast(t.loginAgainChangeAvatar, "error");
       return;
     }
 
@@ -243,7 +255,7 @@ export default function ProfilePage() {
   async function handleAvatarSave(blob: Blob) {
     const auth = readAuth();
     if (!auth?.token || !auth.user || !selectedAvatarFile) {
-      showToast("Login again to change your avatar.", "error");
+      showToast(t.loginAgainChangeAvatar, "error");
       return;
     }
 
@@ -264,9 +276,9 @@ export default function ProfilePage() {
       setEmail(updatedUser.email ?? "");
       setPhoneNumber(updatedUser.phone_number ?? "");
       resetAvatarEditor();
-      showToast("Avatar updated.", "success");
+      showToast(t.avatarUpdated, "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to update avatar.", "error");
+      showToast(error instanceof Error ? error.message : t.failedUpdateAvatar, "error");
     } finally {
       setUploading(false);
     }
@@ -276,7 +288,7 @@ export default function ProfilePage() {
     event.preventDefault();
     const auth = readAuth();
     if (!auth?.token || !user) {
-      showToast("Login again to update your profile.", "error");
+      showToast(t.loginAgainUpdateProfile, "error");
       return;
     }
 
@@ -286,24 +298,24 @@ export default function ProfilePage() {
     const trimmedPhoneNumber = phoneNumber.trim();
 
     if (trimmedFirstName && validatePersonName(trimmedFirstName, "First name")) {
-      showToast("First name must be between 1 and 64 characters.", "error");
+      showToast(t.firstNameValidation, "error");
       return;
     }
     if (trimmedLastName && validatePersonName(trimmedLastName, "Last name")) {
-      showToast("Last name must be between 1 and 64 characters.", "error");
+      showToast(t.lastNameValidation, "error");
       return;
     }
     if (trimmedEmail) {
       const emailError = validateEmail(trimmedEmail);
       if (emailError) {
-        showToast(mapProfileValidationError(emailError), "error");
+        showToast(mapProfileValidationError(emailError, { name: t.firstNameValidation, phone: t.phoneValidation, email: t.validEmailRequired }), "error");
         return;
       }
     }
     if (trimmedPhoneNumber) {
       const phoneError = validatePhoneNumber(trimmedPhoneNumber);
       if (phoneError) {
-        showToast(mapProfileValidationError(phoneError), "error");
+        showToast(mapProfileValidationError(phoneError, { name: t.firstNameValidation, phone: t.phoneValidation, email: t.validEmailRequired }), "error");
         return;
       }
     }
@@ -322,9 +334,9 @@ export default function ProfilePage() {
       setLastName(updatedUser.last_name ?? "");
       setEmail(updatedUser.email ?? "");
       setPhoneNumber(updatedUser.phone_number ?? "");
-      showToast("Profile updated.", "success");
+      showToast(t.accountSaved, "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to update profile.", "error");
+      showToast(error instanceof Error ? error.message : t.accountSaveFailed, "error");
     } finally {
       setSavingProfile(false);
     }
@@ -334,20 +346,20 @@ export default function ProfilePage() {
     event.preventDefault();
     const auth = readAuth();
     if (!auth?.token || !user) {
-      showToast("Login again to change your password.", "error");
+      showToast(t.loginAgainChangeAvatar, "error");
       return;
     }
     if (!user.email?.trim()) {
-      showToast("Add an email to your profile before changing password.", "error");
+      showToast(t.addEmailBeforePasswordChange, "error");
       return;
     }
     if (!currentPassword) {
-      showToast("Enter your current password.", "error");
+      showToast(t.enterCurrentPassword, "error");
       return;
     }
     const nextPassword = newPassword.trim();
     if (!nextPassword) {
-      showToast("Enter a new password.", "error");
+      showToast(t.enterNewPassword, "error");
       return;
     }
     const passwordError = validatePassword(nextPassword);
@@ -356,7 +368,7 @@ export default function ProfilePage() {
       return;
     }
     if (nextPassword !== confirmNewPassword) {
-      showToast("New password confirmation does not match.", "error");
+      showToast(t.newPasswordConfirmationMismatch, "error");
       return;
     }
 
@@ -368,9 +380,9 @@ export default function ProfilePage() {
       });
       setPasswordCode("");
       setPasswordCodeDialogOpen(true);
-      showToast("Verification code sent to your email.", "success");
+      showToast(t.verificationCodeSent, "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to send verification code.", "error");
+      showToast(error instanceof Error ? error.message : t.failedSendVerificationCode, "error");
     } finally {
       setRequestingPasswordCode(false);
     }
@@ -380,12 +392,12 @@ export default function ProfilePage() {
     event.preventDefault();
     const auth = readAuth();
     if (!auth?.token || !user) {
-      showToast("Login again to change your password.", "error");
+      showToast(t.loginAgainChangeAvatar, "error");
       return;
     }
     const code = passwordCode.trim();
     if (code.length !== 6) {
-      showToast("Code must be 6 digits.", "error");
+      showToast(t.verificationCodeMustBe6Digits, "error");
       return;
     }
 
@@ -402,17 +414,17 @@ export default function ProfilePage() {
       setNewPassword("");
       setConfirmNewPassword("");
       setPasswordCode("");
-      showToast("Password changed. Sign in again with your new password.", "success");
+      showToast(t.passwordChangedSignInAgain, "success");
       router.replace("/login");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to confirm password change.", "error");
+      showToast(error instanceof Error ? error.message : t.failedConfirmPasswordChange, "error");
     } finally {
       setConfirmingPasswordCode(false);
     }
   }
 
   return (
-    <AppShell title="Profile" subtitle="Account settings workspace">
+    <AppShell title={t.profile} subtitle={t.profileWorkspaceSubtitle}>
       <div className="wh-page-stack w-full">
         <section className="wh-content-card">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -421,14 +433,16 @@ export default function ProfilePage() {
               apiBase={apiBase}
               uploading={uploading}
               onPickAvatar={() => fileInputRef.current?.click()}
+              actionLabel={t.changeAvatarAction}
+              avatarAlt={t.userAvatarAlt}
             />
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
             <div className="min-w-0">
               <h2 className="truncate text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                {displayName || user?.username || "Profile"}
+                {displayName || user?.username || t.profile}
               </h2>
               <p className="mt-2 text-base text-muted-foreground">
-                Manage your account settings and preferences
+                {t.manageAccountPreferences}
               </p>
             </div>
           </div>
@@ -441,38 +455,38 @@ export default function ProfilePage() {
             >
               <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Login</div>
-                  <div className="mt-1 font-medium text-foreground">{user?.login || "not set"}</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.login}</div>
+                  <div className="mt-1 font-medium text-foreground">{user?.login || t.notSet}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Status</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.status}</div>
                   <div className="mt-1 font-medium text-foreground">{statusLabel}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Role</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.role}</div>
                   <div className="mt-1 font-medium text-foreground">{roleLabel}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">User</div>
-                  <div className="mt-1 truncate font-medium text-foreground">{displayName || user?.username || "Profile"}</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.user}</div>
+                  <div className="mt-1 truncate font-medium text-foreground">{displayName || user?.username || t.profile}</div>
                 </div>
               </div>
 
               <div className="mt-8 border-t border-border pt-8">
-                <h2 className="text-2xl font-semibold tracking-tight text-foreground">Profile Details</h2>
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.profileDetailsTitle}</h2>
                 <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <ProfileField label="First name" value={firstName} onChange={setFirstName} />
-                  <ProfileField label="Last name" value={lastName} onChange={setLastName} />
-                  <ProfileField label="Username" value={user?.username || ""} readOnly />
-                  <ProfileField label="Email" value={email} onChange={setEmail} type="email" />
-                  <ProfileField label="Phone" value={phoneNumber} onChange={setPhoneNumber} />
-                  <ProfileField label="Role" value={roleLabel} readOnly />
+                  <ProfileField label={t.firstName} value={firstName} onChange={setFirstName} />
+                  <ProfileField label={t.lastName} value={lastName} onChange={setLastName} />
+                  <ProfileField label={t.username} value={user?.username || ""} readOnly />
+                  <ProfileField label={t.email} value={email} onChange={setEmail} type="email" />
+                  <ProfileField label={t.phoneNumber} value={phoneNumber} onChange={setPhoneNumber} />
+                  <ProfileField label={t.role} value={roleLabel} readOnly />
                 </div>
               </div>
 
               <div className="mt-8 flex justify-end">
                 <Button type="submit" disabled={savingProfile || !isProfileDirty} className="sm:min-w-[160px]">
-                  {savingProfile ? "Saving..." : "Save Changes"}
+                  {savingProfile ? t.saving : t.saveChanges}
                 </Button>
               </div>
             </form>
@@ -486,17 +500,17 @@ export default function ProfilePage() {
                   <LockKeyhole className="size-4" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Change Password</h2>
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.changePasswordTitle}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Confirm with the emailed code after entering your current and new password.
+                    {t.changePasswordHint}
                   </p>
                 </div>
               </div>
 
               <div className="mt-8 grid gap-5">
-                <ProfileField label="Current password" value={currentPassword} onChange={setCurrentPassword} type="password" />
-                <ProfileField label="New password" value={newPassword} onChange={setNewPassword} type="password" />
-                <ProfileField label="Confirm new password" value={confirmNewPassword} onChange={setConfirmNewPassword} type="password" />
+                <ProfileField label={t.currentPassword} value={currentPassword} onChange={setCurrentPassword} type="password" />
+                <ProfileField label={t.newPassword} value={newPassword} onChange={setNewPassword} type="password" />
+                <ProfileField label={t.confirmPassword} value={confirmNewPassword} onChange={setConfirmNewPassword} type="password" />
               </div>
 
               <div className="mt-8 flex justify-end">
@@ -505,13 +519,13 @@ export default function ProfilePage() {
                   disabled={requestingPasswordCode || confirmingPasswordCode}
                   className="sm:min-w-[160px]"
                 >
-                  {requestingPasswordCode ? "Sending Code..." : "Save Password"}
+                  {requestingPasswordCode ? t.sendingCode : t.savePassword}
                 </Button>
               </div>
             </form>
           </div>
 
-          <ProfileHistoryPanel />
+          <ProfileHistoryPanel t={t} />
 
         <ProfileAvatarCropDialog
           open={avatarEditorOpen}
@@ -534,20 +548,20 @@ export default function ProfilePage() {
         }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Confirm Password Change</DialogTitle>
+              <DialogTitle>{t.confirmPasswordChangeTitle}</DialogTitle>
               <DialogDescription>
-                Enter the 6-digit code sent to your email address to confirm your new password.
+                {t.confirmPasswordChangeDescription}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={(event) => void handlePasswordCodeConfirm(event)} className="flex flex-col gap-4">
               <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium text-foreground">Verification code</span>
+                <span className="text-sm font-medium text-foreground">{t.verificationCodeLabel}</span>
                 <Input
                   value={passwordCode}
                   onChange={(event) => setPasswordCode(event.target.value)}
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="000000"
+                  placeholder={t.verificationCodePlaceholder}
                 />
               </label>
               <DialogFooter>
@@ -557,10 +571,10 @@ export default function ProfilePage() {
                   onClick={() => setPasswordCodeDialogOpen(false)}
                   disabled={confirmingPasswordCode}
                 >
-                  Cancel
+                  {t.cancel}
                 </Button>
                 <Button type="submit" disabled={confirmingPasswordCode}>
-                  {confirmingPasswordCode ? "Confirming..." : "Confirm Code"}
+                  {confirmingPasswordCode ? t.confirming : t.confirmCode}
                 </Button>
               </DialogFooter>
             </form>

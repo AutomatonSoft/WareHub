@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart3, PieChart as PieChartIcon, TrendingUp } from "lucide-react";
+import { useLabels } from "../../app/use-labels";
 import {
   Bar,
   BarChart,
@@ -71,9 +72,11 @@ export function MixedChartsPanel({
   revenueSplitData,
   avgOrderData
 }: MixedChartsPanelProps) {
+  const t = useLabels();
+
   return (
     <div className="dashboard-grid grid gap-4 xl:grid-cols-3">
-      <ChartShell title="Orders by Status" icon={<BarChart3 size={14} />}>
+      <ChartShell title={t.ordersByStatus} icon={<BarChart3 size={14} />}>
         {loading ? (
           <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -81,9 +84,9 @@ export function MixedChartsPanel({
             ))}
           </div>
         ) : statusData.length === 0 ? (
-          <EmptyChartState message="No status data yet" />
+          <EmptyChartState message={t.noStatusDataYet} />
         ) : (
-          <ChartContainer config={{ value: { label: "Orders", color: "var(--chart-4)" } }} className="h-full w-full">
+          <ChartContainer config={{ value: { label: t.ordersLabel, color: "var(--chart-4)" } }} className="h-full w-full">
             <BarChart data={statusData} margin={{ left: 0, right: 8, top: 6, bottom: 6 }}>
               <CartesianGrid vertical={false} stroke="color-mix(in srgb, var(--border) 82%, transparent)" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={8} stroke="var(--text-muted)" />
@@ -95,7 +98,7 @@ export function MixedChartsPanel({
         )}
       </ChartShell>
 
-      <ChartShell title="Revenue Split" icon={<PieChartIcon size={14} />}>
+      <ChartShell title={t.revenueSplit} icon={<PieChartIcon size={14} />}>
         {loading ? (
           <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
             <Skeleton className="mx-auto h-36 w-36 rounded-full" />
@@ -103,9 +106,9 @@ export function MixedChartsPanel({
             <Skeleton className="h-3 w-2/3" />
           </div>
         ) : revenueSplitData.length === 0 ? (
-          <EmptyChartState message="No revenue data yet" />
+          <EmptyChartState message={t.noRevenueDataYet} />
         ) : (
-          <ChartContainer config={{ value: { label: "Revenue", color: "var(--chart-2)" } }} className="h-full w-full">
+          <ChartContainer config={{ value: { label: t.revenueLabel, color: "var(--chart-2)" } }} className="h-full w-full">
             <PieChart>
               <ChartTooltip content={<ChartTooltipContent />} />
               <Pie data={revenueSplitData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2}>
@@ -118,7 +121,7 @@ export function MixedChartsPanel({
         )}
       </ChartShell>
 
-      <ChartShell title="Average Order Value" icon={<TrendingUp size={14} />}>
+      <ChartShell title={t.averageOrderValue} icon={<TrendingUp size={14} />}>
         {loading ? (
           <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
             {Array.from({ length: 4 }).map((_, index) => (
@@ -126,14 +129,14 @@ export function MixedChartsPanel({
             ))}
           </div>
         ) : avgOrderData.length === 0 ? (
-          <EmptyChartState message="No average value data yet" />
+          <EmptyChartState message={t.noAverageValueDataYet} />
         ) : (
-          <ChartContainer config={{ avg: { label: "Avg value", color: "var(--chart-2)" } }} className="h-full w-full">
+          <ChartContainer config={{ avg: { label: t.averageValueLabel, color: "var(--chart-2)" } }} className="h-full w-full">
             <LineChart data={avgOrderData} margin={{ left: 0, right: 8, top: 6, bottom: 6 }}>
               <CartesianGrid vertical={false} stroke="color-mix(in srgb, var(--border) 82%, transparent)" />
               <XAxis dataKey="month" axisLine={false} tickLine={false} tickMargin={8} stroke="var(--text-muted)" />
               <YAxis axisLine={false} tickLine={false} width={36} stroke="var(--text-muted)" allowDecimals={false} />
-              <ChartTooltip content={<ChartTooltipContent labelFormatter={(label) => `Month: ${String(label ?? "")}`} />} />
+              <ChartTooltip content={<ChartTooltipContent labelFormatter={(label) => `${t.monthLabel}: ${String(label ?? "")}`} />} />
               <Line type="monotone" dataKey="avg" stroke="var(--chart-2)" strokeWidth={2.5} dot={false} />
             </LineChart>
           </ChartContainer>

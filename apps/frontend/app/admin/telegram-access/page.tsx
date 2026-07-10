@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { AuthUser } from "../../client-api-types";
 import { DEFAULT_API_BASE, readAuth } from "../../client-api";
+import { useLabels } from "../../use-labels";
 import { AppShell } from "../../../components/layout/app-shell";
 import { SectionCard } from "../../../components/ui/section-card";
 import { AdminTelegramAccessPanel } from "../../dashboard/admin-telegram-access-panel";
@@ -16,6 +17,7 @@ type AuthState = {
 
 export default function AdminTelegramAccessPage() {
   const router = useRouter();
+  const t = useLabels();
   const [auth, setAuth] = useState<AuthState | undefined>(undefined);
 
   useEffect(() => {
@@ -42,23 +44,23 @@ export default function AdminTelegramAccessPage() {
   const isAllowed = auth?.user.role === "admin" && auth.user.status === "approved";
 
   return (
-    <AppShell title="Telegram access" subtitle="Approve Telegram bot access for the working chat.">
+    <AppShell title={t.telegramAccessTitle} subtitle={t.telegramAccessSubtitle}>
       <div className="space-y-4">
         {auth === undefined ? (
-          <SectionCard title="Telegram access" subtitle="Loading...">
+          <SectionCard title={t.telegramAccessTitle} subtitle={t.loading}>
             <div />
           </SectionCard>
         ) : null}
 
         {auth === null ? (
-          <SectionCard title="Telegram access" subtitle="Redirecting...">
+          <SectionCard title={t.telegramAccessTitle} subtitle={t.redirecting}>
             <div />
           </SectionCard>
         ) : null}
 
         {auth && !isAllowed ? (
-          <SectionCard title="Access denied" subtitle="Access denied">
-            <p className="text-sm text-muted-foreground">This page is available only to approved admin accounts.</p>
+          <SectionCard title={t.accessDeniedTitle} subtitle={t.accessDeniedTitle}>
+            <p className="text-sm text-muted-foreground">{t.approvedAdminsOnly}</p>
           </SectionCard>
         ) : null}
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useLabels } from "../../app/use-labels";
 import { ProductEditorGalleryCard } from "./product-editor-gallery-card";
 
 export function ProductEditorHoodGalleryCard({
@@ -15,6 +16,7 @@ export function ProductEditorHoodGalleryCard({
   onReorderImages: (sourceImageUrl: string, targetImageUrl: string) => void;
   onUploadFiles: (files: FileList | null) => void;
 }) {
+  const t = useLabels();
   const uniqueImageUrls = Array.from(new Set(images.filter((value) => value.trim() !== "")));
   const galleryItems = uniqueImageUrls.map((imageUrl, index) => ({
     id: `${index}:${imageUrl}`,
@@ -25,9 +27,9 @@ export function ProductEditorHoodGalleryCard({
     <ProductEditorGalleryCard
       items={galleryItems}
       uploadLoading={imageUploadLoading}
-      uploadButtonLabel={imageUploadLoading ? "Uploading images..." : "Upload images"}
-      emptyPreviewLabel="No image"
-      emptyGalleryLabel="No gallery images"
+      uploadButtonLabel={imageUploadLoading ? t.uploadingImages : t.productEditorUploadImagesAction}
+      emptyPreviewLabel={t.productEditorNoImage}
+      emptyGalleryLabel={t.createProductNoGalleryImages}
       onRemoveItem={(itemId) => {
         const item = galleryItems.find((entry) => entry.id === itemId);
         if (item) {

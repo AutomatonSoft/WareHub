@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Menu } from "lucide-react";
 import type { AuthUser } from "../../app/client-api-types";
 import { applyStoredUiDensity } from "../../app/ui-density";
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 
 export function AppHeader({
@@ -17,6 +18,8 @@ export function AppHeader({
   onMenuOpen: () => void;
   onUserCleared: () => void;
 }) {
+  const t = useLabels();
+
   useEffect(() => {
     applyStoredUiDensity();
   }, []);
@@ -28,7 +31,7 @@ export function AppHeader({
           type="button"
           variant="outline"
           size="icon"
-          aria-label="Open navigation"
+          aria-label={t.openNavigation}
           onClick={onMenuOpen}
           className="wh-header-control xl:hidden"
         >

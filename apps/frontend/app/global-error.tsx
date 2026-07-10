@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useLabels } from "./use-labels";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 
@@ -10,6 +11,7 @@ type GlobalErrorProps = {
 };
 
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
+  const t = useLabels();
   useEffect(() => {
     console.error("Global application error", error);
   }, [error]);
@@ -20,17 +22,17 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
         <main className="mx-auto mt-16 max-w-xl">
           <Card className="border-border bg-card text-card-foreground shadow-sm">
             <CardHeader>
-              <CardTitle>Application error</CardTitle>
+              <CardTitle>{t.globalErrorTitle}</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Something went wrong while rendering the app shell.
+                {t.globalErrorDescription}
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Refresh or retry to continue.
+              {t.globalErrorRetryHint}
             </CardContent>
             <CardFooter>
               <Button type="button" onClick={reset}>
-                Try again
+                {t.tryAgain}
               </Button>
             </CardFooter>
           </Card>

@@ -622,6 +622,7 @@ class JVProductCreateByEANAPIView(APIView):
             site_key=normalized_site_key,
             source_product_id=source_product["product_id"],
             effective_ean=effective_ean,
+            source_model=(source_product.get("model") or "").strip(),
         )
         if conflict_product is not None:
             payload = {
@@ -678,14 +679,15 @@ class JVProductCreateByEANAPIView(APIView):
             return Response(payload, status=status.HTTP_409_CONFLICT)
 
         try:
-            sync_children_from_snapshot(product, snapshot)
+            with transaction.atomic():
+                sync_children_from_snapshot(product, snapshot)
         except IntegrityError as exc:
             payload = {
                 "code": "jv_sync_child_conflict",
                 "detail": "Sync failed due to conflicting child records.",
                 "error": str(exc),
             }
-            finalize_error(
+            _finalize_error_if_tracked(
                 idem_record,
                 status_code=status.HTTP_400_BAD_REQUEST,
                 payload=payload,
@@ -704,7 +706,7 @@ class JVProductCreateByEANAPIView(APIView):
                 "detail": "Sync failed while processing source child data.",
                 "error": str(exc),
             }
-            finalize_error(
+            _finalize_error_if_tracked(
                 idem_record,
                 status_code=status.HTTP_400_BAD_REQUEST,
                 payload=payload,

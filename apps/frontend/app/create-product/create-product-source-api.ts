@@ -196,7 +196,7 @@ export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promi
   }
   const { response, payload } = await xljvGetSitesByEan({ ean: mainEan, site: "JV" });
   if (!response.ok) {
-    throw new Error(payload.detail || `JV source sites request failed: HTTP ${response.status}`);
+    throw new Error(payload.detail || `create_product_jv_source_sites_http:${response.status}`);
   }
   return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> });
 }
@@ -232,7 +232,7 @@ export async function fetchCreateProductJvSourceSnapshot(input: {
 }): Promise<CreateProductJvSourceSnapshot> {
   const normalizedMainEan = normalizeEanOrEmpty(input.mainEan);
   if (!normalizedMainEan) {
-    throw new Error("Main EAN is empty.");
+    throw new Error("create_product_main_ean_empty");
   }
   const { response, payload } = await xljvGetProductByEan({
     ean: normalizedMainEan,
@@ -240,7 +240,7 @@ export async function fetchCreateProductJvSourceSnapshot(input: {
     siteKey: input.siteKey,
   });
   if (!response.ok) {
-    throw new Error(payload.detail || `JV source product request failed: HTTP ${response.status}`);
+    throw new Error(payload.detail || `create_product_jv_source_product_http:${response.status}`);
   }
 
   const descriptions = Array.isArray(payload.descriptions) ? (payload.descriptions as DescriptionRow[]) : [];

@@ -24,6 +24,6 @@ test("buildKauflandWriteConfirmMessage uses sendUpdate label for change", () => 
 });
 
 test("buildKauflandRequiredEanMessage returns stable action-specific text", () => {
-  assert.equal(buildKauflandRequiredEanMessage("create"), "Create form: ean is required.");
-  assert.equal(buildKauflandRequiredEanMessage("delete"), "Delete form: ean is required.");
+  assert.equal(buildKauflandRequiredEanMessage("create"), "Create form: EAN is required.");
+  assert.equal(buildKauflandRequiredEanMessage("delete"), "Delete form: EAN is required.");
 });

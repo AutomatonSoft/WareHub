@@ -117,6 +117,30 @@ type MainRubricIdBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["k
 type DeliveryOptionsCache = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], DeliveryOption[]>>;
 type SelectedDeliveryIdsBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], Set<number>>>;
 
+function getCreateProductTabLabel(
+  tab: (typeof PAGE_TABS)[number],
+  t: ReturnType<typeof useLabels>
+): string {
+  switch (tab) {
+    case "main":
+      return t.createProductTabMain;
+    case "jv":
+      return t.channelJv;
+    case "xl":
+      return t.channelXl;
+    case "hood":
+      return t.channelHood;
+    case "kaufland":
+      return t.channelKaufland;
+    case "otto":
+      return t.channelOtto;
+    case "ebay":
+      return t.channelEbay;
+    default:
+      return tab;
+  }
+}
+
 function pickPrimaryJvContentRow(rows: unknown[]): JvContentRow | null {
   const normalizedRows = rows.map((row) => ((row ?? {}) as JvContentRow));
   const germanRow = normalizedRows.find((row) => String(row.language_code || "").trim().toLowerCase() === "de");
@@ -421,14 +445,18 @@ function buildSourceGalleryItems(
   return items;
 }
 
-async function galleryItemToFile(item: GalleryItem, index: number): Promise<File> {
+async function galleryItemToFile(item: GalleryItem, index: number, t: Record<string, string>): Promise<File> {
   if (item.file instanceof File) {
     return item.file;
   }
 
   const response = await fetch(item.src);
   if (!response.ok) {
-    throw new Error(`Failed to download gallery image ${index + 1}: HTTP ${response.status}`);
+    throw new Error(
+      t.createProductFailedDownloadGalleryImage
+        .replace("{index}", String(index + 1))
+        .replace("{status}", String(response.status))
+    );
   }
 
   const blob = await response.blob();
@@ -507,7 +535,7 @@ export default function CreateProductPage() {
       const jobId = Number(parsed?.jobId);
       if (Number.isFinite(jobId)) {
         setSendAllSitesLoading(true);
-        setSendAllSitesStatus(`Resuming JV create job #${jobId}…`);
+        setSendAllSitesStatus(t.createProductResumeJvJob.replace("{jobId}", String(jobId)));
         void pollCreateJob(jobId);
       }
     } catch {
@@ -641,7 +669,7 @@ export default function CreateProductPage() {
   );
   const canCreateProduct = activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0;
   const primaryActionLoading = activeTab === "jv" ? sendAllSitesLoading : controller.submitting;
-  const primaryActionLabel = primaryActionLoading ? "Creating product..." : "Create product";
+  const primaryActionLabel = primaryActionLoading ? t.createProductCreatingAction : t.createProductCreateAction;
 
   useEffect(() => {
     const jvFields = controller.sourceSnapshot?.rawPayload?.jv_fields;
@@ -705,7 +733,11 @@ export default function CreateProductPage() {
           `/api/v1/jv/rubrics/tree/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
         if (!response.ok) {
-          throw new Error(`Failed to load rubric tree ${site.label}: HTTP ${response.status}`);
+          throw new Error(
+            t.createProductFailedLoadRubricTree
+              .replace("{site}", site.label)
+              .replace("{status}", String(response.status))
+          );
         }
         const payload = (await response.json()) as { tree?: RubricTreeNode[] };
         return {
@@ -732,7 +764,7 @@ export default function CreateProductPage() {
         if (!active) {
           return;
         }
-        setRubricTreeError(error instanceof Error ? error.message : "Failed to load rubric tree.");
+        setRubricTreeError(error instanceof Error ? error.message : t.createProductFailedLoadRubricTreeGeneric);
       })
       .finally(() => {
         if (active) {
@@ -743,7 +775,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeTab, rubricSiteKey, rubricTreesBySite]);
+  }, [activeTab, rubricSiteKey, rubricTreesBySite, t.createProductFailedLoadRubricTree, t.createProductFailedLoadRubricTreeGeneric]);
 
   useEffect(() => {
     if (activeTab !== "jv") {
@@ -763,7 +795,11 @@ export default function CreateProductPage() {
           `/api/v1/jv/delivery-options/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
         if (!response.ok) {
-          throw new Error(`Failed to load delivery options ${site.label}: HTTP ${response.status}`);
+          throw new Error(
+            t.createProductFailedLoadDeliveryOptions
+              .replace("{site}", site.label)
+              .replace("{status}", String(response.status))
+          );
         }
         const payload = (await response.json()) as { items?: DeliveryOption[] };
         return {
@@ -787,7 +823,7 @@ export default function CreateProductPage() {
         if (!active) {
           return;
         }
-        setDeliveryOptionsError(error instanceof Error ? error.message : "Failed to load delivery options.");
+        setDeliveryOptionsError(error instanceof Error ? error.message : t.createProductFailedLoadDeliveryOptionsGeneric);
       })
       .finally(() => {
         if (active) {
@@ -798,7 +834,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeTab, deliveryOptionsBySite]);
+  }, [activeTab, deliveryOptionsBySite, t.createProductFailedLoadDeliveryOptions, t.createProductFailedLoadDeliveryOptionsGeneric]);
 
   useEffect(() => {
     const sourceDeliveryId = asIntegerOrUndefined(sourceJvFields.lieferzeitid);
@@ -948,7 +984,11 @@ export default function CreateProductPage() {
       if (!item.isLocal) {
         const sourceUrl = resolveGallerySourceUrl(item, controller.sourceSnapshot?.siteKey || "");
         if (!sourceUrl) {
-          throw new Error(`Missing source image URL for ${siteKey} image ${index + 1}`);
+          throw new Error(
+            t.createProductMissingSourceImageUrl
+              .replace("{site}", siteKey)
+              .replace("{index}", String(index + 1))
+          );
         }
         const { response, payload } = await xljvUploadImages({
           site: "JV",
@@ -968,13 +1008,16 @@ export default function CreateProductPage() {
         if (!response.ok || !uploadedPath) {
           throw new Error(
             asTrimmedString(payload.detail) ||
-              `Image relay upload failed for ${siteKey} image ${index + 1}: HTTP ${response.status}`
+              t.createProductImageRelayUploadFailed
+                .replace("{site}", siteKey)
+                .replace("{index}", String(index + 1))
+                .replace("{status}", String(response.status))
           );
         }
         return uploadedPath;
       }
 
-      const file = await galleryItemToFile(item, index);
+      const file = await galleryItemToFile(item, index, t);
       const { response, payload } = await xljvUploadImages({
         site: "JV",
         siteKey,
@@ -993,7 +1036,10 @@ export default function CreateProductPage() {
       if (!response.ok || !uploadedPath) {
         throw new Error(
           asTrimmedString(payload.detail) ||
-            `Image upload failed for ${siteKey} image ${index + 1}: HTTP ${response.status}`
+            t.createProductImageUploadFailed
+              .replace("{site}", siteKey)
+              .replace("{index}", String(index + 1))
+              .replace("{status}", String(response.status))
         );
       }
 
@@ -1103,15 +1149,15 @@ export default function CreateProductPage() {
   async function handleSendToAllJvSites() {
     const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
     if (!/^\d{13}$/.test(ean)) {
-      showToast("EAN must contain exactly 13 digits.", "error");
+      showToast(t.validationEanExact13Digits, "error");
       return;
     }
     if (!jvName.trim()) {
-      showToast("Name is required before sending.", "error");
+      showToast(t.createProductNameRequiredBeforeSend, "error");
       return;
     }
     if (!jvArtikelnr.trim()) {
-      showToast("Artikelnr is required before sending.", "error");
+      showToast(t.createProductArtikelnrRequiredBeforeSend, "error");
       return;
     }
 
@@ -1122,13 +1168,13 @@ export default function CreateProductPage() {
       const selectedDelivery = selectedDeliveryIdsBySite[site.key] ?? new Set<number>();
 
       if (selectedRubrics.size === 0) {
-        validationErrors.push(`${site.label}: select at least one rubric.`);
+        validationErrors.push(t.createProductSelectAtLeastOneRubric.replace("{site}", site.label));
       }
       if (!mainRubric || !selectedRubrics.has(mainRubric)) {
-        validationErrors.push(`${site.label}: select one main rubric.`);
+        validationErrors.push(t.createProductSelectMainRubric.replace("{site}", site.label));
       }
       if (selectedDelivery.size !== 1) {
-        validationErrors.push(`${site.label}: select exactly one delivery option.`);
+        validationErrors.push(t.createProductSelectExactlyOneDelivery.replace("{site}", site.label));
       }
     }
 
@@ -1139,15 +1185,15 @@ export default function CreateProductPage() {
       return;
     }
 
-    if (!window.confirm(`Create JV product ${ean} on JV DE, JV AT, JV CH and JV UK?`)) {
+    if (!window.confirm(t.createProductConfirmJvCreate.replace("{ean}", ean))) {
       return;
     }
 
     setSendAllSitesLoading(true);
-    setSendAllSitesStatus("Uploading images and queueing the JV create job…");
+    setSendAllSitesStatus(t.createProductQueueingJvJob);
     setSendAllSitesLog("");
     showToast(
-      "JV creation is being queued — you can keep working, you'll get a toast when it's done.",
+      t.createProductJvQueuedToast,
       "info"
     );
 
@@ -1157,7 +1203,7 @@ export default function CreateProductPage() {
     void (async () => {
       try {
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`Uploading images for ${JV_RUBRIC_SITE_TABS.length} sites…`);
+          setSendAllSitesStatus(t.createProductUploadingImagesForSites.replace("{count}", String(JV_RUBRIC_SITE_TABS.length)));
         }
         // Upload every site's gallery concurrently — one "worker" per site. Each JV site
         // is a separate FTP host, so parallel uploads hit different servers and don't
@@ -1190,7 +1236,7 @@ export default function CreateProductPage() {
         if (!response.ok) {
           const message =
             asTrimmedString((responsePayload as Record<string, unknown>).detail) ||
-            `Failed to queue JV create job (HTTP ${response.status}).`;
+            t.createProductFailedQueueJob.replace("{status}", String(response.status));
           if (isMountedRef.current) {
             setSendAllSitesStatus(message);
             setSendAllSitesLoading(false);
@@ -1202,7 +1248,7 @@ export default function CreateProductPage() {
         const job = (responsePayload.job ?? {}) as JvBatchJobStatus;
         const jobId = Number(job.id);
         if (!Number.isFinite(jobId)) {
-          const message = "JV create job was accepted but no job id was returned.";
+          const message = t.createProductQueueAcceptedNoJobId;
           if (isMountedRef.current) {
             setSendAllSitesStatus(message);
             setSendAllSitesLoading(false);
@@ -1213,11 +1259,15 @@ export default function CreateProductPage() {
 
         persistActiveCreateJob(jobId, ean);
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`JV create job #${jobId} queued — creating on 4 sites in the background…`);
+          setSendAllSitesStatus(
+            t.createProductJvJobQueuedBackground
+              .replace("{jobId}", String(jobId))
+              .replace("{count}", String(JV_RUBRIC_SITE_TABS.length))
+          );
         }
         await pollCreateJob(jobId);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "JV creation failed in the background.";
+        const message = error instanceof Error ? error.message : t.createProductJvBackgroundFailed;
         if (isMountedRef.current) {
           setSendAllSitesStatus(message);
           setSendAllSitesLoading(false);
@@ -1264,7 +1314,7 @@ export default function CreateProductPage() {
         if (httpStatus === 404) {
           clearActiveCreateJob();
           if (isMountedRef.current) setSendAllSitesLoading(false);
-          showToast(`JV create job #${jobId} was not found.`, "error");
+          showToast(t.createProductJvJobNotFound.replace("{jobId}", String(jobId)), "error");
           return;
         }
 
@@ -1276,7 +1326,9 @@ export default function CreateProductPage() {
 
         if (statusValue === "applied" || statusValue === "failed") {
           clearActiveCreateJob();
-          const summary = `JV create finished: ${appliedCount}/${total} sites successful.`;
+          const summary = t.createProductJvCreateFinished
+            .replace("{applied}", String(appliedCount))
+            .replace("{total}", String(total));
           if (isMountedRef.current) {
             setSendAllSitesStatus(summary);
             setSendAllSitesLoading(false);
@@ -1287,12 +1339,17 @@ export default function CreateProductPage() {
         }
 
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`Creating on JV sites… ${appliedCount}/${total} done (job #${jobId}).`);
+          setSendAllSitesStatus(
+            t.createProductJvCreateProgress
+              .replace("{applied}", String(appliedCount))
+              .replace("{total}", String(total))
+              .replace("{jobId}", String(jobId))
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 2500));
       }
       if (isMountedRef.current) {
-        setSendAllSitesStatus(`JV create job #${jobId} is still running — check back later.`);
+        setSendAllSitesStatus(t.createProductJvJobStillRunning.replace("{jobId}", String(jobId)));
         setSendAllSitesLoading(false);
       }
     } finally {
@@ -1302,7 +1359,9 @@ export default function CreateProductPage() {
 
   function renderRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {
     return nodes.flatMap((node) => {
-      const label = String(node.name || `Rubric ${node.id || ""}`).trim();
+      const label = String(
+        node.name || t.createProductRubricLabel.replace("{id}", String(node.id || ""))
+      ).trim();
       const children = Array.isArray(node.children) ? node.children : [];
       const isExpanded = expandedRubricIds.has(node.id);
       const hasChildren = children.length > 0;
@@ -1327,7 +1386,7 @@ export default function CreateProductPage() {
               onChange={() => toggleMainRubric(node.id)}
               disabled={!isSelected}
               className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff] disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={`Main rubric ${label}`}
+              aria-label={t.createProductMainRubricAria.replace("{label}", label)}
             />
           </div>
           <div
@@ -1353,7 +1412,11 @@ export default function CreateProductPage() {
                   })
                 }
                 className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-pill)] border border-border/70 bg-background text-xs text-muted-foreground transition hover:text-foreground"
-                aria-label={isExpanded ? `Collapse ${label}` : `Expand ${label}`}
+                aria-label={
+                  isExpanded
+                    ? t.createProductCollapseRubricAria.replace("{label}", label)
+                    : t.createProductExpandRubricAria.replace("{label}", label)
+                }
               >
                 {isExpanded ? "-" : "+"}
               </button>
@@ -1386,8 +1449,8 @@ export default function CreateProductPage() {
 
   return (
     <AppShell
-      title={t.createProduct || "Create Product"}
-      subtitle="Create product"
+      title={t.createProduct}
+      subtitle={t.createProduct}
     >
       <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1407,7 +1470,7 @@ export default function CreateProductPage() {
                       : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                   ].join(" ")}
                 >
-                  {tab}
+                  {getCreateProductTabLabel(tab, t)}
                 </button>
               );
             })}
@@ -1421,10 +1484,10 @@ export default function CreateProductPage() {
               className="flex min-h-10 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               title={
                 activeTab === "jv"
-                  ? "Create product on JV sites"
+                  ? t.createProductOnJvSites
                   : activeTab === "main"
-                    ? "Create product on all selected sites"
-                    : `Create product on ${activeTab.toUpperCase()} sites`
+                    ? t.createProductOnAllSelectedSites
+                    : t.createProductOnMarketplaceSites.replace("{site}", activeTab.toUpperCase())
               }
             >
               {primaryActionLabel}
@@ -1432,7 +1495,7 @@ export default function CreateProductPage() {
             {isLoading ? (
               <div
                 className="size-5 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
-                aria-label="Loading source data"
+                aria-label={t.createProductLoadingSourceData}
               />
             ) : null}
           </div>
@@ -1444,7 +1507,7 @@ export default function CreateProductPage() {
               <div className="min-w-0 flex-1 space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    NAME
+                    {t.name}
                   </label>
                   <Input
                     value={jvName}
@@ -1454,7 +1517,7 @@ export default function CreateProductPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    URLKEY
+                    {t.xljvUrlKey}
                   </label>
                   <Input
                     value={jvUrlKey}
@@ -1465,7 +1528,7 @@ export default function CreateProductPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      ARTIKELNR
+                      {t.createProductArtikelnr}
                     </label>
                     <Input
                       value={jvArtikelnr}
@@ -1475,7 +1538,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      PRICE
+                      {t.price}
                     </label>
                     <Input
                       value={jvPrice}
@@ -1497,7 +1560,7 @@ export default function CreateProductPage() {
                 <div className="grid gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      BEZEICHNUNG
+                      {t.bezeichnungLabel}
                     </label>
                     <textarea
                       value={jvBezeichnung}
@@ -1508,7 +1571,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      KURZBESCHREIBUNG
+                      {t.kurzbeschreibungLabel}
                     </label>
                     <textarea
                       value={jvKurzbeschreibung}
@@ -1519,7 +1582,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      SHORT DESCRIPTION REAL
+                      {t.createProductShortDescriptionReal}
                     </label>
                     <textarea
                       value={jvShortDescriptionReal}
@@ -1530,7 +1593,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META TITLE
+                      {t.metaTitle}
                     </label>
                     <Input
                       value={jvMetaTitle}
@@ -1540,7 +1603,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META DESCRIPTION
+                      {t.metaDescription}
                     </label>
                     <textarea
                       value={jvMetaDescription}
@@ -1551,7 +1614,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META KEYWORD
+                      {t.metaKeyword}
                     </label>
                     <div className="rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-3">
                       {jvMetaKeywordItems.length > 0 ? (
@@ -1569,7 +1632,7 @@ export default function CreateProductPage() {
                       <textarea
                         value={jvMetaKeyword}
                         onChange={(event) => setJvMetaKeyword(event.target.value)}
-                        placeholder="keyword 1, keyword 2, keyword 3"
+                        placeholder={t.createProductKeywordPlaceholder}
                         className="min-h-[110px] w-full border-0 bg-transparent p-0 text-sm text-foreground outline-none"
                       />
                     </div>
@@ -1578,7 +1641,7 @@ export default function CreateProductPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3">
                       <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        DESCRIPTION
+                        {t.description}
                       </label>
                       <div className="flex gap-1 rounded-[var(--radius-pill)] border border-border/70 bg-background p-1">
                         <button
@@ -1591,7 +1654,7 @@ export default function CreateProductPage() {
                               : "text-muted-foreground hover:text-foreground",
                           ].join(" ")}
                         >
-                          Code
+                          {t.codeLabel}
                         </button>
                         <button
                           type="button"
@@ -1603,7 +1666,7 @@ export default function CreateProductPage() {
                               : "text-muted-foreground hover:text-foreground",
                           ].join(" ")}
                         >
-                          Preview
+                          {t.previewLabel}
                         </button>
                       </div>
                     </div>
@@ -1643,7 +1706,7 @@ export default function CreateProductPage() {
                   {activeGalleryItem ? (
                     <Image
                       src={activeGalleryItem.src}
-                      alt="JV gallery preview"
+                      alt={t.createProductJvGalleryPreview}
                       fill
                       className="object-cover"
                       sizes="(max-width: 1280px) 100vw, 360px"
@@ -1651,7 +1714,7 @@ export default function CreateProductPage() {
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      No image
+                      {t.noImagesInGallery}
                     </div>
                   )}
                 </div>
@@ -1683,7 +1746,7 @@ export default function CreateProductPage() {
                             >
                               <Image
                                 src={item.src}
-                                alt={`JV gallery thumbnail ${index + 1}`}
+                                alt={t.createProductJvGalleryThumbnail.replace("{index}", String(index + 1))}
                                 fill
                                 className="pointer-events-none object-cover"
                                 sizes="88px"
@@ -1695,7 +1758,7 @@ export default function CreateProductPage() {
                               type="button"
                               onClick={() => handleDeleteGalleryItem(item.id)}
                               className="absolute right-1 top-1 z-10 text-sm font-semibold leading-none text-red-500 transition hover:text-red-600"
-                              aria-label={`Delete image ${index + 1}`}
+                              aria-label={t.createProductDeleteImage.replace("{index}", String(index + 1))}
                             >
                               ×
                             </button>
@@ -1706,7 +1769,7 @@ export default function CreateProductPage() {
                   </div>
                 ) : (
                   <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
-                    No gallery images
+                    {t.createProductNoGalleryImages}
                   </div>
                 )}
 
@@ -1715,13 +1778,13 @@ export default function CreateProductPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="flex min-h-14 w-full items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 py-3 text-sm font-medium uppercase tracking-[0.08em] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
                 >
-                  Upload images
+                  {t.productEditorUploadImagesAction}
                 </button>
 
                 <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Rubrik Tree
+                      {t.createProductRubricTree}
                     </div>
                     <button
                       type="button"
@@ -1734,14 +1797,14 @@ export default function CreateProductPage() {
                       disabled={expandableRubricIds.length === 0}
                       className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {areAllRubricsExpanded ? "Collapse all" : "Expand all"}
+                      {areAllRubricsExpanded ? t.createProductCollapseAll : t.createProductExpandAll}
                     </button>
                   </div>
 
                   <Input
                     value={rubricSearch}
                     onChange={(event) => setRubricSearch(event.target.value)}
-                    placeholder="Search rubrik"
+                    placeholder={t.createProductSearchRubric}
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1787,12 +1850,12 @@ export default function CreateProductPage() {
                           : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                       ].join(" ")}
                     >
-                      Only selected
+                      {t.xljvSelectedOnly}
                     </button>
                   </div>
 
                   {rubricTreeLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading rubric tree...</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductLoadingRubricTree}</div>
                   ) : null}
 
                   {rubricTreeError ? (
@@ -1800,11 +1863,11 @@ export default function CreateProductPage() {
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && rubricTree.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No rubric tree data.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoRubricTreeData}</div>
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && rubricTree.length > 0 && filteredRubricTree.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No rubriks found.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoRubricsFound}</div>
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && filteredRubricTree.length > 0 ? (
@@ -1816,13 +1879,13 @@ export default function CreateProductPage() {
 
                 <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Delivery
+                    {t.xljvAvailabilityDeliveryTime}
                   </div>
 
                   <Input
                     value={deliverySearch}
                     onChange={(event) => setDeliverySearch(event.target.value)}
-                    placeholder="Search delivery"
+                    placeholder={t.createProductSearchDelivery}
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1857,12 +1920,12 @@ export default function CreateProductPage() {
                           : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                       ].join(" ")}
                     >
-                      Only selected
+                      {t.xljvSelectedOnly}
                     </button>
                   </div>
 
                   {deliveryOptionsLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading delivery options...</div>
+                    <div className="text-sm text-muted-foreground">{t.xljvLoadingDeliveryOptions}</div>
                   ) : null}
 
                   {deliveryOptionsError ? (
@@ -1870,11 +1933,11 @@ export default function CreateProductPage() {
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No delivery options.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptions}</div>
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length > 0 && filteredDeliveryOptions.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No delivery options found.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptionsFound}</div>
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && filteredDeliveryOptions.length > 0 ? (
@@ -1882,7 +1945,7 @@ export default function CreateProductPage() {
                       {filteredDeliveryOptions.map((option) => {
                         const optionId = option.id;
                         const isSelected = selectedDeliveryIds.has(optionId);
-                        const label = String(option.label || `Delivery ${optionId}`).trim();
+                        const label = String(option.label || t.createProductDeliveryOption.replace("{id}", String(optionId))).trim();
 
                         return (
                           <label
@@ -1991,7 +2054,7 @@ export default function CreateProductPage() {
                 <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
                   <div className="mb-4 rounded-[var(--radius-control)] border border-border/70 bg-muted/20 px-4 py-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Target Scope
+                      {t.createProductTargetScope}
                     </div>
                     <div className="mt-2 text-sm text-foreground">
                       {activeTab === "xl"
@@ -2056,7 +2119,7 @@ export default function CreateProductPage() {
 
                 <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Sites On This Page
+                    {t.createProductSitesOnThisPage}
                   </div>
                   <div className="mt-4 space-y-2">
                     {activeMarketplaceSites.map((site) => (

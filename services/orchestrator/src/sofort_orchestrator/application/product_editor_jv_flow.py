@@ -168,17 +168,15 @@ class ProductEditorJvFlow:
 
         draft = _normalize_jv_draft(local.body, baseline_site_key)
         found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
-        site_payloads = {
-            site_key: site_payload
-            for site_key, site_payload in (
-                (
-                    site_key,
-                    self._load_local_draft_for_site(ean=ean, request_id=request_id, site_key=site_key).body,
-                )
-                for site_key in found_target_ids
-            )
-            if isinstance(site_payload, dict) and site_payload.get("ean")
-        }
+        site_payloads: dict[str, dict] = {}
+        for site_key in found_target_ids:
+            site_payload = local.body if site_key == baseline_site_key else self._load_local_draft_for_site(
+                ean=ean,
+                request_id=request_id,
+                site_key=site_key,
+            ).body
+            if isinstance(site_payload, dict) and site_payload.get("ean"):
+                site_payloads[site_key] = site_payload
         draft["categories_by_site_key"] = {
             site_key: site_categories
             for site_key, site_categories in (

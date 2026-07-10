@@ -78,6 +78,7 @@ class DatabaseApiTests(APITestCase):
         self.assertIn("sync", response.data)
         self.assertIsNone(response.data["sync"]["error"])
         self.assertIsNone(response.data["sync"]["error_detail"])
+        self.assertEqual(kid.place, "1")
 
     @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("Missing Afterbuy login credentials in .env for JV, XL or CH."))
     def test_create_kid_reports_missing_afterbuy_credentials(self, mocked_search):
@@ -275,7 +276,9 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.quantity, 5)
         self.assertEqual(str(attrs.price), "4564.00")
 
-    def test_create_kid_is_idempotent_by_kid_number(self):
+    def test_create_kid_is_idempotent_by_place_for_same_kid(self):
+        self.kid.place = "A1"
+        self.kid.save(update_fields=["place"])
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}
         response = self.client.post("/api/v1/kids/", payload, format="json")
 
@@ -287,7 +290,56 @@ class DatabaseApiTests(APITestCase):
         self.kid.refresh_from_db()
         self.assertEqual(self.kid.place, "A1")
 
-    def test_create_kid_is_idempotent_and_updates_inventory_fields(self):
+    def test_create_kid_with_existing_kid_number_and_no_place_returns_place_suggestions(self):
+        self.kid.place = "2"
+        self.kid.save(update_fields=["place"])
+        Kid.objects.create(kid_number=["OTHER-001A"], place="2A")
+        Kid.objects.create(kid_number=["OTHER-001B"], place="2B")
+        for occupied_base in ("3", "4", "5", "6"):
+            Kid.objects.create(kid_number=[f"BASE-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": primary_kid_number(self.kid.kid_number)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "kid_already_exists_place_required")
+        self.assertEqual(response.data["details"]["current_place"], "2")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2C")
+        self.assertEqual(response.data["details"]["next_free_base_place"], "7")
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.place, "2")
+
+    def test_create_kid_same_kid_number_with_new_place_creates_new_kid(self):
+        self.kid.place = "2"
+        self.kid.save(update_fields=["place"])
+
+        payload = {
+            "kid_number": self.kid.kid_number,
+            "place": "2A",
+            "room": "Wohnzimmer",
+            "type": "Sofa",
+        }
+
+        response = self.client.post("/api/v1/kids/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.place, "2")
+        self.assertEqual(
+            Kid.objects.filter(kid_number__contains=[primary_kid_number(self.kid.kid_number)]).count(),
+            2,
+        )
+        created = Kid.objects.get(id=response.data["id"])
+        self.assertEqual(created.place, "2A")
+        self.assertEqual(created.room, "Wohnzimmer")
+        self.assertEqual(created.furniture_type, "Sofa")
+
+    def test_create_kid_is_idempotent_and_updates_inventory_fields_by_place(self):
+        self.kid.place = "A-01"
+        self.kid.save(update_fields=["place"])
         payload = {
             "kid_number": self.kid.kid_number,
             "place": "A-01",
@@ -329,6 +381,90 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.material, "Wood")
         self.assertEqual(str(attrs.price), "199.50")
         self.assertEqual(attrs.currency, "EUR")
+
+    def test_create_kid_rejects_place_used_by_another_kid(self):
+        Kid.objects.create(kid_number=["OTHER-001"], place="2")
+        Kid.objects.create(kid_number=["OTHER-001A"], place="2A")
+        Kid.objects.create(kid_number=["OTHER-001B"], place="2B")
+        for occupied_base in ("3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"):
+            Kid.objects.create(kid_number=[f"BASE-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900911", "place": "2"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+        self.assertEqual(response.data["code"], "place_occupied")
+        self.assertEqual(response.data["details"]["requested_place"], "2")
+        self.assertEqual(response.data["details"]["suggested_place"], "2C")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2C")
+        self.assertEqual(response.data["details"]["next_free_base_place"], "18")
+        self.assertIn("2C", response.data["place"][0])
+        self.assertIn("18", response.data["place"][0])
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["900911"]).count(), 0)
+
+    def test_update_kid_rejects_place_used_by_another_kid(self):
+        other_kid = Kid.objects.create(kid_number=["OTHER-002"], place="2")
+
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/",
+            {"place": "2"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+        self.assertEqual(response.data["details"]["requested_place"], "2")
+        self.assertEqual(response.data["details"]["suggested_place"], "2A")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2A")
+        self.kid.refresh_from_db()
+        self.assertNotEqual(self.kid.place, "2")
+
+    def test_create_kid_allows_subplace_when_base_place_exists(self):
+        Kid.objects.create(kid_number=["OTHER-003"], place="2")
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900912", "place": "2A"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["900912"], place="2A").exists())
+
+    def test_create_kid_rejects_multi_letter_subplace(self):
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900913", "place": "2AA"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+
+    def test_create_kid_suggests_next_free_base_place_after_z(self):
+        Kid.objects.create(kid_number=["POOL-BASE"], place="2")
+        for suffix in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            Kid.objects.create(kid_number=[f"POOL-{suffix}"], place=f"2{suffix}")
+        for occupied_base in ("3", "4", "5", "6"):
+            Kid.objects.create(kid_number=[f"POOL-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900914", "place": "2Z"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "place_occupied")
+        self.assertEqual(response.data["details"]["requested_place"], "2Z")
+        self.assertEqual(response.data["details"]["suggested_place"], "7")
+        self.assertIsNone(response.data["details"]["same_base_subplace"])
+        self.assertEqual(response.data["details"]["next_free_base_place"], "7")
+        self.assertIn("7", response.data["place"][0])
 
     def test_kid_composite_update_updates_kid_ean_product_attributes_and_order(self):
         ean_row = Ean.objects.create(kid=self.kid, jv="1111111111111")
@@ -518,6 +654,23 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(kid_stats.skipped, 1)
         self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 1)
         self.assertEqual(len(kid_map["KID-001"]), 1)
+
+    def test_kid_green_import_skips_other_kid_with_same_place(self):
+        Kid.objects.create(kid_number=["KID-001"], place="A-1")
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-002","place":"A-1","listing_status":"unlisted"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 0)
+        self.assertEqual(kid_stats.skipped, 1)
+        self.assertEqual(Kid.objects.filter(place="A-1").count(), 1)
+        self.assertEqual(kid_map, {})
         self.assertEqual(kid_map["KID-001"][0].place, "A-1")
 
     def test_kid_green_import_sets_ean_status_true_for_listed_items_with_eans(self):
@@ -2229,6 +2382,69 @@ class DatabaseApiTests(APITestCase):
             [row["place"] for row in relevant_rows],
             ["1", "1A", "1B", "2", "10"],
         )
+
+    def test_inventory_rows_merge_multiple_orders_under_same_kid(self):
+        Orders.objects.create(
+            kid=self.kid,
+            order_id="ORDER-002, ORDER-002-A",
+            sku="4006381333931",
+            title="Second order title",
+            memo="Second order memo",
+            status="paid",
+            payment_status="249.99 EUR",
+            buyer="Second Buyer",
+            platform="ebay",
+            date="2026-04-07T12:00:00Z",
+        )
+
+        response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["entity"], "kid")
+        self.assertEqual(row["order_id"], "ORDER-001")
+        self.assertEqual(row["additional_order_ids_text"], "ORDER-002, ORDER-002-A")
+        self.assertEqual(row["buyer"], "Second Buyer")
+        self.assertEqual(row["payment_status"], "249.99 EUR")
+        self.assertEqual(row["global_price"], "249.99 EUR")
+        self.assertIn("13234455", row["sku_eans"])
+        self.assertIn("4006381333931", row["sku_eans"])
+        self.assertEqual(row["status"], "no_paid | paid")
+
+    def test_inventory_rows_can_filter_by_b_ware_and_in_transit(self):
+        self.kid.b_ware = True
+        self.kid.in_transit = True
+        self.kid.save(update_fields=["b_ware", "in_transit"])
+
+        other_kid = Kid.objects.create(
+            kid_number="FILTER-FLAGS-002",
+            place="88",
+            b_ware=False,
+            in_transit=False,
+        )
+        Orders.objects.create(
+            kid=other_kid,
+            order_id="ORDER-FLAGS-002",
+            sku="4006381333932",
+            title="Flags order",
+            memo="Flags memo",
+            status="no_paid",
+            date="2026-04-08T10:00:00Z",
+        )
+
+        b_ware_response = self.client.get("/api/v1/inventory/rows/?b_ware=true&page_size=100")
+        self.assertEqual(b_ware_response.status_code, status.HTTP_200_OK)
+        b_ware_ids = {row["kid_id"] for row in b_ware_response.data["results"]}
+        self.assertIn(self.kid.id, b_ware_ids)
+        self.assertNotIn(other_kid.id, b_ware_ids)
+
+        in_transit_response = self.client.get("/api/v1/inventory/rows/?in_transit=true&page_size=100")
+        self.assertEqual(in_transit_response.status_code, status.HTTP_200_OK)
+        in_transit_ids = {row["kid_id"] for row in in_transit_response.data["results"]}
+        self.assertIn(self.kid.id, in_transit_ids)
+        self.assertNotIn(other_kid.id, in_transit_ids)
 
     def test_inventory_filter_options_return_distinct_values_from_all_rows(self):
         self.kid.place = "A-12-BLUE"

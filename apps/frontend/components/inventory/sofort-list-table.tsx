@@ -5,12 +5,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useLabels } from "../../app/use-labels";
+import { PLACEHOLDER_EAN } from "./ean-utils";
 import { trackLatency, trackUiError } from "../../app/telemetry";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
+import { ImportKidGreenButton } from "./import-kid-green-button";
 import { fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
@@ -70,7 +72,7 @@ export function SofortListTable() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const placeholderEan = "0000000000000";
+  const placeholderEan = PLACEHOLDER_EAN;
 
   const [rows, setRows] = useState<SofortListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,6 +87,8 @@ export function SofortListTable() {
   const [colorFilter, setColorFilter] = useState("");
   const [materialFilter, setMaterialFilter] = useState("");
   const [listingFilter, setListingFilter] = useState("all");
+  const [bWareOnlyFilter, setBWareOnlyFilter] = useState(false);
+  const [inTransitOnlyFilter, setInTransitOnlyFilter] = useState(false);
   const [backendPage, setBackendPage] = useState(1);
   const [backendPageSize, setBackendPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
@@ -109,6 +113,8 @@ export function SofortListTable() {
     setColorFilter(searchParams.get("color") ?? "");
     setMaterialFilter(searchParams.get("material") ?? "");
     setListingFilter(searchParams.get("listing") ?? "all");
+    setBWareOnlyFilter(searchParams.get("b_ware") === "true");
+    setInTransitOnlyFilter(searchParams.get("in_transit") === "true");
     setBackendPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
     setBackendPageSize(Number.isFinite(pageSizeParam) && pageSizeParam > 0 ? pageSizeParam : 20);
     setUrlHydrated(true);
@@ -138,6 +144,10 @@ export function SofortListTable() {
     else params.delete("material");
     if (listingFilter !== "all") params.set("listing", listingFilter);
     else params.delete("listing");
+    if (bWareOnlyFilter) params.set("b_ware", "true");
+    else params.delete("b_ware");
+    if (inTransitOnlyFilter) params.set("in_transit", "true");
+    else params.delete("in_transit");
     params.delete("sort");
     params.delete("dir");
     if (backendPage > 1) params.set("page", String(backendPage));
@@ -151,8 +161,10 @@ export function SofortListTable() {
   }, [
     backendPage,
     backendPageSize,
+    bWareOnlyFilter,
     colorFilter,
     companyFilter,
+    inTransitOnlyFilter,
     listingFilter,
     locationFilter,
     materialFilter,
@@ -195,6 +207,8 @@ export function SofortListTable() {
       serverColor,
       serverMaterial,
       serverListing,
+      bWareOnlyFilter,
+      inTransitOnlyFilter,
     ],
     queryFn: () =>
       fetchInventoryRows({
@@ -210,7 +224,9 @@ export function SofortListTable() {
         company: serverCompany,
         color: serverColor,
         material: serverMaterial,
-        listing: serverListing
+        listing: serverListing,
+        bWare: bWareOnlyFilter,
+        inTransit: inTransitOnlyFilter,
       })
   });
 
@@ -237,8 +253,8 @@ export function SofortListTable() {
   useEffect(() => {
     if (!sofortListQuery.error) return setError(null);
     trackUiError("sofort_list_fetch_failed", sofortListQuery.error, { page: backendPage });
-    setError(sofortListQuery.error instanceof Error ? sofortListQuery.error.message : "Failed to load list.");
-  }, [backendPage, sofortListQuery.error]);
+    setError(sofortListQuery.error instanceof Error ? sofortListQuery.error.message : t.failedLoadInventory);
+  }, [backendPage, sofortListQuery.error, t.failedLoadInventory]);
 
   useEffect(() => {
     const payload = sofortListQuery.data;
@@ -251,6 +267,7 @@ export function SofortListTable() {
         : {};
       const photos = normalizePhotoList(item.photo);
       const siteEans = extractSiteEans(rawItem, "");
+      const isBWare = rawItem.b_ware === true;
       const normalizedRowEan =
         typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
           ? (item as { database_ean?: string }).database_ean!.trim()
@@ -261,8 +278,8 @@ export function SofortListTable() {
       const normalizedSiteEans = {
         jv: siteEans.jv,
         xl: siteEans.xl,
-        ottoJv: siteEans.ottoJv,
-        ottoXl: siteEans.ottoXl,
+        ottoJv: isBWare ? "B_WARE" : siteEans.ottoJv,
+        ottoXl: isBWare ? "B_WARE" : siteEans.ottoXl,
         ebayJv: siteEans.ebayJv,
         ebayXl: siteEans.ebayXl,
         kauflandJv: siteEans.kauflandJv,
@@ -295,6 +312,7 @@ export function SofortListTable() {
         photo: getPrimaryPhoto(item.photo),
         photoCount: item.photo_count ?? photos.length,
         place: normalizePlaceValue(item.place),
+        bWare: isBWare,
         store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
@@ -355,10 +373,14 @@ export function SofortListTable() {
         listingFilter === "listed" || listingFilter === "unlisted"
           ? { key: "listing", label: t.status, value: listingFilter === "listed" ? t.listed : t.unlisted }
           : null,
+        bWareOnlyFilter ? { key: "b_ware", label: t.bWare, value: t.selectedOnly } : null,
+        inTransitOnlyFilter ? { key: "in_transit", label: t.inTransit, value: t.selectedOnly } : null,
       ].filter((item): item is { key: string; label: string; value: string } => item !== null),
     [
       colorFilter,
       companyFilter,
+      bWareOnlyFilter,
+      inTransitOnlyFilter,
       listingFilter,
       locationFilter,
       materialFilter,
@@ -377,6 +399,9 @@ export function SofortListTable() {
       t.store,
       t.type,
       t.unlisted,
+      t.bWare,
+      t.inTransit,
+      t.selectedOnly,
       t.warehouse,
       typeFilter,
     ]
@@ -393,7 +418,9 @@ export function SofortListTable() {
     companyFilter.trim().length > 0 ||
     colorFilter.trim().length > 0 ||
     materialFilter.trim().length > 0 ||
-    listingFilter !== "all";
+    listingFilter !== "all" ||
+    bWareOnlyFilter ||
+    inTransitOnlyFilter;
 
   useEffect(() => {
     if (backendPage > totalPages) {
@@ -430,6 +457,8 @@ export function SofortListTable() {
     setColorFilter("");
     setMaterialFilter("");
     setListingFilter("all");
+    setBWareOnlyFilter(false);
+    setInTransitOnlyFilter(false);
     setBackendPage(1);
   }
 
@@ -481,6 +510,12 @@ export function SofortListTable() {
       case "listing":
         setListingFilter("all");
         break;
+      case "b_ware":
+        setBWareOnlyFilter(false);
+        break;
+      case "in_transit":
+        setInTransitOnlyFilter(false);
+        break;
       default:
         break;
     }
@@ -500,7 +535,12 @@ export function SofortListTable() {
             query={query}
             queryLabel={t.search}
             searchPlaceholder={t.searchSofortPlaceholder}
-            primaryAction={<AddProductButton onCreated={() => sofortListQuery.refetch()} />}
+            primaryAction={
+              <div className="flex flex-wrap items-center gap-2">
+                <ImportKidGreenButton onImported={() => sofortListQuery.refetch()} />
+                <AddProductButton onCreated={() => sofortListQuery.refetch()} />
+              </div>
+            }
             showFilters={showFilters}
             hasActiveFilters={hasActiveFilters}
             placeFilter={placeFilter}
@@ -512,6 +552,8 @@ export function SofortListTable() {
             colorFilter={colorFilter}
             materialFilter={materialFilter}
             listingFilter={listingFilter}
+            bWareOnlyFilter={bWareOnlyFilter}
+            inTransitOnlyFilter={inTransitOnlyFilter}
             placeOptions={placeOptions}
             quantityOptions={quantityOptions}
             roomOptions={roomOptions}
@@ -532,6 +574,8 @@ export function SofortListTable() {
             onColorFilterChange={(value) => updateSelectFilter(setColorFilter, normalizeSelectValue(value))}
             onMaterialFilterChange={(value) => updateSelectFilter(setMaterialFilter, normalizeSelectValue(value))}
             onListingFilterChange={(value) => updateSelectFilter(setListingFilter, value)}
+            onBWareOnlyFilterChange={(checked) => updateSelectFilter((value) => setBWareOnlyFilter(value === "true"), checked ? "true" : "false")}
+            onInTransitOnlyFilterChange={(checked) => updateSelectFilter((value) => setInTransitOnlyFilter(value === "true"), checked ? "true" : "false")}
             onClearSingleFilter={clearSingleFilter}
             onReset={resetFiltersAndSearch}
             labels={{
@@ -555,9 +599,21 @@ export function SofortListTable() {
               color: t.color,
               material: t.material,
               listing: t.status,
+              bWare: t.bWare,
+              inTransit: t.inTransit,
               warehouse: t.warehouse,
               store: t.store,
               clear: t.clear,
+              filters: t.filters,
+              hideFilters: t.hideFilters,
+              flags: t.flags,
+              noMatchesFound: t.noMatchesFound,
+              searchProductsAria: t.searchProductsAria,
+              actionsAria: t.sofortListActionsAria,
+              filtersAria: t.sofortListFiltersAria,
+              searchFilterPlaceholder: t.searchFilterPlaceholder,
+              searchFilterAria: t.searchFilterAria,
+              activeSuffix: t.activeSuffix,
             }}
           />
         </CardContent>
@@ -567,12 +623,12 @@ export function SofortListTable() {
           {error ? (
             <div className="wh-section-card__body--center">
               <ErrorState
-                title="Inventory service unavailable"
-                description="The list could not be loaded because the inventory service returned an error."
+                title={t.inventoryServiceUnavailableTitle}
+                description={t.inventoryServiceUnavailableDescription}
                 className="max-w-xl"
               />
               <Button type="button" variant="outline" onClick={() => void sofortListQuery.refetch()} disabled={sofortListQuery.isFetching}>
-                Retry
+                {t.tryAgain}
               </Button>
             </div>
           ) : loading ? (

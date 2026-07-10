@@ -7,6 +7,7 @@ import { ThemeProvider } from "../components/theme/theme-provider";
 import { ToastProvider } from "../components/shared/toast-provider";
 import { QueryProvider } from "../components/providers/query-provider";
 import { AuthBootstrap } from "../components/providers/auth-bootstrap";
+import { LanguageSync } from "../components/providers/language-sync";
 import { TooltipProvider } from "../components/ui/tooltip";
 
 const montserrat = Montserrat({
@@ -56,17 +57,31 @@ export default function RootLayout({
       }
     })();
   `;
+  const languageBootstrapScript = `
+    (function () {
+      try {
+        var key = "sofortbot_lang";
+        var saved = localStorage.getItem(key);
+        var lang = saved === "ru" || saved === "de" || saved === "en" ? saved : "en";
+        document.documentElement.lang = lang;
+      } catch (_) {
+        document.documentElement.lang = "en";
+      }
+    })();
+  `;
 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${montserrat.variable} relative min-h-screen bg-background font-sans text-foreground antialiased`}>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
+        <script dangerouslySetInnerHTML={{ __html: languageBootstrapScript }} />
         <div className="relative z-20">
           <QueryProvider>
             <ThemeProvider>
               <TooltipProvider>
                 <ToastProvider>
+                  <LanguageSync />
                   <AuthBootstrap>{children}</AuthBootstrap>
                 </ToastProvider>
               </TooltipProvider>

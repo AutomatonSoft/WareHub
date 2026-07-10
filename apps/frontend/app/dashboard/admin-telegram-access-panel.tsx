@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, RefreshCcw, Search, ShieldCheck, ShieldOff, UserRoundCheck } from "lucide-react";
+import { useLabels } from "../use-labels";
 
 import { fetchAdminUsers } from "../client-api-admin";
 import type { AdminUser, TelegramAccessEntry, TelegramAccessStatus } from "../client-api-types";
@@ -54,6 +55,7 @@ export function AdminTelegramAccessPanel({
   apiBase: string;
   token: string;
 }) {
+  const t = useLabels();
   const [rows, setRows] = useState<TelegramAccessEntry[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,11 +84,11 @@ export function AdminTelegramAccessPanel({
       setRows(nextRows);
       setUsers(nextUsers);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load Telegram access.");
+      setMessage(error instanceof Error ? error.message : t.adminTelegramFailedLoad);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, query, sortOrder, statusFilter, token]);
+  }, [apiBase, query, sortOrder, statusFilter, t.adminTelegramFailedLoad, token]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -143,11 +145,11 @@ export function AdminTelegramAccessPanel({
       await approveTelegramAccess(bindingId, matchedUser);
       await loadRows();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Approve failed.");
+      setMessage(error instanceof Error ? error.message : t.adminTelegramApproveFailed);
     } finally {
       setActionId(null);
     }
-  }, [actionId, loadRows]);
+  }, [actionId, loadRows, t.adminTelegramApproveFailed]);
 
   const handleRevoke = useCallback(async (bindingId: number) => {
     if (actionId !== null) {
@@ -159,33 +161,33 @@ export function AdminTelegramAccessPanel({
       await revokeTelegramAccess(bindingId);
       await loadRows();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Revoke failed.");
+      setMessage(error instanceof Error ? error.message : t.adminTelegramRevokeFailed);
     } finally {
       setActionId(null);
     }
-  }, [actionId, loadRows]);
+  }, [actionId, loadRows, t.adminTelegramRevokeFailed]);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard title="Total" value={counts.total} description="Loaded Telegram chat approvals." icon={<ShieldCheck size={18} />} loading={loading} />
-        <SummaryCard title="Pending" value={counts.pending} description="Waiting for admin decision." icon={<UserRoundCheck size={18} />} loading={loading} />
-        <SummaryCard title="Approved" value={counts.approved} description="Can use the bot in the approved chat." icon={<CheckCircle2 size={18} />} loading={loading} />
-        <SummaryCard title="Revoked" value={counts.revoked} description="Blocked until admin restores access." icon={<ShieldOff size={18} />} loading={loading} />
+        <SummaryCard title={t.adminTelegramTotal} value={counts.total} description={t.adminTelegramLoadedApprovals} icon={<ShieldCheck size={18} />} loading={loading} />
+        <SummaryCard title={t.adminTelegramPending} value={counts.pending} description={t.adminTelegramWaitingDecision} icon={<UserRoundCheck size={18} />} loading={loading} />
+        <SummaryCard title={t.adminTelegramApproved} value={counts.approved} description={t.adminTelegramApprovedHint} icon={<CheckCircle2 size={18} />} loading={loading} />
+        <SummaryCard title={t.adminTelegramRevoked} value={counts.revoked} description={t.adminTelegramRevokedHint} icon={<ShieldOff size={18} />} loading={loading} />
       </div>
 
       <Card className="wh-section-card border-border/70 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-base">Telegram access</CardTitle>
-              <CardDescription>Approve or revoke Telegram bot access per `telegram_user_id + chat_id`.</CardDescription>
+              <CardTitle className="text-base">{t.telegramAccessTitle}</CardTitle>
+              <CardDescription>{t.telegramAccessSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{counts.total} visible</Badge>
+              <Badge variant="outline">{t.adminTelegramVisibleCount.replace("{count}", String(counts.total))}</Badge>
               <Button type="button" variant="outline" size="sm" className="h-10 gap-2" onClick={() => void loadRows()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
-                {loading ? "Loading..." : "Refresh"}
+                {loading ? t.loading : t.refresh}
               </Button>
             </div>
           </div>
@@ -198,40 +200,34 @@ export function AdminTelegramAccessPanel({
               </label>
               <div className="relative">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="telegram-access-search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search login, display name or email"
-                  className="h-10 pl-9"
-                />
+                <Input id="telegram-access-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.adminTelegramSearchPlaceholder} className="h-10 pl-9" />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</label>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.status}</label>
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter((value as StatusFilter) ?? "all")}>
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="All statuses" />
+                  <SelectValue placeholder={t.allStatuses} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="revoked">Revoked</SelectItem>
+                  <SelectItem value="all">{t.allStatuses}</SelectItem>
+                  <SelectItem value="pending">{t.pending}</SelectItem>
+                  <SelectItem value="approved">{t.approved}</SelectItem>
+                  <SelectItem value="revoked">{t.adminTelegramRevoked}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Sort</label>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.sort}</label>
               <Select value={sortOrder} onValueChange={(value) => setSortOrder((value as SortValue) ?? "newest")}>
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Newest first" />
+                  <SelectValue placeholder={t.newestFirst} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">Newest first</SelectItem>
-                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="newest">{t.newestFirst}</SelectItem>
+                  <SelectItem value="oldest">{t.oldestFirst}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -252,7 +248,7 @@ export function AdminTelegramAccessPanel({
           ) : null}
 
           {!loading && rows.length === 0 ? (
-            <EmptyState title="No Telegram access rows" description="No entries match the current filters." />
+            <EmptyState title={t.adminTelegramNoRowsTitle} description={t.adminTelegramNoRowsDescription} />
           ) : null}
 
           {!loading && rows.length > 0 ? (
@@ -260,12 +256,12 @@ export function AdminTelegramAccessPanel({
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="px-4">Identity</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Requested</TableHead>
-                    <TableHead>Last seen</TableHead>
-                    <TableHead className="px-4">Actions</TableHead>
+                    <TableHead className="px-4">{t.adminTelegramIdentity}</TableHead>
+                    <TableHead>{t.adminTelegramScope}</TableHead>
+                    <TableHead>{t.status}</TableHead>
+                    <TableHead>{t.adminTelegramRequested}</TableHead>
+                    <TableHead>{t.adminTelegramLastSeen}</TableHead>
+                    <TableHead className="px-4">{t.adminTelegramActions}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,24 +272,24 @@ export function AdminTelegramAccessPanel({
                       <TableRow key={row.id} className="align-top">
                         <TableCell className="px-4 py-4 whitespace-normal">
                           <div className="space-y-1">
-                            <p className="font-semibold text-foreground">{row.display_name || row.username || "Unknown user"}</p>
+                            <p className="font-semibold text-foreground">{row.display_name || row.username || t.adminTelegramUnknownUser}</p>
                             <p className="text-sm text-muted-foreground">@{row.username || "-"}</p>
                             <p className="break-all text-sm text-muted-foreground">{row.email || "-"}</p>
                             {matchedUser ? (
                               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                <p className="font-semibold">Matched WareHub user</p>
+                                <p className="font-semibold">{t.adminTelegramMatchedUser}</p>
                                 <p>{matchedUser.username} (@{matchedUser.login})</p>
                                 <p>{matchedUser.role} / {matchedUser.status}</p>
                               </div>
                             ) : row.email ? (
                               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                <p className="font-semibold">No WareHub user match</p>
-                                <p>Check whether this email exists in app users before approving.</p>
+                                <p className="font-semibold">{t.adminTelegramNoMatchedUser}</p>
+                                <p>{t.adminTelegramCheckEmailExists}</p>
                               </div>
                             ) : null}
                             {row.app_user?.id ? (
                               <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-                                <p className="font-semibold">Linked on approval</p>
+                                <p className="font-semibold">{t.adminTelegramLinkedOnApproval}</p>
                                 <p>{row.app_user.username || "-"} (@{row.app_user.login || "-"})</p>
                                 <p>{row.app_user.email || "-"}</p>
                               </div>
@@ -302,9 +298,9 @@ export function AdminTelegramAccessPanel({
                         </TableCell>
                         <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
                           <div className="space-y-1">
-                            <p>User ID: {row.telegram_user_id}</p>
-                            <p>Chat ID: {row.chat_id}</p>
-                            <p>Thread: {row.thread_key || "-"}</p>
+                            <p>{t.adminTelegramUserId}: {row.telegram_user_id}</p>
+                            <p>{t.adminTelegramChatId}: {row.chat_id}</p>
+                            <p>{t.adminTelegramThread}: {row.thread_key || "-"}</p>
                           </div>
                         </TableCell>
                         <TableCell className="py-4">
@@ -313,8 +309,8 @@ export function AdminTelegramAccessPanel({
                         <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
                           <div className="space-y-1">
                             <p>{formatDate(row.requested_at)}</p>
-                            <p>Approved by: {row.approved_by || "-"}</p>
-                            <p>Revoked by: {row.revoked_by || "-"}</p>
+                            <p>{t.adminTelegramApprovedBy}: {row.approved_by || "-"}</p>
+                            <p>{t.adminTelegramRevokedBy}: {row.revoked_by || "-"}</p>
                           </div>
                         </TableCell>
                         <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
@@ -324,12 +320,12 @@ export function AdminTelegramAccessPanel({
                           <div className="flex min-w-[220px] flex-wrap gap-2">
                             {row.status !== "approved" ? (
                               <Button type="button" size="sm" className="h-9" onClick={() => void handleApprove(row.id, matchedUser)} disabled={isBusy}>
-                                {isBusy ? "Working..." : "Approve"}
+                                {isBusy ? t.working : t.adminTelegramApprove}
                               </Button>
                             ) : null}
                             {row.status !== "revoked" ? (
                               <Button type="button" variant="outline" size="sm" className="h-9 text-destructive" onClick={() => void handleRevoke(row.id)} disabled={isBusy}>
-                                {isBusy ? "Working..." : "Revoke"}
+                                {isBusy ? t.working : t.adminTelegramRevoke}
                               </Button>
                             ) : null}
                           </div>

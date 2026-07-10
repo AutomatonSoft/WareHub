@@ -1,10 +1,11 @@
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import requests
 
 from django.test import TestCase
 from django.test import SimpleTestCase
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.urls import resolve
 from rest_framework.test import APIRequestFactory
 
@@ -156,6 +157,73 @@ class TelegramServiceTests(SimpleTestCase):
             "edited_channel_post",
             "callback_query",
         ]
+
+    @patch("telegram_service.management.commands.run_telegram_update_poller.time.sleep", return_value=None)
+    @patch("telegram_service.management.commands.run_telegram_update_poller.TelegramConversationService")
+    @patch("telegram_service.management.commands.run_telegram_update_poller.TelegramBotClient")
+    @patch.dict(
+        os.environ,
+        {
+            "TELEGRAM_BOT_TOKEN": "token",
+            "TELEGRAM_WEBHOOK_SECRET": "secret",
+            "TELEGRAM_DELIVERY_MODE": "polling",
+        },
+        clear=False,
+    )
+    def test_update_poller_recovers_once_from_webhook_conflict(self, mocked_bot_class, mocked_service_class, _mocked_sleep):
+        conflict_response = Mock(status_code=409)
+        bot = mocked_bot_class.return_value
+        bot.get_updates.side_effect = [
+            requests.HTTPError("409 Client Error: Conflict", response=conflict_response),
+            [],
+        ]
+        bot.delete_webhook.return_value = {"ok": True}
+        mocked_service_class.return_value = Mock()
+
+        call_command("run_telegram_update_poller", "--once", "--idle-sleep", "0.01")
+
+        self.assertEqual(bot.delete_webhook.call_count, 2)
+        self.assertEqual(bot.get_updates.call_count, 2)
+
+    @patch("telegram_service.management.commands.run_telegram_update_poller.time.sleep", return_value=None)
+    @patch("telegram_service.management.commands.run_telegram_update_poller.TelegramConversationService")
+    @patch("telegram_service.management.commands.run_telegram_update_poller.TelegramBotClient")
+    @patch.dict(
+        os.environ,
+        {
+            "TELEGRAM_BOT_TOKEN": "token",
+            "TELEGRAM_WEBHOOK_SECRET": "secret",
+            "TELEGRAM_DELIVERY_MODE": "polling",
+        },
+        clear=False,
+    )
+    def test_update_poller_keep_webhook_leaves_conflict_unrecovered(self, mocked_bot_class, mocked_service_class, _mocked_sleep):
+        conflict_response = Mock(status_code=409)
+        bot = mocked_bot_class.return_value
+        bot.get_updates.side_effect = requests.HTTPError("409 Client Error: Conflict", response=conflict_response)
+        mocked_service_class.return_value = Mock()
+
+        with self.assertRaises(requests.HTTPError):
+            call_command("run_telegram_update_poller", "--once", "--keep-webhook", "--idle-sleep", "0.01")
+
+        bot.delete_webhook.assert_not_called()
+        self.assertEqual(bot.get_updates.call_count, 1)
+
+    @patch("telegram_service.management.commands.run_telegram_update_poller._poller_single_instance_lock")
+    @patch.dict(
+        os.environ,
+        {
+            "TELEGRAM_BOT_TOKEN": "token",
+            "TELEGRAM_WEBHOOK_SECRET": "secret",
+            "TELEGRAM_DELIVERY_MODE": "polling",
+        },
+        clear=False,
+    )
+    def test_update_poller_exits_when_singleton_lock_is_held(self, mocked_lock):
+        mocked_lock.return_value.__enter__.side_effect = CommandError("Telegram poller is already running.")
+
+        with self.assertRaises(CommandError):
+            call_command("run_telegram_update_poller", "--once")
 
     @patch("telegram_service.orchestrator_client.requests.post")
     @patch("telegram_service.orchestrator_client.requests.get")
