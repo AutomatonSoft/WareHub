@@ -37,6 +37,17 @@ struct DatabaseInventoryRowsResponse {
     results: Vec<Value>,
 }
 
+#[derive(Debug, Default)]
+struct DatabaseInventoryRowsRequest {
+    page_size: i64,
+    page: i64,
+    search: Option<String>,
+    section: Option<String>,
+    store: Option<bool>,
+    b_ware: Option<bool>,
+    in_transit: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 struct DatabaseKidCreatePayload {
     kid_number: String,
@@ -143,13 +154,15 @@ async fn list_database_inventory_rows_service(
     let response = fetch_database_inventory_rows_page(
         state,
         &config,
-        limit,
-        page,
-        query.search.or(query.q),
-        query.section,
-        query.store,
-        query.b_ware,
-        query.in_transit,
+        DatabaseInventoryRowsRequest {
+            page_size: limit,
+            page,
+            search: query.search.or(query.q),
+            section: query.section,
+            store: query.store,
+            b_ware: query.b_ware,
+            in_transit: query.in_transit,
+        },
     )
     .await?;
     let items = response
@@ -317,7 +330,14 @@ async fn fetch_database_inventory_rows(
     search: Option<String>,
 ) -> Result<Vec<Value>, (StatusCode, Json<ErrorResponse>)> {
     fetch_database_inventory_rows_page(
-        state, config, page_size, page, search, None, None, None, None,
+        state,
+        config,
+        DatabaseInventoryRowsRequest {
+            page_size,
+            page,
+            search,
+            ..Default::default()
+        },
     )
         .await
         .map(|response| response.results)
@@ -326,13 +346,7 @@ async fn fetch_database_inventory_rows(
 async fn fetch_database_inventory_rows_page(
     state: &AppState,
     config: &crate::database_kid_sync::DatabaseKidSyncConfig,
-    page_size: i64,
-    page: i64,
-    search: Option<String>,
-    section: Option<String>,
-    store: Option<bool>,
-    b_ware: Option<bool>,
-    in_transit: Option<bool>,
+    request: DatabaseInventoryRowsRequest,
 ) -> Result<DatabaseInventoryRowsResponse, (StatusCode, Json<ErrorResponse>)> {
     let mut url = Url::parse(&format!("{}/api/v1/inventory/rows/", config.base_url)).map_err(
         |_| {
@@ -345,23 +359,23 @@ async fn fetch_database_inventory_rows_page(
     )?;
     {
         let mut pairs = url.query_pairs_mut();
-        pairs.append_pair("page_size", &page_size.to_string());
-        pairs.append_pair("page", &page.to_string());
-        if let Some(search) = normalized_optional_text(search.as_deref()) {
+        pairs.append_pair("page_size", &request.page_size.to_string());
+        pairs.append_pair("page", &request.page.to_string());
+        if let Some(search) = normalized_optional_text(request.search.as_deref()) {
             pairs.append_pair("q", &search);
         }
         pairs.append_pair("sort", "section_slot");
         pairs.append_pair("dir", "asc");
-        if let Some(section) = normalized_optional_text(section.as_deref()) {
+        if let Some(section) = normalized_optional_text(request.section.as_deref()) {
             pairs.append_pair("section", &section);
         }
-        if let Some(store) = store {
+        if let Some(store) = request.store {
             pairs.append_pair("store", if store { "true" } else { "false" });
         }
-        if let Some(b_ware) = b_ware {
+        if let Some(b_ware) = request.b_ware {
             pairs.append_pair("b_ware", if b_ware { "true" } else { "false" });
         }
-        if let Some(in_transit) = in_transit {
+        if let Some(in_transit) = request.in_transit {
             pairs.append_pair("in_transit", if in_transit { "true" } else { "false" });
         }
     }
