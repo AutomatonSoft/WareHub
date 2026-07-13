@@ -20,6 +20,7 @@ use crate::{
     append_service_log, enrich_intake_rows_by_internal_index, extract_order_id_from_qr,
     hydrate_intake_activity, purge_expired_inactive_intakes, validation_error, AppState,
     CreateIntakeRequest, ErrorResponse, IntakeDto, IntakeEventMessage, IntakeProductSnapshot,
+    spawn_database_kid_sync,
 };
 
 pub(crate) async fn create_intake_service(
@@ -195,6 +196,7 @@ pub(crate) async fn create_intake_service(
     })?;
 
     if let Some(created) = first_created.clone() {
+        spawn_database_kid_sync(state, created.clone());
         let db = state.db.clone();
         let logs_state = state.clone();
         let events_state = state.clone();

@@ -30,10 +30,13 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
   Future<void> _syncLabelLayoutFromServer() async {
     try {
       final Uri url = Uri.parse('${_effectiveApiBase()}/label-layout');
-      final http.Response response =
-          await http.get(url, headers: _authHeaders());
+      final http.Response response = await _authorizedRequest('GET', url);
       if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        final MobileAuthRefreshStatus status =
+            await _handleUnauthorizedAfterRefresh();
+        if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+          throw const MobileAuthRefreshUnavailableException();
+        }
         return;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -83,13 +86,18 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
 
   Future<void> _pushLabelLayoutToServer() async {
     final Uri url = Uri.parse('${_effectiveApiBase()}/label-layout');
-    final http.Response response = await http.put(
+    final http.Response response = await _authorizedRequest(
+      'PUT',
       url,
       headers: _authHeaders(json: true),
       body: jsonEncode(_labelLayoutPayload()),
     );
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw Exception('Unauthorized');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -159,8 +167,40 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setStateDialog) {
             final AppStrings strings = AppStrings.of(dialogContext);
-            const double previewW = 220;
+            final double availableDialogWidth =
+                math.max(240, MediaQuery.sizeOf(context).width - 96);
+            final double contentWidth =
+                math.min(340, availableDialogWidth).toDouble();
+            final double previewW = math.min(260, contentWidth).toDouble();
             final double previewH = previewW * (_printHeightPx / _printWidthPx);
+
+            Future<void> saveLayout() async {
+              Navigator.of(dialogContext).pop();
+              if (!mounted) return;
+              setState(() {
+                _labelQrScale = qrScale;
+                _labelQrOffsetX = qrOffsetX;
+                _labelQrOffsetY = qrOffsetY;
+                _labelMainScale = mainScale;
+                _labelMainOffsetX = mainOffsetX;
+                _labelMainOffsetY = mainOffsetY;
+                _labelPartsScale = partsScale;
+                _labelPartsOffsetX = partsOffsetX;
+                _labelPartsOffsetY = partsOffsetY;
+              });
+              try {
+                await _saveLabelLayoutSettings();
+              } catch (_) {
+                if (!mounted) return;
+                _showMessage(
+                  strings.text('label_layout_sync_failed'),
+                  error: true,
+                );
+                return;
+              }
+              if (!mounted) return;
+              _showMessage(strings.text('label_layout_saved'));
+            }
 
             void updateScale(double delta) {
               setStateDialog(() {
@@ -198,176 +238,217 @@ extension _QrHomePageLabelLayout on _QrHomePageState {
             }
 
             return AlertDialog(
-              title: const Text('Label layout'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Center(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: uiBorder),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: SizedBox(
-                          width: previewW,
-                          height: previewH,
-                          child: CustomPaint(
-                            painter: _LabelLayoutPreviewPainter(
-                              printWidth: _printWidthPx.toDouble(),
-                              printHeight: _printHeightPx.toDouble(),
-                              qrScale: qrScale,
-                              qrOffsetX: qrOffsetX,
-                              qrOffsetY: qrOffsetY,
-                              mainScale: mainScale,
-                              mainOffsetX: mainOffsetX,
-                              mainOffsetY: mainOffsetY,
-                              partsScale: partsScale,
-                              partsOffsetX: partsOffsetX,
-                              partsOffsetY: partsOffsetY,
-                              selected: selected,
+              backgroundColor: AuthColors.background,
+              shape: _printerDialogShape(),
+              title: Text(
+                strings.text('label_layout'),
+                style: _printerDialogTitleStyle,
+              ),
+              content: SizedBox(
+                width: contentWidth,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Center(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: uiBorder),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: SizedBox(
+                            width: previewW,
+                            height: previewH,
+                            child: CustomPaint(
+                              painter: _LabelLayoutPreviewPainter(
+                                printWidth: _printWidthPx.toDouble(),
+                                printHeight: _printHeightPx.toDouble(),
+                                qrScale: qrScale,
+                                qrOffsetX: qrOffsetX,
+                                qrOffsetY: qrOffsetY,
+                                mainScale: mainScale,
+                                mainOffsetX: mainOffsetX,
+                                mainOffsetY: mainOffsetY,
+                                partsScale: partsScale,
+                                partsOffsetX: partsOffsetX,
+                                partsOffsetY: partsOffsetY,
+                                selected: selected,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        ChoiceChip(
-                          label: const Text('QR'),
-                          selected: selected == _LabelLayoutElement.qr,
-                          onSelected: (_) {
-                            setStateDialog(() {
-                              selected = _LabelLayoutElement.qr;
-                            });
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Main'),
-                          selected: selected == _LabelLayoutElement.mainText,
-                          onSelected: (_) {
-                            setStateDialog(() {
-                              selected = _LabelLayoutElement.mainText;
-                            });
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Parts'),
-                          selected: selected == _LabelLayoutElement.partsText,
-                          onSelected: (_) {
-                            setStateDialog(() {
-                              selected = _LabelLayoutElement.partsText;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: <Widget>[
-                        const Text('Size'),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Decrease',
-                          onPressed: () => updateScale(-0.04),
-                          icon: const Icon(Icons.remove_circle_outline),
-                        ),
-                        IconButton(
-                          tooltip: 'Increase',
-                          onPressed: () => updateScale(0.04),
-                          icon: const Icon(Icons.add_circle_outline),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: <Widget>[
-                        const Text('Move'),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Left',
-                          onPressed: () => moveSelected(-4, 0),
-                          icon: const Icon(Icons.arrow_left),
-                        ),
-                        IconButton(
-                          tooltip: 'Up',
-                          onPressed: () => moveSelected(0, -4),
-                          icon: const Icon(Icons.arrow_drop_up),
-                        ),
-                        IconButton(
-                          tooltip: 'Down',
-                          onPressed: () => moveSelected(0, 4),
-                          icon: const Icon(Icons.arrow_drop_down),
-                        ),
-                        IconButton(
-                          tooltip: 'Right',
-                          onPressed: () => moveSelected(4, 0),
-                          icon: const Icon(Icons.arrow_right),
-                        ),
-                      ],
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        setStateDialog(() {
-                          qrScale = 0.78;
-                          qrOffsetX = 0;
-                          qrOffsetY = 0;
-                          mainScale = 1.0;
-                          mainOffsetX = 0;
-                          mainOffsetY = 0;
-                          partsScale = 1.0;
-                          partsOffsetX = 0;
-                          partsOffsetY = 0;
-                        });
-                      },
-                      child: const Text('Reset defaults'),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: _LabelLayoutElementChip(
+                              label: 'QR',
+                              selected: selected == _LabelLayoutElement.qr,
+                              onTap: () {
+                                setStateDialog(() {
+                                  selected = _LabelLayoutElement.qr;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _LabelLayoutElementChip(
+                              label: strings.text('label_layout_main'),
+                              selected:
+                                  selected == _LabelLayoutElement.mainText,
+                              onTap: () {
+                                setStateDialog(() {
+                                  selected = _LabelLayoutElement.mainText;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _LabelLayoutElementChip(
+                              label: strings.text('label_layout_parts'),
+                              selected:
+                                  selected == _LabelLayoutElement.partsText,
+                              onTap: () {
+                                setStateDialog(() {
+                                  selected = _LabelLayoutElement.partsText;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            strings.text('label_layout_size'),
+                            style: _printerBodyStyle,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: strings.text('label_layout_decrease'),
+                            onPressed: () => updateScale(-0.04),
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                          IconButton(
+                            tooltip: strings.text('label_layout_increase'),
+                            onPressed: () => updateScale(0.04),
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            strings.text('label_layout_move'),
+                            style: _printerBodyStyle,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: strings.text('label_layout_left'),
+                            onPressed: () => moveSelected(-4, 0),
+                            icon: const Icon(Icons.arrow_left),
+                          ),
+                          IconButton(
+                            tooltip: strings.text('label_layout_up'),
+                            onPressed: () => moveSelected(0, -4),
+                            icon: const Icon(Icons.arrow_drop_up),
+                          ),
+                          IconButton(
+                            tooltip: strings.text('label_layout_down'),
+                            onPressed: () => moveSelected(0, 4),
+                            icon: const Icon(Icons.arrow_drop_down),
+                          ),
+                          IconButton(
+                            tooltip: strings.text('label_layout_right'),
+                            onPressed: () => moveSelected(4, 0),
+                            icon: const Icon(Icons.arrow_right),
+                          ),
+                        ],
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setStateDialog(() {
+                            qrScale = 0.78;
+                            qrOffsetX = 0;
+                            qrOffsetY = 0;
+                            mainScale = 1.0;
+                            mainOffsetX = 0;
+                            mainOffsetY = 0;
+                            partsScale = 1.0;
+                            partsOffsetX = 0;
+                            partsOffsetY = 0;
+                          });
+                        },
+                        child:
+                            Text(strings.text('label_layout_reset_defaults')),
+                      ),
+                      const SizedBox(height: 12),
+                      _PrinterPrimaryButton(
+                        label: strings.text('save'),
+                        onPressed: saveLayout,
+                      ),
+                      const SizedBox(height: 4),
+                      _PrinterSecondaryButton(
+                        label: strings.text('cancel'),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(strings.text('cancel')),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    Navigator.of(dialogContext).pop();
-                    if (!mounted) return;
-                    setState(() {
-                      _labelQrScale = qrScale;
-                      _labelQrOffsetX = qrOffsetX;
-                      _labelQrOffsetY = qrOffsetY;
-                      _labelMainScale = mainScale;
-                      _labelMainOffsetX = mainOffsetX;
-                      _labelMainOffsetY = mainOffsetY;
-                      _labelPartsScale = partsScale;
-                      _labelPartsOffsetX = partsOffsetX;
-                      _labelPartsOffsetY = partsOffsetY;
-                    });
-                    try {
-                      await _saveLabelLayoutSettings();
-                    } catch (_) {
-                      if (!mounted) return;
-                      _showMessage(
-                        'Saved locally, but failed to sync global layout.',
-                        error: true,
-                      );
-                      return;
-                    }
-                    if (!mounted) return;
-                    _showMessage('Label layout saved for all users.');
-                  },
-                  child: Text(strings.text('save')),
-                ),
-              ],
             );
           },
         );
       },
+    );
+  }
+}
+
+class _LabelLayoutElementChip extends StatelessWidget {
+  const _LabelLayoutElementChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AuthRadii.md),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        height: 50,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected ? uiGreen.withValues(alpha: 0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(AuthRadii.md),
+          border: Border.all(
+            color:
+                selected ? uiGreen.withValues(alpha: 0.28) : AuthColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AuthTextStyles.language.copyWith(
+            color: uiText,
+            fontSize: 14,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -11,8 +11,8 @@ use crate::intakes_photo_cleanup_service::enqueue_photo_cleanup_retry;
 use crate::intakes_query_repository as query_repo;
 use crate::{
     append_service_log, delete_uploaded_photo_by_url, hydrate_intake_activity_many,
-    validation_error, AppState, DeleteIntakeQuery, ErrorResponse, IntakeDto, IntakeEventMessage,
-    ListIntakesQuery, ProductStockStatDto, UpdateIntakePhotoRequest,
+    spawn_database_kid_sync, validation_error, AppState, DeleteIntakeQuery, ErrorResponse,
+    IntakeDto, IntakeEventMessage, ListIntakesQuery, ProductStockStatDto, UpdateIntakePhotoRequest,
 };
 
 pub(crate) async fn list_intakes_service(
@@ -318,6 +318,7 @@ pub(crate) async fn update_intake_photo_service(
         intake: Some(updated.clone()),
         intake_id: Some(updated.id),
     });
+    spawn_database_kid_sync(state, updated.clone());
 
     Ok(Json(updated))
 }

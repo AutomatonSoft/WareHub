@@ -95,11 +95,17 @@ async fn main() {
         .expect("invalid APP_PORT value");
 
     let (intake_events, _) = broadcast::channel::<IntakeEventMessage>(512);
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("failed to build HTTP client");
     let state = AppState {
         app_env,
         db,
         intake_events,
         logs: Arc::new(RwLock::new(InMemoryLogs::default())),
+        http_client,
+        database_kid_sync: build_database_kid_sync_config(),
     };
     append_service_log(
         &state,

@@ -2,6 +2,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{header, HeaderName, HeaderValue, Method},
     middleware,
+    response::Redirect,
     routing::{delete, get, patch, post},
     Router,
 };
@@ -17,16 +18,16 @@ use crate::{
     admin_list_users, admin_pending_registration_count, admin_reject_registration,
     admin_update_user_role, afterbuy_health, api_meta, auth_change_password, auth_me,
     auth_update_me, backend_request_log_middleware, confirm_authenticated_password_change,
-    confirm_password_reset, create_intake, create_service_log, cleanup_removed_intake_photos,
+    confirm_password_reset, create_database_inventory_kid, create_intake, create_service_log, cleanup_removed_intake_photos,
     delete_intake, delete_oldest_intake_by_location, env_flag, fetch_afterbuy_order,
     fetch_afterbuy_orders_by_kid, get_photo_cleanup_retry_queue_status,
     get_label_layout_settings, get_printer_setup_settings, healthz,
-    intakes_ws_handler, list_intake_delete_audit_logs, list_intakes, list_product_stats,
+    intakes_ws_handler, list_database_inventory_rows, list_intake_delete_audit_logs, list_intakes, list_product_stats,
     list_service_logs, login_user, logout_user, mobile_app_update, openapi_json, readyz,
     refresh_user, register_user, request_authenticated_password_change_code,
     request_password_reset, scalar_ui, service_logs_page,
-    suggest_placement, update_intake_photo, update_label_layout_settings, upload_photo, AppState,
-    update_printer_setup_settings,
+    suggest_placement, update_database_inventory_kid_photo, update_intake_photo,
+    update_label_layout_settings, update_printer_setup_settings, upload_photo, AppState,
 };
 
 pub(crate) fn build_app(state: AppState) -> Router {
@@ -46,6 +47,12 @@ pub(crate) fn build_app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/intakes", post(create_intake).get(list_intakes))
+        .route("/inventory/rows", get(list_database_inventory_rows))
+        .route("/inventory/kids", post(create_database_inventory_kid))
+        .route(
+            "/inventory/kids/:kid_ref/photo",
+            patch(update_database_inventory_kid_photo),
+        )
         .route("/kids", post(create_intake))
         .route("/kids/", post(create_intake))
         .route("/intakes/products/stats", get(list_product_stats))
@@ -114,7 +121,9 @@ pub(crate) fn build_app(state: AppState) -> Router {
         get(list_intake_delete_audit_logs),
     );
 
-    let mut app = Router::new().nest("/api/v1", api_v1);
+    let mut app = Router::new()
+        .route("/", get(backend_root_redirect))
+        .nest("/api/v1", api_v1);
 
     let expose_uploads_public = state.app_env == "dev" || env_flag("EXPOSE_UPLOADS_PUBLIC", false);
     if expose_uploads_public {
@@ -130,6 +139,10 @@ pub(crate) fn build_app(state: AppState) -> Router {
         ))
         .layer(build_cors_layer(&state))
         .with_state(state)
+}
+
+async fn backend_root_redirect() -> Redirect {
+    Redirect::temporary("/api/v1/scalar")
 }
 
 const DEFAULT_UPLOAD_MAX_BODY_BYTES: usize = 12 * 1024 * 1024;

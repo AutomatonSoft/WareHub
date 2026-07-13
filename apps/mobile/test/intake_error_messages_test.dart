@@ -27,4 +27,14 @@ void main() {
 
     expect(message, 'Create intake failed: HTTP 500. database timeout');
   });
+
+  test('maps invalid box total to friendly range message', () {
+    final String message = buildCreateIntakeErrorMessage(
+      strings: const AppStrings(AppLang.en),
+      statusCode: 400,
+      details: 'box_total must be between 1 and 20',
+    );
+
+    expect(message, 'Enter a number from 1 to 20.');
+  });
 }

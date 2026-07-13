@@ -318,8 +318,17 @@ pub(crate) fn openapi_paths() -> Value {
             "post": {
                 "tags": ["Auth"],
                 "summary": "Login with credentials",
-                "description": "Authenticates the user, returns a bearer access token and sets an HTTP-only refresh cookie.",
+                "description": "Authenticates the user, returns bearer access and refresh tokens, and sets an HTTP-only refresh cookie for browser clients.",
                 "operationId": "loginUser",
+                "parameters": [
+                    {
+                        "name": "x-warehub-client",
+                        "in": "header",
+                        "required": false,
+                        "schema": { "type": "string", "enum": ["mobile"] },
+                        "description": "Set to `mobile` to receive `refresh_token` in the JSON response."
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -365,8 +374,30 @@ pub(crate) fn openapi_paths() -> Value {
             "post": {
                 "tags": ["Auth"],
                 "summary": "Logout current session",
-                "description": "Revokes the presented access token if available, revokes refresh session cookie if present and clears the cookie client-side.",
+                "description": "Revokes the presented access token if available, revokes the refresh token from JSON body or refresh session cookie if present, and clears the cookie client-side.",
                 "operationId": "logoutUser",
+                "parameters": [
+                    {
+                        "name": "x-warehub-client",
+                        "in": "header",
+                        "required": false,
+                        "schema": { "type": "string", "enum": ["mobile"] },
+                        "description": "Identifies mobile clients using JSON refresh tokens."
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "refresh_token": { "type": "string", "format": "uuid" }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "204": {
                         "description": "Logout completed and refresh cookie cleared.",
@@ -388,8 +419,30 @@ pub(crate) fn openapi_paths() -> Value {
             "post": {
                 "tags": ["Auth"],
                 "summary": "Refresh access token",
-                "description": "Rotates the refresh session from the HTTP-only cookie and returns a fresh access token plus a new cookie.",
+                "description": "Rotates the refresh session from JSON `refresh_token` or the HTTP-only cookie and returns fresh access and refresh tokens plus a new browser cookie.",
                 "operationId": "refreshUser",
+                "parameters": [
+                    {
+                        "name": "x-warehub-client",
+                        "in": "header",
+                        "required": false,
+                        "schema": { "type": "string", "enum": ["mobile"] },
+                        "description": "Set to `mobile` to receive the rotated `refresh_token` in the JSON response."
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "refresh_token": { "type": "string", "format": "uuid" }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "New access token and rotated refresh cookie.",
@@ -742,6 +795,8 @@ pub(crate) fn openapi_paths() -> Value {
                                     "photo_url": { "type": "string", "nullable": true },
                                     "product_key": { "type": "string", "nullable": true },
                                     "product_color": { "type": "string", "nullable": true },
+                                    "store": { "type": "boolean", "nullable": true, "default": false },
+                                    "in_transit": { "type": "boolean", "nullable": true, "default": false },
                                     "category_main": { "type": "string", "nullable": true },
                                     "category_sub": { "type": "string", "nullable": true },
                                     "is_b_ware": { "type": "boolean", "nullable": true, "default": false },
@@ -809,6 +864,8 @@ pub(crate) fn openapi_paths() -> Value {
                                     "photo_url": { "type": "string", "nullable": true },
                                     "product_key": { "type": "string", "nullable": true },
                                     "product_color": { "type": "string", "nullable": true },
+                                    "store": { "type": "boolean", "nullable": true },
+                                    "in_transit": { "type": "boolean", "nullable": true },
                                     "category_main": { "type": "string", "nullable": true },
                                     "category_sub": { "type": "string", "nullable": true },
                                     "is_b_ware": { "type": "boolean", "nullable": true },
@@ -855,6 +912,8 @@ pub(crate) fn openapi_paths() -> Value {
                                     "photo_url": { "type": "string", "nullable": true },
                                     "product_key": { "type": "string", "nullable": true },
                                     "product_color": { "type": "string", "nullable": true },
+                                    "store": { "type": "boolean", "nullable": true },
+                                    "in_transit": { "type": "boolean", "nullable": true },
                                     "category_main": { "type": "string", "nullable": true },
                                     "category_sub": { "type": "string", "nullable": true },
                                     "is_b_ware": { "type": "boolean", "nullable": true },

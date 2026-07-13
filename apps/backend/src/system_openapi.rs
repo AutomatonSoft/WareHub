@@ -90,9 +90,19 @@ pub(crate) async fn openapi_json() -> Json<serde_json::Value> {
                 },
                 "LoginResponse": {
                     "type": "object",
-                    "required": ["token", "user"],
+                    "required": ["access_token", "token", "user"],
                     "properties": {
-                        "token": { "type": "string", "format": "uuid" },
+                        "access_token": { "type": "string", "format": "uuid" },
+                        "token": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Backward-compatible alias for `access_token`."
+                        },
+                        "refresh_token": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Returned only for mobile clients that send `x-warehub-client: mobile`. Browser clients keep using the HTTP-only refresh cookie."
+                        },
                         "user": { "$ref": "#/components/schemas/AuthUserResponse" }
                     }
                 },
@@ -107,11 +117,12 @@ pub(crate) async fn openapi_json() -> Json<serde_json::Value> {
                 "IntakeDto": {
                     "type": "object",
                     "required": [
-                        "id", "qr_code", "warehouse_location", "kid_number", "section", "slot_number",
-                        "box_index", "box_total", "unit_index", "is_b_ware", "created_at", "is_removed", "is_active"
+                        "id", "database_kid_id", "qr_code", "warehouse_location", "kid_number", "section", "slot_number",
+                        "box_index", "box_total", "unit_index", "is_b_ware", "store", "in_transit", "created_at", "is_removed", "is_active"
                     ],
                     "properties": {
                         "id": { "type": "string", "format": "uuid" },
+                        "database_kid_id": { "type": "integer" },
                         "qr_code": { "type": "string" },
                         "warehouse_location": { "type": "string" },
                         "kid_number": { "type": "string" },
@@ -133,6 +144,8 @@ pub(crate) async fn openapi_json() -> Json<serde_json::Value> {
                         "category_main": { "type": "string", "nullable": true },
                         "category_sub": { "type": "string", "nullable": true },
                         "is_b_ware": { "type": "boolean" },
+                        "store": { "type": "boolean" },
+                        "in_transit": { "type": "boolean" },
                         "b_ware_comment": { "type": "string", "nullable": true },
                         "product_sale_date": { "type": "string", "nullable": true },
                         "order_memo": { "type": "string", "nullable": true },

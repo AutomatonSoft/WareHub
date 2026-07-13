@@ -45,39 +45,22 @@ extension _QrHomePageScanEntrypoints on _QrHomePageState {
                   ),
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  height: 56,
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(dialogContext).pop('add'),
-                    icon: const Icon(Icons.add_box_rounded),
-                    label: Text(
-                      strings.text('add'),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+                _ScanDialogActionButton(
+                  label: strings.text('add'),
+                  icon: Icons.add_box_rounded,
+                  emphasized: true,
+                  onPressed: () => Navigator.of(dialogContext).pop('add'),
                 ),
                 const SizedBox(height: 10),
-                SizedBox(
-                  height: 56,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(dialogContext).pop('remove'),
-                    icon: const Icon(Icons.indeterminate_check_box_rounded),
-                    label: Text(
-                      strings.text('remove'),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+                _ScanDialogActionButton(
+                  label: strings.text('remove'),
+                  icon: Icons.indeterminate_check_box_rounded,
+                  onPressed: () => Navigator.of(dialogContext).pop('remove'),
                 ),
                 const SizedBox(height: 10),
-                TextButton(
+                _ScanDialogActionButton(
+                  label: strings.text('cancel'),
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(strings.text('cancel')),
                 ),
               ],
             ),

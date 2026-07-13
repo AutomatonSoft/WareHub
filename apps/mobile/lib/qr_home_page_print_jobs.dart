@@ -8,6 +8,56 @@ enum _ImagePrintSource {
   serializerTest,
 }
 
+class _PrintPreviewActionButton extends StatelessWidget {
+  const _PrintPreviewActionButton({
+    this.child,
+  });
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 116,
+      height: 44,
+      child: child,
+    );
+  }
+}
+
+class _ImageSourceActionButton extends StatelessWidget {
+  const _ImageSourceActionButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: AuthSpacing.buttonHeight,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: uiText,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AuthRadii.md),
+          ),
+          textStyle: _printerButtonTextStyle,
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
 extension _QrHomePagePrintJobs on _QrHomePageState {
   Future<_ImagePrintSource?> _showImageSourceDialog() async {
     return showDialog<_ImagePrintSource>(
@@ -15,28 +65,53 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
       builder: (BuildContext context) {
         final AppStrings strings = _strings;
         return AlertDialog(
-          title: Text(strings.text('print_image_source_title')),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(strings.text('cancel')),
+          backgroundColor: AuthColors.background,
+          shape: _printerDialogShape(),
+          title: Text(
+            strings.text('print_image_source_title'),
+            style: _printerDialogTitleStyle,
+          ),
+          content: SizedBox(
+            width: _printerDialogWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _ImageSourceActionButton(
+                        label: strings.text('gallery'),
+                        onPressed: () => Navigator.of(context)
+                            .pop(_ImagePrintSource.gallery),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ImageSourceActionButton(
+                        label: strings.text('manual'),
+                        onPressed: () =>
+                            Navigator.of(context).pop(_ImagePrintSource.manual),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ImageSourceActionButton(
+                        label: 'Serializer x4',
+                        onPressed: () => Navigator.of(context)
+                            .pop(_ImagePrintSource.serializerTest),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _PrinterSecondaryButton(
+                  label: strings.text('cancel'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_ImagePrintSource.gallery),
-              child: Text(strings.text('gallery')),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_ImagePrintSource.manual),
-              child: Text(strings.text('manual')),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_ImagePrintSource.serializerTest),
-              child: const Text('Serializer x4'),
-            ),
-          ],
+          ),
         );
       },
     );
@@ -77,7 +152,9 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
             final double maxDialogHeight =
                 MediaQuery.of(context).size.height * 0.72;
             return AlertDialog(
-              title: Text(dialogTitle),
+              backgroundColor: AuthColors.background,
+              shape: _printerDialogShape(),
+              title: Text(dialogTitle, style: _printerDialogTitleStyle),
               content: SizedBox(
                 width: 280,
                 child: ConstrainedBox(
@@ -98,37 +175,62 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
                 ),
               ),
               actions: <Widget>[
-                TextButton(
-                  onPressed: index <= 0
-                      ? null
-                      : () {
-                          setStateDialog(() {
-                            index -= 1;
-                          });
-                        },
-                  child: Text(strings.text('prev')),
-                ),
-                TextButton(
-                  onPressed: index >= images.length - 1
-                      ? null
-                      : () {
-                          setStateDialog(() {
-                            index += 1;
-                          });
-                        },
-                  child: Text(strings.text('next')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(
-                    canPrint ? strings.text('cancel') : strings.text('close'),
+                SizedBox(
+                  width: 280,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          _PrintPreviewActionButton(
+                            child: _PrinterTextButton(
+                              label: strings.text('prev'),
+                              onPressed: index <= 0
+                                  ? null
+                                  : () {
+                                      setStateDialog(() {
+                                        index -= 1;
+                                      });
+                                    },
+                            ),
+                          ),
+                          const Spacer(),
+                          _PrintPreviewActionButton(
+                            child: _PrinterTextButton(
+                              label: strings.text('next'),
+                              onPressed: index >= images.length - 1
+                                  ? null
+                                  : () {
+                                      setStateDialog(() {
+                                        index += 1;
+                                      });
+                                    },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          if (canPrint) ...<Widget>[
+                            _PrinterPrimaryButton(
+                              label: strings.text('print_now'),
+                              onPressed: () => Navigator.of(context).pop(true),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
+                          _PrinterSecondaryButton(
+                            label: canPrint
+                                ? strings.text('cancel')
+                                : strings.text('close'),
+                            onPressed: () => Navigator.of(context).pop(false),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                if (canPrint)
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: Text(strings.text('print_now')),
-                  ),
               ],
             );
           },
@@ -338,7 +440,12 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
         builder: (BuildContext context) {
           final AppStrings strings = AppStrings.of(context);
           return AlertDialog(
-            title: Text(strings.text('print_image_title')),
+            backgroundColor: AuthColors.background,
+            shape: _printerDialogShape(),
+            title: Text(
+              strings.text('print_image_title'),
+              style: _printerDialogTitleStyle,
+            ),
             content: SizedBox(
               width: 260,
               child: AspectRatio(
@@ -347,13 +454,23 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
               ),
             ),
             actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(strings.text('cancel')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(strings.text('print')),
+              SizedBox(
+                width: 260,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _PrinterPrimaryButton(
+                      label: strings.text('print'),
+                      onPressed: () => Navigator.of(context).pop(true),
+                    ),
+                    const SizedBox(height: 4),
+                    _PrinterSecondaryButton(
+                      label: strings.text('cancel'),
+                      onPressed: () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
               ),
             ],
           );

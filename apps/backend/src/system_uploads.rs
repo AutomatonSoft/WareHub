@@ -6,12 +6,15 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
+use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
+use serde_json::Value;
 use suppaftp::{types::FileType, FtpStream};
 use uuid::Uuid;
 
 use crate::{
-    auth::require_approved_user, delete_uploaded_photo_by_url, internal_error, validation_error, AppState, ErrorResponse,
+    auth::require_approved_user, delete_uploaded_photo_by_url, internal_error, new_request_id, validation_error, AppState,
+    ErrorResponse,
     UploadResponse,
 };
 
@@ -108,7 +111,17 @@ pub(crate) async fn upload_photo(
 
         let extension = detect_extension(&source_name, &content_type);
         let filename = build_upload_filename(kind, &user.login, custom_name.as_deref(), extension);
-        let public_url = store_upload(&config, &target, &filename, bytes.to_vec()).await?;
+        let public_url = if kind == UploadKind::Product {
+            upload_product_via_database_service(
+                &state,
+                &filename,
+                &content_type,
+                bytes.to_vec(),
+            )
+            .await?
+        } else {
+            store_upload(&config, &target, &filename, bytes.to_vec()).await?
+        };
 
         return Ok((StatusCode::CREATED, Json(UploadResponse { url: public_url })));
     }
@@ -117,6 +130,124 @@ pub(crate) async fn upload_photo(
         "invalid_file",
         "no image file found in multipart payload",
     ))
+}
+
+async fn upload_product_via_database_service(
+    state: &AppState,
+    filename: &str,
+    content_type: &str,
+    bytes: Vec<u8>,
+) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
+    let Some(config) = state.database_kid_sync.clone() else {
+        return Err(internal_error(
+            "database-service integration is required for product image uploads".to_string(),
+        ));
+    };
+    let url = format!("{}/api/v1/uploads/images/", config.base_url);
+    let part = Part::bytes(bytes)
+        .file_name(filename.to_string())
+        .mime_str(content_type)
+        .map_err(|error| internal_error(format!("failed to build image upload part: {error}")))?;
+    let form = Form::new().part("images", part);
+
+    let response = state
+        .http_client
+        .post(url)
+        .header("x-warehub-service-token", &config.service_token)
+        .multipart(form)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|error| {
+            upload_proxy_error(format!(
+                "failed to upload product image through database-service: {error}"
+            ))
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(upload_proxy_error(format!(
+            "database-service image upload returned HTTP {status}: {}",
+            extract_database_service_error_message(&body)
+        )));
+    }
+
+    let payload = response.json::<Value>().await.map_err(|error| {
+        internal_error(format!(
+            "database-service image upload response is invalid: {error}"
+        ))
+    })?;
+    extract_public_upload_url(&payload).ok_or_else(|| {
+        internal_error(
+            "database-service image upload response did not include a public image URL".to_string(),
+        )
+    })
+}
+
+fn upload_proxy_error(message: String) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_GATEWAY,
+        Json(ErrorResponse {
+            code: "upload_failed",
+            message,
+            request_id: new_request_id(),
+            details: None,
+        }),
+    )
+}
+
+fn extract_database_service_error_message(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "empty response body".to_string();
+    }
+    if let Ok(payload) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(message) = text_json_field(&payload, "detail")
+            .or_else(|| text_json_field(&payload, "message"))
+            .or_else(|| text_json_field(&payload, "error"))
+            .or_else(|| text_json_field(&payload, "code"))
+        {
+            return message;
+        }
+    }
+    if trimmed.len() > 240 {
+        format!("{}...", &trimmed[..240])
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn extract_public_upload_url(payload: &Value) -> Option<String> {
+    text_json_field(payload, "image_public_url")
+        .or_else(|| first_text_json_array_item(payload, "uploaded_image_public_urls"))
+        .or_else(|| text_json_field(payload, "image"))
+        .or_else(|| first_text_json_array_item(payload, "uploaded_image_urls"))
+}
+
+fn text_json_field(payload: &Value, field: &str) -> Option<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn first_text_json_array_item(payload: &Value, field: &str) -> Option<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().filter_map(Value::as_str).find_map(|value| {
+                let normalized = value.trim();
+                if normalized.is_empty() {
+                    None
+                } else {
+                    Some(normalized.to_string())
+                }
+            })
+        })
 }
 
 async fn load_current_avatar_url(
@@ -540,9 +671,11 @@ fn ensure_ftp_path(ftp: &mut FtpStream, dir: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_upload_filename, build_upload_target, normalize_filename_part, normalize_folder_path,
-        prefixed_dir, public_base_includes_env_dir, root_includes_env_dir, UploadKind,
+        build_upload_filename, build_upload_target, extract_public_upload_url,
+        normalize_filename_part, normalize_folder_path, prefixed_dir,
+        public_base_includes_env_dir, root_includes_env_dir, UploadKind,
     };
+    use serde_json::json;
 
     #[test]
     fn build_upload_target_uses_dev_for_dev_env() {
@@ -619,6 +752,22 @@ mod tests {
     fn normalize_folder_path_keeps_safe_hierarchy() {
         let value = normalize_folder_path(Some("A-12/KID 123/slot.05"));
         assert_eq!(value.as_deref(), Some("A-12/KID_123/slot_05"));
+    }
+
+    #[test]
+    fn extract_public_upload_url_prefers_public_response_fields() {
+        let payload = json!({
+            "uploaded_image_urls": ["images/local-path.jpg"],
+            "uploaded_image_public_urls": ["https://mediawarehub.veloxdesk.com/warehub/dev/item.jpg"],
+            "image": "images/local-path.jpg",
+        });
+
+        let url = extract_public_upload_url(&payload);
+
+        assert_eq!(
+            url.as_deref(),
+            Some("https://mediawarehub.veloxdesk.com/warehub/dev/item.jpg")
+        );
     }
 
     #[test]
