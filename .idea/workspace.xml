@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="6ec2a7b8-9eee-41e2-bb45-2b80667319d0" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/app_exports.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/app_exports.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/app_modules.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/app_modules.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/app_router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/app_router.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/app_types.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/app_types.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/auth/dto.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/auth/dto.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/auth/handlers.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/auth/handlers.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/intakes_create_service.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/intakes_create_service.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/intakes_query_service.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/intakes_query_service.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/main_tests.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/main_tests.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/system_openapi.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/system_openapi.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/system_openapi_paths.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/system_openapi_paths.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/system_uploads.rs" beforeDir="false" afterPath="$PROJECT_DIR$/apps/backend/src/system_uploads.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/app_settings_state.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/app_settings_state.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/app_strings_de.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/app_strings_de.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/app_strings_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/app_strings_en.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/app_strings_ru.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/app_strings_ru.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/app_theme.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/app_theme.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/auth_design_tokens.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/auth_design_tokens.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/auth_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/auth_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/auth_screen_biometrics.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/auth_screen_biometrics.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/auth_widgets.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/auth_widgets.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/mobile_auth.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/mobile_auth.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/models.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/models.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/pages.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/pages.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_core.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_core.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_label_layout.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_label_layout.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_menu.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_menu.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_print_jobs.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_print_jobs.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_add_flow.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_add_flow.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_add_handlers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_add_handlers.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_data.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_data.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_entrypoints.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_entrypoints.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_forms.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_forms.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_helpers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_helpers.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_palette.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_page_scan_palette.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/lib/qr_home_widgets.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/lib/qr_home_widgets.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/pubspec.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/mobile/test/warehouse_location_utils_test.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/mobile/test/warehouse_location_utils_test.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/infra/deploy/prod/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/infra/deploy/prod/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/infra/deploy/prod/env.prod.sanitized.template" beforeDir="false" afterPath="$PROJECT_DIR$/infra/deploy/prod/env.prod.sanitized.template" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/infra/deploy/stage/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/infra/deploy/stage/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/database-service/database/inventory_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/database-service/database/inventory_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/database-service/database/tests.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/database-service/database/tests.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/database-service/database/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/database-service/database/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/start-dev-mac.sh" beforeDir="false" afterPath="$PROJECT_DIR$/start-dev-mac.sh" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="DBNavigator.Project.Workspace.Settings">
+    <assistant-settings>
+      <credential-settings>
+        <credentials />
+      </credential-settings>
+      <profile-settings>
+        <profiles />
+      </profile-settings>
+      <mcp-server-settings>
+        <workspace-integration value="false" />
+        <mcp-servers />
+        <mcp-tool-approvals />
+      </mcp-server-settings>
+    </assistant-settings>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="stage" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;hyperheaven04&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/RavilkaDev0/WareHub&quot;,
+    &quot;accountId&quot;: &quot;f0699230-178c-414d-a40e-5b8df946b25a&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3FszkeKwe9O8kPlbHyAxrMVWltu" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Flutter.WareHub Mobile.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;dart.analysis.tool.window.visible&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;redesign__artyom&quot;,
+    &quot;io.flutter.reload.alreadyRun&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;show.migrate.to.gradle.popup&quot;: &quot;false&quot;
+  }
+}</component>
+  <component name="RunManager">
+    <configuration name="WareHub Mobile" type="FlutterRunConfigurationType" factoryName="Flutter">
+      <option name="additionalArgs" value="--dart-define=APP_ENV=stage" />
+      <option name="buildFlavor" value="stage" />
+      <option name="filePath" value="$PROJECT_DIR$/apps/mobile/lib/main.dart" />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="6ec2a7b8-9eee-41e2-bb45-2b80667319d0" name="Changes" comment="" />
+      <created>1782878708686</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782878708686</updated>
+    </task>
+    <servers />
+  </component>
+</project>

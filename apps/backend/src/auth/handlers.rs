@@ -1,4 +1,5 @@
 use axum::{
+    body::Bytes,
     extract::State,
     http::{header::COOKIE, header::SET_COOKIE, HeaderMap, HeaderValue, StatusCode},
     Json,
@@ -11,7 +12,10 @@ use uuid::Uuid;
 use crate::{internal_error, validation_error, AppState, ErrorResponse};
 
 use super::{
-    dto::{AuthUserResponse, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse},
+    dto::{
+        AuthUserResponse, LoginRequest, LoginResponse, RefreshTokenRequest, RegisterRequest,
+        RegisterResponse,
+    },
     guards::parse_bearer_uuid_token,
     models::{RefreshSessionRow, UserWithPasswordRow},
     password::verify_password,
@@ -22,6 +26,8 @@ use super::{
 };
 
 const REFRESH_COOKIE_NAME: &str = "sofortbot_refresh_token";
+const MOBILE_AUTH_CLIENT_HEADER: &str = "x-warehub-client";
+const MOBILE_AUTH_CLIENT_VALUE: &str = "mobile";
 
 pub(crate) use super::handlers_admin::{
     admin_approve_registration, admin_list_pending_registrations, admin_list_users,
@@ -45,6 +51,7 @@ pub(crate) async fn register_user(
 
 pub(crate) async fn login_user(
     State(state): State<AppState>,
+    request_headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<LoginResponse>), (StatusCode, Json<ErrorResponse>)> {
     let login = normalize_login(&payload.login)?;
@@ -78,26 +85,25 @@ pub(crate) async fn login_user(
     ensure_user_can_authenticate(&user.status)?;
 
     let issued = issue_auth_session(&state.db, build_auth_user_response(&user)).await?;
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let include_refresh_token = is_mobile_auth_client(&request_headers);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
         SET_COOKIE,
         build_refresh_cookie_header(&state, &issued.refresh_token, auth_refresh_session_ttl_days())?,
     );
 
     Ok((
-        headers,
-        Json(LoginResponse {
-            token: issued.access_token.to_string(),
-            user: issued.user,
-        }),
+        response_headers,
+        Json(build_login_response(issued, include_refresh_token)),
     ))
 }
 
 pub(crate) async fn refresh_user(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    request_headers: HeaderMap,
+    body: Bytes,
 ) -> Result<(HeaderMap, Json<LoginResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let refresh_token = parse_refresh_cookie_token(&headers)?;
+    let refresh_token = parse_refresh_token(&request_headers, &body)?;
 
     let session = sqlx::query_as::<_, RefreshSessionRow>(
         r#"
@@ -127,25 +133,25 @@ pub(crate) async fn refresh_user(
     ensure_user_can_authenticate(&session.status)?;
     let user = load_auth_user_response(&state.db, session.user_id).await?;
     let rotated = rotate_refresh_session(&state.db, &session, user).await?;
+    let include_refresh_token =
+        is_mobile_auth_client(&request_headers) || has_json_refresh_payload(&body);
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
         SET_COOKIE,
         build_refresh_cookie_header(&state, &rotated.refresh_token, auth_refresh_session_ttl_days())?,
     );
 
     Ok((
-        headers,
-        Json(LoginResponse {
-            token: rotated.access_token.to_string(),
-            user: rotated.user,
-        }),
+        response_headers,
+        Json(build_login_response(rotated, include_refresh_token)),
     ))
 }
 
 pub(crate) async fn logout_user(
     State(state): State<AppState>,
     headers: HeaderMap,
+    body: Bytes,
 ) -> Result<(HeaderMap, StatusCode), (StatusCode, Json<ErrorResponse>)> {
     if let Ok(token) = parse_bearer_uuid_token(&headers) {
         sqlx::query("DELETE FROM auth_tokens WHERE token = $1")
@@ -155,7 +161,7 @@ pub(crate) async fn logout_user(
             .map_err(|error| internal_error(format!("failed to delete auth token: {error}")))?;
     }
 
-    if let Ok(refresh_token) = parse_refresh_cookie_token(&headers) {
+    if let Ok(refresh_token) = parse_refresh_token(&headers, &body) {
         sqlx::query(
             r#"
             UPDATE auth_refresh_sessions
@@ -172,6 +178,24 @@ pub(crate) async fn logout_user(
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, expired_refresh_cookie_header(&state)?);
     Ok((headers, StatusCode::NO_CONTENT))
+}
+
+fn build_login_response(issued: IssuedAuthSession, include_refresh_token: bool) -> LoginResponse {
+    let access_token = issued.access_token.to_string();
+    LoginResponse {
+        access_token: access_token.clone(),
+        token: access_token,
+        refresh_token: include_refresh_token.then(|| issued.refresh_token.to_string()),
+        user: issued.user,
+    }
+}
+
+fn is_mobile_auth_client(headers: &HeaderMap) -> bool {
+    headers
+        .get(MOBILE_AUTH_CLIENT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim().eq_ignore_ascii_case(MOBILE_AUTH_CLIENT_VALUE))
+        .unwrap_or(false)
 }
 
 struct IssuedAuthSession {
@@ -400,6 +424,56 @@ fn parse_refresh_cookie_token(
     ))
 }
 
+fn parse_refresh_token(
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+    if let Some(token) = parse_refresh_json_token(body)? {
+        return Ok(token);
+    }
+    parse_refresh_cookie_token(headers)
+}
+
+fn parse_refresh_json_token(
+    body: &[u8],
+) -> Result<Option<Uuid>, (StatusCode, Json<ErrorResponse>)> {
+    if !has_json_refresh_payload(body) {
+        return Ok(None);
+    }
+    let payload = serde_json::from_slice::<RefreshTokenRequest>(body).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                code: "invalid_refresh_payload",
+                message: "refresh payload is invalid".to_string(),
+                details: None,
+                request_id: crate::new_request_id(),
+            }),
+        )
+    })?;
+    let Some(raw) = payload.refresh_token.map(|value| value.trim().to_string()) else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    Uuid::parse_str(&raw).map(Some).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                code: "invalid_refresh_token",
+                message: "refresh token is invalid".to_string(),
+                details: None,
+                request_id: crate::new_request_id(),
+            }),
+        )
+    })
+}
+
+fn has_json_refresh_payload(body: &[u8]) -> bool {
+    !body.iter().all(u8::is_ascii_whitespace)
+}
+
 fn build_refresh_cookie_header(
     state: &AppState,
     token: &Uuid,
@@ -449,4 +523,61 @@ fn auth_refresh_session_ttl_days() -> i64 {
         .and_then(|raw| raw.trim().parse::<i64>().ok())
         .filter(|days| *days > 0 && *days <= MAX_DAYS)
         .unwrap_or(DEFAULT_DAYS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_refresh_json_token_accepts_mobile_payload() {
+        let token = Uuid::new_v4();
+        let body = format!(r#"{{"refresh_token":"{token}"}}"#);
+
+        let parsed = parse_refresh_json_token(body.as_bytes()).expect("valid refresh payload");
+
+        assert_eq!(parsed, Some(token));
+    }
+
+    #[test]
+    fn parse_refresh_json_token_ignores_empty_body_for_cookie_clients() {
+        let parsed = parse_refresh_json_token(b"  \n").expect("empty payload");
+
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn parse_refresh_json_token_rejects_bad_uuid() {
+        let error = parse_refresh_json_token(br#"{"refresh_token":"bad-token"}"#)
+            .expect_err("invalid token should be rejected");
+
+        assert_eq!(error.0, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn login_response_omits_refresh_token_for_cookie_clients() {
+        let response = build_login_response(
+            IssuedAuthSession {
+                access_token: Uuid::new_v4(),
+                refresh_token: Uuid::new_v4(),
+                user: AuthUserResponse {
+                    id: Uuid::new_v4(),
+                    username: "user".to_string(),
+                    login: "user".to_string(),
+                    email: None,
+                    first_name: None,
+                    last_name: None,
+                    phone_number: None,
+                    avatar_url: None,
+                    role: "user".to_string(),
+                    status: "approved".to_string(),
+                },
+            },
+            false,
+        );
+
+        let serialized = serde_json::to_value(response).expect("serialize login response");
+
+        assert!(serialized.get("refresh_token").is_none());
+    }
 }

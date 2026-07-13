@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 abstract final class AuthColors {
   static const Color background = Color(0xFFFFFFFF);
-  static const Color foreground = Color(0xFF09090B);
+  static const Color foreground = Color(0xFF18181B);
   static const Color card = Color(0xFFFFFFFF);
-  static const Color cardForeground = Color(0xFF09090B);
+  static const Color cardForeground = Color(0xFF18181B);
   static const Color muted = Color(0xFFF4F4F5);
   static const Color mutedForeground = Color(0xFF71717A);
-  static const Color primary = Color(0xFF18181B);
+  static const Color primary = Color(0xFF1F1F23);
   static const Color primaryForeground = Color(0xFFFAFAFA);
   static const Color border = Color(0xFFE4E4E7);
   static const Color input = Color(0xFFE4E4E7);

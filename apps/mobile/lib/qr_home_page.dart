@@ -16,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'app_settings.dart';
+import 'auth_design_tokens.dart';
+import 'auth_widgets.dart';
 import 'app_theme.dart';
 import 'app_update.dart';
 import 'intake_error_messages.dart';
@@ -34,6 +36,7 @@ import 'warehouse_constants.dart';
 import 'warehouse_location_utils.dart';
 
 part 'qr_home_page_menu.dart';
+part 'qr_home_page_printer_ui.dart';
 part 'qr_home_page_label_layout.dart';
 part 'qr_home_page_core.dart';
 part 'qr_home_page_system.dart';
@@ -47,6 +50,8 @@ part 'qr_home_page_scan_helpers.dart';
 part 'qr_home_page_scan_entrypoints.dart';
 part 'qr_home_page_scan_add_handlers.dart';
 part 'qr_home_page_scan_add_flow.dart';
+part 'qr_home_page_shell.dart';
+part 'qr_home_page_profile.dart';
 
 class QrHomePage extends StatefulWidget {
   const QrHomePage({super.key});
@@ -56,13 +61,20 @@ class QrHomePage extends StatefulWidget {
 }
 
 class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
+  static const int _inventoryPageSize = 20;
+
   final List<IntakeData> _items = <IntakeData>[];
+  final ScrollController _feedScrollController = ScrollController();
+  final TextEditingController _inventorySearchController =
+      TextEditingController();
   final NiimbotLabelPrinter _printer = NiimbotLabelPrinter();
   final ImagePicker _imagePicker = ImagePicker();
   bool _adding = false;
   bool _removing = false;
   bool _printingImage = false;
   String? _printingItemId;
+  HomeTab _selectedHomeTab = HomeTab.feed;
+  SettingsTab _selectedSettingsTab = SettingsTab.printer;
   bool _connectingPrinter = false;
   Future<void>? _connectPrinterFuture;
   bool _printerConnected = false;
@@ -83,9 +95,20 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   double _labelPartsOffsetX = 0;
   double _labelPartsOffsetY = 0;
   bool _loadingList = false;
+  bool _loadingMoreList = false;
+  bool _inventoryHasMore = true;
+  int _inventoryNextOffset = 0;
+  int _inventoryTotalCount = 0;
+  String _inventorySearch = '';
+  int _inventoryQueryRevision = 0;
+  String? _inventorySection;
+  InventoryDestinationFilter? _inventoryDestination;
+  bool? _inventoryBWare;
+  bool? _inventoryInTransit;
   WebSocketChannel? _eventsChannel;
   StreamSubscription<dynamic>? _eventsSubscription;
   Timer? _eventsReconnectTimer;
+  Timer? _inventorySearchDebounceTimer;
   bool _eventsReconnectEnabled = true;
   final Map<String, String> _orderMemoById = <String, String>{};
   final Set<String> _memoLoading = <String>{};
@@ -99,6 +122,7 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _feedScrollController.addListener(_onFeedScroll);
     _refreshPrinterConnectionStatus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_startAuthenticatedHome());
@@ -142,8 +166,13 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _eventsReconnectEnabled = false;
     _eventsReconnectTimer?.cancel();
+    _inventorySearchDebounceTimer?.cancel();
     _eventsSubscription?.cancel();
     _eventsChannel?.sink.close();
+    _feedScrollController
+      ..removeListener(_onFeedScroll)
+      ..dispose();
+    _inventorySearchController.dispose();
     super.dispose();
   }
 
@@ -158,12 +187,12 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final AppStrings strings = AppStrings.of(context);
-    final AppSettings settings = AppSettingsScope.of(context);
     final List<GroupedIntakeData> groupedItems = _groupedItems();
     final int activeCount = groupedItems
         .where((GroupedIntakeData group) => !group.representative.isRemoved)
         .fold<int>(0, (int sum, GroupedIntakeData group) => sum + group.count);
+    final int displayedCount =
+        _inventoryTotalCount > 0 ? _inventoryTotalCount : activeCount;
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -183,319 +212,34 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
           ],
         ),
         actions: <Widget>[
-          PopupMenuButton<String>(
-            tooltip: strings.text('more'),
-            onSelected: (String value) {
-              unawaited(_handleAppBarMenuAction(value));
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'account',
-                child: Row(
-                  children: <Widget>[
-                    const Icon(Icons.logout_rounded, size: 18, color: uiMuted),
-                    const SizedBox(width: 10),
-                    Text(strings.text('logout')),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'language',
-                child: Row(
-                  children: <Widget>[
-                    const Icon(Icons.language_rounded,
-                        size: 18, color: uiMuted),
-                    const SizedBox(width: 10),
-                    Text(strings.language),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'check_updates',
-                child: Row(
-                  children: <Widget>[
-                    const Icon(Icons.system_update_alt_rounded,
-                        size: 18, color: uiMuted),
-                    const SizedBox(width: 10),
-                    Text(
-                      _updateInfo?.updateAvailable == true
-                          ? strings.text('update_available')
-                          : strings.text('check_updates'),
-                    ),
-                  ],
-                ),
-              ),
-              if (_updateInfo?.updateAvailable == true)
-                PopupMenuItem<String>(
-                  value: 'update_app',
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(Icons.download_for_offline_rounded,
-                          size: 18, color: uiMuted),
-                      const SizedBox(width: 10),
-                      Text(strings.text('update_app')),
-                    ],
-                  ),
-                ),
-              PopupMenuItem<String>(
-                value: 'connect_printer',
-                child: Row(
-                  children: <Widget>[
-                    const Icon(Icons.print_rounded, size: 18, color: uiMuted),
-                    const SizedBox(width: 10),
-                    Text(
-                      _printerConnected
-                          ? strings.text('printer_connected')
-                          : _connectingPrinter
-                              ? '${strings.text('connect_printer')}...'
-                              : strings.text('connect_printer'),
-                    ),
-                  ],
-                ),
-              ),
-              if (settings.isAdmin)
-                PopupMenuItem<String>(
-                  value: 'printer_setup',
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(Icons.tune_rounded, size: 18, color: uiMuted),
-                      const SizedBox(width: 10),
-                      Text(strings.text('printer_setup')),
-                    ],
-                  ),
-                ),
-              if (settings.isAdmin)
-                const PopupMenuItem<String>(
-                  value: 'label_layout',
-                  child: Row(
-                    children: <Widget>[
-                      Icon(Icons.crop_free_rounded, size: 18, color: uiMuted),
-                      SizedBox(width: 10),
-                      Text('Label layout'),
-                    ],
-                  ),
-                ),
-              if (settings.isAdmin)
-                PopupMenuItem<String>(
-                  value: 'print_image',
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(Icons.photo_library_rounded,
-                          size: 18, color: uiMuted),
-                      const SizedBox(width: 10),
-                      Text(strings.text('print_image')),
-                    ],
-                  ),
-                ),
-            ],
-            icon: const Icon(Icons.more_vert),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: AuthLanguagePicker(
+              label: AppStrings.of(context).language,
+              value: AppSettingsScope.of(context).language,
+              onChanged: (AppLang lang) {
+                unawaited(AppSettingsScope.of(context).setLanguage(lang));
+              },
+            ),
           ),
         ],
       ),
       body: SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(gradient: appBackgroundGradient),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: appCardGradient,
-                    border: Border.all(color: uiBorder),
-                    boxShadow: const <BoxShadow>[
-                      BoxShadow(
-                        color: Color(0x66000000),
-                        blurRadius: 22,
-                        offset: Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              strings.text('warehouse_feed'),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 22,
-                                color: uiNavy,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              strings.text('realtime_intakes'),
-                              style: const TextStyle(
-                                color: uiMuted,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: uiCardSoft,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: uiBorder),
-                        ),
-                        child: Text(
-                          strings.format(
-                            'units_count',
-                            <String, String>{'count': '$activeCount'},
-                          ),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: uiNavy,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _loadingList
-                    ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                        onRefresh: _reloadList,
-                        child: groupedItems.isEmpty
-                            ? ListView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 28, 16, 130),
-                                children: <Widget>[
-                                  Container(
-                                    padding: const EdgeInsets.all(18),
-                                    decoration: BoxDecoration(
-                                      color: uiCardSoft,
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(
-                                        color: uiBorder,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: <Widget>[
-                                        const Icon(
-                                          Icons.inventory_2_outlined,
-                                          size: 44,
-                                          color: uiMuted,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          strings.text('no_products'),
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: uiMuted,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : ListView.separated(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                                itemCount: groupedItems.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (BuildContext context, int index) {
-                                  final GroupedIntakeData grouped =
-                                      groupedItems[index];
-                                  final IntakeData item =
-                                      grouped.representative;
-                                  final String orderId =
-                                      (parseQrData(item.qrCode).orderId ?? '')
-                                          .trim();
-                                  return QrHomeItemCard(
-                                    item: item,
-                                    photoUrls:
-                                        _photoUrlsFromField(item.photoUrl),
-                                    partsCount: grouped.partsCount,
-                                    count: grouped.count,
-                                    warehouseLocations:
-                                        grouped.warehouseLocations,
-                                    memo: orderId.isEmpty
-                                        ? null
-                                        : _orderMemoById[orderId],
-                                    bWareComment: item.bWareComment,
-                                    printing: _printingItemId == item.id,
-                                    onPrint: (_adding ||
-                                            _removing ||
-                                            _printingItemId != null)
-                                        ? null
-                                        : () => _onPrintItem(item),
-                                  );
-                                },
-                              ),
-                      ),
-              ),
-            ],
-          ),
+        child: _buildSelectedHomeTab(
+          groupedItems: groupedItems,
+          activeCount: displayedCount,
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: appCtaGradient,
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x55203A56),
-                blurRadius: 22,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: SizedBox(
-            width: 64,
-            height: 64,
-            child: FilledButton(
-              onPressed: (_adding ||
-                      _removing ||
-                      _printingItemId != null ||
-                      _printingImage)
-                  ? null
-                  : _onScanTap,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                disabledBackgroundColor: Colors.black26,
-                shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: EdgeInsets.zero,
-              ),
-              child: (_adding || _removing)
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.qr_code_scanner_rounded, size: 28),
-            ),
-          ),
-        ),
+      bottomNavigationBar: HomeBottomNavBar(
+        value: _selectedHomeTab,
+        scanBusy:
+            _adding || _removing || _printingItemId != null || _printingImage,
+        onScan: _onScanTap,
+        onChanged: (HomeTab tab) {
+          setState(() {
+            _selectedHomeTab = tab;
+          });
+        },
       ),
     );
   }

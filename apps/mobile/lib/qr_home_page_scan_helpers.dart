@@ -143,24 +143,42 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
               );
         return AlertDialog(
           title: Text(strings.text(titleKey)),
-          content: Text(body),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.cancel),
-              child: Text(strings.text('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.createNew),
-              child: Text(strings.text('existing_product_create_new')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.addToExisting),
-              child: Text(strings.text('existing_product_add_quantity')),
-            ),
-          ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(body),
+              const SizedBox(height: 24),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _PrinterPrimaryButton(
+                      label: strings.text('existing_product_create_new'),
+                      onPressed: () => Navigator.of(dialogContext)
+                          .pop(_ExistingProductDecision.createNew),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _PrinterPrimaryButton(
+                      label: strings.text('existing_product_add_quantity'),
+                      onPressed: () => Navigator.of(dialogContext)
+                          .pop(_ExistingProductDecision.addToExisting),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _PrinterSecondaryButton(
+                label: strings.text('cancel'),
+                onPressed: () => Navigator.of(dialogContext)
+                    .pop(_ExistingProductDecision.cancel),
+              ),
+            ],
+          ),
+          shape: _printerDialogShape(),
+          backgroundColor: uiCard,
+          surfaceTintColor: Colors.transparent,
         );
       },
     );

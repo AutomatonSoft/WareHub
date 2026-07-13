@@ -57,9 +57,14 @@ extension _AuthScreenBiometrics on _AuthScreenState {
         }
         await settings.updateProfile(
           login: actualLogin,
+          username: '${decoded['username'] ?? decoded['user_name'] ?? ''}',
           email: '${decoded['email'] ?? ''}',
+          firstName: '${decoded['first_name'] ?? ''}',
+          lastName: '${decoded['last_name'] ?? ''}',
+          phoneNumber: '${decoded['phone_number'] ?? decoded['phone'] ?? ''}',
           avatarUrl: '${decoded['avatar_url'] ?? ''}',
           role: '${decoded['role'] ?? ''}',
+          status: '${decoded['status'] ?? ''}',
         );
         configureMobileLogAuthToken(settings.authToken);
         return true;

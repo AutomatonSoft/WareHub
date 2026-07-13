@@ -9,6 +9,7 @@ from django.utils import timezone
 from queue import Queue
 import logging
 import ast
+from hmac import compare_digest
 from decimal import Decimal, InvalidOperation
 import threading
 from rest_framework import generics, status
@@ -135,6 +136,45 @@ def _normalize_search_text(value: object) -> str:
     return str(value or "").strip().lower()
 
 
+PALLET_SEARCH_ALIASES = frozenset(
+    {
+        "pallet",
+        "pallets",
+        "palet",
+        "palets",
+        "palete",
+        "paletes",
+        "palett",
+        "paletts",
+        "palette",
+        "palettes",
+        "pallete",
+        "pallette",
+        "paletten",
+        "palleten",
+        "палет",
+        "палеты",
+        "палета",
+        "палетта",
+        "палетты",
+        "паллет",
+        "паллеты",
+        "паллета",
+        "паллетта",
+        "паллетти",
+        "поддон",
+        "поддоны",
+    }
+)
+
+
+def _inventory_search_token_matches(token: str, haystack: str) -> bool:
+    """Match pallet aliases across supported inventory languages."""
+    if token in PALLET_SEARCH_ALIASES:
+        return any(alias in haystack for alias in PALLET_SEARCH_ALIASES)
+    return token in haystack
+
+
 def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
     location_value = "store" if row.get("store") else "warehouse"
     ean_values = " ".join(
@@ -213,6 +253,26 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
     }
     field_map["global"] = " ".join(value for value in field_map.values() if value)
     return field_map
+
+
+def _inventory_row_section_slot(row: dict) -> tuple[str, int]:
+    """Return the warehouse position in its natural display order."""
+    place = str(row.get("place") or "").strip().upper()
+    section = "".join(char for char in place if char.isalpha())
+    digits = "".join(char for char in place if char.isdigit())
+    return section, int(digits) if digits else 0
+
+
+def _optional_bool_query(request, name: str) -> bool | None:
+    raw_value = request.query_params.get(name)
+    if raw_value in (None, ""):
+        return None
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
 
 
 INVENTORY_QUERY_PREFIXES: tuple[tuple[str, str], ...] = (
@@ -640,9 +700,42 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         return summary
 
-    def perform_create(self, serializer):
+    @staticmethod
+    def _order_sync_skipped_summary(kid):
+        return {
+            "kid_number": primary_kid_number(kid.kid_number),
+            "fetched_items": 0,
+            "collapsed_items": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped_without_order_id": 0,
+            "error": None,
+            "error_detail": None,
+            "skipped": True,
+            "skip_reason": "service_upsert",
+        }
+
+    @staticmethod
+    def _is_service_request(request) -> bool:
+        expected_token = str(getattr(settings, "ORCHESTRATOR_SERVICE_AUTH_TOKEN", "") or "").strip()
+        provided_token = str(request.headers.get("x-warehub-service-token") or "").strip()
+        return bool(expected_token and provided_token and compare_digest(provided_token, expected_token))
+
+    @staticmethod
+    def _truthy_flag(value) -> bool:
+        return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _should_skip_order_sync(self, request, payload, query) -> bool:
+        raw_value = self._coalesce_value(payload, query, "skip_order_sync")
+        return self._is_service_request(request) and self._truthy_flag(raw_value)
+
+    def perform_create(self, serializer, *, skip_order_sync: bool = False):
         kid = serializer.save()
-        sync_summary = self._sync_orders_for_kid(kid)
+        sync_summary = (
+            self._order_sync_skipped_summary(kid)
+            if skip_order_sync
+            else self._sync_orders_for_kid(kid)
+        )
         return kid, sync_summary
 
     @staticmethod
@@ -780,6 +873,11 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data or {})
         query = request.query_params
+        skip_order_sync = self._should_skip_order_sync(request, payload, query)
+        try:
+            payload.pop("skip_order_sync")
+        except Exception:
+            pass
 
         payload["kid_number"] = (
             self._coalesce_value(payload, query, "kid_number")
@@ -848,7 +946,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         existing = _find_kid_by_number(kid_number)
         if existing is None:
             with transaction.atomic():
-                kid, sync_summary = self.perform_create(serializer)
+                kid, sync_summary = self.perform_create(serializer, skip_order_sync=skip_order_sync)
                 self._upsert_product_attributes(kid, product_attrs)
                 self._ensure_database_ean_defaults(kid)
             output = self.get_serializer(kid)
@@ -870,7 +968,11 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         self._upsert_product_attributes(existing, product_attrs)
         self._ensure_database_ean_defaults(existing)
-        sync_summary = self._sync_orders_for_kid(existing)
+        sync_summary = (
+            self._order_sync_skipped_summary(existing)
+            if skip_order_sync
+            else self._sync_orders_for_kid(existing)
+        )
         output = self.get_serializer(existing)
         response_data = dict(output.data)
         response_data["sync"] = sync_summary
@@ -1424,6 +1526,10 @@ class InventoryRowsAPIView(APIView):
         room_raw = str(request.query_params.get("room") or "").strip().lower()
         type_raw = str(request.query_params.get("type") or "").strip().lower()
         listing_raw = str(request.query_params.get("listing") or "").strip().lower()
+        section_raw = str(request.query_params.get("section") or "").strip().upper()
+        store_raw = _optional_bool_query(request, "store")
+        b_ware_raw = _optional_bool_query(request, "b_ware")
+        in_transit_raw = _optional_bool_query(request, "in_transit")
 
         if room_raw:
             rows = [row for row in rows if str(row.get("room") or "").strip().lower() == room_raw]
@@ -1436,6 +1542,24 @@ class InventoryRowsAPIView(APIView):
                 row
                 for row in rows
                 if str(row.get("listing_status") or "unlisted").strip().lower() == listing_raw
+            ]
+
+        if section_raw:
+            rows = [
+                row for row in rows
+                if _inventory_row_section_slot(row)[0] == section_raw
+            ]
+
+        if store_raw is not None:
+            rows = [row for row in rows if bool(row.get("store")) == store_raw]
+
+        if b_ware_raw is not None:
+            rows = [row for row in rows if bool(row.get("b_ware")) == b_ware_raw]
+
+        if in_transit_raw is not None:
+            rows = [
+                row for row in rows
+                if bool(row.get("in_transit")) == in_transit_raw
             ]
 
         if query_raw:
@@ -1454,15 +1578,32 @@ class InventoryRowsAPIView(APIView):
             def _matches_query(row: dict) -> bool:
                 haystacks = _inventory_row_search_haystacks(row)
                 if scoped_field and scoped_tokens:
-                    return all(token in haystacks.get(scoped_field, "") for token in scoped_tokens)
-                return all(token in haystacks["global"] for token in query_tokens)
+                    return all(
+                        _inventory_search_token_matches(
+                            token, haystacks.get(scoped_field, "")
+                        )
+                        for token in scoped_tokens
+                    )
+                return all(
+                    _inventory_search_token_matches(token, haystacks["global"])
+                    for token in query_tokens
+                )
 
             rows = [row for row in rows if _matches_query(row)]
 
         sort_raw = str(request.query_params.get("sort") or "").strip().lower()
         dir_raw = str(request.query_params.get("dir") or "asc").strip().lower()
         reverse = dir_raw == "desc"
-        if sort_raw == "quantity":
+        if sort_raw == "section_slot":
+            rows = sorted(
+                rows,
+                key=lambda row: (
+                    *_inventory_row_section_slot(row),
+                    int(row.get("kid_id") or 0),
+                ),
+                reverse=reverse,
+            )
+        elif sort_raw == "quantity":
             rows = sorted(rows, key=lambda row: int(row.get("quantity") or 0), reverse=reverse)
         elif sort_raw == "place":
             rows = sorted(rows, key=lambda row: str(row.get("place") or ""), reverse=reverse)

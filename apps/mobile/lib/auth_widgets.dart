@@ -101,6 +101,7 @@ class AuthLoginForm extends StatelessWidget {
     required this.isBusy,
     required this.onSubmit,
     required this.onTogglePassword,
+    required this.onForgotPassword,
   });
 
   final AppStrings strings;
@@ -110,6 +111,7 @@ class AuthLoginForm extends StatelessWidget {
   final bool isBusy;
   final Future<void> Function() onSubmit;
   final VoidCallback onTogglePassword;
+  final VoidCallback onForgotPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +144,23 @@ class AuthLoginForm extends StatelessWidget {
             ),
           ),
         ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: isBusy ? null : onForgotPassword,
+            style: TextButton.styleFrom(
+              foregroundColor: AuthColors.foreground,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AuthSpacing.xs,
+                vertical: AuthSpacing.sm,
+              ),
+            ),
+            child: Text(
+              strings.text('forgot_password'),
+              style: AuthTextStyles.label,
+            ),
+          ),
+        ),
         const SizedBox(height: AuthSpacing.lg),
         AuthPrimaryCta(
           label: strings.login,
@@ -167,6 +186,7 @@ class AuthTextField extends StatelessWidget {
     this.textInputAction,
     this.onSubmitted,
     this.suffix,
+    this.keyboardType,
   });
 
   final TextEditingController controller;
@@ -176,6 +196,7 @@ class AuthTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
   final Widget? suffix;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -190,6 +211,7 @@ class AuthTextField extends StatelessWidget {
             controller: controller,
             enabled: enabled,
             obscureText: obscureText,
+            keyboardType: keyboardType,
             textInputAction: textInputAction,
             onSubmitted: onSubmitted,
             style: AuthTextStyles.input,
@@ -290,11 +312,18 @@ class AuthLanguagePicker extends StatefulWidget {
 }
 
 class _AuthLanguagePickerState extends State<AuthLanguagePicker> {
+  final OverlayPortalController _overlayController = OverlayPortalController();
+  final LayerLink _layerLink = LayerLink();
   bool _expanded = false;
 
   void _toggleExpanded() {
     setState(() {
       _expanded = !_expanded;
+      if (_expanded) {
+        _overlayController.show();
+      } else {
+        _overlayController.hide();
+      }
     });
   }
 
@@ -302,54 +331,41 @@ class _AuthLanguagePickerState extends State<AuthLanguagePicker> {
     widget.onChanged(lang);
     setState(() {
       _expanded = false;
+      _overlayController.hide();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        AnimatedSize(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.centerRight,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (Widget child, Animation<double> animation) {
-              final Animation<Offset> offset = Tween<Offset>(
-                begin: const Offset(0.08, 0),
-                end: Offset.zero,
-              ).animate(animation);
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(position: offset, child: child),
-              );
-            },
-            child: _expanded
-                ? Row(
-                    key: const ValueKey<String>('languages-expanded'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: AppLang.values
-                        .map(
-                          (AppLang lang) => _AnimatedLanguageOption(
-                            lang: lang,
-                            isSelected: lang == widget.value,
-                            onTap: () => _selectLanguage(lang),
-                          ),
-                        )
-                        .toList(),
-                  )
-                : const SizedBox(
-                    key: ValueKey<String>('languages-collapsed'),
-                    width: 0,
-                    height: 40,
-                  ),
-          ),
-        ),
-        IconButton(
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: OverlayPortal(
+        controller: _overlayController,
+        overlayChildBuilder: (BuildContext context) {
+          return Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _toggleExpanded,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              CompositedTransformFollower(
+                link: _layerLink,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.centerRight,
+                followerAnchor: Alignment.centerRight,
+                offset: const Offset(-48, 0),
+                child: _LanguageOverlayPanel(
+                  value: widget.value,
+                  onSelect: _selectLanguage,
+                ),
+              ),
+            ],
+          );
+        },
+        child: IconButton(
           tooltip: widget.label,
           onPressed: _toggleExpanded,
           icon: AnimatedRotation(
@@ -362,7 +378,71 @@ class _AuthLanguagePickerState extends State<AuthLanguagePicker> {
             ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _LanguageOverlayPanel extends StatelessWidget {
+  const _LanguageOverlayPanel({
+    required this.value,
+    required this.onSelect,
+  });
+
+  final AppLang value;
+  final ValueChanged<AppLang> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (BuildContext context, double progress, Widget? child) {
+          return Opacity(
+            opacity: progress,
+            child: Transform.translate(
+              offset: Offset(10 * (1 - progress), 0),
+              child: Transform.scale(
+                alignment: Alignment.centerRight,
+                scale: 0.98 + (0.02 * progress),
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AuthSpacing.xs,
+            vertical: AuthSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: AuthColors.card,
+            borderRadius: BorderRadius.circular(AuthRadii.lg),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: AuthColors.foreground.withValues(alpha: 0.12),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: AppLang.values
+                .map(
+                  (AppLang lang) => _AnimatedLanguageOption(
+                    lang: lang,
+                    isSelected: lang == value,
+                    onTap: () => onSelect(lang),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ),
     );
   }
 }

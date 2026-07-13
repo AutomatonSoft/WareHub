@@ -49,7 +49,7 @@ app_pid_filenames=(
 )
 started_log_paths=("" "" "" "" "")
 
-required_python_version="3.13.2"
+required_python_version="3.13.14"
 python_search_targets=()
 python_search_findings=()
 loaded_root_env_keys=()

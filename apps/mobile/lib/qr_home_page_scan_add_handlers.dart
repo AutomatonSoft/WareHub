@@ -53,7 +53,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final int? boxTotal = await _askRequiredInt(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '1', 'total': '7'},
+          <String, String>{'step': '1', 'total': '9'},
         ),
         label: strings.text('number_of_boxes'),
         initialValue: '1',
@@ -72,7 +72,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final String? section = await _askSectionSelection(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '2', 'total': '8'},
+          <String, String>{'step': '2', 'total': '9'},
         ),
       );
       if (section == null) {
@@ -87,7 +87,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final _PlacementInput? placementInput = await _askPlacementInput(
         section: section,
         step: 3,
-        total: 8,
+        total: 9,
       );
       if (placementInput == null) {
         return;
@@ -109,18 +109,36 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       if (addFlow == null) {
         return;
       }
+
+      String? photoUrl;
+      if (addFlow.photos.isNotEmpty) {
+        final String photoPrefix = kidNumber;
+        final String photoFolder = buildIntakePhotoFolder(
+          section,
+          placementInput.warehouseLocation ?? '',
+        );
+        photoUrl = await _uploadPhotosAndBuildField(
+          addFlow.photos,
+          filePrefix: photoPrefix,
+          folder: photoFolder,
+        );
+      }
+
       final IntakeData created = await _createIntake(
         parsed: parsed,
         productColor: addFlow.color,
+        store: addFlow.store,
+        inTransit: addFlow.inTransit,
         isBWare: addFlow.isBWare,
         bWareComment: addFlow.bWareComment,
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,
       );
-      await _finalizeAddedIntake(created, addFlow.photos);
+      await _finalizeAddedIntake(created, const <XFile>[]);
     } catch (error) {
       _showMessage(
         _messageForError(error, fallbackKey: 'action_failed_error'),
@@ -175,7 +193,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final int? boxTotal = await _askRequiredInt(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '1', 'total': '7'},
+          <String, String>{'step': '1', 'total': '9'},
         ),
         label: strings.text('number_of_boxes'),
         initialValue: '1',
@@ -194,7 +212,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final String? section = await _askSectionSelection(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '2', 'total': '8'},
+          <String, String>{'step': '2', 'total': '9'},
         ),
       );
       if (section == null) {
@@ -209,7 +227,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final _PlacementInput? placementInput = await _askPlacementInput(
         section: section,
         step: 3,
-        total: 8,
+        total: 9,
       );
       if (placementInput == null) {
         return;
@@ -230,18 +248,36 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       if (addFlow == null) {
         return;
       }
+
+      String? photoUrl;
+      if (addFlow.photos.isNotEmpty) {
+        final String photoPrefix = kid!;
+        final String photoFolder = buildIntakePhotoFolder(
+          section,
+          placementInput.warehouseLocation ?? '',
+        );
+        photoUrl = await _uploadPhotosAndBuildField(
+          addFlow.photos,
+          filePrefix: photoPrefix,
+          folder: photoFolder,
+        );
+      }
+
       final IntakeData created = await _createIntake(
         parsed: parsed,
         productColor: addFlow.color,
+        store: addFlow.store,
+        inTransit: addFlow.inTransit,
         isBWare: addFlow.isBWare,
         bWareComment: addFlow.bWareComment,
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,
       );
-      await _finalizeAddedIntake(created, addFlow.photos);
+      await _finalizeAddedIntake(created, const <XFile>[]);
     } catch (error) {
       _showMessage(
         _messageForError(error, fallbackKey: 'action_failed_error'),
@@ -270,7 +306,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final int? boxTotal = await _askRequiredInt(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '1', 'total': '7'},
+          <String, String>{'step': '1', 'total': '9'},
         ),
         label: strings.text('number_of_boxes'),
         initialValue: '1',
@@ -289,7 +325,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final String? section = await _askSectionSelection(
         title: strings.format(
           'step_title',
-          <String, String>{'step': '2', 'total': '8'},
+          <String, String>{'step': '2', 'total': '9'},
         ),
       );
       if (section == null) {
@@ -304,7 +340,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       final _PlacementInput? placementInput = await _askPlacementInput(
         section: section,
         step: 3,
-        total: 8,
+        total: 9,
       );
       if (placementInput == null) {
         return;
@@ -329,19 +365,37 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
           (placementInput.existingQrCodeForQuantity ?? '').trim().isNotEmpty
               ? placementInput.existingQrCodeForQuantity!.trim()
               : 'EMPTY-${DateTime.now().millisecondsSinceEpoch}';
+
+      String? photoUrl;
+      if (addFlow.photos.isNotEmpty) {
+        final String photoPrefix = rawQr;
+        final String photoFolder = buildIntakePhotoFolder(
+          section,
+          placementInput.warehouseLocation ?? '',
+        );
+        photoUrl = await _uploadPhotosAndBuildField(
+          addFlow.photos,
+          filePrefix: photoPrefix,
+          folder: photoFolder,
+        );
+      }
+
       final IntakeData created = await _createIntake(
         rawQrCode: rawQr,
-        kidNumberOverride: 'NO-KID',
+        kidNumberOverride: rawQr,
         productColor: addFlow.color,
+        store: addFlow.store,
+        inTransit: addFlow.inTransit,
         isBWare: addFlow.isBWare,
         bWareComment: addFlow.bWareComment,
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,
       );
-      await _finalizeAddedIntake(created, addFlow.photos);
+      await _finalizeAddedIntake(created, const <XFile>[]);
     } catch (error) {
       _showMessage(
         _messageForError(error, fallbackKey: 'action_failed_error'),

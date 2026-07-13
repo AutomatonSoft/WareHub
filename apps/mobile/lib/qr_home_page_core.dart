@@ -140,11 +140,18 @@ extension _QrHomePageCore on _QrHomePageState {
         ),
       );
     }
-    grouped.sort(
-      (GroupedIntakeData a, GroupedIntakeData b) =>
-          DateTime.parse(b.representative.createdAt)
-              .compareTo(DateTime.parse(a.representative.createdAt)),
-    );
+    grouped.sort((GroupedIntakeData a, GroupedIntakeData b) {
+      final IntakeData left = a.representative;
+      final IntakeData right = b.representative;
+      final int sectionOrder = left.section
+          .trim()
+          .toUpperCase()
+          .compareTo(right.section.trim().toUpperCase());
+      if (sectionOrder != 0) return sectionOrder;
+      final int slotOrder = left.slotNumber.compareTo(right.slotNumber);
+      if (slotOrder != 0) return slotOrder;
+      return left.databaseKidId.compareTo(right.databaseKidId);
+    });
     return grouped;
   }
 
@@ -218,17 +225,60 @@ extension _QrHomePageCore on _QrHomePageState {
     return base.resolve(rawUrl).toString();
   }
 
+  void _onFeedScroll() {
+    if (!_feedScrollController.hasClients ||
+        _loadingList ||
+        _loadingMoreList ||
+        !_inventoryHasMore) {
+      return;
+    }
+    final ScrollPosition position = _feedScrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 420) {
+      unawaited(_loadNextInventoryPage());
+    }
+  }
+
   Future<void> _loadInitialIntakes() async {
+    await _loadInventoryPage(
+      reset: true,
+      queryRevision: _inventoryQueryRevision,
+    );
+  }
+
+  Future<void> _loadNextInventoryPage() async {
+    if (!_inventoryHasMore || _loadingList || _loadingMoreList) {
+      return;
+    }
+    await _loadInventoryPage(
+      reset: false,
+      queryRevision: _inventoryQueryRevision,
+    );
+  }
+
+  Future<void> _loadInventoryPage({
+    required bool reset,
+    required int queryRevision,
+  }) async {
     setState(() {
-      _loadingList = true;
+      if (reset) {
+        _loadingList = true;
+        _inventoryNextOffset = 0;
+        _inventoryHasMore = true;
+        _inventoryTotalCount = 0;
+      } else {
+        _loadingMoreList = true;
+      }
     });
 
     try {
-      final Uri url = Uri.parse('${_effectiveApiBase()}/intakes?limit=200');
+      final int offset = reset ? 0 : _inventoryNextOffset;
       final http.Response response = await _authorizedRequest(
         'GET',
-        url,
+        _inventoryRowsUri(offset),
       );
+      if (queryRevision != _inventoryQueryRevision) {
+        return;
+      }
       if (response.statusCode == 401) {
         final MobileAuthRefreshStatus status =
             await _handleUnauthorizedAfterRefresh();
@@ -248,26 +298,48 @@ extension _QrHomePageCore on _QrHomePageState {
       }
 
       final dynamic decoded = jsonDecode(response.body);
-      if (decoded is! List) {
+      if (decoded is! Map<String, dynamic>) {
+        _showMessage(_strings.text('load_list_invalid'), error: true);
+        return;
+      }
+      final dynamic rawItems = decoded['items'];
+      if (rawItems is! List) {
         _showMessage(_strings.text('load_list_invalid'), error: true);
         return;
       }
 
-      final List<IntakeData> loaded = decoded
+      final List<IntakeData> loaded = rawItems
           .whereType<Map<String, dynamic>>()
           .map(IntakeData.fromJson)
           .toList();
+      final int? totalCount = _jsonInt(decoded['count']);
+      final int? nextOffset = _jsonInt(decoded['next_offset']);
+      final bool hasMore = decoded['has_more'] as bool? ?? false;
 
-      if (!mounted) {
+      if (!mounted || queryRevision != _inventoryQueryRevision) {
         return;
       }
       setState(() {
-        _items
-          ..clear()
-          ..addAll(loaded);
+        if (reset) {
+          _items
+            ..clear()
+            ..addAll(loaded);
+        } else {
+          final Set<String> existingIds =
+              _items.map((IntakeData item) => item.id).toSet();
+          _items.addAll(
+            loaded.where((IntakeData item) => !existingIds.contains(item.id)),
+          );
+        }
+        _inventoryTotalCount = totalCount ?? _items.length;
+        _inventoryHasMore = hasMore;
+        _inventoryNextOffset = nextOffset ?? _items.length;
       });
       _prefetchOrderMemosForItems(loaded);
     } catch (error) {
+      if (queryRevision != _inventoryQueryRevision) {
+        return;
+      }
       _showMessage(
         isNetworkUnavailableError(error)
             ? _strings.text('network_unavailable_load')
@@ -277,12 +349,105 @@ extension _QrHomePageCore on _QrHomePageState {
         error: true,
       );
     } finally {
-      if (mounted) {
+      if (mounted && queryRevision == _inventoryQueryRevision) {
         setState(() {
-          _loadingList = false;
+          if (reset) {
+            _loadingList = false;
+          } else {
+            _loadingMoreList = false;
+          }
         });
       }
     }
+  }
+
+  Uri _inventoryRowsUri(int offset) {
+    final Map<String, String> query = <String, String>{
+      'limit': '${_QrHomePageState._inventoryPageSize}',
+      'offset': '$offset',
+    };
+    if (_inventorySearch.isNotEmpty) query['q'] = _inventorySearch;
+    if (_inventorySection != null) query['section'] = _inventorySection!;
+    if (_inventoryDestination != null) {
+      query['store'] = _inventoryDestination == InventoryDestinationFilter.store
+          ? 'true'
+          : 'false';
+    }
+    if (_inventoryBWare != null) query['b_ware'] = _inventoryBWare.toString();
+    if (_inventoryInTransit != null) {
+      query['in_transit'] = _inventoryInTransit.toString();
+    }
+    return Uri.parse('${_effectiveApiBase()}/inventory/rows')
+        .replace(queryParameters: query);
+  }
+
+  int get _activeInventoryFilterCount => <Object?>[
+        _inventorySection,
+        _inventoryDestination,
+        _inventoryBWare,
+        _inventoryInTransit,
+      ].whereType<Object>().length;
+
+  Future<void> _submitInventorySearch(String value) async {
+    _inventorySearchDebounceTimer?.cancel();
+    final String search = value.trim();
+    if (search == _inventorySearch) return;
+    setState(() {
+      _inventorySearch = search;
+      _inventoryQueryRevision++;
+    });
+    await _loadInitialIntakes();
+  }
+
+  void _onInventorySearchChanged(String value) {
+    _inventorySearchDebounceTimer?.cancel();
+    if (value.trim() == _inventorySearch) {
+      return;
+    }
+    _inventorySearchDebounceTimer = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_submitInventorySearch(value)),
+    );
+  }
+
+  Future<void> _clearInventorySearch() async {
+    if (_inventorySearch.isEmpty) return;
+    _inventorySearchDebounceTimer?.cancel();
+    _inventorySearchController.clear();
+    setState(() {
+      _inventorySearch = '';
+      _inventoryQueryRevision++;
+    });
+    await _loadInitialIntakes();
+  }
+
+  Future<void> _applyInventoryFilters({
+    required String? section,
+    required InventoryDestinationFilter? destination,
+    required bool? bWare,
+    required bool? inTransit,
+  }) async {
+    setState(() {
+      _inventorySection = section;
+      _inventoryDestination = destination;
+      _inventoryBWare = bWare;
+      _inventoryInTransit = inTransit;
+      _inventoryQueryRevision++;
+    });
+    await _loadInitialIntakes();
+  }
+
+  int? _jsonInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
   }
 
   Future<void> _connectEvents({bool refreshBeforeConnect = false}) async {
@@ -379,6 +544,8 @@ extension _QrHomePageCore on _QrHomePageState {
     String? kidNumberOverride,
     String? productKey,
     String? productColor,
+    required bool store,
+    required bool inTransit,
     bool isBWare = false,
     String? bWareComment,
     String? categoryMain,
@@ -400,12 +567,14 @@ extension _QrHomePageCore on _QrHomePageState {
       throw UserFacingError(_strings.text('error_qr_required'));
     }
 
-    final Uri url = Uri.parse('${_effectiveApiBase()}/intakes');
+    final Uri url = Uri.parse('${_effectiveApiBase()}/inventory/kids');
     final Map<String, dynamic> body = <String, dynamic>{
       'qr_code': qrCode,
       'kid_number': kidNumber,
       'box_total': boxTotal,
       'placement_strategy': placementStrategy,
+      'store': store,
+      'in_transit': inTransit,
     };
     final String? normalizedPlacementSection =
         placementSection?.trim().toUpperCase();
@@ -492,7 +661,8 @@ extension _QrHomePageCore on _QrHomePageState {
     required String intakeId,
     String? photoUrl,
   }) async {
-    final Uri url = Uri.parse('${_effectiveApiBase()}/intakes/$intakeId/photo');
+    final Uri url =
+        Uri.parse('${_effectiveApiBase()}/inventory/kids/$intakeId/photo');
     final Map<String, dynamic> body = <String, dynamic>{};
     final String? normalizedPhotoUrl = photoUrl?.trim();
     if (normalizedPhotoUrl != null && normalizedPhotoUrl.isNotEmpty) {

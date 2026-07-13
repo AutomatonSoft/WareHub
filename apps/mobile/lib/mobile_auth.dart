@@ -30,17 +30,27 @@ class MobileAuthPayload {
     required this.accessToken,
     required this.refreshToken,
     required this.login,
+    required this.username,
     required this.email,
+    required this.firstName,
+    required this.lastName,
+    required this.phoneNumber,
     required this.avatarUrl,
     required this.role,
+    required this.status,
   });
 
   final String accessToken;
   final String refreshToken;
   final String login;
+  final String username;
   final String email;
+  final String firstName;
+  final String lastName;
+  final String phoneNumber;
   final String avatarUrl;
   final String role;
+  final String status;
 }
 
 MobileAuthPayload? parseMobileAuthPayload(
@@ -55,23 +65,38 @@ MobileAuthPayload? parseMobileAuthPayload(
 
   final dynamic rawUser = payload['user'];
   String login = fallbackLogin.trim();
+  String username = '';
   String email = '';
+  String firstName = '';
+  String lastName = '';
+  String phoneNumber = '';
   String avatarUrl = '';
   String role = '';
+  String status = '';
   if (rawUser is Map<String, dynamic>) {
     login = '${rawUser['login'] ?? login}'.trim();
+    username = '${rawUser['username'] ?? rawUser['user_name'] ?? ''}'.trim();
     email = '${rawUser['email'] ?? ''}'.trim();
+    firstName = '${rawUser['first_name'] ?? ''}'.trim();
+    lastName = '${rawUser['last_name'] ?? ''}'.trim();
+    phoneNumber = '${rawUser['phone_number'] ?? rawUser['phone'] ?? ''}'.trim();
     avatarUrl = '${rawUser['avatar_url'] ?? ''}'.trim();
     role = '${rawUser['role'] ?? ''}'.trim();
+    status = '${rawUser['status'] ?? ''}'.trim();
   }
 
   return MobileAuthPayload(
     accessToken: accessToken,
     refreshToken: '${payload['refresh_token'] ?? ''}'.trim(),
     login: login,
+    username: username,
     email: email,
+    firstName: firstName,
+    lastName: lastName,
+    phoneNumber: phoneNumber,
     avatarUrl: avatarUrl,
     role: role,
+    status: status,
   );
 }
 
@@ -154,9 +179,14 @@ Future<MobileAuthRefreshResult> _refreshMobileAuthSessionOnce(
       token: payload.accessToken,
       refreshToken: payload.refreshToken,
       login: payload.login.isEmpty ? settings.login : payload.login,
+      username: payload.username,
       email: payload.email,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      phoneNumber: payload.phoneNumber,
       avatarUrl: payload.avatarUrl,
       role: payload.role,
+      status: payload.status,
     );
     configureMobileLogAuthToken(payload.accessToken);
     return const MobileAuthRefreshResult(MobileAuthRefreshStatus.refreshed);

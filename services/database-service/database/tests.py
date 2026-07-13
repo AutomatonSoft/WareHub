@@ -1,5 +1,6 @@
 from django.db.utils import ProgrammingError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
@@ -154,6 +155,43 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.material, "Velvet")
         self.assertEqual(str(attrs.price), "349.99")
         self.assertEqual(attrs.currency, "EUR")
+
+    @override_settings(ORCHESTRATOR_SERVICE_AUTH_TOKEN="service-token")
+    @patch("database.views.search_items_auktionsliste")
+    def test_service_upsert_can_skip_afterbuy_order_sync(self, mocked_search):
+        payload = {
+            "kid_number": "EMPTY-1782891067928",
+            "place": "E67",
+            "quantity": 7,
+            "color": "Blau",
+            "room": "Wohnzimmer",
+            "type": "Sofa",
+            "b_ware": True,
+            "commentary": "Packaging damage",
+            "photo": ["https://cdn.example.com/item.jpg"],
+            "skip_order_sync": True,
+        }
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            payload,
+            format="json",
+            HTTP_X_WAREHUB_SERVICE_TOKEN="service-token",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mocked_search.assert_not_called()
+        self.assertTrue(response.data["sync"]["skipped"])
+        kid = Kid.objects.get(kid_number__contains=["EMPTY-1782891067928"])
+        self.assertEqual(kid.place, "E67")
+        self.assertEqual(kid.room, "Wohnzimmer")
+        self.assertEqual(kid.furniture_type, "Sofa")
+        self.assertTrue(kid.b_ware)
+        self.assertEqual(kid.commentary, "Packaging damage")
+        self.assertEqual(kid.photo, ["https://cdn.example.com/item.jpg"])
+        attrs = ProductAttributes.objects.get(kid=kid)
+        self.assertEqual(attrs.quantity, 7)
+        self.assertEqual(attrs.color, "Blau")
 
     def test_create_kid_is_idempotent_by_kid_number(self):
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}
@@ -1562,6 +1600,42 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(rows)
         self.assertTrue(all(row["kid_id"] == self.kid.id for row in rows))
 
+    def test_inventory_rows_filters_and_sorts_section_slots_numerically(self):
+        self.kid.place = "A10"
+        self.kid.store = False
+        self.kid.b_ware = True
+        self.kid.in_transit = True
+        self.kid.save(update_fields=["place", "store", "b_ware", "in_transit"])
+        first_slot_kid = Kid.objects.create(
+            kid_number="KID-SECTION-A2",
+            place="A2",
+            b_ware=True,
+            in_transit=True,
+        )
+        other_section_kid = Kid.objects.create(
+            kid_number="KID-SECTION-B1",
+            place="B1",
+            b_ware=True,
+            in_transit=True,
+        )
+
+        response = self.client.get(
+            "/api/v1/inventory/rows/"
+            "?section=A&store=false&b_ware=true&in_transit=true"
+            "&sort=section_slot&dir=asc&page_size=100"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        self.assertTrue(rows)
+        self.assertTrue(all(row["place"].upper().startswith("A") for row in rows))
+        self.assertTrue(all(not row["store"] for row in rows))
+        self.assertTrue(all(row["b_ware"] for row in rows))
+        self.assertTrue(all(row["in_transit"] for row in rows))
+        kid_ids = [row["kid_id"] for row in rows]
+        self.assertLess(kid_ids.index(first_slot_kid.id), kid_ids.index(self.kid.id))
+        self.assertNotIn(other_section_kid.id, kid_ids)
+
     def test_kids_bulk_update_room_type_listing(self):
         second_kid = Kid.objects.create(kid_number="KID-SECOND-2")
         payload = {
@@ -1701,6 +1775,19 @@ class DatabaseApiTests(APITestCase):
             rows = response.data["results"]
             self.assertTrue(rows, msg=f"Expected rows for query {query!r}")
             self.assertTrue(any(int(row["kid_id"]) == self.kid.id for row in rows), msg=f"Expected kid row for query {query!r}")
+
+    def test_inventory_rows_query_matches_pallet_aliases_across_languages(self):
+        self.kid.commentary = "Палеты"
+        self.kid.save(update_fields=["commentary"])
+
+        for query in ("pallet", "палета", "Paletten"):
+            response = self.client.get(f"/api/v1/inventory/rows/?q={query}&page_size=100")
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertTrue(
+                any(int(row["kid_id"]) == self.kid.id for row in response.data["results"]),
+                msg=f"Expected pallet row for query {query!r}",
+            )
 
     def test_inventory_rows_query_supports_field_scoped_prefixes(self):
         self.kid.room = "Wohnzimmer"

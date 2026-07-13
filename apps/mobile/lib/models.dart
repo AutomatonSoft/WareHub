@@ -17,6 +17,7 @@ enum ScanFlowAction { receive, unload }
 class IntakeData {
   const IntakeData({
     required this.id,
+    required this.databaseKidId,
     required this.qrCode,
     required this.warehouseLocation,
     required this.kidNumber,
@@ -28,6 +29,8 @@ class IntakeData {
     required this.boxTotal,
     required this.unitIndex,
     required this.isBWare,
+    required this.store,
+    required this.inTransit,
     this.bWareComment,
     required this.createdAt,
     required this.isRemoved,
@@ -36,6 +39,7 @@ class IntakeData {
   });
 
   final String id;
+  final int databaseKidId;
   final String qrCode;
   final String warehouseLocation;
   final String kidNumber;
@@ -47,6 +51,8 @@ class IntakeData {
   final int boxTotal;
   final int unitIndex;
   final bool isBWare;
+  final bool store;
+  final bool inTransit;
   final String? bWareComment;
   final String createdAt;
   final bool isRemoved;
@@ -57,6 +63,7 @@ class IntakeData {
 
   IntakeData copyWith({
     String? id,
+    int? databaseKidId,
     String? qrCode,
     String? warehouseLocation,
     String? kidNumber,
@@ -68,6 +75,8 @@ class IntakeData {
     int? boxTotal,
     int? unitIndex,
     bool? isBWare,
+    bool? store,
+    bool? inTransit,
     String? bWareComment,
     String? createdAt,
     bool? isRemoved,
@@ -76,6 +85,7 @@ class IntakeData {
   }) {
     return IntakeData(
       id: id ?? this.id,
+      databaseKidId: databaseKidId ?? this.databaseKidId,
       qrCode: qrCode ?? this.qrCode,
       warehouseLocation: warehouseLocation ?? this.warehouseLocation,
       kidNumber: kidNumber ?? this.kidNumber,
@@ -87,6 +97,8 @@ class IntakeData {
       boxTotal: boxTotal ?? this.boxTotal,
       unitIndex: unitIndex ?? this.unitIndex,
       isBWare: isBWare ?? this.isBWare,
+      store: store ?? this.store,
+      inTransit: inTransit ?? this.inTransit,
       bWareComment: bWareComment ?? this.bWareComment,
       createdAt: createdAt ?? this.createdAt,
       isRemoved: isRemoved ?? this.isRemoved,
@@ -98,6 +110,7 @@ class IntakeData {
   factory IntakeData.fromJson(Map<String, dynamic> json) {
     return IntakeData(
       id: '${json['id'] ?? ''}',
+      databaseKidId: json['database_kid_id'] as int? ?? 0,
       qrCode: '${json['qr_code'] ?? ''}',
       warehouseLocation: '${json['warehouse_location'] ?? ''}',
       kidNumber: '${json['kid_number'] ?? ''}',
@@ -109,6 +122,8 @@ class IntakeData {
       boxTotal: json['box_total'] as int? ?? 1,
       unitIndex: json['unit_index'] as int? ?? 1,
       isBWare: json['is_b_ware'] as bool? ?? false,
+      store: json['store'] as bool? ?? false,
+      inTransit: json['in_transit'] as bool? ?? false,
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty
