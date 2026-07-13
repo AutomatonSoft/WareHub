@@ -145,3 +145,29 @@ def suggest_same_base_subplace(place: object, *, exclude_kid_id: int | None = No
             return candidate
         next_suffix = _increment_suffix(next_suffix)
     return None
+
+
+def list_available_pool_places(*, limit: int = 250, exclude_kid_id: int | None = None) -> list[str]:
+    queryset = Kid.objects.all().order_by("id")
+    if exclude_kid_id is not None:
+        queryset = queryset.exclude(id=exclude_kid_id)
+
+    occupied_exact_places: set[str] = set()
+    highest_base = PLACE_POOL_MIN
+    for raw_place in queryset.values_list("place", flat=True):
+        parsed_place = parse_pool_place(raw_place)
+        if parsed_place is None:
+            continue
+        base, _, normalized = parsed_place
+        highest_base = max(highest_base, base)
+        occupied_exact_places.add(normalized)
+
+    candidates: list[str] = []
+    scan_limit = max(PLACE_POOL_MIN + limit, highest_base + 1)
+    for base in range(PLACE_POOL_MIN, min(scan_limit, PLACE_POOL_MAX) + 1):
+        if str(base) not in occupied_exact_places:
+            candidates.append(str(base))
+            if len(candidates) >= limit:
+                return candidates
+
+    return candidates

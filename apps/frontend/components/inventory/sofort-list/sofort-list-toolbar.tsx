@@ -104,6 +104,7 @@ function SearchableFilterField(props: {
 
 type SofortListToolbarLabels = {
   allPlaces: string;
+  allSections: string;
   allLocations: string;
   allQuantities: string;
   allRooms: string;
@@ -111,9 +112,6 @@ type SofortListToolbarLabels = {
   allCompanies: string;
   allColors: string;
   allMaterials: string;
-  allListingStatuses: string;
-  listed: string;
-  unlisted: string;
   place: string;
   location: string;
   quantity: string;
@@ -122,7 +120,6 @@ type SofortListToolbarLabels = {
   company: string;
   color: string;
   material: string;
-  listing: string;
   bWare: string;
   inTransit: string;
   warehouse: string;
@@ -138,6 +135,7 @@ type SofortListToolbarLabels = {
   searchFilterPlaceholder: string;
   searchFilterAria: string;
   activeSuffix: string;
+  section: string;
 };
 
 export function SofortListToolbar(props: {
@@ -145,9 +143,11 @@ export function SofortListToolbar(props: {
   queryLabel: string;
   searchPlaceholder: string;
   primaryAction?: ReactNode;
+  trailingAction?: ReactNode;
   showFilters: boolean;
   hasActiveFilters: boolean;
   placeFilter: string;
+  sectionFilter: string;
   locationFilter: string;
   quantityFilter: string;
   roomFilter: string;
@@ -155,10 +155,10 @@ export function SofortListToolbar(props: {
   companyFilter: string;
   colorFilter: string;
   materialFilter: string;
-  listingFilter: string;
   bWareOnlyFilter: boolean;
   inTransitOnlyFilter: boolean;
   placeOptions: string[];
+  sectionOptions: string[];
   quantityOptions: string[];
   roomOptions: string[];
   typeOptions: string[];
@@ -170,6 +170,7 @@ export function SofortListToolbar(props: {
   onQueryChange: (value: string) => void;
   onToggleFilters: () => void;
   onPlaceFilterChange: (value: string) => void;
+  onSectionFilterChange: (value: string) => void;
   onLocationFilterChange: (value: string) => void;
   onQuantityFilterChange: (value: string) => void;
   onRoomFilterChange: (value: string) => void;
@@ -177,7 +178,6 @@ export function SofortListToolbar(props: {
   onCompanyFilterChange: (value: string) => void;
   onColorFilterChange: (value: string) => void;
   onMaterialFilterChange: (value: string) => void;
-  onListingFilterChange: (value: string) => void;
   onBWareOnlyFilterChange: (checked: boolean) => void;
   onInTransitOnlyFilterChange: (checked: boolean) => void;
   onClearSingleFilter: (key: string) => void;
@@ -195,12 +195,8 @@ export function SofortListToolbar(props: {
     { value: "warehouse", label: labels.warehouse },
     { value: "store", label: labels.store },
   ];
-  const listingOptions: SelectOption[] = [
-    { value: "all", label: labels.allListingStatuses },
-    { value: "listed", label: labels.listed },
-    { value: "unlisted", label: labels.unlisted },
-  ];
   const placeOptions = [{ value: "all", label: labels.allPlaces }, ...props.placeOptions.map((value) => ({ value, label: value }))];
+  const sectionOptions = [{ value: "all", label: labels.allSections }, ...props.sectionOptions.map((value) => ({ value, label: value }))];
   const quantityOptions = [{ value: "all", label: labels.allQuantities }, ...props.quantityOptions.map((value) => ({ value, label: value }))];
   const roomOptions = [{ value: "all", label: labels.allRooms }, ...props.roomOptions.map((value) => ({ value, label: value }))];
   const typeOptions = [{ value: "all", label: labels.allTypes }, ...props.typeOptions.map((value) => ({ value, label: value }))];
@@ -233,9 +229,12 @@ export function SofortListToolbar(props: {
             <Trash2 />
             {clearLabel}
           </Button>
-          <Badge variant="outline" className="wh-sofort-toolbar__status">
-            {props.statusText}
-          </Badge>
+          {props.trailingAction}
+          {props.statusText ? (
+            <Badge variant="outline" className="wh-sofort-toolbar__status">
+              {props.statusText}
+            </Badge>
+          ) : null}
         </ToolbarGroup>
       </div>
       {props.showFilters ? (
@@ -249,6 +248,15 @@ export function SofortListToolbar(props: {
               emptyLabel={labels.noMatchesFound}
               onValueChange={props.onPlaceFilterChange}
               options={placeOptions}
+            />
+            <SearchableFilterField
+              label={labels.section}
+              ariaLabel={labels.searchFilterAria.replace("{label}", labels.section)}
+              value={props.sectionFilter || "all"}
+              placeholder={labels.searchFilterPlaceholder.replace("{label}", labels.section.toLowerCase())}
+              emptyLabel={labels.noMatchesFound}
+              onValueChange={props.onSectionFilterChange}
+              options={sectionOptions}
             />
             <SearchableFilterField
               label={labels.location}

@@ -13,7 +13,7 @@ import { ErrorState } from "../ui/error-state";
 import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
 import { ImportKidGreenButton } from "./import-kid-green-button";
-import { fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
+import { deleteInventoryEntity, fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
@@ -23,6 +23,7 @@ import { SofortListPagination } from "./sofort-list/sofort-list-pagination";
 import { SofortListTableShell } from "./sofort-list/sofort-list-table-shell";
 import { SofortListToolbar } from "./sofort-list/sofort-list-toolbar";
 import type { SofortListRow } from "./sofort-list/sofort-list-types";
+import { useToast } from "../shared/toast-provider";
 
 function highlightText(value: string, query: string) {
   void query;
@@ -69,6 +70,7 @@ function displayNullable(value: string | null): string {
 
 export function SofortListTable() {
   const t = useLabels();
+  const { showToast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -79,6 +81,7 @@ export function SofortListTable() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [placeFilter, setPlaceFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
   const [quantityFilter, setQuantityFilter] = useState("");
   const [roomFilter, setRoomFilter] = useState("");
@@ -86,7 +89,6 @@ export function SofortListTable() {
   const [companyFilter, setCompanyFilter] = useState("");
   const [colorFilter, setColorFilter] = useState("");
   const [materialFilter, setMaterialFilter] = useState("");
-  const [listingFilter, setListingFilter] = useState("all");
   const [bWareOnlyFilter, setBWareOnlyFilter] = useState(false);
   const [inTransitOnlyFilter, setInTransitOnlyFilter] = useState(false);
   const [backendPage, setBackendPage] = useState(1);
@@ -96,6 +98,7 @@ export function SofortListTable() {
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [urlHydrated, setUrlHydrated] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const fetchStartedAtRef = useRef<number | null>(null);
 
@@ -105,6 +108,7 @@ export function SofortListTable() {
     const pageSizeParam = Number.parseInt(searchParams.get("page_size") ?? "20", 10);
     setQuery(searchParams.get("q") ?? "");
     setPlaceFilter(searchParams.get("place") ?? "");
+    setSectionFilter(searchParams.get("section") ?? "");
     setLocationFilter(searchParams.get("location") ?? "all");
     setQuantityFilter(searchParams.get("quantity") ?? "");
     setRoomFilter(searchParams.get("room") ?? "");
@@ -112,7 +116,6 @@ export function SofortListTable() {
     setCompanyFilter(searchParams.get("company") ?? "");
     setColorFilter(searchParams.get("color") ?? "");
     setMaterialFilter(searchParams.get("material") ?? "");
-    setListingFilter(searchParams.get("listing") ?? "all");
     setBWareOnlyFilter(searchParams.get("b_ware") === "true");
     setInTransitOnlyFilter(searchParams.get("in_transit") === "true");
     setBackendPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
@@ -128,6 +131,8 @@ export function SofortListTable() {
     else params.delete("q");
     if (placeFilter.trim()) params.set("place", placeFilter.trim());
     else params.delete("place");
+    if (sectionFilter.trim()) params.set("section", sectionFilter.trim());
+    else params.delete("section");
     if (locationFilter !== "all") params.set("location", locationFilter);
     else params.delete("location");
     if (quantityFilter.trim()) params.set("quantity", quantityFilter.trim());
@@ -142,8 +147,6 @@ export function SofortListTable() {
     else params.delete("color");
     if (materialFilter.trim()) params.set("material", materialFilter.trim());
     else params.delete("material");
-    if (listingFilter !== "all") params.set("listing", listingFilter);
-    else params.delete("listing");
     if (bWareOnlyFilter) params.set("b_ware", "true");
     else params.delete("b_ware");
     if (inTransitOnlyFilter) params.set("in_transit", "true");
@@ -165,7 +168,6 @@ export function SofortListTable() {
     colorFilter,
     companyFilter,
     inTransitOnlyFilter,
-    listingFilter,
     locationFilter,
     materialFilter,
     pathname,
@@ -175,6 +177,7 @@ export function SofortListTable() {
     roomFilter,
     router,
     searchParams,
+    sectionFilter,
     typeFilter,
     urlHydrated,
   ]);
@@ -182,6 +185,7 @@ export function SofortListTable() {
   const normalizedServerQuery = query.trim();
   const serverPlaceSort: "asc" | "desc" = "asc";
   const serverPlace = placeFilter.trim() || undefined;
+  const serverSection = sectionFilter.trim() || undefined;
   const serverLocation = locationFilter === "warehouse" || locationFilter === "store" ? locationFilter : undefined;
   const serverQuantity = quantityFilter.trim() || undefined;
   const serverRoom = roomFilter.trim() || undefined;
@@ -189,7 +193,6 @@ export function SofortListTable() {
   const serverCompany = companyFilter.trim() || undefined;
   const serverColor = colorFilter.trim() || undefined;
   const serverMaterial = materialFilter.trim() || undefined;
-  const serverListing = listingFilter === "listed" || listingFilter === "unlisted" ? listingFilter : undefined;
 
   const sofortListQuery = useQuery({
     queryKey: [
@@ -199,6 +202,7 @@ export function SofortListTable() {
       normalizedServerQuery,
       serverPlaceSort,
       serverPlace,
+      serverSection,
       serverLocation,
       serverQuantity,
       serverRoom,
@@ -206,7 +210,6 @@ export function SofortListTable() {
       serverCompany,
       serverColor,
       serverMaterial,
-      serverListing,
       bWareOnlyFilter,
       inTransitOnlyFilter,
     ],
@@ -216,6 +219,7 @@ export function SofortListTable() {
         pageSize: backendPageSize,
         q: normalizedServerQuery || undefined,
         place: serverPlace,
+        section: serverSection,
         location: serverLocation,
         quantity: serverQuantity,
         placeSort: serverPlaceSort,
@@ -224,7 +228,6 @@ export function SofortListTable() {
         company: serverCompany,
         color: serverColor,
         material: serverMaterial,
-        listing: serverListing,
         bWare: bWareOnlyFilter,
         inTransit: inTransitOnlyFilter,
       })
@@ -310,8 +313,10 @@ export function SofortListTable() {
         siteEans: normalizedSiteEans,
         siteEanStatuses: normalizedSiteEanStatuses,
         photo: getPrimaryPhoto(item.photo),
+        photoUrls: photos,
         photoCount: item.photo_count ?? photos.length,
         place: normalizePlaceValue(item.place),
+        section: typeof rawItem.section === "string" && rawItem.section.trim().length > 0 ? rawItem.section.trim() : null,
         bWare: isBWare,
         store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
@@ -324,7 +329,6 @@ export function SofortListTable() {
         material: typeof rawItem.material === "string" && rawItem.material.trim().length > 0 ? rawItem.material.trim() : null,
         price: typeof rawItem.price === "string" && rawItem.price.trim().length > 0 ? rawItem.price.trim() : null,
         priceCurrency: typeof rawItem.price_currency === "string" && rawItem.price_currency.trim().length > 0 ? rawItem.price_currency.trim() : null,
-        listingStatus: item.listing_status === "listed" ? "listed" : "unlisted",
         marketplaceActive,
       } satisfies SofortListRow;
     });
@@ -342,8 +346,12 @@ export function SofortListTable() {
   }, [backendPage, placeholderEan, sofortListQuery.data]);
 
   const sortedRows = rows;
+  const rowIds = useMemo(() => new Set(sortedRows.map((row) => row.id)), [sortedRows]);
+  const selectedRows = useMemo(() => sortedRows.filter((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
+  const selectedVisibleCount = selectedRows.length;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / backendPageSize)), [backendPageSize, totalCount]);
   const fallbackPlaceOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.place.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
+  const fallbackSectionOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.section?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const fallbackQuantityOptions = useMemo(() => Array.from(new Set(rows.map((row) => String(row.quantity)).filter(Boolean))).sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10)), [rows]);
   const fallbackRoomOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.room?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const fallbackTypeOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.furnitureType?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
@@ -351,6 +359,7 @@ export function SofortListTable() {
   const fallbackColorOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.color?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const fallbackMaterialOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.material?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const placeOptions = filterOptionsQuery.data?.places ?? fallbackPlaceOptions;
+  const sectionOptions = filterOptionsQuery.data?.sections ?? fallbackSectionOptions;
   const quantityOptions = filterOptionsQuery.data?.quantities ?? fallbackQuantityOptions;
   const roomOptions = filterOptionsQuery.data?.rooms ?? fallbackRoomOptions;
   const typeOptions = filterOptionsQuery.data?.types ?? fallbackTypeOptions;
@@ -361,6 +370,7 @@ export function SofortListTable() {
     () =>
       [
         placeFilter.trim() ? { key: "place", label: t.place, value: placeFilter.trim() } : null,
+        sectionFilter.trim() ? { key: "section", label: t.section, value: sectionFilter.trim() } : null,
         locationFilter !== "all"
           ? { key: "location", label: t.location, value: locationFilter === "warehouse" ? t.warehouse : t.store }
           : null,
@@ -370,9 +380,6 @@ export function SofortListTable() {
         companyFilter.trim() ? { key: "company", label: t.company, value: companyFilter.trim() } : null,
         colorFilter.trim() ? { key: "color", label: t.color, value: colorFilter.trim() } : null,
         materialFilter.trim() ? { key: "material", label: t.material, value: materialFilter.trim() } : null,
-        listingFilter === "listed" || listingFilter === "unlisted"
-          ? { key: "listing", label: t.status, value: listingFilter === "listed" ? t.listed : t.unlisted }
-          : null,
         bWareOnlyFilter ? { key: "b_ware", label: t.bWare, value: t.selectedOnly } : null,
         inTransitOnlyFilter ? { key: "in_transit", label: t.inTransit, value: t.selectedOnly } : null,
       ].filter((item): item is { key: string; label: string; value: string } => item !== null),
@@ -381,24 +388,22 @@ export function SofortListTable() {
       companyFilter,
       bWareOnlyFilter,
       inTransitOnlyFilter,
-      listingFilter,
       locationFilter,
       materialFilter,
       placeFilter,
       quantityFilter,
       roomFilter,
+      sectionFilter,
       t.color,
       t.company,
-      t.listed,
       t.location,
       t.material,
       t.place,
       t.quantity,
       t.room,
-      t.status,
+      t.section,
       t.store,
       t.type,
-      t.unlisted,
       t.bWare,
       t.inTransit,
       t.selectedOnly,
@@ -411,6 +416,7 @@ export function SofortListTable() {
   const hasActiveFilters =
     query.trim().length > 0 ||
     placeFilter.trim().length > 0 ||
+    sectionFilter.trim().length > 0 ||
     locationFilter !== "all" ||
     quantityFilter.trim().length > 0 ||
     roomFilter.trim().length > 0 ||
@@ -418,7 +424,6 @@ export function SofortListTable() {
     companyFilter.trim().length > 0 ||
     colorFilter.trim().length > 0 ||
     materialFilter.trim().length > 0 ||
-    listingFilter !== "all" ||
     bWareOnlyFilter ||
     inTransitOnlyFilter;
 
@@ -427,6 +432,13 @@ export function SofortListTable() {
       setBackendPage(totalPages);
     }
   }, [backendPage, totalPages]);
+
+  useEffect(() => {
+    setSelectedRowIds((current) => {
+      const next = new Set(Array.from(current).filter((rowId) => rowIds.has(rowId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [rowIds]);
 
   function toggleRowSelection(rowId: string) {
     setSelectedRowIds((current) => {
@@ -449,6 +461,7 @@ export function SofortListTable() {
   function resetFiltersAndSearch() {
     setQuery("");
     setPlaceFilter("");
+    setSectionFilter("");
     setLocationFilter("all");
     setQuantityFilter("");
     setRoomFilter("");
@@ -456,10 +469,10 @@ export function SofortListTable() {
     setCompanyFilter("");
     setColorFilter("");
     setMaterialFilter("");
-    setListingFilter("all");
     setBWareOnlyFilter(false);
     setInTransitOnlyFilter(false);
     setBackendPage(1);
+    setSelectedRowIds(new Set());
   }
 
   function updateQuery(nextValue: string) {
@@ -489,6 +502,9 @@ export function SofortListTable() {
       case "location":
         setLocationFilter("all");
         break;
+      case "section":
+        setSectionFilter("");
+        break;
       case "quantity":
         setQuantityFilter("");
         break;
@@ -507,9 +523,6 @@ export function SofortListTable() {
       case "material":
         setMaterialFilter("");
         break;
-      case "listing":
-        setListingFilter("all");
-        break;
       case "b_ware":
         setBWareOnlyFilter(false);
         break;
@@ -524,6 +537,41 @@ export function SofortListTable() {
 
   function updateRowDraft(nextRow: SofortListRow) {
     setRows((current) => current.map((row) => (row.id === nextRow.id ? nextRow : row)));
+  }
+
+  async function deleteSelectedRows() {
+    if (deletingSelected || selectedRows.length === 0) return;
+    const confirmed = window.confirm(`Вы хотите удалить ${selectedRows.length} товаров из базы данных?`);
+    if (!confirmed) return;
+
+    const deletedPlaces = selectedRows
+      .map((row) => (row.section ? `${row.section} ${row.place}` : row.place).trim())
+      .filter(Boolean)
+      .join(", ");
+
+    setDeletingSelected(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedRows.map((row) => deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId }))
+      );
+      const failed = results.filter((result) => result.status === "rejected");
+
+      if (failed.length > 0) {
+        const firstError = failed[0];
+        const message =
+          firstError.status === "rejected" && firstError.reason instanceof Error
+            ? firstError.reason.message
+            : t.deleteFailed;
+        showToast(message, "error");
+      } else {
+        showToast(`Вы удалили товары: ${deletedPlaces}`, "success");
+      }
+
+      setSelectedRowIds(new Set());
+      await sofortListQuery.refetch();
+    } finally {
+      setDeletingSelected(false);
+    }
   }
 
   return (
@@ -541,9 +589,17 @@ export function SofortListTable() {
                 <AddProductButton onCreated={() => sofortListQuery.refetch()} />
               </div>
             }
+            trailingAction={
+              selectedVisibleCount > 0 ? (
+                <Button type="button" variant="destructive" onClick={() => void deleteSelectedRows()} disabled={deletingSelected}>
+                  {deletingSelected ? `${t.deleting} (${selectedVisibleCount})` : `${t.delete} (${selectedVisibleCount})`}
+                </Button>
+              ) : null
+            }
             showFilters={showFilters}
             hasActiveFilters={hasActiveFilters}
             placeFilter={placeFilter}
+            sectionFilter={sectionFilter}
             locationFilter={locationFilter}
             quantityFilter={quantityFilter}
             roomFilter={roomFilter}
@@ -551,10 +607,10 @@ export function SofortListTable() {
             companyFilter={companyFilter}
             colorFilter={colorFilter}
             materialFilter={materialFilter}
-            listingFilter={listingFilter}
             bWareOnlyFilter={bWareOnlyFilter}
             inTransitOnlyFilter={inTransitOnlyFilter}
             placeOptions={placeOptions}
+            sectionOptions={sectionOptions}
             quantityOptions={quantityOptions}
             roomOptions={roomOptions}
             typeOptions={typeOptions}
@@ -562,10 +618,11 @@ export function SofortListTable() {
             colorOptions={colorOptions}
             materialOptions={materialOptions}
             activeFilters={activeFilters}
-            statusText={loading ? t.loadingRows : `${t.rowsOnPage}: ${rows.length} • ${t.total}: ${totalCount}`}
+            statusText={loading ? t.loadingRows : ""}
             onQueryChange={updateQuery}
             onToggleFilters={() => setShowFilters((current) => !current)}
             onPlaceFilterChange={(value) => updateSelectFilter(setPlaceFilter, normalizeSelectValue(value))}
+            onSectionFilterChange={(value) => updateSelectFilter(setSectionFilter, normalizeSelectValue(value))}
             onLocationFilterChange={(value) => updateSelectFilter(setLocationFilter, value)}
             onQuantityFilterChange={(value) => updateSelectFilter(setQuantityFilter, normalizeSelectValue(value))}
             onRoomFilterChange={(value) => updateSelectFilter(setRoomFilter, normalizeSelectValue(value))}
@@ -573,13 +630,13 @@ export function SofortListTable() {
             onCompanyFilterChange={(value) => updateSelectFilter(setCompanyFilter, normalizeSelectValue(value))}
             onColorFilterChange={(value) => updateSelectFilter(setColorFilter, normalizeSelectValue(value))}
             onMaterialFilterChange={(value) => updateSelectFilter(setMaterialFilter, normalizeSelectValue(value))}
-            onListingFilterChange={(value) => updateSelectFilter(setListingFilter, value)}
             onBWareOnlyFilterChange={(checked) => updateSelectFilter((value) => setBWareOnlyFilter(value === "true"), checked ? "true" : "false")}
             onInTransitOnlyFilterChange={(checked) => updateSelectFilter((value) => setInTransitOnlyFilter(value === "true"), checked ? "true" : "false")}
             onClearSingleFilter={clearSingleFilter}
             onReset={resetFiltersAndSearch}
             labels={{
               allPlaces: t.allPlaces,
+              allSections: t.allSections,
               allLocations: t.allLocations,
               allQuantities: t.allQuantities,
               allRooms: t.allRooms,
@@ -587,10 +644,8 @@ export function SofortListTable() {
               allCompanies: t.allCompanies,
               allColors: t.allColors,
               allMaterials: t.allMaterials,
-              allListingStatuses: t.allListingStatuses,
-              listed: t.listed,
-              unlisted: t.unlisted,
               place: t.place,
+              section: t.section,
               location: t.location,
               quantity: t.quantity,
               room: t.room,
@@ -598,7 +653,6 @@ export function SofortListTable() {
               company: t.company,
               color: t.color,
               material: t.material,
-              listing: t.status,
               bWare: t.bWare,
               inTransit: t.inTransit,
               warehouse: t.warehouse,
@@ -649,6 +703,8 @@ export function SofortListTable() {
                 onToggleRowSelection={toggleRowSelection}
                 onUpdateRow={updateRowDraft}
                 onRefresh={() => void sofortListQuery.refetch()}
+                availablePlaces={filterOptionsQuery.data?.available_places ?? []}
+                occupiedPlaces={filterOptionsQuery.data?.places ?? []}
                 highlightText={highlightText}
                 labels={{
                   place: t.place,
@@ -682,30 +738,30 @@ export function SofortListTable() {
                   confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
                 }}
               />
-              {!error && rows.length > 0 ? (
-                <SofortListPagination
-                  page={backendPage}
-                  totalPages={totalPages}
-                  totalCount={totalCount}
-                  pageSize={backendPageSize}
-                  pageSizeOptions={[10, 20, 50, 100]}
-                  hasPrevPage={hasPrevPage}
-                  hasNextPage={hasNextPage}
-                  labels={{
-                    rowsOnPage: t.rowsOnPage,
-                    total: t.total,
-                    previous: t.previous,
-                    next: t.next,
-                    page: t.page,
-                  }}
-                  onPageChange={setBackendPage}
-                  onPageSizeChange={updatePageSize}
-                />
-              ) : null}
             </>
           )}
         </CardContent>
       </Card>
+      {!error && rows.length > 0 && !loading ? (
+        <SofortListPagination
+          page={backendPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={backendPageSize}
+          pageSizeOptions={[10, 20, 50, 100]}
+          hasPrevPage={hasPrevPage}
+          hasNextPage={hasNextPage}
+          labels={{
+            rowsOnPage: t.rowsOnPage,
+            total: t.total,
+            previous: t.previous,
+            next: t.next,
+            page: t.page,
+          }}
+          onPageChange={setBackendPage}
+          onPageSizeChange={updatePageSize}
+        />
+      ) : null}
     </div>
   );
 }

@@ -3664,10 +3664,6 @@
             "nullable": true,
             "maxLength": 128
           },
-          "listing_status": {
-            "type": "string",
-            "maxLength": 16
-          },
           "b_ware": {
             "type": "boolean"
           },

@@ -27,7 +27,7 @@ test("sofort-list CSV export contains UTF-8 BOM and expected headers", async ({ 
   expect(buffer[2]).toBe(0xbf);
 
   const text = bufferToUtf8(buffer);
-  expect(text).toContain('"place","quantity","room","type","kid_number","kid_id","listing_status"');
+  expect(text).toContain('"place","quantity","room","type","kid_number","kid_id"');
 });
 
 test("sofort-list XLS export is Spreadsheet XML with expected headers", async ({ page }) => {

@@ -1472,7 +1472,6 @@ export interface components {
             readonly id?: number;
             in_transit?: boolean;
             kid_number: string;
-            listing_status?: string;
             photo?: Record<string, never>;
             place?: string | null;
             room?: string | null;

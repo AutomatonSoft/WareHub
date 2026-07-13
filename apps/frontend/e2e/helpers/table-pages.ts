@@ -22,10 +22,6 @@ export function sofortTypeFilter(page: Page): Locator {
   return page.getByLabel("Filter by furniture type");
 }
 
-export function sofortListingFilter(page: Page): Locator {
-  return page.getByLabel("Filter by listing status");
-}
-
 export function sofortSortButtons(page: Page): Locator {
   return page.locator("thead button");
 }

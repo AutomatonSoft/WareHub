@@ -102,7 +102,6 @@ class KidPayload:
     otto_xl: str | None
     quantity: int | None
     commentary: str
-    listing_status: str | None
 
 
 @dataclass
@@ -260,7 +259,6 @@ def load_kid_payloads(json_path: Path) -> dict[tuple[str, str], KidPayload]:
                 otto_xl=_normalize_ean(row.get("Ean.otto_xl")),
                 quantity=_parse_quantity(row.get("ProductAttributes.quantity")),
                 commentary=_normalize_commentary(row),
-                listing_status=_normalize_optional_text(row.get("listing_status")),
             )
             continue
 
@@ -360,7 +358,6 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> dict[str, list[K
                     room=payload.room,
                     store=payload.store,
                     b_ware=payload.b_ware,
-                    listing_status=payload.listing_status or "unlisted",
                     commentary=payload.commentary,
                 )
                 Ean.objects.create(

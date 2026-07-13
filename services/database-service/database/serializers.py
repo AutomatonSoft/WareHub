@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .ftp_upload import normalize_managed_public_photo_value
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
 from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
 from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
@@ -40,9 +41,21 @@ class KidModelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Pool subplace may contain at most one letter from A to Z.")
         return normalize_place(value)
 
+    def validate_section(self, value):
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip().upper()
+        if len(normalized) != 1 or not ("A" <= normalized <= "Z"):
+            raise serializers.ValidationError("Section must be a single English letter from A to Z.")
+        return normalized
+
+    def validate_photo(self, value):
+        return normalize_managed_public_photo_value(value)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["kid_number"] = primary_kid_number(instance.kid_number)
+        data["photo"] = normalize_managed_public_photo_value(data.get("photo"))
         return data
 
 
@@ -68,9 +81,9 @@ class KidCompositePatchSerializer(KidModelSerializer):
             "photo",
             "room",
             "furniture_type",
-            "listing_status",
             "b_ware",
             "commentary",
+            "section",
             "in_transit",
         )
 

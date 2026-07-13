@@ -24,7 +24,6 @@ test("kid ean summary model normalizes payload", () => {
         place: "A-01",
         room: "ROOM-1",
         furniture_type: "chair",
-        listing_status: "listed",
         main_photo: "https://cdn.example.com/a.jpg",
         photo_count: 1,
         last_update: "2026-05-18T08:00:00Z"
