@@ -22,17 +22,15 @@ import {
 import { dedupeKidUploadFiles, validateKidUploadFiles } from "./kid-upload-validation";
 
 const ACCOUNT_EMPTY_VALUE = "__empty_account__";
-const LISTING_STATUS_EMPTY_VALUE = "__empty_listing_status__";
-
 const MAX_KID_NUMBER_LENGTH = 255;
 const MAX_PLACE_LENGTH = 255;
+const MAX_SECTION_LENGTH = 1;
 const MAX_ROOM_LENGTH = 128;
 const MAX_TYPE_LENGTH = 128;
 const MAX_COMPANY_LENGTH = 128;
 const MAX_COLOR_LENGTH = 128;
 const MAX_SIZE_LENGTH = 128;
 const MAX_MATERIAL_LENGTH = 128;
-const MAX_LISTING_STATUS_LENGTH = 16;
 
 type CreateKidFormState = {
   kidNumber: string;
@@ -42,9 +40,9 @@ type CreateKidFormState = {
   color: string;
   commentary: string;
   inTransit: boolean;
-  listingStatus: "" | "listed" | "unlisted";
   material: string;
   place: string;
+  section: string;
   price: string;
   quantity: string;
   room: string;
@@ -82,9 +80,9 @@ function createEmptyFormState(): CreateKidFormState {
     color: "",
     commentary: "",
     inTransit: false,
-    listingStatus: "",
     material: "",
     place: "",
+    section: "",
     price: "",
     quantity: "",
     room: "",
@@ -121,6 +119,10 @@ function validateForm(state: CreateKidFormState, t: Record<string, string>): Cre
     errors.place = t.createKidPlaceMax.replace("{max}", String(MAX_PLACE_LENGTH));
   }
 
+  if (state.section.trim().length > MAX_SECTION_LENGTH) {
+    errors.section = t.section;
+  }
+
   if (state.room.trim().length > MAX_ROOM_LENGTH) {
     errors.room = t.createKidRoomMax.replace("{max}", String(MAX_ROOM_LENGTH));
   }
@@ -151,10 +153,6 @@ function validateForm(state: CreateKidFormState, t: Record<string, string>): Cre
 
   if (state.quantity.trim().length > 0 && !/^\d+$/.test(state.quantity.trim())) {
     errors.quantity = t.createKidQuantityWhole;
-  }
-
-  if (state.listingStatus.trim().length > MAX_LISTING_STATUS_LENGTH) {
-    errors.listing_status = t.createKidListingStatusMax.replace("{max}", String(MAX_LISTING_STATUS_LENGTH));
   }
 
   return errors;
@@ -351,10 +349,10 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
         color: normalizeOptionalText(form.color),
         commentary: normalizeOptionalText(form.commentary),
         inTransit: form.inTransit,
-        listingStatus: form.listingStatus || null,
         store: form.store,
         material: normalizeOptionalText(form.material),
         place: normalizeOptionalText(form.place),
+        section: normalizeOptionalText(form.section),
         price: normalizeOptionalText(form.price),
         quantity: normalizeOptionalText(form.quantity),
         room: normalizeOptionalText(form.room),
@@ -549,37 +547,6 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                     </div>
 
                     <div className="xl:col-span-1">
-                      <CompactField label={t.createKidListingStatus} htmlFor="create-kid-listing-status" error={fieldErrors.listing_status}>
-                        <Select
-                          value={form.listingStatus || LISTING_STATUS_EMPTY_VALUE}
-                          onValueChange={(value) => {
-                            const nextValue = String(value || "");
-                            setForm((current) => ({
-                              ...current,
-                              listingStatus:
-                                nextValue === LISTING_STATUS_EMPTY_VALUE ? "" : (nextValue as CreateKidFormState["listingStatus"])
-                            }));
-                          }}
-                        >
-                          <SelectTrigger
-                            id="create-kid-listing-status"
-                            className="h-10 w-full min-w-0 rounded-[var(--radius-control)]"
-                            aria-invalid={fieldErrors.listing_status ? "true" : "false"}
-                          >
-                            <span className={`min-w-0 truncate text-left ${form.listingStatus ? "text-foreground" : "text-muted-foreground"}`}>
-                              {form.listingStatus || t.createKidSelectStatus}
-                            </span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={LISTING_STATUS_EMPTY_VALUE}>{t.notSelected}</SelectItem>
-                            <SelectItem value="listed">{t.listed}</SelectItem>
-                            <SelectItem value="unlisted">{t.unlisted}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </CompactField>
-                    </div>
-
-                    <div className="xl:col-span-1">
                       <CompactField label={t.place} htmlFor="create-kid-place" error={fieldErrors.place}>
                         <Input
                           id="create-kid-place"
@@ -591,6 +558,19 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                             setForm((current) => ({ ...current, place: event.target.value }));
                             setPlaceConflictDialog(null);
                           }}
+                        />
+                      </CompactField>
+                    </div>
+
+                    <div className="xl:col-span-1">
+                      <CompactField label={t.section} htmlFor="create-kid-section" error={fieldErrors.section}>
+                        <Input
+                          id="create-kid-section"
+                          className="h-10 rounded-[var(--radius-control)]"
+                          value={form.section}
+                          maxLength={MAX_SECTION_LENGTH}
+                          aria-invalid={fieldErrors.section ? "true" : "false"}
+                          onChange={(event) => setForm((current) => ({ ...current, section: event.target.value.toUpperCase() }))}
                         />
                       </CompactField>
                     </div>
@@ -647,21 +627,25 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
                       </CompactField>
                     </div>
 
-                    <StatusFlagField
-                      label={t.bWare}
-                      checked={form.bWare}
-                      onCheckedChange={(checked) => setForm((current) => ({ ...current, bWare: checked }))}
-                    />
-                    <StatusFlagField
-                      label={t.store}
-                      checked={form.store}
-                      onCheckedChange={(checked) => setForm((current) => ({ ...current, store: checked }))}
-                    />
-                    <StatusFlagField
-                      label={t.inTransit}
-                      checked={form.inTransit}
-                      onCheckedChange={(checked) => setForm((current) => ({ ...current, inTransit: checked }))}
-                    />
+                    <div className="md:col-span-2 xl:col-span-3">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <StatusFlagField
+                          label={t.bWare}
+                          checked={form.bWare}
+                          onCheckedChange={(checked) => setForm((current) => ({ ...current, bWare: checked }))}
+                        />
+                        <StatusFlagField
+                          label={t.store}
+                          checked={form.store}
+                          onCheckedChange={(checked) => setForm((current) => ({ ...current, store: checked }))}
+                        />
+                        <StatusFlagField
+                          label={t.inTransit}
+                          checked={form.inTransit}
+                          onCheckedChange={(checked) => setForm((current) => ({ ...current, inTransit: checked }))}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </SectionCard>
 

@@ -2270,7 +2270,14 @@ html[data-density="compact"] .ui-table-data-meta {
 
 .wh-sofort-page { display: flex; flex-direction: column; gap: 12px; }
 .wh-sofort-alert { border-radius: var(--wh-radius-card); }
-.wh-sofort-toolbar-card { padding: 12px; }
+.wh-sofort-toolbar-card {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+}
 .wh-sofort-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2303,7 +2310,7 @@ html[data-density="compact"] .ui-table-data-meta {
   padding-top: 2px;
 }
 .wh-sofort-toolbar__filter-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 .wh-sofort-filter-field {
@@ -2384,8 +2391,101 @@ html[data-density="compact"] .ui-table-data-meta {
 }
 .wh-sofort-table-card [data-slot="card-content"] { min-height: 320px; }
 .wh-sofort-table-card .wh-section-card__body--center { min-height: 260px; }
-.wh-sofort-table-body { display: flex; flex-direction: column; gap: 0; }
+.wh-sofort-table-body { display: flex; flex-direction: column; gap: 8px; }
 .wh-sofort-table-shell { display: flex; flex-direction: column; gap: 0; }
+.wh-sofort-mobile-list { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.wh-sofort-mobile-list__toolbar { display: flex; justify-content: flex-start; }
+.wh-sofort-mobile-list__select-all { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #64748b; }
+.wh-sofort-mobile-list__items { display: flex; flex-direction: column; gap: 12px; }
+.wh-sofort-mobile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 12px 28px -28px rgba(15, 23, 42, 0.28);
+}
+.wh-sofort-mobile-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wh-sofort-mobile-card__checkbox { display: inline-flex; padding-top: 4px; }
+.wh-sofort-mobile-card__place { display: flex; flex: 1; flex-direction: column; align-items: flex-end; gap: 6px; }
+.wh-sofort-mobile-card__main {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.wh-sofort-mobile-card__image-wrap { display: flex; justify-content: center; }
+.wh-sofort-mobile-card__content { display: flex; min-width: 0; flex-direction: column; gap: 10px; }
+.wh-sofort-mobile-card__section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 10px 12px;
+}
+.wh-sofort-mobile-card__title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #0f172a;
+}
+.wh-sofort-mobile-card__title span { color: #64748b; font-weight: 600; }
+.wh-sofort-mobile-card__meta,
+.wh-sofort-mobile-card__commentary {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #0f172a;
+}
+.wh-sofort-mobile-card__meta span { color: #64748b; font-weight: 600; }
+.wh-sofort-mobile-card__commentary { color: #475569; }
+.wh-sofort-mobile-card__section--summary {
+  display: grid;
+  gap: 8px;
+}
+.wh-sofort-mobile-card__section--attributes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.wh-sofort-mobile-card__section--attributes .wh-sofort-mobile-card__meta {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+.wh-sofort-mobile-card__section--summary .wh-sofort-mobile-card__meta,
+.wh-sofort-mobile-card__section--commentary .wh-sofort-mobile-card__commentary {
+  font-size: 14px;
+}
+.wh-sofort-mobile-card__section--marketplace {
+  padding-top: 12px;
+}
+.wh-sofort-mobile-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.wh-sofort-mobile-card__actions .wh-button,
+.wh-sofort-mobile-card__actions > a {
+  width: 100%;
+  justify-content: center;
+}
 .wh-sofort-table-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wh-space-3); }
 .wh-sofort-table-meta__title { margin: 0; font-size: 13px; font-weight: 600; color: #0f172a; }
 .wh-sofort-table-meta__count { border-color: #e2e8f0; background: #f8fafc; color: #334155; }
@@ -2489,12 +2589,12 @@ html[data-density="compact"] .ui-table-data-meta {
 }
 .wh-sofort-place-cell__value {
   display: inline-flex;
-  min-width: 88px;
   align-items: center;
   justify-content: center;
   border-radius: 14px;
   border: 1px solid #dbe4ee;
   background: #f8fafc;
+  min-width: 88px;
   padding: 12px 14px;
   font-size: 18px;
   font-weight: 700;
@@ -2601,6 +2701,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   background: rgba(2, 6, 23, 0.82);
 }
 .wh-sofort-photo-viewer__content {
+  position: relative;
   max-width: min(96vw, 1800px);
   max-height: 92vh;
 }
@@ -2612,6 +2713,37 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   object-fit: contain;
   border-radius: 16px;
   box-shadow: 0 24px 56px rgba(15, 23, 42, 0.5);
+}
+.wh-sofort-photo-viewer__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(203, 213, 225, 0.85);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  transform: translateY(-50%);
+}
+.wh-sofort-photo-viewer__nav--prev { left: 16px; }
+.wh-sofort-photo-viewer__nav--next { right: 16px; }
+.wh-sofort-photo-viewer__counter {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 2;
+  transform: translateX(-50%);
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
 }
 .wh-sofort-photo-viewer__close {
   position: fixed;
@@ -3357,6 +3489,101 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   }
 }
 
+@media (min-width: 1280px) and (max-width: 1535px) {
+  .wh-page-content { padding: 10px; }
+  .wh-sofort-toolbar-card { padding: 10px; }
+  .wh-sofort-toolbar__top { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+  .wh-sofort-toolbar__actions { gap: 6px; }
+  .wh-sofort-toolbar__actions .wh-button { min-width: 0; padding-inline: 12px; }
+  .wh-sofort-col--place { width: 88px; }
+  .wh-sofort-col--image { width: 118px; }
+  .wh-sofort-col--product { width: 132px; }
+  .wh-sofort-col--attributes { width: 172px; }
+  .wh-sofort-col--commentary { width: 120px; }
+  .wh-sofort-col--price { width: 84px; }
+  .wh-sofort-col--marketplace { width: 214px; }
+  .wh-sofort-col--actions { width: 144px; }
+  .wh-sofort-cell { padding-inline: 8px !important; }
+  .wh-sofort-data-table th { font-size: 11px; letter-spacing: 0.06em; }
+  .wh-sofort-data-table .ui-table-row td {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    font-size: 11.5px;
+  }
+  .wh-sofort-table-row { min-height: 180px; }
+  .wh-sofort-photo,
+  .wh-sofort-photo-placeholder,
+  .wh-sofort-product-cell__image {
+    width: 116px;
+    height: 116px;
+    border-radius: 14px;
+  }
+  .wh-sofort-product-cell,
+  .wh-sofort-warehouse-cell,
+  .wh-sofort-commentary-cell,
+  .wh-sofort-price-ean-cell {
+    min-height: 116px;
+  }
+  .wh-sofort-product-cell { gap: 8px; justify-content: flex-start; }
+  .wh-sofort-product-cell__content {
+    max-width: none;
+    gap: 4px;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .wh-sofort-product-cell__title,
+  .wh-sofort-product-cell__meta,
+  .wh-sofort-kid-link span {
+    font-size: 11.5px;
+    line-height: 1.3;
+  }
+  .wh-sofort-place-cell__value {
+    min-width: 78px;
+    padding: 10px 12px;
+    font-size: 16px;
+  }
+  .wh-sofort-place-cell__location {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .wh-sofort-warehouse-cell {
+    gap: 6px;
+    justify-content: flex-start;
+    padding-top: 4px;
+  }
+  .wh-sofort-warehouse-cell__line {
+    grid-template-columns: 60px minmax(0, 1fr);
+    column-gap: 6px;
+    font-size: 11.5px;
+  }
+  .wh-sofort-commentary-cell { align-items: flex-start; padding-top: 4px; }
+  .wh-sofort-commentary-text {
+    font-size: 11.5px;
+    line-height: 1.35;
+    -webkit-line-clamp: 5;
+    max-height: calc(1.35em * 5);
+  }
+  .wh-sofort-price-ean-cell { justify-content: flex-start; padding-top: 4px; }
+  .wh-sofort-row-actions { gap: 6px; }
+  .wh-sofort-row-actions .wh-button {
+    min-width: 0;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+  .wh-sofort-marketplace-matrix__head,
+  .wh-sofort-marketplace-matrix__row {
+    grid-template-columns: 48px repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .wh-sofort-marketplace-matrix { gap: 6px; }
+  .wh-sofort-marketplace-matrix__market,
+  .wh-sofort-marketplace-matrix__row code {
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 1199px) {
   .wh-dashboard__main-grid, .wh-dashboard__bottom-grid { grid-template-columns: minmax(0, 1fr); }
   .wh-dashboard__side-column,
@@ -3389,6 +3616,11 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
     gap: 6px;
   }
   .wh-inventory-shell { min-height: calc(100dvh - 150px); }
+  .wh-sofort-mobile-card__main { grid-template-columns: 120px minmax(0, 1fr); }
+  .wh-sofort-product-cell__image,
+  .wh-sofort-photo,
+  .wh-sofort-photo-placeholder { width: 120px; height: 120px; }
+  .wh-sofort-mobile-card__section--attributes { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 639px) {
   .wh-app-shell { display: block; }
@@ -3407,6 +3639,18 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   .wh-sofort-toolbar__actions > * { width: 100%; }
   .wh-app-header__subtitle { display: none; }
   .wh-sofort-loading__row { grid-template-columns: 24px 64px 48px minmax(120px, 1fr); }
+  .wh-sofort-toolbar-card { top: 8px; padding: 10px; }
+  .wh-sofort-mobile-list { padding: 10px; }
+  .wh-sofort-mobile-card { padding: 12px; border-radius: 16px; }
+  .wh-sofort-mobile-card__top { align-items: center; }
+  .wh-sofort-mobile-card__place { align-items: flex-start; }
+  .wh-sofort-mobile-card__main { grid-template-columns: minmax(0, 1fr); }
+  .wh-sofort-mobile-card__image-wrap { justify-content: flex-start; }
+  .wh-sofort-mobile-card__actions { grid-template-columns: minmax(0, 1fr); }
+  .wh-sofort-mobile-card__section--attributes .wh-sofort-mobile-card__meta { grid-template-columns: minmax(68px, auto) minmax(0, 1fr); }
+  .wh-sofort-mobile-card__title { font-size: 14px; }
+  .wh-sofort-mobile-card__meta,
+  .wh-sofort-mobile-card__commentary { font-size: 13px; }
 }
 
 

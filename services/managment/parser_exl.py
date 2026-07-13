@@ -21,16 +21,6 @@ OUTPUT_PATH = Path(__file__).with_name("kid_green.txt")
 JSON_OUTPUT_PATH = Path(__file__).with_name("kid_green.json")
 IMAGES_OUTPUT_DIR = Path(__file__).with_name("kid_green_images")
 
-# Known status colors in column P
-GREEN_COLORS = {
-    "FF6AA84F",
-    "FF34A853",
-    "FF00FF00",
-}
-RED_COLORS = {
-    "FFFF0000",
-    "FFCC0000",
-}
 DROP_WORDS = (
     "Выставить!!!",
     "Продано!!!",
@@ -435,20 +425,6 @@ def _extract_used_images_for_entries(
     return created_files
 
 
-def _listing_status_from_colors(colors: set[str]) -> str:
-    if not colors:
-        return ""
-
-    has_green = any(color in GREEN_COLORS for color in colors)
-    has_red = any(color in RED_COLORS for color in colors)
-
-    if has_green and not has_red:
-        return "listed"
-    if has_red and not has_green:
-        return "unlisted"
-    return ""
-
-
 def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     style_colors = {}
@@ -457,7 +433,7 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
 
     # A=place, C=company, D=Kid.room, E=kid, F=Ean.ebay_xl, H=Ean.jv,
     # J=Ean.otto_jv, L=Ean.otto_xl, N=ProductAttributes.quantity,
-    # R=commentary, S=comment2, T=listing_status
+    # R=commentary, S=comment2
     for row_number, row in _iter_active_sheet_rows(excel_path, max_col=20):
         if row_number < 2:
             continue
@@ -473,15 +449,11 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
         quantity_cell = row[13]
         commentary_cell = row[17]
         comment2_cell = row[18]
-        status_cell = row[19]
-
         kid = _normalize_kid(kid_cell["value"]) or _cell_to_text(kid_cell["value"])
         kid_store = _contains_store(place_cell["value"])
         kid_b_ware = _contains_b_ware(
             cell["value"] for cell in row
         )
-
-        status_colors = style_colors.get(status_cell["style_id"], set())
 
         result.append(
             {
@@ -498,7 +470,6 @@ def collect_kid_entries(excel_path: Path) -> list[dict[str, object]]:
                 "ProductAttributes.quantity": _cell_to_text(quantity_cell["value"]),
                 "commentary": _cell_to_text(commentary_cell["value"]),
                 "comment2": _cell_to_text(comment2_cell["value"]),
-                "listing_status": _listing_status_from_colors(status_colors),
             }
         )
 

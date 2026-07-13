@@ -34,25 +34,3 @@ test("login page performance budget", async ({ page }) => {
   expect(metrics.domContentLoadedMs, `DCL too high for ${metrics.url}`).toBeLessThan(3500);
   expect(metrics.loadEventMs, `Load event too high for ${metrics.url}`).toBeLessThan(6000);
 });
-
-test("sofort-list filter interaction budget", async ({ page }) => {
-  await login(page);
-  await page.goto("/sofort-list");
-  await expect(page).toHaveURL(/\/sofort-list/);
-
-  const listingFilter = page.getByLabel("Filter by listing status");
-  await expect(listingFilter).toBeVisible();
-
-  const requestPromise = page.waitForRequest((request) => {
-    if (!request.url().includes("/inventory/rows/")) return false;
-    const url = new URL(request.url());
-    return url.searchParams.get("listing") === "listed";
-  }, { timeout: 8000 });
-
-  const startedAt = Date.now();
-  await listingFilter.selectOption("listed");
-  await requestPromise;
-  const interactionMs = Date.now() - startedAt;
-
-  expect(interactionMs, "Sofort-list filter interaction is too slow").toBeLessThan(3000);
-});

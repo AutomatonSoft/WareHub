@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Ean, Kid, Orders, ProductAttributes
+from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 
 
 class KidDeleteTests(APITestCase):
@@ -14,6 +14,7 @@ class KidDeleteTests(APITestCase):
         self.set_session_role("admin")
         kid = Kid.objects.create(kid_number="KID-DEL-001")
         Ean.objects.create(kid=kid, main_ean="1234567890123")
+        EanStatus.objects.create(kid=kid, jv=True)
         Orders.objects.create(kid=kid, order_id="ORDER-DEL-001", title="Delete me")
         ProductAttributes.objects.create(kid=kid, quantity=2)
 
@@ -22,6 +23,7 @@ class KidDeleteTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Kid.objects.filter(id=kid.id).exists())
         self.assertFalse(Ean.objects.filter(kid_id=kid.id).exists())
+        self.assertFalse(EanStatus.objects.filter(ean_id=kid.id).exists())
         self.assertFalse(Orders.objects.filter(kid_id=kid.id).exists())
         self.assertFalse(ProductAttributes.objects.filter(kid_id=kid.id).exists())
 

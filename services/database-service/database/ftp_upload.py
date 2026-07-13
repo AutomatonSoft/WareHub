@@ -140,7 +140,11 @@ def _ensure_config(*, leaf_dir: str) -> tuple[str, int, str, str, list[str], str
         UPLOAD_FTP_USER,
         UPLOAD_FTP_PASS,
         remote_parts,
-        UPLOAD_FTP_PUBLIC_BASE_URL,
+        _normalize_managed_public_base_url(
+            UPLOAD_FTP_PUBLIC_BASE_URL,
+            storage_root_dir=UPLOAD_FTP_STORAGE_ROOT_DIR,
+            root_dir=UPLOAD_FTP_ROOT_DIR,
+        ),
         final_dir,
     )
 
@@ -286,6 +290,77 @@ def _build_public_url(public_base: str, leaf_dir: str, filename: str) -> str:
     leaf_parts = [p for p in leaf_dir.split("/") if p]
     final_path = "/" + "/".join(base_parts + leaf_parts + [filename])
     return urlunparse((parsed.scheme, parsed.netloc, final_path, "", "", ""))
+
+
+def _split_clean_path_parts(value: str) -> list[str]:
+    return [part for part in str(value or "").strip().strip("/").split("/") if part]
+
+
+def _normalize_managed_public_base_url(public_base: str, *, storage_root_dir: str, root_dir: str) -> str:
+    value = str(public_base or "").strip().rstrip("/")
+    if not value:
+        return value
+
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value
+
+    preferred_parts = _split_clean_path_parts(storage_root_dir) or _split_clean_path_parts(root_dir)
+    if not preferred_parts:
+        return value
+
+    if preferred_parts[0].lower() == parsed.netloc.lower():
+        preferred_parts = preferred_parts[1:]
+    if not preferred_parts:
+        return value
+
+    normalized_path = "/" + "/".join(preferred_parts)
+    return urlunparse((parsed.scheme, parsed.netloc, normalized_path, "", "", ""))
+
+
+def normalize_managed_public_photo_url(photo_url: str) -> str:
+    value = str(photo_url or "").strip()
+    if not value:
+        return ""
+
+    expected_base = _normalize_managed_public_base_url(
+        UPLOAD_FTP_PUBLIC_BASE_URL,
+        storage_root_dir=UPLOAD_FTP_STORAGE_ROOT_DIR,
+        root_dir=UPLOAD_FTP_ROOT_DIR,
+    )
+    if not expected_base:
+        return value
+
+    current = urlparse(value)
+    expected = urlparse(expected_base)
+    if not current.scheme or not current.netloc:
+        return value
+    if current.scheme != expected.scheme or current.netloc.lower() != expected.netloc.lower():
+        return value
+
+    current_parts = [part for part in (current.path or "").split("/") if part]
+    expected_parts = [part for part in (expected.path or "").split("/") if part]
+    if len(current_parts) < 2 or len(expected_parts) < 2:
+        return value
+    if current_parts[: len(expected_parts)] == expected_parts:
+        return value
+    if current_parts[0] != expected_parts[0]:
+        return value
+
+    env_names = {"dev", "stage", "prod"}
+    if current_parts[1] not in env_names or expected_parts[1] not in env_names:
+        return value
+
+    normalized_path = "/" + "/".join(expected_parts[:2] + current_parts[2:])
+    return urlunparse((current.scheme, current.netloc, normalized_path, current.params, current.query, current.fragment))
+
+
+def normalize_managed_public_photo_value(value: object) -> object:
+    if isinstance(value, list):
+        return [normalize_managed_public_photo_url(str(item or "").strip()) for item in value if str(item or "").strip()]
+    if isinstance(value, str):
+        return normalize_managed_public_photo_url(value)
+    return value
 
 
 def _build_open_cart_image_path(leaf_dir: str, filename: str) -> str:

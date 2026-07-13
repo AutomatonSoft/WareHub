@@ -15,7 +15,6 @@ export type KidDto = {
   quantity?: number | null;
   room?: string | null;
   type?: string | null;
-  listing_status?: "listed" | "unlisted" | string;
   sku?: string | null;
   title: string;
   memo?: string | null;

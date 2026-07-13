@@ -5,6 +5,7 @@ from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
+from .ftp_upload import normalize_managed_public_photo_value
 from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
@@ -306,10 +307,11 @@ def build_inventory_rows() -> list[dict]:
                 "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,
+                "section": kid.section,
                 "b_ware": bool(kid.b_ware),
                 "in_transit": bool(kid.in_transit),
                 "store": bool(kid.store),
-                "photo": kid.photo,
+                "photo": normalize_managed_public_photo_value(kid.photo),
                 "photo_count": len(kid.photo or []) if isinstance(kid.photo, list) else 0,
                 "order_db_id": order_db_id,
                 "order_id": parent_order_ids[0] if parent_order_ids else "-",
@@ -343,7 +345,6 @@ def build_inventory_rows() -> list[dict]:
                 "room": kid.room,
                 "type": kid.furniture_type,
                 "commentary": kid.commentary,
-                "listing_status": kid.listing_status or "unlisted",
                 "title": _join_unique_text(titles, empty=primary_kid or "Kid without orders"),
                 "memo": _join_unique_text(memos, empty=(kid.commentary or "-")),
                 "sku": _join_unique_text(skus),
@@ -401,7 +402,6 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "place": "",
         "room": "",
         "furniture_type": "",
-        "listing_status": "unlisted",
         "store": False,
         "main_ean": "",
         "database_ean": "",
@@ -449,7 +449,6 @@ def build_kid_ean_summary(kid_id: int) -> dict:
             "place": str(base_row.get("place") or "").strip(),
             "room": str(base_row.get("room") or "").strip(),
             "furniture_type": str(base_row.get("type") or "").strip(),
-            "listing_status": str(base_row.get("listing_status") or "unlisted").strip(),
             "store": bool(base_row.get("store")),
             "main_ean": _norm_ean(base_row.get("main_ean") or base_row.get("database_ean") or base_row.get("ean")),
             "database_ean": _norm_ean(base_row.get("database_ean") or base_row.get("main_ean") or base_row.get("ean")),
@@ -462,7 +461,6 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "missing_place": not bool(kid_snapshot.get("place")),
         "missing_room": not bool(kid_snapshot.get("room")),
         "missing_photo": int(kid_snapshot.get("photo_count") or 0) == 0,
-        "listed": str(kid_snapshot.get("listing_status") or "").lower() == "listed",
     }
 
     return {

@@ -10,6 +10,8 @@ import { syncDatabaseServiceSession } from "../../app/services-session";
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
 export type InventoryFilterOptions = {
   places: string[];
+  available_places?: string[];
+  sections: string[];
   locations: Array<"warehouse" | "store">;
   quantities: string[];
   rooms: string[];
@@ -44,11 +46,11 @@ export type CreateKidFieldErrors = Partial<
     | "b_ware"
     | "commentary"
     | "in_transit"
-    | "listing_status"
     | "store"
     | "photo"
     | "photo_files"
     | "place"
+    | "section"
     | "room"
     | "type"
     | "quantity"
@@ -139,11 +141,11 @@ function parseKidRequestErrorPayload(payload: unknown): {
         rawKey === "b_ware" ||
         rawKey === "commentary" ||
         rawKey === "in_transit" ||
-        rawKey === "listing_status" ||
         rawKey === "store" ||
         rawKey === "photo" ||
         rawKey === "photo_files" ||
         rawKey === "place" ||
+        rawKey === "section" ||
         rawKey === "room" ||
         rawKey === "type" ||
         rawKey === "quantity" ||
@@ -331,6 +333,7 @@ export async function fetchInventoryRows(params: {
   pageSize: number;
   q?: string;
   place?: string;
+  section?: string;
   location?: "warehouse" | "store";
   quantity?: string;
   placeSort?: "asc" | "desc";
@@ -339,7 +342,6 @@ export async function fetchInventoryRows(params: {
   company?: string;
   color?: string;
   material?: string;
-  listing?: "listed" | "unlisted";
   bWare?: boolean;
   inTransit?: boolean;
   sort?: "place" | "quantity";
@@ -353,6 +355,9 @@ export async function fetchInventoryRows(params: {
   }
   if (params.place?.trim()) {
     searchParams.set("place", params.place.trim());
+  }
+  if (params.section?.trim()) {
+    searchParams.set("section", params.section.trim());
   }
   if (params.location === "warehouse" || params.location === "store") {
     searchParams.set("location", params.location);
@@ -377,9 +382,6 @@ export async function fetchInventoryRows(params: {
   }
   if (params.material?.trim()) {
     searchParams.set("material", params.material.trim());
-  }
-  if (params.listing === "listed" || params.listing === "unlisted") {
-    searchParams.set("listing", params.listing);
   }
   if (params.bWare) {
     searchParams.set("b_ware", "true");
@@ -617,10 +619,10 @@ export type KidDetailsModel = {
   kidNumber: string;
   account: "JV" | "XL" | "CH" | "" | null;
   place: string;
+  section: string;
   photoUrls: string[];
   room: string;
   furnitureType: string;
-  listingStatus: "listed" | "unlisted";
   bWare: boolean;
   store: boolean;
   commentary: string;
@@ -647,7 +649,6 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
   const photoUrls = Array.isArray(photoRaw)
     ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
-  const listingStatus = String(payload.listing_status || "").trim().toLowerCase() === "listed" ? "listed" : "unlisted";
   const account = typeof payload.account === "string" && payload.account.trim() ? (payload.account.trim().toUpperCase() as "JV" | "XL" | "CH") : null;
 
   return {
@@ -655,10 +656,10 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
     kidNumber: String(payload.kid_number || "").trim(),
     account: account ?? "",
     place: String(payload.place || "").trim(),
+    section: String(payload.section || "").trim(),
     photoUrls,
     room: String(payload.room || "").trim(),
     furnitureType: String(payload.furniture_type || "").trim(),
-    listingStatus,
     bWare: payload.b_ware === true,
     store: payload.store === true,
     commentary: String(payload.commentary || "").trim(),
@@ -671,10 +672,10 @@ export async function patchKidDetails(params: {
   kidNumber: string;
   account: "JV" | "XL" | "CH" | "" | null;
   place: string;
+  section: string;
   photoUrls: string[];
   room: string;
   furnitureType: string;
-  listingStatus: "listed" | "unlisted";
   bWare: boolean;
   store: boolean;
   commentary: string;
@@ -684,10 +685,10 @@ export async function patchKidDetails(params: {
     kid_number: params.kidNumber.trim(),
     account: params.account ? params.account : null,
     place: params.place.trim() || null,
+    section: params.section.trim() || null,
     photo: params.photoUrls,
     room: params.room.trim() || null,
     furniture_type: params.furnitureType.trim() || null,
-    listing_status: params.listingStatus,
     b_ware: params.bWare,
     store: params.store,
     commentary: params.commentary.trim() || null,
@@ -724,10 +725,10 @@ export async function createKidItem(params: {
   color?: string | null;
   commentary?: string | null;
   inTransit?: boolean;
-  listingStatus?: "listed" | "unlisted" | string | null;
   store?: boolean;
   material?: string | null;
   place?: string | null;
+  section?: string | null;
   price?: string | null;
   quantity?: string | null;
   room?: string | null;
@@ -743,9 +744,9 @@ export async function createKidItem(params: {
     ...(params.company?.trim() ? { company: params.company.trim() } : {}),
     ...(params.color?.trim() ? { color: params.color.trim() } : {}),
     ...(params.commentary?.trim() ? { commentary: params.commentary.trim() } : {}),
-    ...(params.listingStatus?.trim() ? { listing_status: params.listingStatus.trim() } : {}),
     ...(params.material?.trim() ? { material: params.material.trim() } : {}),
     ...(params.place?.trim() ? { place: params.place.trim() } : {}),
+    ...(params.section?.trim() ? { section: params.section.trim() } : {}),
     ...(params.price?.trim() ? { price: params.price.trim() } : {}),
     ...(params.quantity?.trim() ? { quantity: params.quantity.trim() } : {}),
     ...(params.room?.trim() ? { room: params.room.trim() } : {}),
@@ -816,7 +817,6 @@ export async function bulkUpdateKids(params: {
     material?: string;
     price?: string;
     currency?: string;
-    listingStatus?: "listed" | "unlisted";
   }>;
 }): Promise<number> {
   const payload = {
@@ -830,8 +830,7 @@ export async function bulkUpdateKids(params: {
       size: item.size,
       material: item.material,
       price: item.price,
-      currency: item.currency,
-      listing_status: item.listingStatus
+      currency: item.currency
     }))
   };
   const response = await apiFetch(`${getServicesApiBase()}/kids/bulk-update/`, {

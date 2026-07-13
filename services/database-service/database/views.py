@@ -26,11 +26,12 @@ import urllib.request
 from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
-from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .models import EANPool, EANUsage, Ean, EanStatus, Kid, Orders, ProductAttributes
 from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_rows, build_kid_ean_summary
 from .place_rules import (
     find_place_conflict,
+    list_available_pool_places,
     normalize_place,
     parse_pool_place,
     suggest_nearest_free_place,
@@ -46,6 +47,7 @@ from .ftp_upload import (
     FtpUploadCorruptedFileError,
     collect_uploaded_files,
     delete_uploaded_photo_urls,
+    normalize_managed_public_photo_value,
     upload_kid_photo_file,
     upload_jv_product_file_for_site,
     upload_public_file,
@@ -78,6 +80,20 @@ from orders_pars.service import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
+    if not photo_urls:
+        return
+    try:
+        delete_uploaded_photo_urls(photo_urls)
+    except Exception:
+        logger.exception(
+            "KID_PHOTO_CLEANUP_FAILED context=%s kid_id=%s photo_count=%s",
+            context,
+            kid_id,
+            len(photo_urls),
+        )
 KID_GREEN_IMPORT_JOBS: dict[str, dict] = {}
 KID_GREEN_IMPORT_JOBS_LOCK = threading.Lock()
 
@@ -137,9 +153,13 @@ def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
 
 def _normalize_photo_list(value: object) -> list[str]:
     if isinstance(value, list):
-        return [str(item or "").strip() for item in value if str(item or "").strip()]
+        return [
+            str(normalize_managed_public_photo_value(str(item or "").strip()) or "").strip()
+            for item in value
+            if str(item or "").strip()
+        ]
     if isinstance(value, str):
-        text = value.strip()
+        text = str(normalize_managed_public_photo_value(value) or "").strip()
         return [text] if text else []
     return []
 
@@ -202,11 +222,11 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
         "kid_id": _normalize_search_text(row.get("kid_id")),
         "account": _normalize_search_text(row.get("kid_account")),
         "place": _normalize_search_text(row.get("place")),
+        "section": _normalize_search_text(row.get("section")),
         "location": location_value,
         "room": _normalize_search_text(row.get("room")),
         "type": _normalize_search_text(row.get("type")),
         "commentary": _normalize_search_text(row.get("commentary")),
-        "listing_status": _normalize_search_text(row.get("listing_status")),
         "quantity": _normalize_search_text(row.get("quantity")),
         "company": _normalize_search_text(row.get("company")),
         "color": _normalize_search_text(row.get("color")),
@@ -293,9 +313,6 @@ def _sort_inventory_rows_by_place(rows: list[dict], descending: bool = False) ->
 
 
 INVENTORY_QUERY_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("listing status", "listing_status"),
-    ("listing", "listing_status"),
-    ("status", "listing_status"),
     ("kid number", "kid_number"),
     ("kid id", "kid_id"),
     ("kid", "kid"),
@@ -1095,7 +1112,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             )
 
         update_fields = []
-        for field in ("account", "place", "photo", "room", "furniture_type", "listing_status", "commentary", "b_ware", "store", "in_transit"):
+        for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit"):
             if field in validated:
                 next_value = validated.get(field)
                 if getattr(existing, field) != next_value:
@@ -1149,7 +1166,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         with transaction.atomic():
             self.perform_update(serializer)
             if removed_photos:
-                delete_uploaded_photo_urls(removed_photos)
+                _delete_uploaded_photo_urls_safe(removed_photos, context="kid_partial_update", kid_id=instance.id)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1158,8 +1175,9 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         with transaction.atomic():
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
-                delete_uploaded_photo_urls(photo_urls)
+                _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
             Ean.objects.filter(kid_id=instance.id).delete()
+            EanStatus.objects.filter(ean_id=instance.id).delete()
             Orders.objects.filter(kid_id=instance.id).delete()
             ProductAttributes.objects.filter(kid_id=instance.id).delete()
             with default_connection.cursor() as cursor:
@@ -1282,7 +1300,7 @@ class KidCompositeUpdateAPIView(APIView):
                 updated_orders.append(order_serializer.save())
 
             if removed_photos:
-                delete_uploaded_photo_urls(removed_photos)
+                _delete_uploaded_photo_urls_safe(removed_photos, context="kid_composite_update", kid_id=kid.id)
 
         kid.refresh_from_db()
         response_orders = list(Orders.objects.filter(kid=kid, pk__in=[order.id for order in updated_orders]).order_by("id"))
@@ -1738,6 +1756,7 @@ class InventoryRowsAPIView(APIView):
 
         query_raw = str(request.query_params.get("q") or "").strip().lower()
         place_raw = str(request.query_params.get("place") or "").strip()
+        section_raw = str(request.query_params.get("section") or "").strip()
         location_raw = str(request.query_params.get("location") or "").strip().lower()
         quantity_raw = str(request.query_params.get("quantity") or "").strip()
         room_raw = str(request.query_params.get("room") or "").strip().lower()
@@ -1745,12 +1764,14 @@ class InventoryRowsAPIView(APIView):
         company_raw = str(request.query_params.get("company") or "").strip()
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
-        listing_raw = str(request.query_params.get("listing") or "").strip().lower()
         b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
         in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
             rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "place", place_raw)]
+
+        if section_raw:
+            rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "section", section_raw)]
 
         if location_raw in {"warehouse", "store"}:
             rows = [row for row in rows if _inventory_row_text_filter_value(row, "location") == location_raw]
@@ -1772,13 +1793,6 @@ class InventoryRowsAPIView(APIView):
 
         if material_raw:
             rows = [row for row in rows if _inventory_row_matches_text_filter(row, "material", material_raw)]
-
-        if listing_raw in {"listed", "unlisted"}:
-            rows = [
-                row
-                for row in rows
-                if str(row.get("listing_status") or "unlisted").strip().lower() == listing_raw
-            ]
 
         if b_ware_raw == "true":
             rows = [row for row in rows if row.get("b_ware") is True]
@@ -1861,6 +1875,8 @@ class InventoryFilterOptionsAPIView(APIView):
 
         payload = {
             "places": _inventory_filter_option_values(rows, "place"),
+            "available_places": list_available_pool_places(limit=250),
+            "sections": _inventory_filter_option_values(rows, "section"),
             "locations": sorted({_inventory_row_text_filter_value(row, "location") for row in rows if _inventory_row_text_filter_value(row, "location")}),
             "quantities": _inventory_filter_quantity_values(rows),
             "rooms": _inventory_filter_option_values(rows, "room"),
@@ -1884,7 +1900,6 @@ class KidsBulkUpdateAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        allowed_listing = {"listed", "unlisted"}
         kid_ids: set[int] = set()
         normalized_updates: list[dict] = []
 
@@ -1903,14 +1918,6 @@ class KidsBulkUpdateAPIView(APIView):
                 patch_data["room"] = str(raw.get("room") or "").strip()
             if "type" in raw:
                 patch_data["furniture_type"] = str(raw.get("type") or "").strip()
-            if "listing_status" in raw:
-                listing_status = str(raw.get("listing_status") or "").strip().lower()
-                if listing_status not in allowed_listing:
-                    return Response(
-                        {"detail": "listing_status must be 'listed' or 'unlisted'."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                patch_data["listing_status"] = listing_status
             if "color" in raw:
                 patch_data["color"] = str(raw.get("color") or "").strip()
             if "company" in raw:
@@ -1966,9 +1973,6 @@ class KidsBulkUpdateAPIView(APIView):
                 if "room" in patch_data and kid.room != patch_data["room"]:
                     kid.room = patch_data["room"]
                     update_fields.append("room")
-                if "listing_status" in patch_data and kid.listing_status != patch_data["listing_status"]:
-                    kid.listing_status = patch_data["listing_status"]
-                    update_fields.append("listing_status")
                 if "furniture_type" in patch_data and kid.furniture_type != patch_data["furniture_type"]:
                     kid.furniture_type = patch_data["furniture_type"]
                     update_fields.append("furniture_type")
