@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'app_settings.dart';
+import 'app_bootstrap_screen.dart';
 import 'app_theme.dart';
 import 'auth_screen.dart';
 import 'mobile_logging.dart';
@@ -115,7 +116,7 @@ class QrOnlyApp extends StatelessWidget {
             '/login': (_) => const AuthScreen(),
             '/home': (_) => const QrHomePage(),
           },
-          home: const AuthScreen(),
+          home: const AppBootstrapScreen(),
         );
       },
     );

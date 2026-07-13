@@ -12,6 +12,7 @@ IntakeData _item({
 }) {
   return IntakeData(
     id: id,
+    databaseKidId: 0,
     qrCode: 'Q-$id',
     warehouseLocation: location,
     kidNumber: 'KID-$id',
@@ -23,6 +24,8 @@ IntakeData _item({
     boxTotal: 1,
     unitIndex: 1,
     isBWare: false,
+    store: false,
+    inTransit: false,
     bWareComment: null,
     createdAt: '2026-01-01T00:00:00Z',
     isRemoved: isRemoved,

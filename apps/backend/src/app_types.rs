@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
-use crate::service_logs::InMemoryLogs;
+use crate::{database_kid_sync::DatabaseKidSyncConfig, service_logs::InMemoryLogs};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -13,6 +13,8 @@ pub(crate) struct AppState {
     pub(crate) db: PgPool,
     pub(crate) intake_events: broadcast::Sender<IntakeEventMessage>,
     pub(crate) logs: Arc<RwLock<InMemoryLogs>>,
+    pub(crate) http_client: reqwest::Client,
+    pub(crate) database_kid_sync: Option<DatabaseKidSyncConfig>,
 }
 
 #[derive(Serialize)]
@@ -38,6 +40,8 @@ pub(crate) struct CreateIntakeRequest {
     pub(crate) photo_url: Option<String>,
     pub(crate) product_key: Option<String>,
     pub(crate) product_color: Option<String>,
+    pub(crate) store: Option<bool>,
+    pub(crate) in_transit: Option<bool>,
     pub(crate) category_main: Option<String>,
     pub(crate) category_sub: Option<String>,
     pub(crate) is_b_ware: Option<bool>,

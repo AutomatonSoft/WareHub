@@ -303,6 +303,30 @@ async fn new_request_id_uses_request_context_when_available() {
 }
 
 #[tokio::test]
+async fn backend_root_redirects_to_scalar_docs() {
+    let app = build_app(test_app_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .body(Body::empty())
+                .expect("must build request"),
+        )
+        .await
+        .expect("request must complete");
+
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        response
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok()),
+        Some("/api/v1/scalar")
+    );
+}
+
+#[tokio::test]
 async fn logs_endpoint_requires_authorization() {
     let db = lazy_test_db_pool();
     let (tx, _) = broadcast::channel(8);
@@ -311,6 +335,8 @@ async fn logs_endpoint_requires_authorization() {
         db,
         intake_events: tx,
         logs: Arc::new(RwLock::new(InMemoryLogs::default())),
+        http_client: reqwest::Client::new(),
+        database_kid_sync: None,
     };
     let app = build_app(state);
 
@@ -403,5 +429,7 @@ fn test_app_state() -> AppState {
         db,
         intake_events: tx,
         logs: Arc::new(RwLock::new(InMemoryLogs::default())),
+        http_client: reqwest::Client::new(),
+        database_kid_sync: None,
     }
 }

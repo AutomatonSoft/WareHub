@@ -5,14 +5,12 @@ class _ScanSourceOption {
     required this.value,
     required this.title,
     required this.icon,
-    required this.accent,
     this.emphasized = false,
   });
 
   final String value;
   final String title;
   final IconData icon;
-  final Color accent;
   final bool emphasized;
 }
 

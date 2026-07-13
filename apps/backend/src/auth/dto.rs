@@ -89,8 +89,16 @@ pub(crate) struct AuthUserResponse {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct LoginResponse {
+    pub access_token: String,
     pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
     pub user: AuthUserResponse,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RefreshTokenRequest {
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

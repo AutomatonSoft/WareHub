@@ -85,12 +85,16 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
     final Uri url = Uri.parse(
       '${_effectiveApiBase()}/intakes/by-location?section=$section&slot_number=$slotNumber',
     );
-    final http.Response response = await http.delete(
+    final http.Response response = await _authorizedRequest(
+      'DELETE',
       url,
-      headers: _authHeaders(),
     );
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw Exception(_strings.text('delete_intake_failed_unauthorized'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -189,7 +193,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         }),
       );
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -286,7 +293,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         }),
       );
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {

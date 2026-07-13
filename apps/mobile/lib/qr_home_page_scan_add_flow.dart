@@ -2,15 +2,19 @@ part of 'qr_home_page.dart';
 
 class _AddFlowData {
   const _AddFlowData({
+    required this.store,
     required this.category,
     required this.color,
+    required this.inTransit,
     required this.isBWare,
     required this.bWareComment,
     required this.photos,
   });
 
+  final bool store;
   final _CategorySelection category;
   final String? color;
+  final bool inTransit;
   final bool isBWare;
   final String? bWareComment;
   final List<XFile> photos;
@@ -25,10 +29,37 @@ extension _QrHomePageAddFlow on _QrHomePageState {
       return null;
     }
 
+    final bool? store = await _askStoreDestinationSelection(
+      title: strings.format(
+        'step_title',
+        <String, String>{'step': '4', 'total': '10'},
+      ),
+    );
+    if (store == null) {
+      return null;
+    }
+
+    await _stabilizeUiAfterRouteTransition();
+    if (!mounted) {
+      return null;
+    }
+
+    final bool inTransit = await _askInTransitSelection(
+      title: strings.format(
+        'step_title',
+        <String, String>{'step': '5', 'total': '10'},
+      ),
+    );
+
+    await _stabilizeUiAfterRouteTransition();
+    if (!mounted) {
+      return null;
+    }
+
     final _CategorySelection? category = await _askCategorySelection(
       title: strings.format(
         'step_title',
-        <String, String>{'step': '4', 'total': '8'},
+        <String, String>{'step': '6', 'total': '10'},
       ),
     );
     if (category == null) {
@@ -43,28 +74,30 @@ extension _QrHomePageAddFlow on _QrHomePageState {
     final String? color = await _askColorSelectionGerman(
       title: strings.format(
         'step_title',
-        <String, String>{'step': '5', 'total': '8'},
+        <String, String>{'step': '7', 'total': '10'},
       ),
     );
 
     final bool isBWare = await _askBWareSelection(
       title: strings.format(
         'step_title',
-        <String, String>{'step': '6', 'total': '8'},
+        <String, String>{'step': '8', 'total': '10'},
       ),
     );
 
     final String? bWareComment = await _askOptionalComment(
       title: strings.format(
         'step_title',
-        <String, String>{'step': '7', 'total': '8'},
+        <String, String>{'step': '9', 'total': '10'},
       ),
     );
-    final List<XFile> photos = await _capturePhotosUpTo10(step: 8, total: 8);
+    final List<XFile> photos = await _capturePhotosUpTo10(step: 10, total: 10);
 
     return _AddFlowData(
+      store: store,
       category: category,
       color: color,
+      inTransit: inTransit,
       isBWare: isBWare,
       bWareComment: bWareComment,
       photos: photos,
@@ -85,12 +118,20 @@ extension _QrHomePageAddFlow on _QrHomePageState {
         filePrefix: photoPrefix,
         folder: photoFolder,
       );
-      if ((photoUrl ?? '').trim().isNotEmpty) {
-        result = await _updateIntakePhoto(
-          intakeId: result.id,
-          photoUrl: photoUrl,
+      final String normalizedPhotoUrl = (photoUrl ?? '').trim();
+      if (normalizedPhotoUrl.isEmpty) {
+        throw UserFacingError(
+          _strings.format('photos_upload_failed', <String, String>{
+            'count': '${photos.length}',
+          }),
         );
       }
+      final String kidPhotoRef =
+          result.databaseKidId > 0 ? '${result.databaseKidId}' : result.id;
+      result = await _updateIntakePhoto(
+        intakeId: kidPhotoRef,
+        photoUrl: normalizedPhotoUrl,
+      );
     }
     _upsertItem(result);
 

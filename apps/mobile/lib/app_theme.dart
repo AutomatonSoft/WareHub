@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 
-const Color uiBg = Color(0xFF0B0E18);
-const Color uiBgSoft = Color(0xFF12182A);
-const Color uiCard = Color(0xFF151B2E);
-const Color uiCardSoft = Color(0xFF1B2238);
-const Color uiText = Color(0xFFF1F3FF);
-const Color uiMuted = Color(0xFF9AA6C7);
-const Color uiNavy = Color(0xFFD6DCFF);
-const Color uiGreen = Color(0xFF7B63FF);
-const Color uiGreenDeep = Color(0xFF5B46D1);
-const Color uiOrange = Color(0xFF4F9BFF);
-const Color uiOrangeDeep = Color(0xFFFF8DA1);
-const Color uiCyan = Color(0xFF5ED6FF);
-const Color uiBorder = Color(0x26FFFFFF);
+import 'auth_design_tokens.dart';
+
+const Color uiBg = AuthColors.background;
+const Color uiBgSoft = AuthColors.background;
+const Color uiCard = AuthColors.card;
+const Color uiCardSoft = AuthColors.muted;
+const Color uiText = AuthColors.foreground;
+const Color uiMuted = AuthColors.mutedForeground;
+const Color uiNavy = AuthColors.foreground;
+const Color uiGreen = AuthColors.primary;
+const Color uiGreenDeep = Color(0xFF27272A);
+const Color uiBrandGreen = Color(0xFF047857);
+const Color uiBrandGreenSoft = Color(0xFFECFDF5);
+const Color uiOrange = Color(0xFF3F3F46);
+const Color uiOrangeDeep = AuthColors.destructive;
+const Color uiCyan = AuthColors.ring;
+const Color uiBorder = Colors.transparent;
 
 const LinearGradient appBackgroundGradient = LinearGradient(
   colors: <Color>[
-    Color(0xFF0B0E18),
-    Color(0xFF12182A),
-    Color(0xFF0F1628),
+    AuthColors.background,
+    AuthColors.background,
   ],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -26,8 +29,8 @@ const LinearGradient appBackgroundGradient = LinearGradient(
 
 const LinearGradient appCardGradient = LinearGradient(
   colors: <Color>[
-    Color(0x331C2440),
-    Color(0x111C2440),
+    AuthColors.card,
+    AuthColors.card,
   ],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
@@ -35,9 +38,8 @@ const LinearGradient appCardGradient = LinearGradient(
 
 const LinearGradient appCtaGradient = LinearGradient(
   colors: <Color>[
-    uiGreen,
-    uiOrange,
-    uiCyan,
+    AuthColors.primary,
+    AuthColors.primary,
   ],
   begin: Alignment.centerLeft,
   end: Alignment.centerRight,
@@ -46,13 +48,13 @@ const LinearGradient appCtaGradient = LinearGradient(
 ThemeData buildAppTheme() {
   final ColorScheme scheme = ColorScheme.fromSeed(
     seedColor: uiGreen,
-    brightness: Brightness.dark,
+    brightness: Brightness.light,
   );
 
   return ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
-    fontFamily: 'Montserrat',
+    brightness: Brightness.light,
+    fontFamily: AuthTextStyles.fontFamily,
     scaffoldBackgroundColor: uiBg,
     colorScheme: scheme,
     snackBarTheme: const SnackBarThemeData(
@@ -64,7 +66,7 @@ ThemeData buildAppTheme() {
       color: uiCard,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AuthRadii.xl),
       ),
     ),
     appBarTheme: const AppBarTheme(
@@ -76,33 +78,27 @@ ThemeData buildAppTheme() {
         color: uiText,
         fontSize: 20,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.2,
+        letterSpacing: 0,
       ),
     ),
-    inputDecorationTheme: InputDecorationTheme(
+    inputDecorationTheme: const InputDecorationTheme(
       filled: true,
       fillColor: uiCardSoft,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: uiBorder),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: uiBorder),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: uiGreen),
-      ),
-      labelStyle: const TextStyle(color: uiMuted),
-      floatingLabelStyle: const TextStyle(color: uiCyan),
+      border: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      disabledBorder: InputBorder.none,
+      errorBorder: InputBorder.none,
+      focusedErrorBorder: InputBorder.none,
+      labelStyle: TextStyle(color: uiMuted),
+      floatingLabelStyle: TextStyle(color: uiText),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: uiGreen,
-        foregroundColor: Colors.white,
+        foregroundColor: AuthColors.primaryForeground,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AuthRadii.md),
         ),
         textStyle: const TextStyle(fontWeight: FontWeight.w700),
       ),
@@ -112,12 +108,12 @@ ThemeData buildAppTheme() {
         foregroundColor: uiText,
         side: const BorderSide(color: uiBorder),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AuthRadii.md),
         ),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: uiCyan),
+      style: TextButton.styleFrom(foregroundColor: uiText),
     ),
   );
 }

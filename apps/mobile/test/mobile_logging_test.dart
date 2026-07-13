@@ -30,7 +30,7 @@ void main() {
     test('uses lan backend for dev', () {
       expect(
         defaultApiBaseForEnv('dev'),
-        'http://192.168.0.103:8932/api/v1',
+        'http://10.0.2.2:8932/api/v1',
       );
     });
 
