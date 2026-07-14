@@ -95,7 +95,7 @@ pub(crate) fn openapi_paths() -> Value {
             "get": {
                 "tags": ["Mobile"],
                 "summary": "Get mobile app update metadata",
-                "description": "Returns the current APK channel, latest version and download URL for the active environment.",
+                "description": "Returns the current APK channel, latest version, download URL and optional release metadata for the active environment.",
                 "operationId": "getMobileAppUpdate",
                 "responses": {
                     "200": {
@@ -108,7 +108,12 @@ pub(crate) fn openapi_paths() -> Value {
                                     "properties": {
                                         "channel": { "type": "string", "example": "stage" },
                                         "latest_version": { "type": "string", "example": "v1.2.3" },
-                                        "apk_url": { "type": "string" }
+                                        "apk_url": { "type": "string", "format": "uri" },
+                                        "minimum_supported_version": { "type": "string", "nullable": true },
+                                        "sha256": { "type": "string", "nullable": true },
+                                        "published_at": { "type": "string", "format": "date-time", "nullable": true },
+                                        "release_notes": { "type": "string", "nullable": true },
+                                        "mandatory": { "type": "boolean", "nullable": true }
                                     }
                                 }
                             }

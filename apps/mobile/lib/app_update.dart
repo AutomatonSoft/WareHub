@@ -71,28 +71,17 @@ String normalizeVersion(String value) {
   if (plusIndex >= 0) {
     normalized = normalized.substring(0, plusIndex);
   }
-  final int dashIndex = normalized.indexOf('-');
-  if (dashIndex >= 0) {
-    normalized = normalized.substring(0, dashIndex);
-  }
   return normalized.trim();
 }
 
 int compareVersions(String left, String right) {
-  final RegExp leadingDigits = RegExp(r'^\d+');
-  final List<int> a = left.split('.').map((String part) {
-    final Match? match = leadingDigits.firstMatch(part.trim());
-    return match == null ? 0 : int.parse(match.group(0)!);
-  }).toList();
-  final List<int> b = right.split('.').map((String part) {
-    final Match? match = leadingDigits.firstMatch(part.trim());
-    return match == null ? 0 : int.parse(match.group(0)!);
-  }).toList();
+  final _ParsedVersion a = _ParsedVersion.parse(left);
+  final _ParsedVersion b = _ParsedVersion.parse(right);
 
-  final int maxLen = a.length > b.length ? a.length : b.length;
+  final int maxLen = a.core.length > b.core.length ? a.core.length : b.core.length;
   for (int i = 0; i < maxLen; i++) {
-    final int ai = i < a.length ? a[i] : 0;
-    final int bi = i < b.length ? b[i] : 0;
+    final int ai = i < a.core.length ? a.core[i] : 0;
+    final int bi = i < b.core.length ? b.core[i] : 0;
     if (ai > bi) {
       return 1;
     }
@@ -100,5 +89,41 @@ int compareVersions(String left, String right) {
       return -1;
     }
   }
-  return 0;
+
+  if (a.stageBuild == b.stageBuild) {
+    return 0;
+  }
+  if (a.stageBuild == null) {
+    return 1;
+  }
+  if (b.stageBuild == null) {
+    return -1;
+  }
+  return a.stageBuild!.compareTo(b.stageBuild!);
+}
+
+class _ParsedVersion {
+  const _ParsedVersion(this.core, this.stageBuild);
+
+  final List<int> core;
+  final int? stageBuild;
+
+  factory _ParsedVersion.parse(String value) {
+    final String normalized = normalizeVersion(value);
+    final int prereleaseIndex = normalized.indexOf('-');
+    final String coreValue = prereleaseIndex >= 0
+        ? normalized.substring(0, prereleaseIndex)
+        : normalized;
+    final String? prerelease = prereleaseIndex >= 0
+        ? normalized.substring(prereleaseIndex + 1)
+        : null;
+    final RegExp leadingDigits = RegExp(r'^\d+');
+    final List<int> core = coreValue.split('.').map((String part) {
+      final Match? match = leadingDigits.firstMatch(part.trim());
+      return match == null ? 0 : int.parse(match.group(0)!);
+    }).toList();
+    final Match? stageMatch = RegExp(r'^stage\.(\d+)$').firstMatch(prerelease ?? '');
+
+    return _ParsedVersion(core, stageMatch == null ? null : int.parse(stageMatch.group(1)!));
+  }
 }

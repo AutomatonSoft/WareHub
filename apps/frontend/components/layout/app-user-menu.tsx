@@ -6,7 +6,7 @@ import { BookOpen, ChevronDown, Download, LogOut, User, UserCircle2 } from "luci
 import { useEffect, useMemo, useState } from "react";
 import { clearAuth, DEFAULT_API_BASE, logout, readAuth, resolvePhotoUrl } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
-import { resolveMobileApkUrlFromEnv } from "../../app/mobile-apk-url";
+import { MOBILE_APK_DOWNLOAD_PATH } from "../../app/mobile-apk-url";
 import { useLabels } from "../../app/use-labels";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
@@ -32,7 +32,7 @@ export function AppUserMenu({
   const t = useLabels();
   const router = useRouter();
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE;
-  const mobileApkUrl = resolveMobileApkUrlFromEnv();
+  const mobileApkUrl = MOBILE_APK_DOWNLOAD_PATH;
   const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   useEffect(() => {
