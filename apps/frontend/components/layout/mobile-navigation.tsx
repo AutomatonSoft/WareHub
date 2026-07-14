@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Download, MoreHorizontal } from "lucide-react";
 import type { AuthUser } from "../../app/client-api-types";
+import { MOBILE_APK_DOWNLOAD_PATH } from "../../app/mobile-apk-url";
 import { useLabels } from "../../app/use-labels";
 import { adminNavigationItem, navigationItems, telegramAdminNavigationItem } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
@@ -33,9 +35,42 @@ export function MobileNavigation({
   const visibleNavigationItems = currentUser?.role === "admin"
     ? [...navigationItems, adminNavigationItem, telegramAdminNavigationItem]
     : navigationItems;
+  const primaryNavigationItems = navigationItems.slice(0, 3);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <>
+      <nav className="wh-mobile-bottom-nav" aria-label={t.mobileNavigationAria}>
+        {primaryNavigationItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname === item.href;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn("wh-mobile-bottom-nav__item", isActive && "wh-mobile-bottom-nav__item--active")}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <Icon size={19} aria-hidden="true" />
+              <span>{t[item.labelKey]}</span>
+            </Link>
+          );
+        })}
+        <a className="wh-mobile-bottom-nav__item" href={MOBILE_APK_DOWNLOAD_PATH}>
+          <Download size={19} aria-hidden="true" />
+          <span>{t.downloadApp}</span>
+        </a>
+        <button
+          type="button"
+          className="wh-mobile-bottom-nav__item"
+          aria-label={t.openNavigation}
+          onClick={() => onOpenChange(true)}
+        >
+          <MoreHorizontal size={20} aria-hidden="true" />
+          <span>{t.morePages}</span>
+        </button>
+      </nav>
+      <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent side="left" className="wh-mobile-nav w-[min(88vw,360px)] border-r border-border bg-[var(--wh-color-surface)] p-0 xl:hidden">
         <SheetHeader className="border-b border-border p-4">
           <SheetTitle className="text-base font-semibold">{t.brandName}</SheetTitle>
@@ -70,6 +105,7 @@ export function MobileNavigation({
           </div>
         </div>
       </SheetContent>
-    </Sheet>
+      </Sheet>
+    </>
   );
 }
