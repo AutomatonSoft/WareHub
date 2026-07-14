@@ -78,7 +78,8 @@ int compareVersions(String left, String right) {
   final _ParsedVersion a = _ParsedVersion.parse(left);
   final _ParsedVersion b = _ParsedVersion.parse(right);
 
-  final int maxLen = a.core.length > b.core.length ? a.core.length : b.core.length;
+  final int maxLen =
+      a.core.length > b.core.length ? a.core.length : b.core.length;
   for (int i = 0; i < maxLen; i++) {
     final int ai = i < a.core.length ? a.core[i] : 0;
     final int bi = i < b.core.length ? b.core[i] : 0;
@@ -114,16 +115,17 @@ class _ParsedVersion {
     final String coreValue = prereleaseIndex >= 0
         ? normalized.substring(0, prereleaseIndex)
         : normalized;
-    final String? prerelease = prereleaseIndex >= 0
-        ? normalized.substring(prereleaseIndex + 1)
-        : null;
+    final String? prerelease =
+        prereleaseIndex >= 0 ? normalized.substring(prereleaseIndex + 1) : null;
     final RegExp leadingDigits = RegExp(r'^\d+');
     final List<int> core = coreValue.split('.').map((String part) {
       final Match? match = leadingDigits.firstMatch(part.trim());
       return match == null ? 0 : int.parse(match.group(0)!);
     }).toList();
-    final Match? stageMatch = RegExp(r'^stage\.(\d+)$').firstMatch(prerelease ?? '');
+    final Match? stageMatch =
+        RegExp(r'^stage\.(\d+)$').firstMatch(prerelease ?? '');
 
-    return _ParsedVersion(core, stageMatch == null ? null : int.parse(stageMatch.group(1)!));
+    return _ParsedVersion(
+        core, stageMatch == null ? null : int.parse(stageMatch.group(1)!));
   }
 }
