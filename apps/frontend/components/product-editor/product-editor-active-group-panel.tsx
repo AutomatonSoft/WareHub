@@ -2,14 +2,16 @@ import { useLabels } from "../../app/use-labels";
 import { findGroup, hasActionableHoodTarget, hasActionableJvTarget } from "./product-editor-model";
 import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
+import { ProductEditorKauflandPanel } from "./product-editor-kaufland-panel";
 import { ProductEditorXlPanel } from "./product-editor-xl-panel";
 import { getProductEditorPlaceholderDetails, getProductEditorTabCopy } from "./product-editor-copy";
-import { ProductEditorEmptyPanel } from "./product-editor-shared-panels";
+import { ProductEditorEmptyPanel, ProductEditorPlaceholderPanel } from "./product-editor-shared-panels";
 import type {
   ProductEditorDiscoverResponse,
   ProductEditorGroupId,
   ProductEditorHoodDraft,
   ProductEditorJvDraft,
+  ProductEditorKauflandDraft,
   ProductEditorJobResponse,
   ProductEditorPlanResponse
 } from "./product-editor-types";
@@ -55,6 +57,13 @@ export function ProductEditorActiveGroupPanel(input: {
   onUploadHoodFiles: (files: FileList | null) => void;
   onApplyHoodEditedProducts: () => void;
   onApplyJvEditedProducts: () => void;
+  kauflandDraft: ProductEditorKauflandDraft;
+  kauflandWarnings: ProductEditorDiscoverResponse["warnings"];
+  kauflandLoading: boolean;
+  kauflandChangedFields: string[];
+  kauflandApplyLoading: boolean;
+  onPatchKaufland: (patch: Partial<ProductEditorKauflandDraft>) => void;
+  onApplyKauflandEditedProducts: () => void;
 }) {
   const t = useLabels();
   const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
@@ -192,11 +201,30 @@ export function ProductEditorActiveGroupPanel(input: {
     );
   }
 
+  if (input.activeGroupId === "KAUFLAND") {
+    if (!input.discover && !input.kauflandDraft.ean) {
+      return (
+        <ProductEditorEmptyPanel
+          title="Kaufland tab"
+          body="Run discover first so orchestrator can resolve Kaufland JV and XL targets."
+          eanValue={input.eanValue}
+          isEanValid={input.isEanValid}
+          searching={input.searching}
+          onChangeEan={input.onChangeEan}
+          onSearch={input.onSearch}
+        />
+      );
+    }
+    return <ProductEditorKauflandPanel draft={input.kauflandDraft} warnings={input.kauflandWarnings} loading={input.kauflandLoading} applyLoading={input.kauflandApplyLoading} changedFields={input.kauflandChangedFields} onChange={input.onPatchKaufland} onApply={input.onApplyKauflandEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;
+  }
+
   const details =
     PRODUCT_EDITOR_PLACEHOLDER_DETAILS[input.activeGroupId as keyof typeof PRODUCT_EDITOR_PLACEHOLDER_DETAILS] ??
     [t.productEditorPlaceholderNonActionable];
-  const variantHint = activeVariant ? t.productEditorActiveSourceVariant.replace("{variant}", activeVariant) : "";
-  const tabHint = t.productEditorActiveTab.replace("{tab}", input.activeTabLabel);
+  const variantHint = activeVariant
+    ? String(t.productEditorActiveSourceVariant ?? "Source variant: {variant}").replace("{variant}", activeVariant)
+    : "";
+  const tabHint = String(t.productEditorActiveTab ?? "Active tab: {tab}").replace("{tab}", input.activeTabLabel);
   const body = [tabHint, details[0], variantHint].filter(Boolean).join(" ");
   return (
     <ProductEditorEmptyPanel

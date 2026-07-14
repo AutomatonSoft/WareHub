@@ -17,7 +17,8 @@ export function buildDirectUpdatePayload(input) {
     productDescription: { title: productName, description: productName },
     mediaAssets: imageUrls.map((url, idx) => ({ url, role: idx === 0 ? "MAIN" : "ALT" })),
     source_model: productName,
-    jv_fields: { artikelnr: productName, ean }
+    jv_fields: { artikelnr: productName, ean },
+    ...input.additionalPayload
   };
 }
 
@@ -32,6 +33,7 @@ export function buildJobUpdatePayload(input) {
     price,
     quantity: 1,
     images: imageUrls,
-    picture_urls: imageUrls
+    picture_urls: imageUrls,
+    ...input.additionalPayload
   };
 }

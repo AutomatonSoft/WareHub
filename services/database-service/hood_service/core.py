@@ -20,9 +20,10 @@ HOOD_API_CONNECT_TIMEOUT = int(os.getenv("HOOD_API_CONNECT_TIMEOUT", "8"))
 HOOD_API_READ_TIMEOUT = int(os.getenv("HOOD_API_READ_TIMEOUT", "30"))
 HOOD_API_TIMEOUT = (HOOD_API_CONNECT_TIMEOUT, HOOD_API_READ_TIMEOUT)
 HOOD_API_PATCH_ENDPOINT = os.getenv("HOOD_API_PATCH_ENDPOINT", "/api/items/by-ean")
+HOOD_API_CREATE_ENDPOINT = os.getenv("HOOD_API_CREATE_ENDPOINT", HOOD_API_PATCH_ENDPOINT)
 HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT = os.getenv(
     "HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT",
-    "/items/delete/by-item-number/{item_number}",
+    "/api/items/delete/by-item-number/{item_number}",
 )
 HOOD_LOGIN = os.getenv("HOOD_LOGIN", "").strip()
 HOOD_PASSWORD = os.getenv("HOOD_PASSWORD", "").strip()
@@ -59,8 +60,8 @@ def to_int(value):
         return None
 
 
-def build_patch_urls(ean: str) -> list[str]:
-    endpoint = (HOOD_API_PATCH_ENDPOINT or "/api/items/by-ean").strip()
+def _build_ean_endpoint_urls(endpoint: str, ean: str) -> list[str]:
+    endpoint = (endpoint or "/api/items/by-ean").strip()
     if not endpoint.startswith("/"):
         endpoint = f"/{endpoint}"
 
@@ -92,8 +93,16 @@ def build_patch_urls(ean: str) -> list[str]:
     return candidates
 
 
+def build_patch_urls(ean: str) -> list[str]:
+    return _build_ean_endpoint_urls(HOOD_API_PATCH_ENDPOINT, ean)
+
+
+def build_create_urls(ean: str) -> list[str]:
+    return _build_ean_endpoint_urls(HOOD_API_CREATE_ENDPOINT, ean)
+
+
 def build_delete_by_item_number_urls(item_number: str) -> list[str]:
-    endpoint = (HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT or "/items/delete/by-item-number/{item_number}").strip()
+    endpoint = (HOOD_API_DELETE_BY_ITEM_NUMBER_ENDPOINT or "/api/items/delete/by-item-number/{item_number}").strip()
     if not endpoint.startswith("/"):
         endpoint = f"/{endpoint}"
 

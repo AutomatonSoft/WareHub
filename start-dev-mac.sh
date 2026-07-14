@@ -53,7 +53,7 @@ app_pid_filenames=(
 )
 started_log_paths=("" "" "" "" "" "")
 
-required_python_version="3.13.14"
+required_python_version="$(tr -d '[:space:]' < "$repo_root/.python-version")"
 python_search_targets=()
 python_search_findings=()
 loaded_root_env_keys=()
@@ -704,7 +704,7 @@ get_command_for_app() {
   local app_name="$1"
 
   case "$app_name" in
-    frontend) printf '%s\n' "npm run dev" ;;
+    frontend) printf '%s\n' "script -q /dev/null /bin/bash -lc 'stty cols 120 rows 40; exec npm run dev'" ;;
     backend)
       if [[ "$with_backend_migrations" == true ]]; then
         printf '%s\n' "env SKIP_DB_MIGRATIONS=false cargo run"

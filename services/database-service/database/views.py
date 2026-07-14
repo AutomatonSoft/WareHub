@@ -1995,7 +1995,7 @@ class KidsBulkUpdateAPIView(APIView):
 
 class MarketplaceKauflandHealthAPIView(APIView):
     permission_classes = [SessionRolePermission]
-    kaufland_health_url = "https://kaufland.automatonsoft.de/api/health/"
+    kaufland_health_url = "https://kl.automatonsoft.de/api/health/"
 
     def get(self, request):
         req = urllib.request.Request(

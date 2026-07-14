@@ -91,6 +91,33 @@ export type ProductEditorHoodDraft = {
   pending_uploads: ProductEditorPendingUpload[];
 };
 
+export type ProductEditorKauflandDraft = {
+  target_id: string;
+  ean: string;
+  controller: "jv" | "xl";
+  category: string[];
+  title: string;
+  mpn: string;
+  short_description: string[];
+  description: string;
+  picture: string[];
+  manufacturer: string;
+  product_dimensions: string;
+  colour: string;
+  length: string;
+  width: string;
+  height: string;
+  material: string;
+  storefront: string;
+  product_safety_contact: Array<Record<string, unknown>>;
+  category_detail: Array<Record<string, unknown>>;
+  material_composition: string;
+  abnehmbarer_bezug: string;
+  parts_of_animal_origin: string;
+  price: string;
+  unit_id: string;
+};
+
 export type ProductEditorJvDescription = {
   language_id: number;
   name: string;

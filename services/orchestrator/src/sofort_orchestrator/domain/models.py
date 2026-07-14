@@ -34,6 +34,11 @@ class CanonicalPayload(BaseModel):
     price: str | None = None
     quantity: int | None = None
     images: list[str] | None = None
+    categoryID: str | None = None
+    condition: str | None = None
+    itemMode: str | None = None
+    itemNumber: str | None = None
+    productProperties: list[dict] | None = None
     picture_urls: list[str] | None = None
     storefront: str | None = None
     unit_id: int | None = None

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Operation } from "../../lib/api/generated/orchestrator-openapi-types";
 import { allMarketplaceSites } from "../../lib/marketplace-sites";
 import {
   xljvCreateAndPush,
@@ -16,9 +17,14 @@ import {
   pushProductToOrchestrator
 } from "./orchestrator-api";
 import {
+  buildHoodCreatePayload,
+  DEFAULT_HOOD_CREATE_FIELDS,
   normalizeCreateProductInput,
   validateCreateProductInput,
-  type CreateProductFieldKey
+  validateHoodCreateFields,
+  type CreateProductFieldKey,
+  type HoodCreateFieldKey,
+  type HoodCreateFields
 } from "./create-product-model";
 import { normalizeJobId, parseJobEventsSummary } from "./job-status-model";
 import { buildJobStatusDetails } from "./job-status-details-model";
@@ -62,6 +68,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [productName, setProductName] = useState("");
   const [imagesText, setImagesText] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [hoodFields, setHoodFields] = useState<HoodCreateFields>(DEFAULT_HOOD_CREATE_FIELDS);
+  const [hoodFieldErrors, setHoodFieldErrors] = useState<Partial<Record<HoodCreateFieldKey, string>>>({});
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CreateProductFieldKey, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [useControlledJob, setUseControlledJob] = useState(true);
@@ -244,6 +252,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
     setFieldErrors({});
     setImageFiles([]);
+    setHoodFields(DEFAULT_HOOD_CREATE_FIELDS);
+    setHoodFieldErrors({});
     showToast(t.fieldsReset, "info");
   }
 
@@ -263,7 +273,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return validation.isValid;
   }
 
-  async function submitCreateProduct(siteIdsOverride?: string[]) {
+  async function submitCreateProduct(
+    siteIdsOverride?: string[],
+    operation = Operation.update,
+    additionalPayload?: Record<string, unknown>
+  ) {
     const targetSiteIds = Array.isArray(siteIdsOverride) ? siteIdsOverride : selectedSites;
     if (targetSiteIds.length === 0) {
       showToast(t.selectAtLeastOneMarketplaceSite, "error");
@@ -284,7 +298,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           price: normalized.price,
           productName: normalized.productName,
           imageUrls: normalized.imageUrls,
-          selectedSiteIds: targetSiteIds
+          selectedSiteIds: targetSiteIds,
+          operation,
+          additionalPayload,
         });
         setLatestJobId(created.jobId);
         showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
@@ -296,7 +312,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         price: normalized.price,
         productName: normalized.productName,
         imageUrls: normalized.imageUrls,
-        selectedSiteIds: targetSiteIds
+        selectedSiteIds: targetSiteIds,
+        operation,
+        additionalPayload,
       });
 
       const failedCount = result.results.filter((item) => item.status === "failed").length;
@@ -323,6 +341,18 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
   async function handleCreateProductForSiteIds(siteIds: string[]) {
     await submitCreateProduct(siteIds);
+  }
+
+  async function handleCreateProductForHoodSiteIds(siteIds: string[]) {
+    const hoodErrors = validateHoodCreateFields(hoodFields);
+    setHoodFieldErrors(hoodErrors);
+    if (Object.keys(hoodErrors).length > 0) {
+      showToast("Complete the required Hood fields before publishing.", "error");
+      return;
+    }
+
+    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    await submitCreateProduct(siteIds, Operation.publish, buildHoodCreatePayload({ ean: normalized.ean, fields: hoodFields }));
   }
 
   async function handleCreateProductForXlDefaultSite() {
@@ -510,6 +540,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     productName,
     imagesText,
     imageFiles,
+    hoodFields,
+    hoodFieldErrors,
     fieldErrors,
     submitting,
     useControlledJob,
@@ -540,6 +572,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setProductName,
     setImagesText,
     setImageFiles,
+    setHoodFields,
     setFieldErrors,
     setUseControlledJob,
     setLatestJobId,
@@ -551,6 +584,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     resetFields,
     handleCreateProduct,
     handleCreateProductForSiteIds,
+    handleCreateProductForHoodSiteIds,
     handleCreateProductForXlDefaultSite,
     loadJobStatus,
     loadReconciliationReports,

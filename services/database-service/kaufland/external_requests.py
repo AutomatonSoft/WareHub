@@ -2,7 +2,7 @@ import requests
 import json
 from decimal import Decimal
 
-BASE_URL = "https://kaufland.automatonsoft.de"
+BASE_URL = "https://kl.automatonsoft.de"
 
 
 def _json_safe(value):

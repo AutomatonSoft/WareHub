@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildHoodCreatePayload,
   parseImageUrlsFromText,
+  validateHoodCreateFields,
   validateCreateProductInput,
   normalizeCreateProductInput
 } from "../app/create-product/create-product-model.mjs";
@@ -9,6 +11,28 @@ import {
 test("parseImageUrlsFromText trims and removes empty lines", () => {
   const urls = parseImageUrlsFromText("  https://cdn/1.jpg  \n\nhttps://cdn/2.jpg\r\n");
   assert.deepEqual(urls, ["https://cdn/1.jpg", "https://cdn/2.jpg"]);
+});
+
+test("Hood create fields validate and build the marketplace payload", () => {
+  const fields = {
+    description: "A desk",
+    quantity: "2",
+    condition: "new",
+    itemMode: "shopProduct",
+    itemNumber: "",
+    productPropertiesText: '[{"name":"Material","value":"Wood"}]'
+  };
+
+  assert.deepEqual(validateHoodCreateFields(fields), {});
+  assert.deepEqual(buildHoodCreatePayload({ ean: "4006381333931", fields }), {
+    description: "A desk",
+    quantity: 2,
+    categoryID: "2412",
+    condition: "new",
+    itemMode: "shopProduct",
+    itemNumber: "4006381333931",
+    productProperties: [{ name: "Material", value: "Wood" }]
+  });
 });
 
 test("validateCreateProductInput returns errors for invalid values", () => {

@@ -3,7 +3,7 @@ export const PRODUCT_EDITOR_TAB_COPY = {
   XL: { label: "XL", subtitle: "Read-only placeholder for now." },
   HOOD: { label: "HOOD", subtitle: "MVP-first tab through the new orchestrator flow." },
   OTTO: { label: "OTTO", subtitle: "Planned / read-only." },
-  KAUFLAND: { label: "KAUFLAND", subtitle: "Planned / read-only." },
+  KAUFLAND: { label: "KAUFLAND", subtitle: "Kaufland product editing through the orchestrator." },
   EBAY: { label: "EBAY", subtitle: "Unsupported / planned." }
 };
 
@@ -18,8 +18,8 @@ export const PRODUCT_EDITOR_PLACEHOLDER_DETAILS = {
     "No Product Editor draft or apply controls are exposed here yet."
   ],
   KAUFLAND: [
-    "Kaufland remains read-only in Product Editor until a safe orchestrator-controlled flow is added.",
-    "Direct create/change/delete actions are intentionally absent here."
+    "Kaufland writes are planned and applied through the orchestrator.",
+    "Found targets are updated; missing targets can be created after confirmation."
   ],
   EBAY: [
     "Ebay is still unsupported in runtime and remains visible only as a roadmap placeholder.",

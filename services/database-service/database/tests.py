@@ -864,7 +864,8 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
-    def test_marketplace_hood_deactivate_by_kid_uses_ean_as_item_number(self, mocked_delete):
+    @patch("database.marketplace_deactivate_service._store_hood_snapshot_before_delete")
+    def test_marketplace_hood_deactivate_by_kid_uses_ean_as_item_number(self, mocked_snapshot, mocked_delete):
         kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
         Ean.objects.create(
             kid=kid,
@@ -886,6 +887,13 @@ class DatabaseApiTests(APITestCase):
                 "item_number": "4062292028939",
             },
         }
+        mocked_snapshot.return_value = {
+            "ok": True,
+            "site_key": "HOOD_JV",
+            "channel": "HOOD",
+            "status_code": status.HTTP_200_OK,
+            "details": {"snapshot_saved": True},
+        }
 
         response = self.client.post(
             "/api/v1/marketplace/hood/deactivate-by-kid/",
@@ -902,11 +910,17 @@ class DatabaseApiTests(APITestCase):
             account="jv",
             item_number="4062292028939",
         )
+        mocked_snapshot.assert_called_once_with(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
         status_row = EanStatus.objects.get(ean=kid)
         self.assertFalse(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
-    def test_marketplace_hood_deactivate_by_kid_updates_active_hood_targets(self, mocked_delete):
+    @patch("database.marketplace_deactivate_service._store_hood_snapshot_before_delete")
+    def test_marketplace_hood_deactivate_by_kid_updates_active_hood_targets(self, mocked_snapshot, mocked_delete):
         kid = Kid.objects.create(kid_number=["KID-HOOD-BOTH"])
         Ean.objects.create(
             kid=kid,
@@ -933,6 +947,13 @@ class DatabaseApiTests(APITestCase):
             }
 
         mocked_delete.side_effect = _fake_apply
+        mocked_snapshot.side_effect = lambda *, ean, site_key, account: {
+            "ok": True,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_200_OK,
+            "details": {"ean": ean, "account": account, "snapshot_saved": True},
+        }
 
         response = self.client.post(
             "/api/v1/marketplace/hood/deactivate-by-kid/",
@@ -945,6 +966,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["summary"]["total"], 2)
         self.assertEqual(response.data["summary"]["success"], 2)
         self.assertEqual(mocked_delete.call_count, 2)
+        self.assertEqual(mocked_snapshot.call_count, 2)
         first_call = mocked_delete.call_args_list[0].kwargs
         second_call = mocked_delete.call_args_list[1].kwargs
         self.assertEqual(first_call["item_number"], first_call["ean"])
@@ -952,6 +974,100 @@ class DatabaseApiTests(APITestCase):
         status_row = EanStatus.objects.get(ean=kid)
         self.assertFalse(status_row.hood_jv)
         self.assertFalse(status_row.hood_xl)
+
+    @patch("database.marketplace_deactivate_service._apply_hood_restore_from_snapshot")
+    def test_marketplace_hood_activate_by_kid_restores_inactive_target(self, mocked_restore):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-RESTORE"])
+        Ean.objects.create(kid=kid, hood_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, hood_jv=False)
+        mocked_restore.return_value = {
+            "ok": True,
+            "site_key": "HOOD_JV",
+            "channel": "HOOD",
+            "status_code": status.HTTP_201_CREATED,
+            "details": {"restored_from_snapshot": True},
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/hood/deactivate-by-kid/",
+            {"kid_number": "KID-HOOD-RESTORE", "inactive": False, "place": "12"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertTrue(response.data["results"][0]["details"]["restored_from_snapshot"])
+        mocked_restore.assert_called_once_with(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "12")
+
+    @patch("database.marketplace_deactivate_service.set_external_push_status")
+    @patch("database.marketplace_deactivate_service.requests.post")
+    @patch("database.marketplace_deactivate_service.build_create_urls", return_value=["https://hood.example/items/4062292028939"])
+    @patch(
+        "database.marketplace_deactivate_service.get_hood_product_snapshot_payload",
+        return_value={
+            "items": [
+                {
+                    "itemID": "remote-item-1",
+                    "itemNumber": "4062292028939",
+                    "title": "Saved Hood title",
+                    "description": "Saved Hood description",
+                    "price": "99.99",
+                    "quantity": 3,
+                    "categoryID": "2412",
+                    "condition": "new",
+                    "itemMode": "shopProduct",
+                    "images": ["https://cdn.example/image.jpg"],
+                    "productProperties": [{"name": "Material", "value": "Wood"}],
+                }
+            ]
+        },
+    )
+    def test_hood_restore_posts_saved_snapshot_fields(
+        self,
+        mocked_snapshot,
+        mocked_urls,
+        mocked_post,
+        mocked_push_status,
+    ):
+        from .marketplace_deactivate_service import _apply_hood_restore_from_snapshot
+
+        mocked_post.return_value.status_code = status.HTTP_200_OK
+        mocked_post.return_value.json.return_value = {"success": True}
+
+        result = _apply_hood_restore_from_snapshot(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status_code"], status.HTTP_201_CREATED)
+        self.assertEqual(
+            mocked_post.call_args.kwargs["json"],
+            {
+                "description": "Saved Hood description",
+                "title": "Saved Hood title",
+                "price": "99.99",
+                "quantity": 3,
+                "categoryID": "2412",
+                "condition": "new",
+                "itemMode": "shopProduct",
+                "itemNumber": "4062292028939",
+                "images": ["https://cdn.example/image.jpg"],
+                "productProperties": [{"name": "Material", "value": "Wood"}],
+                "ean": "4062292028939",
+                "account": "jv",
+            },
+        )
+        mocked_push_status.assert_called_once_with(account="jv", ean="4062292028939", pushed=True)
 
     @patch("database.marketplace_deactivate_service._apply_xl_deactivate")
     def test_marketplace_xl_deactivate_by_kid_uses_only_xlmoebel_de_and_updates_status(self, mocked_apply_xl):
@@ -1024,7 +1140,7 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertEqual(kid.place, "18")
 
-    def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
+    def test_marketplace_deactivate_by_kid_keeps_hood_status_for_dedicated_hood_flow(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
         Ean.objects.create(
             kid=kid,
@@ -1051,13 +1167,13 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["status"], "ok")
         self.assertEqual(response.data["summary"]["failed"], 0)
         site_keys = {row["site_key"]: row for row in response.data["results"]}
-        self.assertEqual(site_keys["HOOD_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertNotIn("HOOD_JV", site_keys)
         self.assertEqual(site_keys["OTTO_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
         self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
         self.assertEqual(site_keys["KAUFLAND_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
 
         status_row = EanStatus.objects.get(ean=kid)
-        self.assertFalse(status_row.hood_jv)
+        self.assertTrue(status_row.hood_jv)
         self.assertFalse(status_row.otto_jv)
         self.assertFalse(status_row.ebay_jv)
         self.assertFalse(status_row.kaufland_jv)
@@ -1152,7 +1268,7 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertIsNone(kid.place)
 
-    def test_marketplace_local_statuses_by_kid_updates_unsupported_channels_on_activate(self):
+    def test_marketplace_local_statuses_by_kid_keeps_hood_status_on_activate(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
         Ean.objects.create(
             kid=kid,
@@ -1178,11 +1294,30 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], "ok")
         self.assertEqual(response.data["summary"]["failed"], 0)
+        site_keys = {row["site_key"]: row for row in response.data["results"]}
+        self.assertNotIn("HOOD_JV", site_keys)
         status_row = EanStatus.objects.get(ean=kid)
-        self.assertTrue(status_row.hood_jv)
+        self.assertFalse(status_row.hood_jv)
         self.assertTrue(status_row.otto_jv)
         self.assertTrue(status_row.ebay_jv)
         self.assertTrue(status_row.kaufland_jv)
+
+    def test_marketplace_local_statuses_by_kid_is_successful_noop_for_hood_only_mapping(self):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
+        Ean.objects.create(kid=kid, hood_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, hood_jv=True)
+
+        response = self.client.post(
+            "/api/v1/marketplace/local-statuses-by-kid/",
+            {"kid_number": "KID-HOOD-ONLY", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["results"][0]["details"]["code"], "marketplace_local_status_no_targets")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
     @patch("database.marketplace_deactivate_service.push_product_to_source")

@@ -8,13 +8,20 @@ from rest_framework import status
 from catalog_core.models import ImportedProduct
 from database.models import EanStatus, Kid
 from hood_service.core import (
+    HOOD_API_BASE_URL,
     HOOD_API_TIMEOUT,
+    build_create_urls,
     build_delete_by_item_number_urls,
     build_patch_urls,
     get_status_meta,
     hood_auth,
     set_external_push_status,
     upsert_response_and_items,
+)
+from hood_service.snapshot_store import (
+    get_hood_product_snapshot_payload,
+    mark_hood_product_snapshot_restored,
+    save_hood_product_snapshot,
 )
 from jv_services.batch_defaults import FIXED_JV_BATCH_SITE_KEYS
 from jv_services.source_client import (
@@ -47,6 +54,18 @@ from xl_services.sync_utils import (
 logger = logging.getLogger(__name__)
 
 SUPPORTED_HOOD_SITE_KEYS = {"HOOD_JV", "HOOD_XL"}
+HOOD_RESTORE_PAYLOAD_FIELDS = (
+    "description",
+    "title",
+    "price",
+    "quantity",
+    "categoryID",
+    "condition",
+    "itemMode",
+    "itemNumber",
+    "images",
+    "productProperties",
+)
 JV_SOFORT_ARTIKELNR_PREFIX = "JVM"
 DEACTIVATE_TARGET_ORDER = (
     "jv",
@@ -1191,6 +1210,204 @@ def _apply_hood_delete_by_item_number(*, ean: str, site_key: str, account: str, 
     }
 
 
+def _store_hood_snapshot_before_delete(*, ean: str, site_key: str, account: str) -> dict:
+    external_url = f"{HOOD_API_BASE_URL}/api/items/by-ean/{ean}"
+    try:
+        external_response = requests.get(
+            external_url,
+            params={"account": account},
+            headers={"accept": "application/json"},
+            auth=hood_auth(),
+            timeout=HOOD_API_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "hood_snapshot_network_failed",
+                "detail": "Hood product snapshot could not be loaded before delete.",
+                "error": str(exc),
+            },
+        }
+
+    if external_response.status_code >= 400:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "hood_snapshot_fetch_failed",
+                "detail": "Hood product snapshot could not be loaded before delete.",
+                "downstream_status_code": external_response.status_code,
+                "body": external_response.text[:1500],
+            },
+        }
+
+    try:
+        external_payload = external_response.json()
+    except ValueError:
+        external_payload = None
+
+    if not isinstance(external_payload, dict) or not isinstance(external_payload.get("items"), list) or not external_payload["items"]:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "hood_snapshot_payload_invalid",
+                "detail": "Hood returned no product fields to save before delete.",
+            },
+        }
+
+    payload = dict(external_payload)
+    payload["account"] = account
+    payload["ean"] = ean
+    with transaction.atomic():
+        upsert_response_and_items(payload, account=account, ean=ean)
+        save_hood_product_snapshot(account=account, ean=ean, payload=payload)
+
+    return {
+        "ok": True,
+        "site_key": site_key,
+        "channel": "HOOD",
+        "status_code": status.HTTP_200_OK,
+        "details": {
+            "ean": ean,
+            "account": account,
+            "snapshot_saved": True,
+            "items_saved": len(payload["items"]),
+        },
+    }
+
+
+def _restore_payload_from_hood_snapshot(*, account: str, ean: str) -> tuple[dict | None, str | None]:
+    snapshot = get_hood_product_snapshot_payload(account=account, ean=ean)
+    if not isinstance(snapshot, dict):
+        return None, "hood_restore_snapshot_missing"
+
+    raw_items = snapshot.get("items")
+    items = [item for item in raw_items if isinstance(item, dict)] if isinstance(raw_items, list) else []
+    matching_items = [
+        item
+        for item in items
+        if str(item.get("itemNumber") or "").strip() == ean or str(item.get("itemID") or "").strip() == ean
+    ]
+    if len(matching_items) == 1:
+        item = matching_items[0]
+    elif len(items) == 1:
+        item = items[0]
+    elif not items:
+        return None, "hood_restore_snapshot_empty"
+    else:
+        return None, "hood_restore_snapshot_ambiguous"
+
+    payload = {field: item[field] for field in HOOD_RESTORE_PAYLOAD_FIELDS if field in item}
+    if not payload:
+        return None, "hood_restore_snapshot_invalid"
+    payload["ean"] = ean
+    payload["account"] = account
+    return payload, None
+
+
+def _apply_hood_restore_from_snapshot(*, ean: str, site_key: str, account: str) -> dict:
+    payload, error_code = _restore_payload_from_hood_snapshot(account=account, ean=ean)
+    if payload is None:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_409_CONFLICT,
+            "details": {
+                "code": error_code,
+                "detail": "A saved Hood product snapshot is required to activate this item.",
+                "ean": ean,
+                "account": account,
+            },
+        }
+
+    external_response = None
+    last_error = None
+    for candidate_url in build_create_urls(ean):
+        try:
+            response = requests.post(
+                candidate_url,
+                params={"account": account},
+                json=payload,
+                headers={"accept": "application/json"},
+                auth=hood_auth(),
+                timeout=HOOD_API_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            last_error = str(exc)
+            continue
+
+        if response.status_code in (404, 405):
+            external_response = response
+            continue
+        external_response = response
+        break
+
+    if external_response is None:
+        set_external_push_status(account=account, ean=ean, pushed=False, error=last_error or "unknown error")
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "hood_restore_network_failed",
+                "detail": f"Hood product restore network error: {last_error or 'unknown error'}",
+            },
+        }
+
+    if external_response.status_code >= 400:
+        set_external_push_status(account=account, ean=ean, pushed=False, error=external_response.text[:500])
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "hood_restore_create_failed",
+                "detail": "Hood external API returned an error while restoring the product.",
+                "downstream_status_code": external_response.status_code,
+                "body": external_response.text[:1500],
+            },
+        }
+
+    try:
+        external_payload = external_response.json()
+    except ValueError:
+        external_payload = None
+
+    if isinstance(external_payload, dict) and isinstance(external_payload.get("items"), list):
+        external_payload = dict(external_payload)
+        external_payload["account"] = account
+        external_payload["ean"] = ean
+        with transaction.atomic():
+            upsert_response_and_items(external_payload, account=account, ean=ean)
+    mark_hood_product_snapshot_restored(account=account, ean=ean)
+    set_external_push_status(account=account, ean=ean, pushed=True)
+    return {
+        "ok": True,
+        "site_key": site_key,
+        "channel": "HOOD",
+        "status_code": status.HTTP_201_CREATED,
+        "details": {
+            "ean": ean,
+            "account": account,
+            "restored_from_snapshot": True,
+            "payload_fields": sorted(payload.keys()),
+            "external_payload": external_payload,
+        },
+    }
+
+
 def _build_success_response(*, entity_name: str, entity_value: str, inactive: bool, results: list[dict], response_status: int):
     success_count = sum(1 for row in results if row.get("ok"))
     failed_count = len(results) - success_count
@@ -1544,8 +1761,6 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     update_fields: list[str] = []
 
     for field_name, channel in (
-        ("hood_jv", "HOOD"),
-        ("hood_xl", "HOOD"),
         ("otto_jv", "OTTO"),
         ("otto_xl", "OTTO"),
         ("ebay_jv", "EBAY"),
@@ -1582,13 +1797,13 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     if not results:
         results.append(
             {
-                "ok": False,
-                "site_key": "",
+                "ok": True,
+                "site_key": "LOCAL",
                 "channel": "LOCAL",
-                "status_code": status.HTTP_409_CONFLICT,
+                "status_code": status.HTTP_200_OK,
                 "details": {
                     "code": "marketplace_local_status_no_targets",
-                    "detail": "Для этого Kid нет локальных marketplace targets для обновления.",
+                    "detail": "Для этого Kid нет OTTO, EBAY или KAUFLAND targets для локального обновления.",
                 },
             }
         )
@@ -1782,7 +1997,10 @@ def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str
         ("hood_jv", "HOOD_JV", "jv"),
         ("hood_xl", "HOOD_XL", "xl"),
     ):
-        if not bool(getattr(status_row, source_field, False)):
+        is_active = bool(getattr(status_row, source_field, False))
+        if inactive and not is_active:
+            continue
+        if not inactive and is_active:
             continue
         ean_value = str(getattr(ean_row, source_field, "") or "").strip()
         if not ean_value:
@@ -1823,12 +2041,27 @@ def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str
 
     desired_flag_value = not bool(inactive)
     for target in targets:
-        result = _apply_hood_delete_by_item_number(
-            ean=target["ean"],
-            site_key=target["site_key"],
-            account=target["account"],
-            item_number=target["ean"],
-        )
+        if inactive:
+            snapshot_result = _store_hood_snapshot_before_delete(
+                ean=target["ean"],
+                site_key=target["site_key"],
+                account=target["account"],
+            )
+            if not snapshot_result.get("ok"):
+                results.append(snapshot_result)
+                continue
+            result = _apply_hood_delete_by_item_number(
+                ean=target["ean"],
+                site_key=target["site_key"],
+                account=target["account"],
+                item_number=target["ean"],
+            )
+        else:
+            result = _apply_hood_restore_from_snapshot(
+                ean=target["ean"],
+                site_key=target["site_key"],
+                account=target["account"],
+            )
         if result.get("ok") and result.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
             setattr(status_row, target["source_field"], desired_flag_value)
             status_row.save(update_fields=[target["source_field"]])
@@ -1843,7 +2076,11 @@ def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str
                 "status_code": status.HTTP_409_CONFLICT,
                 "details": {
                     "code": "marketplace_deactivate_no_active_targets",
-                    "detail": "Для этого Kid нет активных HOOD-статусов для деактивации.",
+                        "detail": (
+                            "Для этого Kid нет активных HOOD-статусов для деактивации."
+                            if inactive
+                            else "Для этого Kid нет деактивированных HOOD-статусов для восстановления."
+                        ),
                 },
             }
         )

@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from .external_requests import change_product_by_ean, create_product_by_ean, delete_product_by_ean, product_inside
 from .serializers import (
+    KAUFLAND_PRODUCT_WRITE_FIELDS,
     KauflandChangeByEANSerializer,
     KauflandCreateByEANSerializer,
     KauflandDeleteByEANSerializer,
@@ -55,27 +56,43 @@ class GetProductAPIView(APIView):
         try:
             data = product_inside(ean, site)
             return Response(data, status=200)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+        except requests.Timeout:
+            return Response(
+                {
+                    "error": "kaufland_lookup_timeout",
+                    "detail": "Kaufland product lookup timed out.",
+                },
+                status=504,
+            )
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            details = None
+            try:
+                details = exc.response.json() if exc.response is not None else None
+            except Exception:
+                details = exc.response.text if exc.response is not None else str(exc)
+            return Response(
+                {"error": "kaufland_lookup_failed", "detail": _json_safe_error(details)},
+                status=status_code,
+            )
+        except requests.RequestException as exc:
+            return Response(
+                {
+                    "error": "kaufland_lookup_transport_error",
+                    "detail": str(exc),
+                },
+                status=502,
+            )
 
 
 class ChangeProductByEANAPIView(APIView):
     def post(self, request):
-        serializer = KauflandChangeByEANSerializer(data=request.data or {}, partial=True)
+        serializer = KauflandChangeByEANSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
         # Forward only fields explicitly provided by client.
-        allowed_fields = {
-            "ean",
-            "title",
-            "description",
-            "picture_urls",
-            "unit_id",
-            "storefront",
-            "price",
-            "controller",
-        }
+        allowed_fields = set(KAUFLAND_PRODUCT_WRITE_FIELDS)
         request_keys = set(request.data.keys()) if hasattr(request.data, "keys") else set()
 
         raw_changed = request.data.get("changed_fields") if hasattr(request.data, "get") else None
@@ -153,7 +170,7 @@ class CreateProductByEANAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         # Enforce primitive numeric types before forwarding to external API.
-        for int_field in ("price", "delivery", "height", "length", "width"):
+        for int_field in ("price", "delivery"):
             if int_field in payload:
                 payload[int_field] = int(payload[int_field])
         # Compatibility for upstream validators:
@@ -168,12 +185,8 @@ class CreateProductByEANAPIView(APIView):
                 pictures_str = str(picture_value or "")
                 payload["picture"] = [pictures_str] if pictures_str else []
             payload["pictures"] = pictures_str
-        # Lightweight debug log for outgoing create payload shape.
-        print("KAUFLAND_CREATE_OUTGOING:", payload)
-
         try:
             data = create_product_by_ean(payload)
-            print("KAUFLAND_CREATE_RESPONSE:", data)
             return Response(data, status=200)
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502

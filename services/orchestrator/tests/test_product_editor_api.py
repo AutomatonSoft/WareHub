@@ -24,6 +24,9 @@ class FakeProductEditorGateway:
         self.jv_batch_calls: list[dict] = []
         self.jv_local_calls: list[str] = []
         self.xl_batch_calls: list[dict] = []
+        self.kaufland_fetch_calls: list[str] = []
+        self.kaufland_change_calls: list[dict] = []
+        self.kaufland_create_calls: list[dict] = []
         self.jv_sites_calls = 0
         self.xl_sites_calls = 0
         self.fetch_by_account = {
@@ -133,6 +136,15 @@ class FakeProductEditorGateway:
                 ],
             },
         }
+        self.kaufland_by_controller = {
+            "jv": {
+                "response_data": {
+                    "ean": ["4012345678901"], "title": ["Desk Kaufland JV"], "price": [19900],
+                    "storefront": ["de"], "category": ["desks"], "picture": ["https://img/kaufland.jpg"],
+                }
+            },
+            "xl": {"detail": "not found"},
+        }
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
         body = self.fetch_by_account[account]
@@ -143,6 +155,20 @@ class FakeProductEditorGateway:
         self.patch_calls.append({"ean": ean, "account": account, "payload": payload, "request_id": request_id})
         result = self.patch_by_account[account]
         return type("R", (), {"status_code": result["status_code"], "body": result["body"]})()
+
+    def fetch_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str):
+        self.kaufland_fetch_calls.append(controller)
+        body = self.kaufland_by_controller[controller]
+        status_code = 200 if "ean" in body or "response_data" in body else 404
+        return type("R", (), {"status_code": status_code, "body": body})()
+
+    def change_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str, payload: dict):
+        self.kaufland_change_calls.append({"ean": ean, "controller": controller, "payload": payload})
+        return type("R", (), {"status_code": 200, "body": {"updated": True}})()
+
+    def create_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str, payload: dict):
+        self.kaufland_create_calls.append({"ean": ean, "controller": controller, "payload": payload})
+        return type("R", (), {"status_code": 201, "body": {"created": True}})()
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str):
         self.jv_sites_calls += 1
@@ -290,6 +316,24 @@ def test_product_editor_discover_respects_active_group_xl(tmp_path):
     assert targets["XLMOEBEL_DE"]["status"] == "found"
 
 
+def test_product_editor_discover_respects_active_group_kaufland(tmp_path):
+    client, gateway = _client(tmp_path)
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["selected_group_id"] == "KAUFLAND"
+    assert payload["selected_target_ids"] == ["KAUFLAND_JV"]
+    assert [group["id"] for group in payload["groups"]] == ["KAUFLAND"]
+    targets = {target["id"]: target for target in payload["groups"][0]["targets"]}
+    assert targets["KAUFLAND_JV"]["status"] == "found"
+    assert targets["KAUFLAND_XL"]["status"] == "missing"
+    assert gateway.kaufland_fetch_calls == ["jv", "xl"]
+
+
 def test_product_editor_load_returns_normalized_xl_draft(tmp_path):
     client, gateway = _client(tmp_path)
     response = client.post(
@@ -303,6 +347,36 @@ def test_product_editor_load_returns_normalized_xl_draft(tmp_path):
     assert payload["draft"]["source_model"] == "XL-DE-BASE"
     assert payload["draft"]["price"] == "39.99"
     assert "XLMOEBEL_DE" in gateway.xl_synced_site_keys
+
+
+def test_product_editor_kaufland_load_plan_and_apply_updates_found_and_creates_missing(tmp_path):
+    client, gateway = _client(tmp_path)
+    load_response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND", "baseline_target_id": "KAUFLAND_JV"},
+    )
+    assert load_response.status_code == 200
+    draft = load_response.json()["draft"]
+    assert draft["title"] == "Desk Kaufland JV"
+    assert draft["price"] == "19900"
+
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901", "active_group": "KAUFLAND", "changed_fields": ["title"],
+            "draft": {**draft, "title": "Updated desk"},
+            "selected_target_ids": ["KAUFLAND_JV", "KAUFLAND_XL"],
+        },
+    )
+    assert plan_response.status_code == 200
+    assert plan_response.json()["summary"]["operations"] == {"KAUFLAND_JV": "update", "KAUFLAND_XL": "create"}
+
+    apply_response = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": plan_response.json()["plan_id"], "confirmation": True})
+    assert apply_response.status_code == 200
+    assert apply_response.json()["status"] == "completed"
+    assert gateway.kaufland_change_calls[0]["controller"] == "jv"
+    assert gateway.kaufland_change_calls[0]["payload"]["changed_fields"] == ["title"]
+    assert gateway.kaufland_create_calls[0]["controller"] == "xl"
 
 
 def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local(tmp_path):
