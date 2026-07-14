@@ -64,6 +64,9 @@ services:
       AFTERBUY_CH_COOKIE_CACHE_FILE: ${AFTERBUY_CH_COOKIE_CACHE_FILE:?AFTERBUY_CH_COOKIE_CACHE_FILE is required}
       MOBILE_STAGE_APP_VERSION: ${MOBILE_STAGE_APP_VERSION:-}
       MOBILE_STAGE_APK_URL: ${MOBILE_STAGE_APK_URL:-}
+      MOBILE_STAGE_RELEASE_MANIFEST_PATH: /var/lib/warehub/mobile-release/current.json
+    volumes:
+      - ./mobile-release:/var/lib/warehub/mobile-release:ro
 
   frontend:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}:${FRONTEND_STAGE_TAG:?FRONTEND_STAGE_TAG is required}
