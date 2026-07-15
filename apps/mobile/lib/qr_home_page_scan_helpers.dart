@@ -207,7 +207,6 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
   }
 
   Future<_PlacementInput?> _askPlacementInput({
-    required String section,
     required int step,
     required int total,
   }) async {
@@ -251,16 +250,16 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
       }
       return _PlacementInput(
         placementStrategy: 'manual',
-        warehouseLocation: buildWarehouseLocation(section, nextSlotCode),
+        warehouseLocation: normalizeWarehousePlace(nextSlotCode),
       );
     }
 
-    if (isWarehouseSlotOccupied(_items, slotCode)) {
-      final String targetLocation = buildWarehouseLocation(section, slotCode);
+    final String targetLocation = normalizeWarehousePlace(slotCode);
+    if (isWarehousePlaceOccupied(_items, targetLocation)) {
       final List<IntakeData> existingAtLocation = _items
           .where((IntakeData item) =>
               item.isActiveEffective &&
-              item.warehouseLocation.trim().toUpperCase() == targetLocation)
+              normalizeWarehousePlace(item.warehouseLocation) == targetLocation)
           .toList(growable: false);
       final _ExistingProductDecision decision =
           await _askExistingProductDecision(
@@ -272,7 +271,7 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
         return null;
       }
       if (decision == _ExistingProductDecision.createNew) {
-        return _askPlacementInput(section: section, step: step, total: total);
+        return _askPlacementInput(step: step, total: total);
       }
       final IntakeData? representative = existingAtLocation.isNotEmpty
           ? (existingAtLocation
@@ -290,7 +289,7 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
 
     return _PlacementInput(
       placementStrategy: 'manual',
-      warehouseLocation: buildWarehouseLocation(section, slotCode),
+      warehouseLocation: targetLocation,
     );
   }
 }

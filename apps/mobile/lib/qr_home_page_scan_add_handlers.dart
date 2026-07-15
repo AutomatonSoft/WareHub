@@ -85,7 +85,6 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       }
 
       final _PlacementInput? placementInput = await _askPlacementInput(
-        section: section,
         step: 3,
         total: 9,
       );
@@ -134,6 +133,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        placementSection: section,
         photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,
@@ -225,7 +225,6 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       }
 
       final _PlacementInput? placementInput = await _askPlacementInput(
-        section: section,
         step: 3,
         total: 9,
       );
@@ -273,6 +272,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        placementSection: section,
         photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,
@@ -338,7 +338,6 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
       }
 
       final _PlacementInput? placementInput = await _askPlacementInput(
-        section: section,
         step: 3,
         total: 9,
       );
@@ -391,6 +390,7 @@ extension _QrHomePageScanAddHandlers on _QrHomePageState {
         categoryMain: addFlow.category.main,
         categorySub: addFlow.category.sub,
         warehouseLocation: placementInput.warehouseLocation,
+        placementSection: section,
         photoUrl: photoUrl,
         boxTotal: boxTotal,
         placementStrategy: placementInput.placementStrategy,

@@ -22,7 +22,8 @@ use crate::{
     delete_intake, delete_oldest_intake_by_location, env_flag, fetch_afterbuy_order,
     fetch_afterbuy_orders_by_kid, get_photo_cleanup_retry_queue_status,
     get_label_layout_settings, get_printer_setup_settings, healthz,
-    intakes_ws_handler, list_database_inventory_rows, list_intake_delete_audit_logs, list_intakes, list_product_stats,
+    intakes_ws_handler, list_database_inventory_filter_options, list_database_inventory_rows,
+    list_intake_delete_audit_logs, list_intakes, list_product_stats,
     list_service_logs, login_user, logout_user, mobile_app_update, openapi_json, readyz,
     refresh_user, register_user, request_authenticated_password_change_code,
     request_password_reset, scalar_ui, service_logs_page,
@@ -48,6 +49,10 @@ pub(crate) fn build_app(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/intakes", post(create_intake).get(list_intakes))
         .route("/inventory/rows", get(list_database_inventory_rows))
+        .route(
+            "/inventory/filter-options",
+            get(list_database_inventory_filter_options),
+        )
         .route("/inventory/kids", post(create_database_inventory_kid))
         .route(
             "/inventory/kids/:kid_ref/photo",

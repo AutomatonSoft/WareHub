@@ -251,8 +251,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     try {
       final AppStrings strings = _strings;
       final String payload = _buildLabelQrPayload(warehouseLocation);
-      final String mainCaption =
-          warehouseLocation.trim().toUpperCase().replaceAll(' ', '');
+      final String mainCaption = payload;
       final int partsTotal = totalParts ?? quantity;
       final List<ui.Image> images = <ui.Image>[];
       for (int i = 1; i <= quantity; i++) {

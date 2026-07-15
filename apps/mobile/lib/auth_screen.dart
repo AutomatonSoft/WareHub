@@ -28,6 +28,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _biometricBusy = false;
   bool _autoPrompted = false;
   bool _checkedBiometrics = false;
+  BiometricType? _preferredBiometricType;
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
@@ -317,7 +318,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               const SizedBox(height: AuthSpacing.md),
                               if (!_biometricAvailable)
                                 Text(
-                                  strings.fingerprintUnavailable,
+                                  strings.text('biometric_unavailable'),
                                   style: AuthTextStyles.helper,
                                 ),
                               if (_biometricAvailable &&
@@ -335,12 +336,18 @@ class _AuthScreenState extends State<AuthScreen> {
                                             strokeWidth: 2,
                                           ),
                                         )
-                                      : const Icon(
-                                          Icons.fingerprint,
+                                      : Icon(
+                                          _preferredBiometricType ==
+                                                  BiometricType.face
+                                              ? Icons.face_rounded
+                                              : _preferredBiometricType ==
+                                                      BiometricType.fingerprint
+                                                  ? Icons.fingerprint
+                                                  : Icons.lock_person_rounded,
                                           size: 20,
                                         ),
                                   label: Text(
-                                    strings.fingerprintLogin,
+                                    _biometricLoginLabel(strings),
                                     style: AuthTextStyles.label,
                                   ),
                                   style: FilledButton.styleFrom(
@@ -551,93 +558,87 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = AppStrings.of(context);
-    final EdgeInsets viewInsets = MediaQuery.viewInsetsOf(context);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AuthSpacing.screenHorizontal,
         vertical: AuthSpacing.xxl,
       ),
       backgroundColor: Colors.transparent,
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.only(bottom: viewInsets.bottom),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 430),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: AuthColors.card,
-              borderRadius: BorderRadius.circular(AuthRadii.xl),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 28,
-                  offset: const Offset(0, 16),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AuthSpacing.xl,
-                AuthSpacing.lg,
-                AuthSpacing.xl,
-                AuthSpacing.xl,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AuthColors.card,
+            borderRadius: BorderRadius.circular(AuthRadii.xl),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 28,
+                offset: const Offset(0, 16),
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            strings.text('reset_password_title'),
-                            style: AuthTextStyles.title.copyWith(fontSize: 24),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed:
-                              _busy ? null : () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AuthSpacing.sm),
-                    Text(
-                      _stepSubtitle(strings),
-                      style: AuthTextStyles.helper,
-                    ),
-                    const SizedBox(height: AuthSpacing.lg),
-                    ..._buildStepFields(strings),
-                    if ((_message ?? '').trim().isNotEmpty) ...<Widget>[
-                      const SizedBox(height: AuthSpacing.md),
-                      Container(
-                        padding: const EdgeInsets.all(AuthSpacing.md),
-                        decoration: BoxDecoration(
-                          color: _messageIsError
-                              ? AuthColors.destructive.withValues(alpha: 0.10)
-                              : AuthColors.muted,
-                          borderRadius: BorderRadius.circular(AuthRadii.md),
-                        ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AuthSpacing.xl,
+              AuthSpacing.lg,
+              AuthSpacing.xl,
+              AuthSpacing.xl,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
                         child: Text(
-                          _message!,
-                          style: AuthTextStyles.helper.copyWith(
-                            color: _messageIsError
-                                ? AuthColors.destructive
-                                : AuthColors.foreground,
-                          ),
+                          strings.text('reset_password_title'),
+                          style: AuthTextStyles.title.copyWith(fontSize: 24),
                         ),
                       ),
+                      IconButton(
+                        onPressed:
+                            _busy ? null : () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                     ],
-                    const SizedBox(height: AuthSpacing.lg),
-                    AuthPrimaryCta(
-                      label: _primaryLabel(strings),
-                      isBusy: _busy,
-                      onTap: _primaryAction,
+                  ),
+                  const SizedBox(height: AuthSpacing.sm),
+                  Text(
+                    _stepSubtitle(strings),
+                    style: AuthTextStyles.helper,
+                  ),
+                  const SizedBox(height: AuthSpacing.lg),
+                  ..._buildStepFields(strings),
+                  if ((_message ?? '').trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AuthSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.all(AuthSpacing.md),
+                      decoration: BoxDecoration(
+                        color: _messageIsError
+                            ? AuthColors.destructive.withValues(alpha: 0.10)
+                            : AuthColors.muted,
+                        borderRadius: BorderRadius.circular(AuthRadii.md),
+                      ),
+                      child: Text(
+                        _message!,
+                        style: AuthTextStyles.helper.copyWith(
+                          color: _messageIsError
+                              ? AuthColors.destructive
+                              : AuthColors.foreground,
+                        ),
+                      ),
                     ),
                   ],
-                ),
+                  const SizedBox(height: AuthSpacing.lg),
+                  AuthPrimaryCta(
+                    label: _primaryLabel(strings),
+                    isBusy: _busy,
+                    onTap: _primaryAction,
+                  ),
+                ],
               ),
             ),
           ),

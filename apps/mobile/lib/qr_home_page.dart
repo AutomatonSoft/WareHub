@@ -50,6 +50,7 @@ part 'qr_home_page_scan_helpers.dart';
 part 'qr_home_page_scan_entrypoints.dart';
 part 'qr_home_page_scan_add_handlers.dart';
 part 'qr_home_page_scan_add_flow.dart';
+part 'qr_home_page_select.dart';
 part 'qr_home_page_shell.dart';
 part 'qr_home_page_profile.dart';
 
@@ -98,10 +99,19 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   bool _loadingMoreList = false;
   bool _inventoryHasMore = true;
   int _inventoryNextOffset = 0;
-  int _inventoryTotalCount = 0;
+  int? _inventoryTotalCount;
   String _inventorySearch = '';
   int _inventoryQueryRevision = 0;
+  InventoryFilterOptions _inventoryFilterOptions =
+      const InventoryFilterOptions();
+  String? _inventoryPlace;
   String? _inventorySection;
+  String? _inventoryQuantity;
+  String? _inventoryRoom;
+  String? _inventoryType;
+  String? _inventoryCompany;
+  String? _inventoryColor;
+  String? _inventoryMaterial;
   InventoryDestinationFilter? _inventoryDestination;
   bool? _inventoryBWare;
   bool? _inventoryInTransit;
@@ -188,11 +198,7 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final List<GroupedIntakeData> groupedItems = _groupedItems();
-    final int activeCount = groupedItems
-        .where((GroupedIntakeData group) => !group.representative.isRemoved)
-        .fold<int>(0, (int sum, GroupedIntakeData group) => sum + group.count);
-    final int displayedCount =
-        _inventoryTotalCount > 0 ? _inventoryTotalCount : activeCount;
+    final AppStrings strings = AppStrings.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -215,7 +221,7 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: AuthLanguagePicker(
-              label: AppStrings.of(context).language,
+              label: strings.language,
               value: AppSettingsScope.of(context).language,
               onChanged: (AppLang lang) {
                 unawaited(AppSettingsScope.of(context).setLanguage(lang));
@@ -227,7 +233,7 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
       body: SafeArea(
         child: _buildSelectedHomeTab(
           groupedItems: groupedItems,
-          activeCount: displayedCount,
+          inventoryCount: _inventoryTotalCount,
         ),
       ),
       bottomNavigationBar: HomeBottomNavBar(
