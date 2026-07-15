@@ -542,63 +542,49 @@ extension _QrHomePageScanForms on _QrHomePageState {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedMain,
-                      isExpanded: true,
-                      style: _scanFieldTextStyle,
-                      decoration: _scanInputDecoration(
-                        label: strings.text('category_optional'),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
+                    AppSelectField<String>(
+                      label: strings.text('category_optional'),
+                      value: selectedMain,
+                      options: <AppSelectOption<String>>[
+                        AppSelectOption<String>(
                           value: '',
-                          child: Text(
-                            strings.text('no_selection'),
-                            style: _scanFieldTextStyle,
-                          ),
+                          label: strings.text('no_selection'),
                         ),
                         ...kCategoryMainOptionsGerman.map(
-                          (String main) => DropdownMenuItem<String>(
+                          (String main) => AppSelectOption<String>(
                             value: main,
-                            child: Text(main, style: _scanFieldTextStyle),
+                            label: main,
                           ),
                         ),
                       ],
-                      onChanged: (String? value) {
+                      onChanged: (String value) {
                         setStateDialog(() {
-                          selectedMain = value ?? '';
+                          selectedMain = value;
                           selectedSub = '';
                         });
                       },
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedSub,
-                      isExpanded: true,
-                      style: _scanFieldTextStyle,
-                      decoration: _scanInputDecoration(
-                        label: strings.text('subcategory_optional'),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
+                    AppSelectField<String>(
+                      label: strings.text('subcategory_optional'),
+                      value: selectedSub,
+                      options: <AppSelectOption<String>>[
+                        AppSelectOption<String>(
                           value: '',
-                          child: Text(
-                            strings.text('no_selection'),
-                            style: _scanFieldTextStyle,
-                          ),
+                          label: strings.text('no_selection'),
                         ),
                         ...subOptions.map(
-                          (String sub) => DropdownMenuItem<String>(
+                          (String sub) => AppSelectOption<String>(
                             value: sub,
-                            child: Text(sub, style: _scanFieldTextStyle),
+                            label: sub,
                           ),
                         ),
                       ],
                       onChanged: selectedMain.isEmpty
                           ? null
-                          : (String? value) {
+                          : (String value) {
                               setStateDialog(() {
-                                selectedSub = value ?? '';
+                                selectedSub = value;
                               });
                             },
                     ),

@@ -1,9 +1,12 @@
+from decimal import Decimal
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import ProgrammingError
 from django.test import override_settings
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
+from datetime import timedelta
 import requests
 
 from catalog_core.models import ImportedProduct
@@ -18,7 +21,8 @@ from .kid_green_import_service import (
     upsert_orders_for_kids,
 )
 from .kid_number_utils import primary_kid_number
-from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .inventory_audit_service import record_inventory_change, retained_inventory_history_photo_urls
+from .models import Ean, EanStatus, InventoryChangeLog, Kid, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -54,6 +58,185 @@ class DatabaseApiTests(APITestCase):
         self.kid.refresh_from_db()
 
         self.assertEqual(primary_kid_number(self.kid.kid_number), "NEW-003")
+
+    def test_inventory_change_history_removes_records_older_than_90_days(self):
+        expired_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="EXPIRED-001",
+            action="product_updated",
+        )
+        InventoryChangeLog.objects.filter(pk=expired_entry.pk).update(
+            created_at=timezone.now() - timedelta(days=91)
+        )
+        recent_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="RECENT-001",
+            action="product_updated",
+        )
+
+        response = self.client.get("/api/v1/inventory/change-history/?limit=20")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["id"] for row in response.data["results"]], [recent_entry.id])
+        self.assertFalse(InventoryChangeLog.objects.filter(pk=expired_entry.pk).exists())
+
+    def test_inventory_change_history_filters_by_kid_place_actor_and_date_range(self):
+        matching_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="KID-SEARCH-001",
+            place="155A",
+            actor_login="ravil",
+            actor_name="Ravil Raykhanov",
+            action="product_updated",
+        )
+        other_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="KID-OTHER-002",
+            place="39",
+            actor_login="other",
+            actor_name="Other User",
+            action="product_updated",
+        )
+        InventoryChangeLog.objects.filter(pk=other_entry.pk).update(
+            created_at=timezone.now() - timedelta(days=8)
+        )
+
+        response = self.client.get(
+            "/api/v1/inventory/change-history/",
+            {
+                "q": "155A",
+                "actor": "ravil",
+                "date_from": timezone.localdate().isoformat(),
+                "date_to": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["id"] for row in response.data["results"]], [matching_entry.id])
+        self.assertEqual(response.data["actors"], [{"value": "ravil", "label": "Ravil Raykhanov"}])
+
+    def test_inventory_change_history_paginates_ten_entries_per_page(self):
+        InventoryChangeLog.objects.bulk_create(
+            [
+                InventoryChangeLog(kid=self.kid, kid_number=f"KID-{index}", action="product_updated")
+                for index in range(12)
+            ]
+        )
+
+        response = self.client.get("/api/v1/inventory/change-history/", {"limit": 10, "page": 2})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["total"], 12)
+        self.assertEqual(response.data["page"], 2)
+        self.assertEqual(response.data["page_size"], 10)
+        self.assertEqual(len(response.data["results"]), 2)
+
+    def test_inventory_history_retains_removed_photo_urls_for_90_days(self):
+        retained_url = "https://example.test/removed-photo.png"
+        InventoryChangeLog.objects.create(
+            kid=self.kid,
+            action="product_updated",
+            changes=[{"field": "photo", "before": [retained_url], "after": []}],
+        )
+
+        self.assertEqual(
+            retained_inventory_history_photo_urls([retained_url, "https://example.test/unused-photo.png"]),
+            {retained_url},
+        )
+
+    def test_bulk_update_records_price_change_in_inventory_history(self):
+        ProductAttributes.objects.create(kid=self.kid, price="100.00")
+
+        response = self.client.patch(
+            "/api/v1/kids/bulk-update/",
+            {"updates": [{"kid_id": self.kid.id, "price": "125.50"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history_entry = InventoryChangeLog.objects.filter(kid=self.kid).latest("id")
+        self.assertEqual(
+            history_entry.changes,
+            [{"field": "attributes.price", "before": "100.00", "after": "125.50"}],
+        )
+
+    def test_inventory_history_records_each_product_field_change_separately(self):
+        record_inventory_change(
+            kid=self.kid,
+            actor={"login": "ravil", "name": "Ravil Raykhanov"},
+            action="product_updated",
+            changes=[
+                {"field": "attributes.price", "before": "100.00", "after": "125.50"},
+                {"field": "attributes.color", "before": "Black", "after": "White"},
+            ],
+        )
+
+        rows = list(InventoryChangeLog.objects.filter(kid=self.kid).order_by("id"))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            [row.changes for row in rows],
+            [
+                [{"field": "attributes.price", "before": "100.00", "after": "125.50"}],
+                [{"field": "attributes.color", "before": "Black", "after": "White"}],
+            ],
+        )
+
+    def test_inventory_dashboard_summary_reports_inventory_readiness(self):
+        self.kid.place = "1A"
+        self.kid.photo = ["https://example.test/product.png"]
+        self.kid.in_transit = True
+        self.kid.b_ware = True
+        self.kid.save(update_fields=["place", "photo", "in_transit", "b_ware"])
+        Ean.objects.create(kid=self.kid, main_ean="4260174428871")
+        ProductAttributes.objects.create(kid=self.kid, price=Decimal("199.99"))
+        EanStatus.objects.create(
+            ean=self.kid,
+            jv=True,
+            otto_jv=True,
+            ebay_xl=True,
+            kaufland_jv=True,
+            hood_xl=True,
+        )
+
+        missing_photo = Kid.objects.create(kid_number="MISSING-PHOTO", place="2A", in_transit=True)
+        Ean.objects.create(kid=missing_photo, main_ean="4260174428872")
+        ProductAttributes.objects.create(kid=missing_photo, price=Decimal("49.99"))
+
+        Kid.objects.create(
+            kid_number="MISSING-METADATA",
+            photo=["https://example.test/other.png"],
+        )
+
+        response = self.client.get("/api/v1/inventory/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            {
+                "total_products": 3,
+                "placed_products": 2,
+                "unplaced_products": 1,
+                "without_photos": 1,
+                "without_ean": 1,
+                "without_price": 1,
+                "ready_for_listing": 1,
+                "readiness_percent": 33,
+                "in_transit_products": 2,
+                "b_ware_products": 1,
+                "marketplace_statuses": {
+                    "jv": {"true_count": 1, "false_count": 0},
+                    "xl": {"true_count": 0, "false_count": 1},
+                    "otto_jv": {"true_count": 1, "false_count": 0},
+                    "otto_xl": {"true_count": 0, "false_count": 1},
+                    "ebay_jv": {"true_count": 0, "false_count": 1},
+                    "ebay_xl": {"true_count": 1, "false_count": 0},
+                    "kaufland_jv": {"true_count": 1, "false_count": 0},
+                    "kaufland_xl": {"true_count": 0, "false_count": 1},
+                    "hood_jv": {"true_count": 0, "false_count": 1},
+                    "hood_xl": {"true_count": 1, "false_count": 0},
+                },
+            },
+        )
 
     def test_create_kid(self):
         payload = {"kid_number": "900900"}
@@ -2012,6 +2195,17 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["main_ean"], "4444444444444")
         self.assertEqual(response.data["database_ean"], "4444444444444")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
+
+    def test_marketplace_eans_patch_allows_b_ware_for_otto_only(self):
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-eans/",
+            {"otto_jv_ean": "b-ware", "otto_xl_ean": "B_WARE"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["otto_jv_ean"], "B_WARE")
+        self.assertEqual(response.data["otto_xl_ean"], "B_WARE")
 
     def test_marketplace_eans_get_hides_placeholder_values(self):
         Ean.objects.create(

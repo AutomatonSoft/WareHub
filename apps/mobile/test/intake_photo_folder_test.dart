@@ -4,6 +4,7 @@ import 'package:sofortbot_mobile/intake_photo_folder.dart';
 void main() {
   test('buildIntakePhotoFolder normalizes and combines section/location', () {
     expect(buildIntakePhotoFolder(' d ', ' a12 '), 'D_A12');
+    expect(buildIntakePhotoFolder('Showroom', 'Showroom 12'), 'A_A12');
   });
 
   test('buildIntakePhotoFolder keeps underscores and uppercases values', () {
@@ -30,6 +31,10 @@ void main() {
     expect(
       parseIntakePhotoFolder('D_A_12'),
       (section: 'D', warehouseLocation: 'A_12'),
+    );
+    expect(
+      parseIntakePhotoFolder('SHOWROOM_SHOWROOM12'),
+      (section: 'A', warehouseLocation: 'A12'),
     );
   });
 

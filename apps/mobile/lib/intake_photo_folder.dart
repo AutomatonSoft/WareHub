@@ -1,11 +1,14 @@
+import 'warehouse_constants.dart';
+
 /// Produces a stable folder token for intake photos.
 ///
 /// Output contract remains `<SECTION>_<WAREHOUSE_LOCATION>` to keep existing
 /// storage layout backwards compatible.
 String buildIntakePhotoFolder(String section, String warehouseLocation) {
-  final String normalizedSection = normalizeIntakePhotoFolderToken(section);
-  final String normalizedLocation =
-      normalizeIntakePhotoFolderToken(warehouseLocation);
+  final String normalizedSection =
+      normalizeIntakePhotoFolderToken(normalizeWarehouseSection(section));
+  final String normalizedLocation = normalizeIntakePhotoFolderToken(
+      normalizeWarehouseLocation(warehouseLocation));
   return '${normalizedSection}_$normalizedLocation';
 }
 
@@ -56,11 +59,15 @@ String normalizeIntakePhotoFolderToken(String value) {
 ) {
   final int separatorIndex = folder.indexOf('_');
   if (separatorIndex < 0) {
-    return (section: folder, warehouseLocation: '');
+    return (
+      section: normalizeWarehouseSection(folder),
+      warehouseLocation: '',
+    );
   }
 
   return (
-    section: folder.substring(0, separatorIndex),
-    warehouseLocation: folder.substring(separatorIndex + 1),
+    section: normalizeWarehouseSection(folder.substring(0, separatorIndex)),
+    warehouseLocation:
+        normalizeWarehouseLocation(folder.substring(separatorIndex + 1)),
   );
 }

@@ -1,6 +1,8 @@
 import re
 import logging
 
+from django.db.models import Count, Q
+
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
@@ -10,6 +12,107 @@ from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN = ""
+MARKETPLACE_STATUS_FIELDS = (
+    "jv",
+    "xl",
+    "otto_jv",
+    "otto_xl",
+    "ebay_jv",
+    "ebay_xl",
+    "kaufland_jv",
+    "kaufland_xl",
+    "hood_jv",
+    "hood_xl",
+)
+
+
+def _has_photo_value(value: object) -> bool:
+    if isinstance(value, list):
+        return any(str(item or "").strip() for item in value)
+    return bool(str(value or "").strip())
+
+
+def _has_main_ean(value: object) -> bool:
+    normalized = str(value or "").strip()
+    return bool(normalized) and normalized != "0000000000000"
+
+
+def build_inventory_dashboard_summary() -> dict[str, object]:
+    rows = Kid.objects.values(
+        "place",
+        "photo",
+        "in_transit",
+        "b_ware",
+        "ean__main_ean",
+        "product_attributes__price",
+    )
+
+    total_products = 0
+    placed_products = 0
+    without_photos = 0
+    without_ean = 0
+    without_price = 0
+    ready_for_listing = 0
+    in_transit_products = 0
+    b_ware_products = 0
+
+    for row in rows.iterator():
+        total_products += 1
+        has_place = bool(str(row["place"] or "").strip())
+        has_photo = _has_photo_value(row["photo"])
+        has_ean = _has_main_ean(row["ean__main_ean"])
+        has_price = row["product_attributes__price"] is not None
+
+        if has_place:
+            placed_products += 1
+        if not has_photo:
+            without_photos += 1
+        if not has_ean:
+            without_ean += 1
+        if not has_price:
+            without_price += 1
+        if has_photo and has_ean and has_price:
+            ready_for_listing += 1
+        if row["in_transit"]:
+            in_transit_products += 1
+        if row["b_ware"]:
+            b_ware_products += 1
+
+    readiness_percent = 0
+    if total_products:
+        readiness_percent = round((ready_for_listing / total_products) * 100)
+
+    status_aggregate = EanStatus.objects.aggregate(
+        **{
+            f"{field_name}_true": Count("id", filter=Q(**{field_name: True}))
+            for field_name in MARKETPLACE_STATUS_FIELDS
+        },
+        **{
+            f"{field_name}_false": Count("id", filter=Q(**{field_name: False}))
+            for field_name in MARKETPLACE_STATUS_FIELDS
+        },
+    )
+    marketplace_statuses = {
+        field_name: {
+            "true_count": status_aggregate[f"{field_name}_true"],
+            "false_count": status_aggregate[f"{field_name}_false"],
+        }
+        for field_name in MARKETPLACE_STATUS_FIELDS
+    }
+
+    return {
+        "total_products": total_products,
+        "placed_products": placed_products,
+        "unplaced_products": total_products - placed_products,
+        "without_photos": without_photos,
+        "without_ean": without_ean,
+        "without_price": without_price,
+        "ready_for_listing": ready_for_listing,
+        "readiness_percent": readiness_percent,
+        "in_transit_products": in_transit_products,
+        "b_ware_products": b_ware_products,
+        "marketplace_statuses": marketplace_statuses,
+    }
 
 def _norm_ean(value: object) -> str:
     normalized = str(value or "").strip()

@@ -25,7 +25,16 @@ pub(crate) struct DatabaseInventoryRowsQuery {
     pub(crate) offset: Option<i64>,
     pub(crate) search: Option<String>,
     pub(crate) q: Option<String>,
+    pub(crate) place: Option<String>,
     pub(crate) section: Option<String>,
+    pub(crate) quantity: Option<String>,
+    pub(crate) room: Option<String>,
+    #[serde(rename = "type")]
+    pub(crate) furniture_type: Option<String>,
+    pub(crate) company: Option<String>,
+    pub(crate) color: Option<String>,
+    pub(crate) material: Option<String>,
+    pub(crate) location: Option<String>,
     pub(crate) store: Option<bool>,
     pub(crate) b_ware: Option<bool>,
     pub(crate) in_transit: Option<bool>,
@@ -42,16 +51,38 @@ struct DatabaseInventoryRowsRequest {
     page_size: i64,
     page: i64,
     search: Option<String>,
+    place: Option<String>,
     section: Option<String>,
-    store: Option<bool>,
+    quantity: Option<String>,
+    room: Option<String>,
+    furniture_type: Option<String>,
+    company: Option<String>,
+    color: Option<String>,
+    material: Option<String>,
+    location: Option<String>,
     b_ware: Option<bool>,
     in_transit: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub(crate) struct MobileInventoryFilterOptionsDto {
+    pub(crate) places: Vec<String>,
+    pub(crate) sections: Vec<String>,
+    pub(crate) locations: Vec<String>,
+    pub(crate) quantities: Vec<String>,
+    pub(crate) rooms: Vec<String>,
+    pub(crate) types: Vec<String>,
+    pub(crate) companies: Vec<String>,
+    pub(crate) colors: Vec<String>,
+    pub(crate) materials: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct DatabaseKidCreatePayload {
     kid_number: String,
     place: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section: Option<String>,
     skip_order_sync: bool,
     quantity: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,6 +145,55 @@ pub(crate) async fn list_database_inventory_rows(
         .map(Json)
 }
 
+pub(crate) async fn list_database_inventory_filter_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<MobileInventoryFilterOptionsDto>, (StatusCode, Json<ErrorResponse>)> {
+    let _user = require_approved_user(&state, &headers).await?;
+    let Some(config) = state.database_kid_sync.clone() else {
+        return Err(database_inventory_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "database_inventory_not_configured",
+            "database-service integration is not configured",
+        ));
+    };
+    let url = format!("{}/api/v1/inventory/filter-options/", config.base_url);
+    let response = state
+        .http_client
+        .get(url)
+        .header("x-warehub-service-token", &config.service_token)
+        .timeout(Duration::from_secs(DATABASE_INVENTORY_TIMEOUT_SECONDS))
+        .send()
+        .await
+        .map_err(|error| {
+            database_inventory_error(
+                StatusCode::BAD_GATEWAY,
+                "database_inventory_filter_options_request_failed",
+                format!("failed to request database-service inventory filter options: {error}"),
+            )
+        })?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(database_inventory_error(
+            StatusCode::BAD_GATEWAY,
+            "database_inventory_filter_options_upstream_failed",
+            format!("database-service returned HTTP {status}: {body}"),
+        ));
+    }
+    response
+        .json::<MobileInventoryFilterOptionsDto>()
+        .await
+        .map(Json)
+        .map_err(|error| {
+            database_inventory_error(
+                StatusCode::BAD_GATEWAY,
+                "database_inventory_filter_options_response_invalid",
+                format!("database-service inventory filter options response is invalid: {error}"),
+            )
+        })
+}
+
 pub(crate) async fn create_database_inventory_kid(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -151,6 +231,11 @@ async fn list_database_inventory_rows_service(
     let limit = normalize_page_size(query.limit);
     let offset = query.offset.unwrap_or(0).max(0);
     let page = normalize_page(Some(offset), limit);
+    let location = normalized_optional_text(query.location.as_deref()).or_else(|| {
+        query
+            .store
+            .map(|store| if store { "store" } else { "warehouse" }.to_string())
+    });
     let response = fetch_database_inventory_rows_page(
         state,
         &config,
@@ -158,8 +243,15 @@ async fn list_database_inventory_rows_service(
             page_size: limit,
             page,
             search: query.search.or(query.q),
+            place: query.place,
             section: query.section,
-            store: query.store,
+            quantity: query.quantity,
+            room: query.room,
+            furniture_type: query.furniture_type,
+            company: query.company,
+            color: query.color,
+            material: query.material,
+            location,
             b_ware: query.b_ware,
             in_transit: query.in_transit,
         },
@@ -364,13 +456,33 @@ async fn fetch_database_inventory_rows_page(
         if let Some(search) = normalized_optional_text(request.search.as_deref()) {
             pairs.append_pair("q", &search);
         }
-        pairs.append_pair("sort", "section_slot");
-        pairs.append_pair("dir", "asc");
+        pairs.append_pair("place_sort", "asc");
+        if let Some(place) = normalized_optional_text(request.place.as_deref()) {
+            pairs.append_pair("place", &place);
+        }
         if let Some(section) = normalized_optional_text(request.section.as_deref()) {
             pairs.append_pair("section", &section);
         }
-        if let Some(store) = request.store {
-            pairs.append_pair("store", if store { "true" } else { "false" });
+        if let Some(quantity) = normalized_optional_text(request.quantity.as_deref()) {
+            pairs.append_pair("quantity", &quantity);
+        }
+        if let Some(room) = normalized_optional_text(request.room.as_deref()) {
+            pairs.append_pair("room", &room);
+        }
+        if let Some(furniture_type) = normalized_optional_text(request.furniture_type.as_deref()) {
+            pairs.append_pair("type", &furniture_type);
+        }
+        if let Some(company) = normalized_optional_text(request.company.as_deref()) {
+            pairs.append_pair("company", &company);
+        }
+        if let Some(color) = normalized_optional_text(request.color.as_deref()) {
+            pairs.append_pair("color", &color);
+        }
+        if let Some(material) = normalized_optional_text(request.material.as_deref()) {
+            pairs.append_pair("material", &material);
+        }
+        if let Some(location) = normalized_optional_text(request.location.as_deref()) {
+            pairs.append_pair("location", &location);
         }
         if let Some(b_ware) = request.b_ware {
             pairs.append_pair("b_ware", if b_ware { "true" } else { "false" });
@@ -440,6 +552,8 @@ fn build_database_kid_create_payload(
     Ok(DatabaseKidCreatePayload {
         kid_number,
         place,
+        section: normalized_optional_text(payload.placement_section.as_deref())
+            .map(|value| value.to_uppercase()),
         skip_order_sync: true,
         quantity: payload.box_total.unwrap_or(1).max(1),
         color: normalized_optional_text(payload.product_color.as_deref()),
@@ -459,7 +573,7 @@ fn map_kid_response_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
         .unwrap_or_default();
     let kid_number = text_field(row, "kid_number").unwrap_or_default();
     let place = text_field(row, "place").unwrap_or_default();
-    let (section, slot_number) = parse_place(&place);
+    let (section, slot_number) = section_and_slot_from_row(row, &place);
     MobileInventoryRowDto {
         id,
         database_kid_id: int_field(row, "id").unwrap_or(0).max(0) as i64,
@@ -493,7 +607,7 @@ fn map_inventory_row_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
     let kid_number = text_field(row, "kid_number").unwrap_or_default();
     let order_id = text_field(row, "order_id").filter(|value| value != "-");
     let place = text_field(row, "place").unwrap_or_default();
-    let (section, slot_number) = parse_place(&place);
+    let (section, slot_number) = section_and_slot_from_row(row, &place);
     let quantity = int_field(row, "quantity").unwrap_or(1).max(1);
 
     MobileInventoryRowDto {
@@ -549,6 +663,15 @@ fn parse_place(place: &str) -> (String, i32) {
         }
     }
     let slot_number = digits.parse::<i32>().unwrap_or(0);
+    (section, slot_number)
+}
+
+fn section_and_slot_from_row(row: &Value, place: &str) -> (String, i32) {
+    let (parsed_section, slot_number) = parse_place(place);
+    let section = text_field(row, "section")
+        .filter(|value| value != "-")
+        .map(|value| value.to_uppercase())
+        .unwrap_or(parsed_section);
     (section, slot_number)
 }
 
@@ -656,7 +779,8 @@ mod tests {
             "id": "KID-42",
             "kid_id": 42,
             "kid_number": "KID-001",
-            "place": "E123",
+            "place": "1A",
+            "section": "A",
             "photo": ["https://cdn.example.com/1.jpg"],
             "order_id": "-",
             "sku": "SKU-1",
@@ -672,9 +796,9 @@ mod tests {
         assert_eq!(mapped.id, "KID-42");
         assert_eq!(mapped.database_kid_id, 42);
         assert_eq!(mapped.qr_code, "KID-001");
-        assert_eq!(mapped.warehouse_location, "E123");
-        assert_eq!(mapped.section, "E");
-        assert_eq!(mapped.slot_number, 123);
+        assert_eq!(mapped.warehouse_location, "1A");
+        assert_eq!(mapped.section, "A");
+        assert_eq!(mapped.slot_number, 1);
         assert_eq!(mapped.box_total, 3);
         assert_eq!(mapped.product_key.as_deref(), Some("SKU-1"));
         assert!(mapped.store);
@@ -691,7 +815,7 @@ mod tests {
         let payload = CreateIntakeRequest {
             qr_code: "QR-1".to_string(),
             warehouse_location: Some("E123".to_string()),
-            placement_section: None,
+            placement_section: Some("A".to_string()),
             kid_number: "KID-001".to_string(),
             photo_url: Some(" https://cdn.example.com/1.jpg, https://cdn.example.com/2.jpg ".to_string()),
             product_key: None,
@@ -710,6 +834,7 @@ mod tests {
 
         assert_eq!(create_payload.kid_number, "KID-001");
         assert_eq!(create_payload.place, "E123");
+        assert_eq!(create_payload.section.as_deref(), Some("A"));
         assert!(create_payload.store);
         assert!(create_payload.in_transit);
         assert!(create_payload.b_ware);
@@ -729,5 +854,26 @@ mod tests {
         assert_eq!(normalize_page_size(Some(700)), 100);
         assert_eq!(normalize_page(Some(20), 20), 2);
         assert_eq!(normalize_page(Some(-1), 20), 1);
+    }
+
+    #[test]
+    fn decodes_inventory_filter_options_contract() {
+        let options: MobileInventoryFilterOptionsDto = serde_json::from_value(json!({
+            "places": ["1A", "1B"],
+            "sections": ["A"],
+            "locations": ["warehouse"],
+            "quantities": ["1", "2"],
+            "rooms": ["Wohnzimmer"],
+            "types": ["Sofa"],
+            "companies": ["Brand"],
+            "colors": ["Blue"],
+            "materials": ["Velvet"]
+        }))
+        .expect("filter options");
+
+        assert_eq!(options.places, vec!["1A", "1B"]);
+        assert_eq!(options.sections, vec!["A"]);
+        assert_eq!(options.quantities, vec!["1", "2"]);
+        assert_eq!(options.materials, vec!["Velvet"]);
     }
 }

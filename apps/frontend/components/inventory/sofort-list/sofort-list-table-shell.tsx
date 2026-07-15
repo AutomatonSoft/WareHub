@@ -89,6 +89,49 @@ type FullscreenGalleryState = {
   index: number;
 };
 
+const BLANK_PRODUCT_IMAGE_URL = "https://mediawarehub.veloxdesk.com/warehub/blank.png";
+const PALLET_PRODUCT_IMAGE_URL = "https://mediawarehub.veloxdesk.com/warehub/pallet.png";
+
+type ProductThumbnailProps = {
+  row: SofortListRow;
+  productPhotoAlt: string;
+  onOpenGallery: (photos: string[], startIndex?: number) => void;
+};
+
+function isPalletValue(value: string | null): boolean {
+  return /^(?:\u043f\u0430\u043b\u0435\u0442\u044b|pallets?|paletten)!*$/.test(
+    value?.trim().toLocaleLowerCase("ru-RU") ?? ""
+  );
+}
+
+function isPalletProduct(row: SofortListRow): boolean {
+  return isPalletValue(row.room) || isPalletValue(row.furnitureType);
+}
+
+function ProductThumbnail({ row, productPhotoAlt, onOpenGallery }: ProductThumbnailProps) {
+  if (isPalletProduct(row)) {
+    return (
+      <div className="wh-sofort-product-cell__image wh-sofort-product-cell__image--static">
+        <Image src={PALLET_PRODUCT_IMAGE_URL} alt={row.furnitureType ?? ""} width={240} height={240} unoptimized className="wh-sofort-photo" />
+      </div>
+    );
+  }
+
+  if (row.photo !== "-") {
+    return (
+      <button type="button" className="wh-sofort-product-cell__image" onClick={() => onOpenGallery(row.photoUrls, 0)}>
+        <Image src={row.photo} alt={productPhotoAlt} width={240} height={240} unoptimized className="wh-sofort-photo" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="wh-sofort-product-cell__image wh-sofort-product-cell__image--static">
+      <Image src={BLANK_PRODUCT_IMAGE_URL} alt="" width={240} height={240} unoptimized className="wh-sofort-photo" />
+    </div>
+  );
+}
+
 const MARKETPLACE_CONFIRM_TARGETS = [
   { key: "JV", state: "live" as const },
   { key: "XL", state: "live" as const },
@@ -1011,15 +1054,11 @@ export function SofortListTableShell(props: {
                     </div>
                   </td>
                   <td className="wh-sofort-image-cell wh-sofort-cell py-3 text-center align-middle">
-                    {row.photo !== "-" ? (
-                      <button type="button" className="wh-sofort-product-cell__image" onClick={() => openFullscreenGallery(row.photoUrls, 0)}>
-                        <Image src={row.photo} alt={t.productPhotoForKid.replace("{kid}", row.kidNumber)} width={240} height={240} unoptimized className="wh-sofort-photo" />
-                      </button>
-                    ) : (
-                      <div className="wh-sofort-product-cell__image">
-                        <div className="wh-sofort-photo-placeholder" />
-                      </div>
-                    )}
+                    <ProductThumbnail
+                      row={row}
+                      productPhotoAlt={t.productPhotoForKid.replace("{kid}", row.kidNumber)}
+                      onOpenGallery={openFullscreenGallery}
+                    />
                   </td>
                   <td className="wh-sofort-product-cell-wrap wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-product-cell">
@@ -1149,15 +1188,11 @@ export function SofortListTableShell(props: {
 
                 <div className="wh-sofort-mobile-card__main">
                   <div className="wh-sofort-mobile-card__image-wrap">
-                    {row.photo !== "-" ? (
-                      <button type="button" className="wh-sofort-product-cell__image" onClick={() => openFullscreenGallery(row.photoUrls, 0)}>
-                        <Image src={row.photo} alt={t.productPhotoForKid.replace("{kid}", row.kidNumber)} width={240} height={240} unoptimized className="wh-sofort-photo" />
-                      </button>
-                    ) : (
-                      <div className="wh-sofort-product-cell__image">
-                        <div className="wh-sofort-photo-placeholder" />
-                      </div>
-                    )}
+                    <ProductThumbnail
+                      row={row}
+                      productPhotoAlt={t.productPhotoForKid.replace("{kid}", row.kidNumber)}
+                      onOpenGallery={openFullscreenGallery}
+                    />
                   </div>
 
                   <div className="wh-sofort-mobile-card__content">

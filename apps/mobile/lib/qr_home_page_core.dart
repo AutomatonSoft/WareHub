@@ -130,7 +130,7 @@ extension _QrHomePageCore on _QrHomePageState {
           .where((String value) => value.isNotEmpty)
           .toSet()
           .toList(growable: false)
-        ..sort();
+        ..sort(compareWarehousePlaces);
       grouped.add(
         GroupedIntakeData(
           representative: representative,
@@ -143,13 +143,17 @@ extension _QrHomePageCore on _QrHomePageState {
     grouped.sort((GroupedIntakeData a, GroupedIntakeData b) {
       final IntakeData left = a.representative;
       final IntakeData right = b.representative;
-      final int sectionOrder = left.section
-          .trim()
-          .toUpperCase()
-          .compareTo(right.section.trim().toUpperCase());
+      final String leftPlace = a.warehouseLocations.isNotEmpty
+          ? a.warehouseLocations.first
+          : left.warehouseLocation;
+      final String rightPlace = b.warehouseLocations.isNotEmpty
+          ? b.warehouseLocations.first
+          : right.warehouseLocation;
+      final int sectionOrder =
+          compareWarehouseSections(left.section, right.section);
       if (sectionOrder != 0) return sectionOrder;
-      final int slotOrder = left.slotNumber.compareTo(right.slotNumber);
-      if (slotOrder != 0) return slotOrder;
+      final int placeOrder = compareWarehousePlaces(leftPlace, rightPlace);
+      if (placeOrder != 0) return placeOrder;
       return left.databaseKidId.compareTo(right.databaseKidId);
     });
     return grouped;
@@ -264,7 +268,6 @@ extension _QrHomePageCore on _QrHomePageState {
         _loadingList = true;
         _inventoryNextOffset = 0;
         _inventoryHasMore = true;
-        _inventoryTotalCount = 0;
       } else {
         _loadingMoreList = true;
       }
@@ -367,11 +370,21 @@ extension _QrHomePageCore on _QrHomePageState {
       'offset': '$offset',
     };
     if (_inventorySearch.isNotEmpty) query['q'] = _inventorySearch;
-    if (_inventorySection != null) query['section'] = _inventorySection!;
+    if (_inventoryPlace != null) query['place'] = _inventoryPlace!;
+    if (_inventorySection != null) {
+      query['section'] = normalizeWarehouseSection(_inventorySection!);
+    }
+    if (_inventoryQuantity != null) query['quantity'] = _inventoryQuantity!;
+    if (_inventoryRoom != null) query['room'] = _inventoryRoom!;
+    if (_inventoryType != null) query['type'] = _inventoryType!;
+    if (_inventoryCompany != null) query['company'] = _inventoryCompany!;
+    if (_inventoryColor != null) query['color'] = _inventoryColor!;
+    if (_inventoryMaterial != null) query['material'] = _inventoryMaterial!;
     if (_inventoryDestination != null) {
-      query['store'] = _inventoryDestination == InventoryDestinationFilter.store
-          ? 'true'
-          : 'false';
+      query['location'] =
+          _inventoryDestination == InventoryDestinationFilter.store
+              ? 'store'
+              : 'warehouse';
     }
     if (_inventoryBWare != null) query['b_ware'] = _inventoryBWare.toString();
     if (_inventoryInTransit != null) {
@@ -382,11 +395,41 @@ extension _QrHomePageCore on _QrHomePageState {
   }
 
   int get _activeInventoryFilterCount => <Object?>[
+        _inventoryPlace,
         _inventorySection,
+        _inventoryQuantity,
+        _inventoryRoom,
+        _inventoryType,
+        _inventoryCompany,
+        _inventoryColor,
+        _inventoryMaterial,
         _inventoryDestination,
         _inventoryBWare,
         _inventoryInTransit,
       ].whereType<Object>().length;
+
+  Future<void> _loadInventoryFilterOptions() async {
+    final http.Response response = await _authorizedRequest(
+      'GET',
+      Uri.parse('${_effectiveApiBase()}/inventory/filter-options'),
+      headers: _authHeaders(),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _handleUnauthorizedAfterRefresh();
+      return;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('HTTP ${response.statusCode}');
+    }
+    final dynamic decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid inventory filter options');
+    }
+    if (!mounted) return;
+    setState(() {
+      _inventoryFilterOptions = InventoryFilterOptions.fromJson(decoded);
+    });
+  }
 
   Future<void> _submitInventorySearch(String value) async {
     _inventorySearchDebounceTimer?.cancel();
@@ -422,13 +465,28 @@ extension _QrHomePageCore on _QrHomePageState {
   }
 
   Future<void> _applyInventoryFilters({
+    required String? place,
     required String? section,
+    required String? quantity,
+    required String? room,
+    required String? type,
+    required String? company,
+    required String? color,
+    required String? material,
     required InventoryDestinationFilter? destination,
     required bool? bWare,
     required bool? inTransit,
   }) async {
     setState(() {
-      _inventorySection = section;
+      _inventoryPlace = place;
+      final String normalizedSection = normalizeWarehouseSection(section ?? '');
+      _inventorySection = normalizedSection.isEmpty ? null : normalizedSection;
+      _inventoryQuantity = quantity;
+      _inventoryRoom = room;
+      _inventoryType = type;
+      _inventoryCompany = company;
+      _inventoryColor = color;
+      _inventoryMaterial = material;
       _inventoryDestination = destination;
       _inventoryBWare = bWare;
       _inventoryInTransit = inTransit;
@@ -576,8 +634,9 @@ extension _QrHomePageCore on _QrHomePageState {
       'store': store,
       'in_transit': inTransit,
     };
-    final String? normalizedPlacementSection =
-        placementSection?.trim().toUpperCase();
+    final String? normalizedPlacementSection = placementSection == null
+        ? null
+        : normalizeWarehouseSection(placementSection);
     if (normalizedPlacementSection != null &&
         normalizedPlacementSection.isNotEmpty) {
       body['placement_section'] = normalizedPlacementSection;
@@ -603,7 +662,9 @@ extension _QrHomePageCore on _QrHomePageState {
     if (normalizedCategorySub != null && normalizedCategorySub.isNotEmpty) {
       body['category_sub'] = normalizedCategorySub;
     }
-    final String? normalizedWarehouseLocation = warehouseLocation?.trim();
+    final String? normalizedWarehouseLocation = warehouseLocation == null
+        ? null
+        : normalizeWarehouseLocation(warehouseLocation);
     if (normalizedWarehouseLocation != null &&
         normalizedWarehouseLocation.isNotEmpty) {
       body['warehouse_location'] = normalizedWarehouseLocation;
@@ -740,6 +801,8 @@ extension _QrHomePageCore on _QrHomePageState {
         SnackBar(
           content: Text(message),
           backgroundColor: error ? Colors.red.shade700 : null,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 56),
         ),
       );
   }

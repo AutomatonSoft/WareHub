@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
+from database.inventory_audit_service import record_inventory_change, request_actor
+from database.models import Kid
 from database.serializers import (
     MarketplaceDeactivateByEANSerializer,
     MarketplaceDeactivateByKidSerializer,
@@ -19,6 +21,18 @@ from database.marketplace_deactivate_service import (
     toggle_local_marketplace_statuses_by_kid_number,
 )
 from jv_services.view_helpers import session_actor
+
+
+def _record_marketplace_change(request, *, kid_number: str, inactive: bool, channel: str) -> None:
+    kid = Kid.objects.filter(kid_number__contains=[kid_number]).order_by("id").first()
+    if kid is None:
+        return
+    record_inventory_change(
+        kid=kid,
+        actor=request_actor(request),
+        action="marketplace_deactivated" if inactive else "marketplace_activated",
+        metadata={"channel": channel},
+    )
 
 
 class MarketplaceDeactivateByKidAPIView(APIView):
@@ -39,6 +53,13 @@ class MarketplaceDeactivateByKidAPIView(APIView):
                 place=validated.get("place"),
                 payloads_by_site_key=validated.get("payloads") or {},
             )
+            if 200 <= result["status_code"] < 300:
+                _record_marketplace_change(
+                    request,
+                    kid_number=str(validated["kid_number"]).strip(),
+                    inactive=bool(validated.get("inactive", True)),
+                    channel="MARKETPLACES",
+                )
             return Response(result["payload"], status=result["status_code"])
 
         serializer = MarketplaceDeactivateByEANSerializer(data=body)
@@ -68,6 +89,13 @@ class MarketplaceJVDeactivateSofortByKidAPIView(APIView):
             actor=actor,
             place=validated.get("place"),
         )
+        if 200 <= result["status_code"] < 300:
+            _record_marketplace_change(
+                request,
+                kid_number=str(validated["kid_number"]).strip(),
+                inactive=bool(validated.get("inactive", True)),
+                channel="JV",
+            )
         return Response(result["payload"], status=result["status_code"])
 
 
@@ -85,6 +113,13 @@ class MarketplaceHoodDeactivateByKidAPIView(APIView):
             actor=actor,
             place=validated.get("place"),
         )
+        if 200 <= result["status_code"] < 300:
+            _record_marketplace_change(
+                request,
+                kid_number=str(validated["kid_number"]).strip(),
+                inactive=bool(validated.get("inactive", True)),
+                channel="HOOD",
+            )
         return Response(result["payload"], status=result["status_code"])
 
 
@@ -102,6 +137,13 @@ class MarketplaceXLDeactivateByKidAPIView(APIView):
             actor=actor,
             place=validated.get("place"),
         )
+        if 200 <= result["status_code"] < 300:
+            _record_marketplace_change(
+                request,
+                kid_number=str(validated["kid_number"]).strip(),
+                inactive=bool(validated.get("inactive", True)),
+                channel="XL",
+            )
         return Response(result["payload"], status=result["status_code"])
 
 
@@ -118,4 +160,11 @@ class MarketplaceLocalStatusesByKidAPIView(APIView):
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
         )
+        if 200 <= result["status_code"] < 300:
+            _record_marketplace_change(
+                request,
+                kid_number=str(validated["kid_number"]).strip(),
+                inactive=bool(validated.get("inactive", True)),
+                channel="LOCAL",
+            )
         return Response(result["payload"], status=result["status_code"])

@@ -2,7 +2,9 @@ export type KpiMetricId =
   | "total_products"
   | "stock_value"
   | "low_stock_items"
-  | "avg_fulfillment_rate";
+  | "avg_fulfillment_rate"
+  | "in_transit_products"
+  | "b_ware_products";
 
 export type KpiMetric = {
   id: KpiMetricId;
