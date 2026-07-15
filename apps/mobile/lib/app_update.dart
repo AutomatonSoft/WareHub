@@ -48,10 +48,9 @@ Future<MobileUpdateInfo?> loadMobileUpdateInfo(String apiBase) async {
   }
 
   final PackageInfo packageInfo = await PackageInfo.fromPlatform();
-  final String currentVersion = packageInfo.version.trim();
-  final bool updateAvailable = compareVersions(
-          normalizeVersion(latestVersion), normalizeVersion(currentVersion)) >
-      0;
+  final String currentVersion = formatInstalledVersion(packageInfo);
+  final bool updateAvailable =
+      compareVersions(latestVersion, currentVersion) > 0;
 
   return MobileUpdateInfo(
     channel: channel,
@@ -62,14 +61,22 @@ Future<MobileUpdateInfo?> loadMobileUpdateInfo(String apiBase) async {
   );
 }
 
+String formatInstalledVersion(PackageInfo packageInfo) {
+  final String version = packageInfo.version.trim();
+  final String buildNumber = packageInfo.buildNumber.trim();
+  if (version.isEmpty) {
+    return buildNumber;
+  }
+  if (buildNumber.isEmpty || version.contains('+')) {
+    return version;
+  }
+  return '$version+$buildNumber';
+}
+
 String normalizeVersion(String value) {
   String normalized = value.trim();
   if (normalized.startsWith('v') || normalized.startsWith('V')) {
     normalized = normalized.substring(1);
-  }
-  final int plusIndex = normalized.indexOf('+');
-  if (plusIndex >= 0) {
-    normalized = normalized.substring(0, plusIndex);
   }
   return normalized.trim();
 }
@@ -91,32 +98,51 @@ int compareVersions(String left, String right) {
     }
   }
 
-  if (a.stageBuild == b.stageBuild) {
-    return 0;
-  }
   if (a.stageBuild == null) {
+    if (b.stageBuild == null) {
+      if (a.buildNumber != null && b.buildNumber != null) {
+        return a.buildNumber!.compareTo(b.buildNumber!);
+      }
+      return 0;
+    }
     return 1;
   }
   if (b.stageBuild == null) {
     return -1;
   }
-  return a.stageBuild!.compareTo(b.stageBuild!);
+  final int stageCompare = a.stageBuild!.compareTo(b.stageBuild!);
+  if (stageCompare != 0) {
+    return stageCompare;
+  }
+  if (a.buildNumber != null && b.buildNumber != null) {
+    return a.buildNumber!.compareTo(b.buildNumber!);
+  }
+  return 0;
 }
 
 class _ParsedVersion {
-  const _ParsedVersion(this.core, this.stageBuild);
+  const _ParsedVersion(this.core, this.stageBuild, this.buildNumber);
 
   final List<int> core;
   final int? stageBuild;
+  final int? buildNumber;
 
   factory _ParsedVersion.parse(String value) {
     final String normalized = normalizeVersion(value);
-    final int prereleaseIndex = normalized.indexOf('-');
-    final String coreValue = prereleaseIndex >= 0
-        ? normalized.substring(0, prereleaseIndex)
+    final int buildSeparatorIndex = normalized.indexOf('+');
+    final String withoutBuild = buildSeparatorIndex >= 0
+        ? normalized.substring(0, buildSeparatorIndex)
         : normalized;
-    final String? prerelease =
-        prereleaseIndex >= 0 ? normalized.substring(prereleaseIndex + 1) : null;
+    final String? buildValue = buildSeparatorIndex >= 0
+        ? normalized.substring(buildSeparatorIndex + 1)
+        : null;
+    final int prereleaseIndex = withoutBuild.indexOf('-');
+    final String coreValue = prereleaseIndex >= 0
+        ? withoutBuild.substring(0, prereleaseIndex)
+        : withoutBuild;
+    final String? prerelease = prereleaseIndex >= 0
+        ? withoutBuild.substring(prereleaseIndex + 1)
+        : null;
     final RegExp leadingDigits = RegExp(r'^\d+');
     final List<int> core = coreValue.split('.').map((String part) {
       final Match? match = leadingDigits.firstMatch(part.trim());
@@ -124,8 +150,12 @@ class _ParsedVersion {
     }).toList();
     final Match? stageMatch =
         RegExp(r'^stage\.(\d+)$').firstMatch(prerelease ?? '');
+    final Match? buildMatch = RegExp(r'^(\d+)$').firstMatch(buildValue ?? '');
 
     return _ParsedVersion(
-        core, stageMatch == null ? null : int.parse(stageMatch.group(1)!));
+      core,
+      stageMatch == null ? null : int.parse(stageMatch.group(1)!),
+      buildMatch == null ? null : int.parse(buildMatch.group(1)!),
+    );
   }
 }
