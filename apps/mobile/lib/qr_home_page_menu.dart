@@ -244,128 +244,102 @@ extension _QrHomePageMenu on _QrHomePageState {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        initialValue: nextLabelType,
-                        style: _printerFieldTextStyle,
-                        items: <DropdownMenuItem<int>>[
-                          const DropdownMenuItem(
+                      AppSelectField<int>(
+                        label: strings.text('label_type'),
+                        value: nextLabelType,
+                        options: <AppSelectOption<int>>[
+                          const AppSelectOption<int>(
                             value: 0,
-                            child: Text('Auto (RFID)'),
+                            label: 'Auto (RFID)',
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 1,
-                            child: Text(
-                              strings.format(
-                                'label_type_value',
-                                <String, String>{'value': '1'},
-                              ),
+                            label: strings.format(
+                              'label_type_value',
+                              <String, String>{'value': '1'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 2,
-                            child: Text(
-                              strings.format(
-                                'label_type_value',
-                                <String, String>{'value': '2'},
-                              ),
+                            label: strings.format(
+                              'label_type_value',
+                              <String, String>{'value': '2'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 3,
-                            child: Text(
-                              strings.format(
-                                'label_type_value',
-                                <String, String>{'value': '3'},
-                              ),
+                            label: strings.format(
+                              'label_type_value',
+                              <String, String>{'value': '3'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 4,
-                            child: Text(
-                              strings.format(
-                                'label_type_value',
-                                <String, String>{'value': '4'},
-                              ),
+                            label: strings.format(
+                              'label_type_value',
+                              <String, String>{'value': '4'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 5,
-                            child: Text(
-                              strings.format(
-                                'label_type_value',
-                                <String, String>{'value': '5'},
-                              ),
+                            label: strings.format(
+                              'label_type_value',
+                              <String, String>{'value': '5'},
                             ),
                           ),
                         ],
-                        onChanged: (int? value) {
-                          if (value == null) return;
+                        onChanged: (int value) {
                           setStateDialog(() {
                             nextLabelType = value;
                           });
                         },
-                        decoration:
-                            _printerInputDecoration(strings.text('label_type')),
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        initialValue: nextDensity,
-                        style: _printerFieldTextStyle,
-                        items: <DropdownMenuItem<int>>[
-                          DropdownMenuItem(
+                      AppSelectField<int>(
+                        label: strings.text('density'),
+                        value: nextDensity,
+                        options: <AppSelectOption<int>>[
+                          AppSelectOption<int>(
                             value: 1,
-                            child: Text(
-                              strings.format(
-                                'density_value',
-                                <String, String>{'value': '1'},
-                              ),
+                            label: strings.format(
+                              'density_value',
+                              <String, String>{'value': '1'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 2,
-                            child: Text(
-                              strings.format(
-                                'density_value',
-                                <String, String>{'value': '2'},
-                              ),
+                            label: strings.format(
+                              'density_value',
+                              <String, String>{'value': '2'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 3,
-                            child: Text(
-                              strings.format(
-                                'density_value',
-                                <String, String>{'value': '3'},
-                              ),
+                            label: strings.format(
+                              'density_value',
+                              <String, String>{'value': '3'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 4,
-                            child: Text(
-                              strings.format(
-                                'density_value',
-                                <String, String>{'value': '4'},
-                              ),
+                            label: strings.format(
+                              'density_value',
+                              <String, String>{'value': '4'},
                             ),
                           ),
-                          DropdownMenuItem(
+                          AppSelectOption<int>(
                             value: 5,
-                            child: Text(
-                              strings.format(
-                                'density_value',
-                                <String, String>{'value': '5'},
-                              ),
+                            label: strings.format(
+                              'density_value',
+                              <String, String>{'value': '5'},
                             ),
                           ),
                         ],
-                        onChanged: (int? value) {
-                          if (value == null) return;
+                        onChanged: (int value) {
                           setStateDialog(() {
                             nextDensity = value;
                           });
                         },
-                        decoration:
-                            _printerInputDecoration(strings.text('density')),
                       ),
                       const SizedBox(height: 18),
                       SwitchListTile(

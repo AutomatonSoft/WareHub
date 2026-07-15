@@ -5,6 +5,17 @@ import 'package:flutter/material.dart';
 import 'app_settings.dart';
 import 'app_theme.dart';
 
+@visibleForTesting
+String resolveInitialAppRoute({
+  required bool hasLocalSession,
+  required bool biometricEnabled,
+}) {
+  if (!hasLocalSession || biometricEnabled) {
+    return '/login';
+  }
+  return '/home';
+}
+
 class AppBootstrapScreen extends StatefulWidget {
   const AppBootstrapScreen({super.key});
 
@@ -25,7 +36,10 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
     final AppSettings settings = AppSettingsScope.of(context);
     final bool hasLocalSession = settings.authToken.trim().isNotEmpty ||
         settings.refreshToken.trim().isNotEmpty;
-    final String route = hasLocalSession ? '/home' : '/login';
+    final String route = resolveInitialAppRoute(
+      hasLocalSession: hasLocalSession,
+      biometricEnabled: settings.biometricEnabled,
+    );
     if (!mounted) {
       return;
     }

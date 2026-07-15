@@ -35,8 +35,57 @@ IntakeData _item({
 }
 
 void main() {
+  test('formatInventoryProductHeading includes place, section and KID', () {
+    expect(
+      formatInventoryProductHeading(
+        place: '1A',
+        section: 'a',
+        kidNumber: 'KID-42',
+      ),
+      'A / 1A - KID-42',
+    );
+    expect(
+      formatInventoryProductHeading(
+        place: '2B',
+        section: '',
+        kidNumber: 'KID-10',
+      ),
+      '2B - KID-10',
+    );
+    expect(
+      formatInventoryProductHeading(
+        place: '3C',
+        section: 'Showroom',
+        kidNumber: 'KID-11',
+      ),
+      'A / 3C - KID-11',
+    );
+  });
+
+  test('compareWarehouseSections uses the warehouse section order', () {
+    final List<String> sections = <String>['M', 'B', 'Showroom', 'K', 'X'];
+
+    sections.sort(compareWarehouseSections);
+
+    expect(sections, <String>['Showroom', 'B', 'K', 'M', 'X']);
+  });
+
+  test('compareWarehousePlaces uses natural place order', () {
+    final List<String> places = <String>['10', '2A', '1B', '1A', '2', ''];
+
+    places.sort(compareWarehousePlaces);
+
+    expect(places, <String>['1A', '1B', '2', '2A', '10', '']);
+  });
+
   test('buildWarehouseLocation uppercases section and slot', () {
     expect(buildWarehouseLocation('a', '12b'), 'A12B');
+    expect(buildWarehouseLocation('Showroom', '12b'), 'A12B');
+  });
+
+  test('normalizeWarehousePlace does not prepend the selected section', () {
+    expect(normalizeWarehousePlace(' 11a '), '11A');
+    expect(normalizeWarehousePlace('12'), '12');
   });
 
   test('parseWarehouseSlotNumber parses number from slot code', () {
@@ -51,6 +100,8 @@ void main() {
     expect(parseWarehouseLocationFromQrPayload('d12'), 'D12');
     expect(parseWarehouseLocationFromQrPayload('  qr:D77b  '), 'D77B');
     expect(parseWarehouseLocationFromQrPayload('slot=K15;meta=x'), 'K15');
+    expect(parseWarehouseLocationFromQrPayload('Showroom12'), 'A12');
+    expect(parseWarehouseLocationFromQrPayload('slot=showroom 14'), 'A14');
     expect(parseWarehouseLocationFromQrPayload('invalid'), isNull);
     expect(parseWarehouseLocationFromQrPayload('A0'), isNull);
     expect(parseWarehouseLocationFromQrPayload('B10001'), isNull);
@@ -62,25 +113,27 @@ void main() {
     expect(parseWarehouseSectionAndSlot('D12')!.key, 'D');
     expect(parseWarehouseSectionAndSlot('D12')!.value, 12);
     expect(parseWarehouseSectionAndSlot('D12A')!.value, 12);
+    expect(parseWarehouseSectionAndSlot('Showroom12')!.key, 'A');
     expect(parseWarehouseSectionAndSlot('X0'), isNull);
     expect(parseWarehouseSectionAndSlot('X10001'), isNull);
     expect(parseWarehouseSectionAndSlot('12X'), isNull);
   });
 
-  test('isWarehouseSlotOccupied checks slot globally across all sections', () {
+  test('isWarehousePlaceOccupied compares the complete place code', () {
     final List<IntakeData> items = <IntakeData>[
-      _item(id: '1', location: 'F1', slotNumber: 1),
-      _item(id: '4', location: 'D1', slotNumber: 1),
-      _item(id: '2', location: 'D11', slotNumber: 11, isRemoved: true),
-      _item(id: '3', location: 'D12', slotNumber: 12, isActive: false),
+      _item(id: '1', location: '1A', slotNumber: 1),
+      _item(id: '4', location: '1B', slotNumber: 1),
+      _item(id: '2', location: '11A', slotNumber: 11, isRemoved: true),
+      _item(id: '3', location: '12A', slotNumber: 12, isActive: false),
     ];
 
-    expect(isWarehouseSlotOccupied(items, '1'), isTrue);
-    expect(isWarehouseSlotOccupied(items, '1A'), isTrue);
-    expect(isWarehouseSlotOccupied(items, '11'), isFalse);
-    expect(isWarehouseSlotOccupied(items, '12'), isFalse);
-    expect(isWarehouseSlotOccupied(items, '99'), isFalse);
-    expect(isWarehouseSlotOccupied(items, '0'), isFalse);
+    expect(isWarehousePlaceOccupied(items, '1A'), isTrue);
+    expect(isWarehousePlaceOccupied(items, '1b'), isTrue);
+    expect(isWarehousePlaceOccupied(items, '1'), isFalse);
+    expect(isWarehousePlaceOccupied(items, '11A'), isFalse);
+    expect(isWarehousePlaceOccupied(items, '12A'), isFalse);
+    expect(isWarehousePlaceOccupied(items, '99'), isFalse);
+    expect(isWarehousePlaceOccupied(items, '0'), isFalse);
   });
 
   test('findNextFreeWarehouseSlotCode returns first free global slot', () {
@@ -107,8 +160,13 @@ void main() {
         isNull);
   });
 
-  test('warehouseSectionLabel maps A to Showroom', () {
-    expect(warehouseSectionLabel('A'), 'Showroom');
+  test('warehouse section normalization treats Showroom as A', () {
+    expect(normalizeWarehouseSection('Showroom'), 'A');
+    expect(normalizeWarehouseSection(' showroom '), 'A');
+    expect(normalizeWarehouseSection('Шоурум'), 'A');
+    expect(normalizeWarehouseLocation('Showroom 12b'), 'A12B');
+    expect(warehouseSectionLabel('A'), 'A');
+    expect(warehouseSectionLabel('Showroom'), 'A');
     expect(warehouseSectionLabel('d'), 'D');
   });
 }

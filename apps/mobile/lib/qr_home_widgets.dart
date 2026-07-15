@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'app_settings.dart';
 import 'app_theme.dart';
 import 'models.dart';
+import 'warehouse_constants.dart';
+import 'warehouse_location_utils.dart';
 
 const String _palletFallbackAsset = 'assets/images/pallet.png';
 const String _productFallbackAsset = 'assets/images/blank.png';
-const double _palletThumbnailScale = 1.35;
 
 class QrHomeItemCard extends StatelessWidget {
   const QrHomeItemCard({
@@ -43,8 +44,14 @@ class QrHomeItemCard extends StatelessWidget {
       palletLabel,
       emptyFallback: item.kidNumber,
     );
-    final String displayTitle =
-        '${item.section} ${item.slotNumber} — $displayKidNumber';
+    final String displayPlace = warehouseLocations.isNotEmpty
+        ? warehouseLocations.first
+        : item.warehouseLocation.trim();
+    final String displayTitle = formatInventoryProductHeading(
+      place: displayPlace,
+      section: item.section,
+      kidNumber: displayKidNumber,
+    );
     final String displayProductKey = _localizedPalletValue(
       item.productKey,
       palletLabel,
@@ -161,8 +168,6 @@ class QrHomeItemCard extends StatelessWidget {
                       ? _palletFallbackAsset
                       : _productFallbackAsset,
                   size: 120,
-                  thumbnailScale:
-                      isPalletPlaceholder ? _palletThumbnailScale : 1,
                 ),
                 const SizedBox(width: 12),
               ],
@@ -173,7 +178,7 @@ class QrHomeItemCard extends StatelessWidget {
                     Text('${strings.text('kid')}: $displayKidNumber',
                         style: const TextStyle(color: uiMuted)),
                     Text(
-                        '${strings.text('section_slot')}: ${item.section} / ${item.slotNumber}',
+                        '${strings.text('section_slot')}: ${warehouseSectionLabel(item.section)} / ${item.slotNumber}',
                         style: const TextStyle(color: uiMuted)),
                     Text('${strings.text('product_key')}: $displayProductKey',
                         style: const TextStyle(color: uiMuted)),
@@ -305,7 +310,6 @@ class QrHomeItemCard extends StatelessWidget {
     BuildContext context,
     String assetPath, {
     double size = 86,
-    double thumbnailScale = 1,
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -343,14 +347,11 @@ class QrHomeItemCard extends StatelessWidget {
           width: size,
           height: size,
           color: uiCardSoft,
-          child: Transform.scale(
-            scale: thumbnailScale,
-            child: Image.asset(
-              assetPath,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image_outlined, color: uiMuted),
-              ),
+          child: Image.asset(
+            assetPath,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Center(
+              child: Icon(Icons.broken_image_outlined, color: uiMuted),
             ),
           ),
         ),
