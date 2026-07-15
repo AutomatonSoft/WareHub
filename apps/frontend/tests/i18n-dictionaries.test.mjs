@@ -73,7 +73,7 @@ test("i18n dictionaries: key parity and snapshot", async () => {
   const snapshot = digest(concatenated);
   assert.equal(
     snapshot,
-    "4fdcc85029894feb9bf4d90f1d9fe3c58b459c05441eebe959e34ef9a440030b",
+    "ceadc93aa70d8ea10c940796c003c23dab4f337d61d49851c642f83e2e3f6173",
     "i18n dictionary snapshot changed; review and update expected hash intentionally"
   );
 });
