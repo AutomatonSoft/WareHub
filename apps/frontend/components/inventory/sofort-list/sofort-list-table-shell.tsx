@@ -587,6 +587,9 @@ export function SofortListTableShell(props: {
   const [editPlaceSuggestions, setEditPlaceSuggestions] = useState<PlaceSuggestionHints | null>(null);
   const [marketplaceResult, setMarketplaceResult] = useState<MarketplaceResultDialogState | null>(null);
   const [marketplaceConfirm, setMarketplaceConfirm] = useState<MarketplaceConfirmDialogState | null>(null);
+  const hasQuantityDeactivationWarning = Boolean(
+    marketplaceConfirm?.inactive && marketplaceConfirm.row.quantity > 1
+  );
   const [customRoomOptions, setCustomRoomOptions] = useState<string[]>([]);
   const [customTypeOptions, setCustomTypeOptions] = useState<string[]>([]);
   const availablePlaceOptions = Array.from(new Set([
@@ -1310,6 +1313,23 @@ export function SofortListTableShell(props: {
                 </div>
               </div>
 
+              {hasQuantityDeactivationWarning ? (
+                <div className="rounded-xl border border-amber-300/70 bg-amber-50 p-4 text-amber-950">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-semibold">{t.confirmActionQuantityWarningTitle}</p>
+                      <p className="mt-1 text-sm leading-6">
+                        {t.confirmActionQuantityWarningMessage.replace(
+                          "{quantity}",
+                          String(marketplaceConfirm.row.quantity)
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {props.labels.confirmActionDetails}
@@ -1372,7 +1392,9 @@ export function SofortListTableShell(props: {
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setMarketplaceConfirm(null)}>
-              {props.labels.confirmActionCancel}
+              {hasQuantityDeactivationWarning
+                ? t.confirmActionQuantityWarningCancel
+                : props.labels.confirmActionCancel}
             </Button>
             <Button
               type="button"
@@ -1388,7 +1410,11 @@ export function SofortListTableShell(props: {
                 void runMarketplaceAction(row, inactive, nextPlace);
               }}
             >
-              {marketplaceConfirm?.inactive ? props.labels.deactivate : props.labels.activate}
+              {hasQuantityDeactivationWarning
+                ? t.confirmActionQuantityWarningConfirm
+                : marketplaceConfirm?.inactive
+                  ? props.labels.deactivate
+                  : props.labels.activate}
             </Button>
           </DialogFooter>
         </DialogContent>
