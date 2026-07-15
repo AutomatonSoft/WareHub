@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, Gauge, Wallet } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, BadgeCheck, Banknote, Boxes, CreditCard, Tag, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { useLabels } from "../../app/use-labels";
@@ -8,16 +8,20 @@ import { StatCard as UIStatCard } from "../ui/stat-card";
 
 const iconByMetricId: Record<KpiMetric["id"], LucideIcon> = {
   total_products: Boxes,
-  stock_value: Wallet,
-  low_stock_items: AlertTriangle,
-  avg_fulfillment_rate: Gauge
+  stock_value: BadgeCheck,
+  low_stock_items: CreditCard,
+  avg_fulfillment_rate: Banknote,
+  in_transit_products: Truck,
+  b_ware_products: Tag
 };
 
 const accentClassByMetricId: Record<KpiMetric["id"], string> = {
   total_products: "wh-stat-card--products",
   stock_value: "wh-stat-card--value",
   low_stock_items: "wh-stat-card--risk",
-  avg_fulfillment_rate: "wh-stat-card--fulfillment"
+  avg_fulfillment_rate: "wh-stat-card--fulfillment",
+  in_transit_products: "wh-stat-card--transit",
+  b_ware_products: "wh-stat-card--bware"
 };
 
 export function StatCard({ metric }: { metric: KpiMetric }) {
@@ -31,16 +35,24 @@ export function StatCard({ metric }: { metric: KpiMetric }) {
       description: t.warehouseCatalogFootprint
     },
     stock_value: {
-      label: t.stockValue,
-      description: t.pricedInventoryExposure
+      label: t.readyForListing,
+      description: metric.delta
     },
     low_stock_items: {
-      label: t.lowStockItems,
-      description: t.ordersPendingReplenishment
+      label: t.paidOrders,
+      description: metric.delta
     },
     avg_fulfillment_rate: {
-      label: t.avgFulfillmentRate,
-      description: t.paidOrdersAgainstTotalVolume
+      label: t.paidRevenueLabel,
+      description: metric.delta
+    },
+    in_transit_products: {
+      label: t.inTransitProducts,
+      description: metric.delta
+    },
+    b_ware_products: {
+      label: t.bWareProducts,
+      description: metric.delta
     }
   }[metric.id] ?? {
     label: metric.id,
