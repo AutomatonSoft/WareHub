@@ -13,12 +13,26 @@ const List<String> kWarehouseSections = <String>[
   'M',
 ];
 
-String warehouseSectionLabel(String section) {
+const Set<String> _showroomSectionAliases = <String>{'SHOWROOM', 'ШОУРУМ'};
+
+String normalizeWarehouseSection(String section) {
   final String normalized = section.trim().toUpperCase();
-  if (normalized == 'A') {
-    return 'Showroom';
+  return _showroomSectionAliases.contains(normalized) ? 'A' : normalized;
+}
+
+String normalizeWarehouseLocation(String warehouseLocation) {
+  final String normalized = warehouseLocation.trim().toUpperCase();
+  final String compact = normalized.replaceAll(RegExp(r'\s+'), '');
+  for (final String alias in _showroomSectionAliases) {
+    if (compact.startsWith(alias)) {
+      return 'A${compact.substring(alias.length)}';
+    }
   }
   return normalized;
+}
+
+String warehouseSectionLabel(String section) {
+  return normalizeWarehouseSection(section);
 }
 
 const List<String> kGermanColors = <String>[

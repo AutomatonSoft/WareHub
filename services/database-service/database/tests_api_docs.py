@@ -13,6 +13,7 @@ class ApiDocsTests(APITestCase):
         self.assertIn("/api/v1/healthz", response.data["paths"])
         self.assertIn("/api/v1/kids/", response.data["paths"])
         self.assertIn("/api/v1/orders/", response.data["paths"])
+        self.assertIn("/api/v1/inventory/dashboard-summary/", response.data["paths"])
         self.assertIn("/api/v1/kids/{kid_id}/order-ids/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/items/search/", response.data["paths"])
         self.assertIn("/api/v1/afterbuy/items/search-web/", response.data["paths"])

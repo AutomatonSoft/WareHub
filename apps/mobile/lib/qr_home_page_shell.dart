@@ -20,12 +20,14 @@ enum InventoryDestinationFilter {
 extension _QrHomePageShell on _QrHomePageState {
   Widget _buildSelectedHomeTab({
     required List<GroupedIntakeData> groupedItems,
-    required int activeCount,
+    required int? inventoryCount,
   }) {
     switch (_selectedHomeTab) {
       case HomeTab.feed:
         return _buildFeedTab(
-            groupedItems: groupedItems, activeCount: activeCount);
+          groupedItems: groupedItems,
+          inventoryCount: inventoryCount,
+        );
       case HomeTab.settings:
         return _buildSettingsTab();
     }
@@ -70,7 +72,7 @@ extension _QrHomePageShell on _QrHomePageState {
 
   Widget _buildFeedTab({
     required List<GroupedIntakeData> groupedItems,
-    required int activeCount,
+    required int? inventoryCount,
   }) {
     final AppStrings strings = AppStrings.of(context);
     return GestureDetector(
@@ -87,50 +89,7 @@ extension _QrHomePageShell on _QrHomePageState {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                child: AppSurface(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              strings.text('warehouse_feed'),
-                              style:
-                                  AuthTextStyles.title.copyWith(fontSize: 22),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              strings.text('realtime_intakes'),
-                              style: AuthTextStyles.helper,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: uiCardSoft,
-                          borderRadius: BorderRadius.circular(AuthRadii.md),
-                        ),
-                        child: Text(
-                          strings.format(
-                            'units_count',
-                            <String, String>{'count': '$activeCount'},
-                          ),
-                          style: AuthTextStyles.language.copyWith(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
                 child: AppSurface(
                   padding: const EdgeInsets.all(8),
                   backgroundColor: uiCard,
@@ -172,7 +131,15 @@ extension _QrHomePageShell on _QrHomePageState {
                                     BorderRadius.circular(AuthRadii.md),
                                 borderSide: BorderSide.none,
                               ),
-                              hintText: strings.text('inventory_search_hint'),
+                              hintText: inventoryCount == null
+                                  ? strings
+                                      .text('inventory_search_loading_hint')
+                                  : strings.format(
+                                      'inventory_search_hint',
+                                      <String, String>{
+                                        'count': '$inventoryCount',
+                                      },
+                                    ),
                               prefixIcon: const Icon(
                                 Icons.search_rounded,
                                 color: uiMuted,
@@ -311,7 +278,16 @@ extension _QrHomePageShell on _QrHomePageState {
   }
 
   Future<void> _openInventoryFilters() async {
+    if (!mounted) return;
+    final Future<void> filterOptionsFuture = _loadInventoryFilterOptions();
+    String? place = _inventoryPlace;
     String? section = _inventorySection;
+    String? quantity = _inventoryQuantity;
+    String? room = _inventoryRoom;
+    String? type = _inventoryType;
+    String? company = _inventoryCompany;
+    String? color = _inventoryColor;
+    String? material = _inventoryMaterial;
     InventoryDestinationFilter? destination = _inventoryDestination;
     bool? bWare = _inventoryBWare;
     bool? inTransit = _inventoryInTransit;
@@ -321,181 +297,272 @@ extension _QrHomePageShell on _QrHomePageState {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (BuildContext context) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setSheetState) => Container(
-          decoration: const BoxDecoration(
-            color: uiCard,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(AuthRadii.xl),
+      builder: (BuildContext context) => FutureBuilder<void>(
+        future: filterOptionsFuture,
+        builder: (BuildContext context, AsyncSnapshot<void> snapshot) =>
+            StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) =>
+              Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.9,
             ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AuthColors.border,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: <Widget>[
-                      const Icon(Icons.tune_rounded, color: uiBrandGreen),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          strings.text('filter_list'),
-                          style: AuthTextStyles.title.copyWith(fontSize: 22),
+            decoration: const BoxDecoration(
+              color: uiCard,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AuthRadii.xl),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AuthColors.border,
+                          borderRadius: BorderRadius.circular(99),
                         ),
                       ),
-                      if (_activeInventoryFilterCount > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: uiBrandGreenSoft,
-                            borderRadius: BorderRadius.circular(AuthRadii.sm),
-                          ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: <Widget>[
+                        const Icon(Icons.tune_rounded, color: uiBrandGreen),
+                        const SizedBox(width: 10),
+                        Expanded(
                           child: Text(
-                            '$_activeInventoryFilterCount',
-                            style: AuthTextStyles.label.copyWith(
+                            strings.text('filter_list'),
+                            style: AuthTextStyles.title.copyWith(fontSize: 22),
+                          ),
+                        ),
+                        if (snapshot.connectionState == ConnectionState.waiting)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
                               color: uiBrandGreen,
                             ),
+                          )
+                        else if (_activeInventoryFilterCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: uiBrandGreenSoft,
+                              borderRadius: BorderRadius.circular(AuthRadii.sm),
+                            ),
+                            child: Text(
+                              '$_activeInventoryFilterCount',
+                              style: AuthTextStyles.label.copyWith(
+                                color: uiBrandGreen,
+                              ),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _InventoryFilterGroup(
-                    title: strings.text('filter_section'),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        _InventoryFilterOption(
-                          label: strings.text('all_sections'),
-                          selected: section == null,
-                          onTap: () => setSheetState(() => section = null),
-                        ),
-                        ...kWarehouseSections.map(
-                          (String value) => _InventoryFilterOption(
-                            label: warehouseSectionLabel(value),
-                            selected: section == value,
-                            onTap: () => setSheetState(() => section = value),
-                          ),
-                        ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  _InventoryFilterGroup(
-                    title: strings.text('filter_destination'),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        _InventoryFilterOption(
-                          label: strings.text('all_destinations'),
-                          selected: destination == null,
-                          onTap: () => setSheetState(() => destination = null),
-                        ),
-                        _InventoryFilterOption(
-                          label: strings.text('warehouse'),
-                          icon: Icons.warehouse_outlined,
-                          selected: destination ==
-                              InventoryDestinationFilter.warehouse,
-                          onTap: () => setSheetState(
-                            () => destination =
-                                InventoryDestinationFilter.warehouse,
-                          ),
-                        ),
-                        _InventoryFilterOption(
-                          label: strings.text('store'),
-                          icon: Icons.storefront_outlined,
-                          selected:
-                              destination == InventoryDestinationFilter.store,
-                          onTap: () => setSheetState(
-                            () =>
-                                destination = InventoryDestinationFilter.store,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _InventoryFilterGroup(
-                    title: strings.text('filter_status'),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        _InventoryFilterOption(
-                          label: strings.text('b_ware_only'),
-                          icon: Icons.verified_outlined,
-                          selected: bWare == true,
-                          onTap: () => setSheetState(
-                            () => bWare = bWare == true ? null : true,
-                          ),
-                        ),
-                        _InventoryFilterOption(
-                          label: strings.text('in_transit_only'),
-                          icon: Icons.local_shipping_outlined,
-                          selected: inTransit == true,
-                          onTap: () => setSheetState(
-                            () => inTransit = inTransit == true ? null : true,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: AppTextButton(
-                          label: strings.text('reset'),
-                          onPressed: () {
-                            unawaited(_applyInventoryFilters(
-                              section: null,
-                              destination: null,
-                              bWare: null,
-                              inTransit: null,
-                            ));
-                            Navigator.of(context).pop();
-                          },
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            if (snapshot.hasError)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AuthColors.destructive.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius:
+                                      BorderRadius.circular(AuthRadii.md),
+                                ),
+                                child: Text(
+                                  strings.text('load_filters_failed'),
+                                  style: AuthTextStyles.helper.copyWith(
+                                    color: AuthColors.destructive,
+                                  ),
+                                ),
+                              ),
+                            _InventoryFilterSelect(
+                              label: strings.text('filter_place'),
+                              allLabel: strings.text('all_places'),
+                              value: place,
+                              options: _inventoryFilterOptions.places,
+                              onChanged: (String? value) =>
+                                  setSheetState(() => place = value),
+                            ),
+                            _InventoryFilterSelect(
+                              label: strings.text('filter_section'),
+                              allLabel: strings.text('all_sections'),
+                              value: section,
+                              options: <String>{
+                                ...kWarehouseSections,
+                                ..._inventoryFilterOptions.sections,
+                              }.toList(growable: false),
+                              onChanged: (String? value) =>
+                                  setSheetState(() => section = value),
+                            ),
+                            _InventoryFilterGroup(
+                              title: strings.text('filter_destination'),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: <Widget>[
+                                  _InventoryFilterOption(
+                                      label: strings.text('all_destinations'),
+                                      selected: destination == null,
+                                      onTap: () => setSheetState(
+                                          () => destination = null)),
+                                  _InventoryFilterOption(
+                                      label: strings.text('warehouse'),
+                                      icon: Icons.warehouse_outlined,
+                                      selected: destination ==
+                                          InventoryDestinationFilter.warehouse,
+                                      onTap: () => setSheetState(() =>
+                                          destination =
+                                              InventoryDestinationFilter
+                                                  .warehouse)),
+                                  _InventoryFilterOption(
+                                      label: strings.text('store'),
+                                      icon: Icons.storefront_outlined,
+                                      selected: destination ==
+                                          InventoryDestinationFilter.store,
+                                      onTap: () => setSheetState(() =>
+                                          destination =
+                                              InventoryDestinationFilter
+                                                  .store)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_quantity'),
+                                allLabel: strings.text('all_quantities'),
+                                value: quantity,
+                                options: _inventoryFilterOptions.quantities,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => quantity = value)),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_room'),
+                                allLabel: strings.text('all_rooms'),
+                                value: room,
+                                options: _inventoryFilterOptions.rooms,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => room = value)),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_type'),
+                                allLabel: strings.text('all_types'),
+                                value: type,
+                                options: _inventoryFilterOptions.types,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => type = value)),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_company'),
+                                allLabel: strings.text('all_companies'),
+                                value: company,
+                                options: _inventoryFilterOptions.companies,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => company = value)),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_color'),
+                                allLabel: strings.text('all_colors'),
+                                value: color,
+                                options: _inventoryFilterOptions.colors,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => color = value)),
+                            _InventoryFilterSelect(
+                                label: strings.text('filter_material'),
+                                allLabel: strings.text('all_materials'),
+                                value: material,
+                                options: _inventoryFilterOptions.materials,
+                                onChanged: (String? value) =>
+                                    setSheetState(() => material = value)),
+                            _InventoryFilterGroup(
+                              title: strings.text('filter_status'),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: <Widget>[
+                                  _InventoryFilterOption(
+                                      label: strings.text('b_ware_only'),
+                                      icon: Icons.verified_outlined,
+                                      selected: bWare == true,
+                                      onTap: () => setSheetState(() =>
+                                          bWare = bWare == true ? null : true)),
+                                  _InventoryFilterOption(
+                                      label: strings.text('in_transit_only'),
+                                      icon: Icons.local_shipping_outlined,
+                                      selected: inTransit == true,
+                                      onTap: () => setSheetState(() =>
+                                          inTransit =
+                                              inTransit == true ? null : true)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: AppPrimaryButton(
-                          label: strings.text('apply'),
-                          icon: Icons.check_rounded,
-                          onPressed: () {
-                            unawaited(_applyInventoryFilters(
-                              section: section,
-                              destination: destination,
-                              bWare: bWare,
-                              inTransit: inTransit,
-                            ));
-                            Navigator.of(context).pop();
-                          },
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AppTextButton(
+                            label: strings.text('reset'),
+                            onPressed: () {
+                              unawaited(_applyInventoryFilters(
+                                place: null,
+                                section: null,
+                                quantity: null,
+                                room: null,
+                                type: null,
+                                company: null,
+                                color: null,
+                                material: null,
+                                destination: null,
+                                bWare: null,
+                                inTransit: null,
+                              ));
+                              Navigator.of(context).pop();
+                            },
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: AppPrimaryButton(
+                            label: strings.text('apply'),
+                            icon: Icons.check_rounded,
+                            onPressed: () {
+                              unawaited(_applyInventoryFilters(
+                                place: place,
+                                section: section,
+                                quantity: quantity,
+                                room: room,
+                                type: type,
+                                company: company,
+                                color: color,
+                                material: material,
+                                destination: destination,
+                                bWare: bWare,
+                                inTransit: inTransit,
+                              ));
+                              Navigator.of(context).pop();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -892,33 +959,24 @@ class _InventoryFilterButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          height: AuthSpacing.buttonHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: active ? uiBrandGreen : uiCardSoft,
-            borderRadius: BorderRadius.circular(AuthRadii.md),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(
-                Icons.tune_rounded,
-                size: 20,
-                color: active ? Colors.white : uiText,
-              ),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: AuthTextStyles.label.copyWith(
-                  color: active ? Colors.white : uiText,
-                ),
-              ),
-            ],
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: AuthSpacing.buttonHeight,
+            height: AuthSpacing.buttonHeight,
+            decoration: BoxDecoration(
+              color: active ? uiBrandGreen : uiCardSoft,
+              borderRadius: BorderRadius.circular(AuthRadii.md),
+            ),
+            child: Icon(
+              Icons.tune_rounded,
+              size: 21,
+              color: active ? Colors.white : uiText,
+            ),
           ),
         ),
       ),
@@ -944,6 +1002,47 @@ class _InventoryFilterGroup extends StatelessWidget {
         const SizedBox(height: 9),
         child,
       ],
+    );
+  }
+}
+
+class _InventoryFilterSelect extends StatelessWidget {
+  const _InventoryFilterSelect({
+    required this.label,
+    required this.allLabel,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String allLabel;
+  final String? value;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> values = <String>{
+      if (value != null && value!.trim().isNotEmpty) value!.trim(),
+      ...options
+          .map((String option) => option.trim())
+          .where((String option) => option.isNotEmpty),
+    }.toList(growable: false);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: AppSelectField<String>(
+        label: label,
+        value: value ?? '',
+        options: <AppSelectOption<String>>[
+          AppSelectOption<String>(value: '', label: allLabel),
+          ...values.map(
+            (String option) =>
+                AppSelectOption<String>(value: option, label: option),
+          ),
+        ],
+        onChanged: (String next) => onChanged(next.isEmpty ? null : next),
+      ),
     );
   }
 }

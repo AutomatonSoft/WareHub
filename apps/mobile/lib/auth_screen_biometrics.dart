@@ -3,6 +3,22 @@
 part of 'auth_screen.dart';
 
 extension _AuthScreenBiometrics on _AuthScreenState {
+  String _biometricLoginLabel(AppStrings strings) {
+    return _preferredBiometricType == BiometricType.face
+        ? strings.text('face_id_login')
+        : strings.text('biometric_login');
+  }
+
+  String _biometricMethodName(AppStrings strings) {
+    if (_preferredBiometricType == BiometricType.face) {
+      return strings.text('face_id_name');
+    }
+    if (_preferredBiometricType == BiometricType.fingerprint) {
+      return strings.text('fingerprint_name');
+    }
+    return strings.text('biometric_name');
+  }
+
   Future<bool> _hasValidStoredSession() async {
     final AppSettings settings = AppSettingsScope.of(context);
     final String boundLogin = settings.biometricAccountLogin.trim();
@@ -84,7 +100,8 @@ extension _AuthScreenBiometrics on _AuthScreenState {
   }
 
   Future<void> _initBiometrics(AppSettings settings) async {
-    final bool available = await _resolveBiometricAvailability();
+    final BiometricType? preferredType = await _resolveBiometricType();
+    final bool available = preferredType != null;
 
     if (!mounted) {
       return;
@@ -92,11 +109,8 @@ extension _AuthScreenBiometrics on _AuthScreenState {
 
     setState(() {
       _biometricAvailable = available;
+      _preferredBiometricType = preferredType;
     });
-
-    if (!available && settings.biometricEnabled) {
-      await settings.setBiometricEnabled(false);
-    }
 
     if (available &&
         settings.biometricEnabled &&
@@ -105,8 +119,8 @@ extension _AuthScreenBiometrics on _AuthScreenState {
       await settings.bindBiometricAccount(settings.login.trim());
     }
 
-    if (available && settings.biometricEnabled) {
-      if (!_autoPrompted) {
+    if (settings.biometricEnabled) {
+      if (available && !_autoPrompted) {
         _autoPrompted = true;
         await _authenticateWithBiometrics();
       }
@@ -124,18 +138,32 @@ extension _AuthScreenBiometrics on _AuthScreenState {
     }
   }
 
-  Future<bool> _resolveBiometricAvailability() async {
+  Future<BiometricType?> _resolveBiometricType() async {
     try {
       final bool supported = await _localAuth.isDeviceSupported();
       if (!supported) {
-        return false;
+        return null;
       }
       final bool canCheck = await _localAuth.canCheckBiometrics;
       final List<BiometricType> available =
           await _localAuth.getAvailableBiometrics();
-      return canCheck || available.isNotEmpty;
+      if (available.contains(BiometricType.face)) {
+        return BiometricType.face;
+      }
+      if (available.contains(BiometricType.fingerprint)) {
+        return BiometricType.fingerprint;
+      }
+      if (available.contains(BiometricType.strong)) {
+        return BiometricType.strong;
+      }
+      if (available.contains(BiometricType.weak)) {
+        return BiometricType.weak;
+      }
+      // Android versions before API 29 may not disclose the concrete
+      // biometric type. The system prompt still selects the enrolled method.
+      return canCheck ? BiometricType.weak : null;
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
@@ -143,7 +171,7 @@ extension _AuthScreenBiometrics on _AuthScreenState {
     return _localAuth.authenticate(
       localizedReason: reason,
       options: const AuthenticationOptions(
-        biometricOnly: false,
+        biometricOnly: true,
         stickyAuth: true,
         useErrorDialogs: true,
       ),
@@ -161,7 +189,7 @@ extension _AuthScreenBiometrics on _AuthScreenState {
     try {
       final AppStrings strings = AppStrings.of(context);
       final bool ok = await _authenticateBiometricPrompt(
-        strings.fingerprintReason,
+        strings.text('biometric_reason'),
       );
       if (ok && mounted) {
         final bool validSession = await _hasValidStoredSession();
@@ -173,7 +201,7 @@ extension _AuthScreenBiometrics on _AuthScreenState {
       }
     } on PlatformException {
       if (mounted) {
-        _showMessage(AppStrings.of(context).fingerprintUnavailable);
+        _showMessage(AppStrings.of(context).text('biometric_unavailable'));
       }
     } finally {
       if (mounted) {
@@ -193,12 +221,23 @@ extension _AuthScreenBiometrics on _AuthScreenState {
       return;
     }
     final AppStrings strings = AppStrings.of(context);
+    final String biometricName = _biometricMethodName(strings);
     final bool? enable = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: Text(strings.text('enable_fingerprint_title')),
-          content: Text(strings.text('enable_fingerprint_body')),
+          title: Text(
+            strings.format(
+              'enable_biometric_title',
+              <String, String>{'biometric': biometricName},
+            ),
+          ),
+          content: Text(
+            strings.format(
+              'enable_biometric_body',
+              <String, String>{'biometric': biometricName},
+            ),
+          ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -216,17 +255,23 @@ extension _AuthScreenBiometrics on _AuthScreenState {
       return;
     }
 
-    final bool availableNow = await _resolveBiometricAvailability();
+    final BiometricType? preferredType = await _resolveBiometricType();
+    final bool availableNow = preferredType != null;
     if (!mounted) {
       return;
     }
     if (_biometricAvailable != availableNow) {
       setState(() {
         _biometricAvailable = availableNow;
+        _preferredBiometricType = preferredType;
+      });
+    } else if (_preferredBiometricType != preferredType) {
+      setState(() {
+        _preferredBiometricType = preferredType;
       });
     }
     if (!availableNow) {
-      _showMessage(strings.fingerprintUnavailable);
+      _showMessage(strings.text('biometric_unavailable'));
       return;
     }
     if (_biometricBusy) {
@@ -237,16 +282,16 @@ extension _AuthScreenBiometrics on _AuthScreenState {
     });
     try {
       final bool verified = await _authenticateBiometricPrompt(
-        strings.fingerprintReason,
+        strings.text('biometric_reason'),
       );
       if (verified) {
         await settings.setBiometricEnabled(true);
         await settings.bindBiometricAccount(settings.login);
       } else {
-        _showMessage(strings.text('fingerprint_setup_canceled'));
+        _showMessage(strings.text('biometric_setup_canceled'));
       }
     } on PlatformException {
-      _showMessage(strings.fingerprintUnavailable);
+      _showMessage(strings.text('biometric_unavailable'));
     } finally {
       if (mounted) {
         setState(() {

@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
+from datetime import date, datetime, time, timedelta
 from queue import Queue
 import logging
 import ast
@@ -27,8 +28,9 @@ from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
 from .models import EANPool, EANUsage, Ean, EanStatus, Kid, Orders, ProductAttributes
+from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
-from .inventory_service import build_inventory_rows, build_kid_ean_summary
+from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
 from .place_rules import (
     find_place_conflict,
     list_available_pool_places,
@@ -84,6 +86,16 @@ DEFAULT_EAN_PLACEHOLDER = "0000000000000"
 
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
     if not photo_urls:
+        return
+    retained_urls = retained_inventory_history_photo_urls(photo_urls)
+    photo_urls = [url for url in photo_urls if url not in retained_urls]
+    if not photo_urls:
+        logger.info(
+            "KID_PHOTO_CLEANUP_DEFERRED_FOR_INVENTORY_HISTORY context=%s kid_id=%s photo_count=%s",
+            context,
+            kid_id,
+            len(retained_urls),
+        )
         return
     try:
         delete_uploaded_photo_urls(photo_urls)
@@ -568,6 +580,9 @@ class DevBackendSessionSyncAPIView(APIView):
         login = str(payload.get("login") or "").strip()
         username = str(payload.get("username") or "").strip()
         email = str(payload.get("email") or "").strip()
+        first_name = str(payload.get("first_name") or "").strip()
+        last_name = str(payload.get("last_name") or "").strip()
+        display_name = " ".join(value for value in (first_name, last_name) if value)
 
         if account_status != "approved":
             return Response(
@@ -594,6 +609,9 @@ class DevBackendSessionSyncAPIView(APIView):
         request.session["username"] = username or login or role
         request.session["login"] = login or username or role
         request.session["email"] = email
+        request.session["first_name"] = first_name
+        request.session["last_name"] = last_name
+        request.session["display_name"] = display_name or login or username or role
         request.session["auth_source"] = "backend_token_bridge"
         request.session["auth_request_id"] = request_id
         request.session.modified = True
@@ -1102,6 +1120,12 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             response_data = dict(output.data)
             response_data["sync"] = sync_summary
             response_data["enrichment"] = enrichment_summary
+            record_inventory_change(
+                kid=kid,
+                actor=request_actor(request),
+                action="product_created",
+                changes=[],
+            )
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
         existing_kid_number = primary_kid_number(existing.kid_number)
@@ -1111,6 +1135,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        before_values = {field: getattr(existing, field) for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit")}
         update_fields = []
         for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit"):
             if field in validated:
@@ -1132,6 +1157,9 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         response_data = dict(output.data)
         response_data["sync"] = sync_summary
         response_data["enrichment"] = enrichment_summary
+        changes = changed_fields(before_values, {field: getattr(existing, field) for field in before_values})
+        if changes:
+            record_inventory_change(kid=existing, actor=request_actor(request), action="product_updated", changes=changes)
         return Response(response_data, status=status.HTTP_200_OK)
 
 class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -1152,6 +1180,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         payload = request.data.copy() if hasattr(request.data, "copy") else request.data
         serializer = self.get_serializer(instance, data=payload, partial=partial)
         serializer.is_valid(raise_exception=True)
+        before_values = {field: getattr(instance, field) for field in serializer.validated_data}
 
         if "place" in serializer.validated_data:
             target_place = serializer.validated_data.get("place")
@@ -1165,8 +1194,12 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
 
         with transaction.atomic():
             self.perform_update(serializer)
-            if removed_photos:
-                _delete_uploaded_photo_urls_safe(removed_photos, context="kid_partial_update", kid_id=instance.id)
+
+        changes = changed_fields(before_values, {field: getattr(instance, field) for field in before_values})
+        if changes:
+            record_inventory_change(kid=instance, actor=request_actor(request), action="product_updated", changes=changes)
+        if removed_photos:
+            _delete_uploaded_photo_urls_safe(removed_photos, context="kid_partial_update", kid_id=instance.id)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1260,30 +1293,39 @@ class KidCompositeUpdateAPIView(APIView):
         old_photos = _normalize_photo_list(kid.photo)
         removed_photos: list[str] = []
         updated_orders: list[Orders] = []
+        audit_changes: list[dict] = []
 
         with transaction.atomic():
             kid_payload = payload.get("kid")
             if isinstance(kid_payload, dict):
                 kid_serializer = KidCompositePatchSerializer(kid, data=kid_payload, partial=True)
                 kid_serializer.is_valid(raise_exception=True)
+                before_values = {field: getattr(kid, field) for field in kid_serializer.validated_data}
                 if "photo" in kid_serializer.validated_data:
                     next_photos = _normalize_photo_list(kid_serializer.validated_data.get("photo"))
                     removed_photos = [url for url in old_photos if url not in next_photos]
                 kid_serializer.save()
+                audit_changes.extend(changed_fields(before_values, {field: getattr(kid, field) for field in before_values}))
 
             ean_payload = payload.get("ean")
             if isinstance(ean_payload, dict):
                 ean_row, _ = Ean.objects.get_or_create(kid=kid)
                 ean_serializer = EanPatchSerializer(ean_row, data=ean_payload, partial=True)
                 ean_serializer.is_valid(raise_exception=True)
+                ean_before = {f"ean.{field}": getattr(ean_row, field) for field in ean_serializer.validated_data}
                 ean_serializer.save()
+                ean_after = {field: getattr(ean_row, field.removeprefix("ean.")) for field in ean_before}
+                audit_changes.extend(changed_fields(ean_before, ean_after))
 
             attrs_payload = payload.get("product_attributes")
             if isinstance(attrs_payload, dict):
                 attrs_row, _ = ProductAttributes.objects.get_or_create(kid=kid)
                 attrs_serializer = ProductAttributesPatchSerializer(attrs_row, data=attrs_payload, partial=True)
                 attrs_serializer.is_valid(raise_exception=True)
+                attrs_before = {f"attributes.{field}": getattr(attrs_row, field) for field in attrs_serializer.validated_data}
                 attrs_serializer.save()
+                attrs_after = {field: getattr(attrs_row, field.removeprefix("attributes.")) for field in attrs_before}
+                audit_changes.extend(changed_fields(attrs_before, attrs_after))
 
             for order_payload in payload.get("orders") or []:
                 order_pk = int(order_payload["id"])
@@ -1299,8 +1341,11 @@ class KidCompositeUpdateAPIView(APIView):
                 order_serializer.is_valid(raise_exception=True)
                 updated_orders.append(order_serializer.save())
 
-            if removed_photos:
-                _delete_uploaded_photo_urls_safe(removed_photos, context="kid_composite_update", kid_id=kid.id)
+            if audit_changes:
+                record_inventory_change(kid=kid, actor=request_actor(request), action="product_updated", changes=audit_changes)
+
+        if removed_photos:
+            _delete_uploaded_photo_urls_safe(removed_photos, context="kid_composite_update", kid_id=kid.id)
 
         kid.refresh_from_db()
         response_orders = list(Orders.objects.filter(kid=kid, pk__in=[order.id for order in updated_orders]).order_by("id"))
@@ -1340,6 +1385,8 @@ class KidEanSummaryAPIView(APIView):
 
 class KidMarketplaceEansAPIView(APIView):
     permission_classes = [SessionRolePermission]
+    B_WARE_EAN_MARKER = "B_WARE"
+    OTTO_EAN_FIELDS = frozenset({"otto_jv_ean", "otto_xl_ean"})
 
     @staticmethod
     def _normalize_ean(value: object) -> str:
@@ -1355,6 +1402,13 @@ class KidMarketplaceEansAPIView(APIView):
             return None
         return normalized
 
+    @classmethod
+    def _normalize_marketplace_ean(cls, value: object, field_name: str) -> str | None:
+        normalized = cls._normalize_optional_ean(value)
+        if field_name in cls.OTTO_EAN_FIELDS and normalized and normalized.upper().replace("-", "_") == cls.B_WARE_EAN_MARKER:
+            return cls.B_WARE_EAN_MARKER
+        return normalized
+
     @staticmethod
     def _normalize_ean_for_response(value: object) -> str:
         normalized = str(value or "").strip()
@@ -1363,7 +1417,9 @@ class KidMarketplaceEansAPIView(APIView):
         return normalized
 
     @staticmethod
-    def _validate_ean(value: str, field_name: str) -> None:
+    def _validate_ean(value: str, field_name: str, *, allow_b_ware: bool = False) -> None:
+        if allow_b_ware and value == KidMarketplaceEansAPIView.B_WARE_EAN_MARKER:
+            return
         if len(value) != 13 or not value.isdigit():
             raise ValidationError({field_name: "EAN must be a 13-digit numeric string."})
 
@@ -1433,9 +1489,9 @@ class KidMarketplaceEansAPIView(APIView):
         for field in fields:
             if field not in payload:
                 continue
-            normalized = self._normalize_optional_ean(payload.get(field))
+            normalized = self._normalize_marketplace_ean(payload.get(field), field)
             if normalized is not None:
-                self._validate_ean(normalized, field)
+                self._validate_ean(normalized, field, allow_b_ware=field in self.OTTO_EAN_FIELDS)
             updates[field] = normalized
 
         if not updates:
@@ -1840,6 +1896,135 @@ class InventoryRowsAPIView(APIView):
         return paginator.get_paginated_response(page)
 
 
+class InventoryDashboardSummaryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        request_id = _request_id_from_request(request)
+        try:
+            return Response(build_inventory_dashboard_summary(), status=status.HTTP_200_OK)
+        except (ProgrammingError, OperationalError):
+            logger.exception(
+                "INVENTORY_DASHBOARD_SUMMARY_SCHEMA_ERROR request_id=%s",
+                request_id,
+            )
+            return Response(
+                {
+                    "code": "INVENTORY_DASHBOARD_SUMMARY_SCHEMA_ERROR",
+                    "message": "Inventory dashboard summary is unavailable due to a database schema mismatch.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("INVENTORY_DASHBOARD_SUMMARY_INTERNAL_ERROR request_id=%s", request_id)
+            return Response(
+                {
+                    "code": "INVENTORY_DASHBOARD_SUMMARY_INTERNAL_ERROR",
+                    "message": "Failed to load the inventory dashboard summary.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class InventoryChangeHistoryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    @staticmethod
+    def _date_range(request) -> tuple[datetime | None, datetime | None]:
+        def parse_date(parameter: str) -> date | None:
+            try:
+                return date.fromisoformat(str(request.query_params.get(parameter) or ""))
+            except (TypeError, ValueError):
+                return None
+
+        start_date = parse_date("date_from")
+        end_date = parse_date("date_to")
+        if start_date or end_date:
+            start_date = start_date or end_date
+            end_date = end_date or start_date
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+            current_timezone = timezone.get_current_timezone()
+            return (
+                timezone.make_aware(datetime.combine(start_date, time.min), current_timezone),
+                timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), current_timezone),
+            )
+
+        period = str(request.query_params.get("period") or "").strip().lower()
+        if period not in {"day", "week", "month"}:
+            return None, None
+        try:
+            selected_date = date.fromisoformat(str(request.query_params.get("date") or ""))
+        except ValueError:
+            selected_date = timezone.localdate()
+
+        if period == "week":
+            start_date = selected_date - timedelta(days=selected_date.weekday())
+            end_date = start_date + timedelta(days=7)
+        elif period == "month":
+            start_date = selected_date.replace(day=1)
+            end_date = (start_date.replace(year=start_date.year + 1, month=1) if start_date.month == 12 else start_date.replace(month=start_date.month + 1))
+        else:
+            start_date = selected_date
+            end_date = start_date + timedelta(days=1)
+
+        current_timezone = timezone.get_current_timezone()
+        return (
+            timezone.make_aware(datetime.combine(start_date, time.min), current_timezone),
+            timezone.make_aware(datetime.combine(end_date, time.min), current_timezone),
+        )
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        try:
+            page = int(request.query_params.get("page", 1))
+        except (TypeError, ValueError):
+            page = 1
+        search = str(request.query_params.get("q") or "").strip()
+        actor = str(request.query_params.get("actor") or "").strip()
+        occurred_after, occurred_before = self._date_range(request)
+        try:
+            history = list_inventory_change_history(
+                limit=limit,
+                page=page,
+                search=search,
+                actor=actor,
+                occurred_after=occurred_after,
+                occurred_before=occurred_before,
+            )
+            return Response(
+                {
+                    **history,
+                    "actors": list_inventory_change_history_actors(
+                        search=search,
+                        occurred_after=occurred_after,
+                        occurred_before=occurred_before,
+                    ),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except (ProgrammingError, OperationalError):
+            logger.exception("INVENTORY_CHANGE_HISTORY_SCHEMA_ERROR")
+            return Response(
+                {"code": "INVENTORY_CHANGE_HISTORY_SCHEMA_ERROR", "message": "Inventory change history is unavailable."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("INVENTORY_CHANGE_HISTORY_INTERNAL_ERROR")
+            return Response(
+                {
+                    "code": "INVENTORY_CHANGE_HISTORY_INTERNAL_ERROR",
+                    "message": "Failed to load inventory change history.",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class InventoryFilterOptionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -1966,9 +2151,16 @@ class KidsBulkUpdateAPIView(APIView):
             )
 
         updated_count = 0
+        inventory_changes: list[tuple[Kid, list[dict]]] = []
         with transaction.atomic():
             for patch_data in normalized_updates:
                 kid = kids[patch_data["kid_id"]]
+                audit_changes: list[dict] = []
+                kid_before = {
+                    field: getattr(kid, field)
+                    for field in ("room", "furniture_type")
+                    if field in patch_data
+                }
                 update_fields: list[str] = []
                 if "room" in patch_data and kid.room != patch_data["room"]:
                     kid.room = patch_data["room"]
@@ -1979,16 +2171,30 @@ class KidsBulkUpdateAPIView(APIView):
                 if update_fields:
                     kid.save(update_fields=update_fields)
                     updated_count += 1
+                audit_changes.extend(changed_fields(kid_before, {field: getattr(kid, field) for field in kid_before}))
 
                 attrs_updates: dict = {}
                 for attr_key in ("quantity", "company", "color", "size", "material", "price", "currency"):
                     if attr_key in patch_data:
                         attrs_updates[attr_key] = patch_data[attr_key]
                 if attrs_updates:
-                    ProductAttributes.objects.update_or_create(
+                    existing_attrs = ProductAttributes.objects.filter(kid_id=kid.id).first()
+                    attrs_before = {
+                        f"attributes.{field}": getattr(existing_attrs, field) if existing_attrs is not None else None
+                        for field in attrs_updates
+                    }
+                    attrs_row, _ = ProductAttributes.objects.update_or_create(
                         kid_id=kid.id,
                         defaults=attrs_updates,
                     )
+                    attrs_after = {field: getattr(attrs_row, field.removeprefix("attributes.")) for field in attrs_before}
+                    audit_changes.extend(changed_fields(attrs_before, attrs_after))
+
+                if audit_changes:
+                    inventory_changes.append((kid, audit_changes))
+
+        for kid, changes in inventory_changes:
+            record_inventory_change(kid=kid, actor=request_actor(request), action="product_updated", changes=changes)
 
         return Response({"updated": updated_count}, status=status.HTTP_200_OK)
 
