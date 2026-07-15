@@ -12,7 +12,8 @@ from django.db.models import (
     BigAutoField,
     DecimalField,
     OneToOneField,
-    BooleanField
+    BooleanField,
+    SET_NULL,
 )
 from django.db.models import Q
 from .kid_number_utils import normalize_kid_numbers
@@ -176,3 +177,20 @@ class ProductAttributes(Model):
     currency = CharField(max_length=8, default="EUR")
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
+
+
+class InventoryChangeLog(Model):
+    """Append-only audit trail for inventory changes initiated from WareHub."""
+
+    kid = ForeignKey(Kid, null=True, blank=True, on_delete=SET_NULL, related_name="change_logs")
+    kid_number = CharField(max_length=255, blank=True, default="")
+    place = CharField(max_length=255, blank=True, default="")
+    actor_login = CharField(max_length=255, blank=True, default="")
+    actor_name = CharField(max_length=255, blank=True, default="")
+    action = CharField(max_length=64, db_index=True)
+    changes = JSONField(default=list, blank=True)
+    metadata = JSONField(default=dict, blank=True)
+    created_at = DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]

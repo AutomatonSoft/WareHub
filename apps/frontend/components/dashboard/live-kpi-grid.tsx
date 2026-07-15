@@ -2,18 +2,22 @@
 
 import { StatCard } from "./stat-card";
 import type { KpiMetric } from "../../lib/mock-data";
-import { Card, CardContent, CardHeader } from "../ui/card";
+import { Card, CardAction, CardContent, CardHeader } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 
 function KpiSkeletonCard() {
   return (
     <Card className="wh-stat-card wh-section-card relative overflow-hidden">
-      <CardHeader className="pb-3">
+      <CardHeader>
         <Skeleton className="h-3 w-24" />
+        <CardAction>
+          <Skeleton className="size-6 rounded-[var(--radius-control)]" />
+        </CardAction>
       </CardHeader>
       <CardContent className="pt-0">
-        <Skeleton className="mt-3 h-9 w-28" />
-        <Skeleton className="mt-3 h-7 w-20 rounded-full" />
+        <div className="min-w-0">
+          <Skeleton className="h-8 w-24" />
+        </div>
       </CardContent>
     </Card>
   );
@@ -34,7 +38,7 @@ export function LiveKpiGrid({
     <div>
       <div className="wh-dashboard__stats wh-stat-grid stagger-children">
         {loading
-          ? Array.from({ length: 4 }).map((_, index) => <KpiSkeletonCard key={`kpi-skeleton-${index}`} />)
+          ? Array.from({ length: 3 }).map((_, index) => <KpiSkeletonCard key={`kpi-skeleton-${index}`} />)
           : displayMetrics.map((metric) => <StatCard key={metric.id} metric={metric} />)}
       </div>
       {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
