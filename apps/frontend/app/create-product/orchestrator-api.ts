@@ -43,7 +43,22 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
   const account = site.kind.toLowerCase();
 
   if (site.family === "HOOD") {
-    return { marketplace: Marketplace.hood, account, changed_fields: ["title", "price", "description", "images"] };
+    return {
+      marketplace: Marketplace.hood,
+      account,
+      changed_fields: [
+        "title",
+        "price",
+        "quantity",
+        "description",
+        "images",
+        "categoryID",
+        "condition",
+        "itemMode",
+        "itemNumber",
+        "productProperties"
+      ]
+    };
   }
 
   if (site.family === "KAUFLAND") {
@@ -121,7 +136,9 @@ export async function pushProductToOrchestrator(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
+  operation?: OrchestratorOperation;
 }): Promise<OrchestratorResponse> {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildDirectUpdatePayload(input as BuildOrchestratorPayloadInput);
@@ -129,7 +146,7 @@ export async function pushProductToOrchestrator(input: {
   const response = await apiFetch(`/api/v1/orchestrator/products/${encodeURIComponent(input.ean)}/update`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ operation: Operation.update satisfies OrchestratorOperation, payload, channels })
+    body: JSON.stringify({ operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels })
   });
 
   const body = await response.json();
@@ -150,7 +167,9 @@ export async function createOrchestratorJob(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
+  operation?: OrchestratorOperation;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildJobUpdatePayload(input as BuildOrchestratorPayloadInput);
@@ -160,7 +179,7 @@ export async function createOrchestratorJob(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: Operation.update satisfies OrchestratorOperation, payload, channels }
+      command: { operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels }
     })
   });
   const raw = (await response.json()) as Record<string, unknown>;

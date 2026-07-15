@@ -34,3 +34,17 @@ test("buildJobUpdatePayload keeps only job-required fields", () => {
   assert.equal(payload.price, "89.00");
   assert.deepEqual(payload.images, ["https://cdn/table.jpg"]);
 });
+
+test("buildJobUpdatePayload preserves Hood marketplace fields", () => {
+  const payload = buildJobUpdatePayload({
+    ean: "4006381333931",
+    productName: "Table",
+    price: "89.00",
+    imageUrls: [],
+    additionalPayload: { categoryID: "2412", condition: "new", itemMode: "shopProduct" }
+  });
+
+  assert.equal(payload.categoryID, "2412");
+  assert.equal(payload.condition, "new");
+  assert.equal(payload.itemMode, "shopProduct");
+});

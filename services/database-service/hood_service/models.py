@@ -120,3 +120,25 @@ class HoodItemXL(BaseHoodItem):
         ]
         verbose_name = "Hood Item XL"
         verbose_name_plural = "Hood Items XL"
+
+
+class HoodProductSnapshot(models.Model):
+    account = models.CharField(max_length=16)
+    ean = models.CharField(max_length=255)
+    payload = models.JSONField(default=dict)
+    source_item_id = models.CharField(max_length=255, blank=True, default="")
+    saved_at = models.DateTimeField(auto_now=True)
+    restored_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "ean"],
+                name="unique_hood_product_snapshot_account_ean",
+            ),
+        ]
+        ordering = ["-saved_at"]
+
+    def __str__(self) -> str:
+        return f"{self.account}:{self.ean}"

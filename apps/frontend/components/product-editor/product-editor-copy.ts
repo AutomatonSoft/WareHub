@@ -6,7 +6,7 @@ export function getProductEditorTabCopy(t: Record<string, string>): Record<Produ
     XL: { label: "XL", subtitle: t.productEditorTabSubtitleXl, tabStatus: t.productEditorTabStatusPlanned },
     HOOD: { label: "HOOD", subtitle: t.productEditorTabSubtitleHood, tabStatus: t.productEditorTabStatusActive },
     OTTO: { label: "OTTO", subtitle: t.productEditorTabSubtitleOtto, tabStatus: t.productEditorTabStatusPlanned },
-    KAUFLAND: { label: "KAUFLAND", subtitle: t.productEditorTabSubtitleKaufland, tabStatus: t.productEditorTabStatusPlanned },
+    KAUFLAND: { label: "KAUFLAND", subtitle: t.productEditorTabSubtitleKaufland, tabStatus: t.productEditorTabStatusActive },
     EBAY: { label: "EBAY", subtitle: t.productEditorTabSubtitleEbay, tabStatus: t.productEditorTabStatusUnsupported }
   };
 }

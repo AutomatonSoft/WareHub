@@ -22,6 +22,7 @@ from database.permissions import SessionRolePermission
 from .core import (
     HOOD_API_BASE_URL,
     HOOD_API_TIMEOUT,
+    build_create_urls,
     build_patch_urls,
     collect_uploaded_files,
     decode_html_entities,
@@ -45,6 +46,7 @@ HOOD_VALIDATE_UPLOADED_IMAGE_URLS = (os.getenv("HOOD_VALIDATE_UPLOADED_IMAGE_URL
     "yes",
     "on",
 }
+HOOD_CREATE_CATEGORY_ID = "2412"
 
 
 def _normalize_changed_fields(value) -> list[str]:
@@ -90,6 +92,11 @@ def _coerce_json_list_field(value):
 
 def _allowed_patch_fields() -> set[str]:
     return set(HoodPatchSerializer().fields.keys())
+
+
+def _enforce_create_category(create_body: dict) -> dict:
+    create_body["categoryID"] = HOOD_CREATE_CATEGORY_ID
+    return create_body
 
 
 def _extract_current_external_item(ean: str, account: str) -> dict | None:
@@ -368,6 +375,157 @@ class HoodFetchByEANAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+    def post(self, request, ean: str):
+        account = normalize_account(request.query_params.get("account"))
+        if not account:
+            return Response(
+                {"code": "hood_account_invalid", "detail": "Передайте query-параметр account со значением 'jv' или 'xl'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ean_value = (ean or "").strip()
+        if not ean_value:
+            return Response(
+                {"code": "hood_ean_empty", "detail": "Пустой ean в пути."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request_hash = build_request_hash(
+            method=request.method,
+            path=request.path,
+            query=dict(request.query_params),
+            body=request.data if isinstance(request.data, dict) else str(request.data),
+        )
+        idem_key = derive_idem_key(request, request_hash)
+        idem_state, idem_record = claim_or_replay(
+            scope="hood.create_by_ean.v1",
+            idem_key=idem_key,
+            request_hash=request_hash,
+        )
+        if idem_state == "replay":
+            return Response(idem_record.response_payload, status=idem_record.status_code or status.HTTP_200_OK)
+        if idem_state == "processing":
+            return Response(
+                {"code": "hood_idempotency_in_progress", "detail": "Request with same idempotency key is in progress."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if idem_state == "conflict":
+            return Response(
+                {"code": "hood_idempotency_key_conflict", "detail": "Idempotency key reused with different payload."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if request.data is None:
+            create_body: dict = {}
+        elif isinstance(request.data, dict):
+            create_body = dict(request.data)
+        elif hasattr(request.data, "dict"):
+            create_body = request.data.dict()
+        else:
+            payload = {"code": "hood_create_body_invalid", "detail": "POST body должен быть JSON-объектом или form-data."}
+            finalize_error(idem_record, status_code=status.HTTP_400_BAD_REQUEST, payload=payload, error_code=payload["code"])
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+        create_body = sanitize_patch_payload(create_body)
+        create_body = {key: value for key, value in create_body.items() if key in _allowed_patch_fields()}
+        create_body = _enforce_create_category(create_body)
+        create_body["ean"] = ean_value
+        create_body["account"] = account
+        if "price" in create_body and create_body["price"] is not None and not isinstance(create_body["price"], str):
+            create_body["price"] = str(create_body["price"])
+        if "quantity" in create_body and create_body["quantity"] not in (None, "") and not isinstance(create_body["quantity"], int):
+            try:
+                create_body["quantity"] = int(create_body["quantity"])
+            except (TypeError, ValueError):
+                pass
+
+        schema_serializer = HoodPatchSerializer(data=create_body)
+        if not schema_serializer.is_valid():
+            payload = {
+                "code": "hood_create_schema_invalid",
+                "detail": "POST body validation failed.",
+                "errors": schema_serializer.errors,
+            }
+            finalize_error(idem_record, status_code=status.HTTP_400_BAD_REQUEST, payload=payload, error_code=payload["code"])
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        create_body = schema_serializer.validated_data
+
+        external_response = None
+        last_error = None
+        for candidate_url in build_create_urls(ean_value):
+            try:
+                response = requests.post(
+                    candidate_url,
+                    params={"account": account},
+                    json=create_body,
+                    headers={"accept": "application/json"},
+                    auth=hood_auth(),
+                    timeout=HOOD_API_TIMEOUT,
+                )
+            except requests.RequestException as exc:
+                last_error = str(exc)
+                continue
+
+            if response.status_code in (404, 405):
+                external_response = response
+                continue
+            external_response = response
+            break
+
+        if external_response is None:
+            payload = {"code": "hood_external_network_failed", "detail": f"Hood external API network error: {last_error or 'unknown error'}"}
+            finalize_error(idem_record, status_code=status.HTTP_502_BAD_GATEWAY, payload=payload, error_code=payload["code"])
+            return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+
+        if external_response.status_code >= 400:
+            payload = {
+                "code": "hood_external_create_failed",
+                "detail": "Hood external API returned error status on POST.",
+                "status_code": external_response.status_code,
+                "body": external_response.text[:1500],
+            }
+            finalize_error(idem_record, status_code=status.HTTP_502_BAD_GATEWAY, payload=payload, error_code=payload["code"])
+            return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+
+        try:
+            external_payload = external_response.json()
+        except ValueError:
+            external_payload = {}
+
+        created_item = _extract_current_external_item(ean=ean_value, account=account)
+        if created_item is None:
+            payload = {
+                "code": "hood_external_create_unconfirmed",
+                "detail": "Hood accepted POST but the item could not be confirmed by EAN.",
+                "external_status_code": external_response.status_code,
+            }
+            set_external_push_status(account=account, ean=ean_value, pushed=False, error=payload["detail"])
+            finalize_error(idem_record, status_code=status.HTTP_502_BAD_GATEWAY, payload=payload, error_code=payload["code"])
+            return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+
+        if not isinstance(external_payload, dict) or not isinstance(external_payload.get("items"), list):
+            external_payload = {
+                "account": account,
+                "ean": ean_value,
+                "success": True,
+                "items": [created_item],
+            }
+
+        db_result = None
+        if isinstance(external_payload, dict) and isinstance(external_payload.get("items"), list):
+            with transaction.atomic():
+                db_result = upsert_response_and_items(external_payload, account=account, ean=ean_value)
+        set_external_push_status(account=account, ean=ean_value, pushed=True)
+        response_payload = {
+            "account": account,
+            "ean": ean_value,
+            "db": db_result,
+            "external_status_code": external_response.status_code,
+            "external_payload": external_payload,
+        }
+        finalize_success(idem_record, status_code=status.HTTP_201_CREATED, payload=response_payload)
+        return Response(response_payload, status=status.HTTP_201_CREATED)
 
     def patch(self, request, ean: str):
         account = normalize_account(request.query_params.get("account"))

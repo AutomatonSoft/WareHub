@@ -4,6 +4,7 @@ from .models import (
     HoodApiResponseXL,
     HoodItemJV,
     HoodItemXL,
+    HoodProductSnapshot,
 )
 
 
@@ -36,3 +37,9 @@ class HoodItemJVAdmin(BaseHoodItemAdmin):
 @admin.register(HoodItemXL)
 class HoodItemXLAdmin(BaseHoodItemAdmin):
     pass
+
+
+@admin.register(HoodProductSnapshot)
+class HoodProductSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("id", "account", "ean", "source_item_id", "saved_at", "restored_at")
+    search_fields = ("account", "ean", "source_item_id")

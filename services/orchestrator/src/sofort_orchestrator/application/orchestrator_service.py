@@ -5,6 +5,7 @@ from ..domain.models import (
     ChannelResult,
     ErrorContract,
     FinalStatus,
+    Marketplace,
     Operation,
     OrchestrateRequest,
     OrchestrateResponse,
@@ -28,13 +29,29 @@ class OrchestratorService:
         self.channel_limiter = channel_limiter
 
     def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:
-        if command.operation is not Operation.UPDATE:
+        if command.operation not in {Operation.UPDATE, Operation.PUBLISH}:
             return self._unsupported_operation_response(request_id=request_id, command=command)
 
         results: list[ChannelResult] = []
 
         for channel in command.channels:
             target_label = _target_label(channel)
+            if command.operation is Operation.PUBLISH and channel.marketplace is not Marketplace.HOOD:
+                results.append(
+                    ChannelResult(
+                        marketplace=channel.marketplace,
+                        target=target_label,
+                        status="failed",
+                        status_code=501,
+                        error=ErrorContract(
+                            code="orchestrator_operation_not_supported",
+                            message="Publish is currently supported only for HOOD.",
+                            request_id=request_id,
+                            details={"operation": command.operation.value, "marketplace": channel.marketplace.value},
+                        ),
+                    )
+                )
+                continue
             product_editor_mode = str(channel.overrides.get("__product_editor_mode") or "").strip().lower()
             unknown = validate_changed_fields(channel.marketplace, channel.changed_fields)
             if unknown:
@@ -119,6 +136,7 @@ class OrchestratorService:
                     request_id=request_id,
                     channel=channel,
                     payload=scoped_payload,
+                    operation=command.operation,
                 )
             except RetryExhaustedError as exc:
                 code = "orchestrator_channel_retry_exhausted"

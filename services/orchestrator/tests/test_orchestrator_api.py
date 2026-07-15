@@ -14,7 +14,7 @@ from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
 from src.sofort_orchestrator.main import app
 from src.sofort_orchestrator.infra.settings import settings
-from src.sofort_orchestrator.domain.models import JobPriority, OrchestrateRequest
+from src.sofort_orchestrator.domain.models import JobPriority, Operation, OrchestrateRequest
 
 
 settings.enable_job_worker = False
@@ -24,7 +24,15 @@ class FakeAdapters:
     def __init__(self) -> None:
         self.calls = 0
 
-    def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
         self.calls += 1
         if channel.marketplace is Marketplace.KAUFLAND:
             return type("R", (), {"status_code": 502, "body": {"code": "kaufland_down"}})()
@@ -32,7 +40,15 @@ class FakeAdapters:
 
 
 class TimeoutAdapters(FakeAdapters):
-    def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
         raise RetryExhaustedError("timed out", kind="timeout")
 
 
@@ -277,7 +293,7 @@ def test_orchestrator_rejects_unknown_operation_value(tmp_path):
     assert payload["code"] == "orchestrator_request_validation_failed"
 
 
-@pytest.mark.parametrize("operation", ["publish", "unpublish", "relist"])
+@pytest.mark.parametrize("operation", ["unpublish", "relist"])
 def test_orchestrator_returns_not_supported_for_non_update_operations(tmp_path, operation: str):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)
@@ -294,6 +310,28 @@ def test_orchestrator_returns_not_supported_for_non_update_operations(tmp_path, 
     assert payload["results"][0]["error"]["code"] == "orchestrator_operation_not_supported"
     assert payload["results"][0]["error"]["details"]["operation"] == operation
     assert fake.calls == 0
+
+
+def test_orchestrator_publishes_to_hood(tmp_path):
+    fake = FakeAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+    body = {
+        "operation": "publish",
+        "payload": {"title": "Desk", "description": "Oak", "price": "199.99", "quantity": 1},
+        "channels": [
+            {
+                "marketplace": "hood",
+                "account": "jv",
+                "changed_fields": ["title", "description", "price", "quantity"],
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert fake.calls == 1
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):

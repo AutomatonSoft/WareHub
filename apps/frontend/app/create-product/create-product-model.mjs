@@ -35,3 +35,46 @@ export function normalizeCreateProductInput(input) {
     imageUrls: parseImageUrlsFromText(input?.imagesText || "")
   };
 }
+
+export const DEFAULT_HOOD_CREATE_FIELDS = {
+  description: "",
+  quantity: "1",
+  condition: "new",
+  itemMode: "shopProduct",
+  itemNumber: "",
+  productPropertiesText: "[]"
+};
+
+export const HOOD_CREATE_CATEGORY_ID = "2412";
+
+export function validateHoodCreateFields(fields) {
+  const errors = {};
+  if (!fields.description.trim()) errors.description = "Description is required for Hood.";
+  if (!/^\d+$/.test(fields.quantity.trim()) || Number(fields.quantity) < 1) {
+    errors.quantity = "Quantity must be a positive whole number.";
+  }
+  try {
+    const parsed = JSON.parse(fields.productPropertiesText || "[]");
+    if (!Array.isArray(parsed) || parsed.some((item) => !item || typeof item !== "object")) {
+      errors.productPropertiesText = "Properties must be a JSON array of name/value objects.";
+    }
+  } catch {
+    errors.productPropertiesText = "Properties must be valid JSON.";
+  }
+  return errors;
+}
+
+export function buildHoodCreatePayload(input) {
+  const productProperties = JSON.parse(input.fields.productPropertiesText || "[]");
+  return {
+    description: input.fields.description.trim(),
+    quantity: Number(input.fields.quantity),
+    categoryID: HOOD_CREATE_CATEGORY_ID,
+    condition: input.fields.condition.trim(),
+    itemMode: input.fields.itemMode.trim(),
+    itemNumber: input.fields.itemNumber.trim() || input.ean,
+    productProperties: productProperties
+      .map((property) => ({ name: String(property?.name || "").trim(), value: String(property?.value || "").trim() }))
+      .filter((property) => property.name && property.value)
+  };
+}

@@ -16,7 +16,7 @@ import { Input } from "../../components/ui/input";
 import { apiFetch } from "../../lib/api/client";
 import { useToast } from "../../components/shared/toast-provider";
 import { useLabels } from "../use-labels";
-import { CreateProductFormPanel } from "./create-product-form-panel";
+import { CreateProductFormPanel, HoodCreateFieldsPanel } from "./create-product-form-panel";
 import { CreateProductJobPanel } from "./create-product-job-panel";
 import { MarketplaceSiteSelectorPanel } from "./marketplace-site-selector-panel";
 import { useCreateProductController } from "./use-create-product-controller";
@@ -1444,6 +1444,10 @@ export default function CreateProductPage() {
       return void controller.handleCreateProduct();
     }
 
+    if (activeTab === "hood") {
+      return void controller.handleCreateProductForHoodSiteIds(activeMarketplaceSiteIds);
+    }
+
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
   }
 
@@ -2094,10 +2098,19 @@ export default function CreateProductPage() {
                     onSubmit={
                       activeTab === "xl"
                         ? () => void controller.handleCreateProductForXlDefaultSite()
-                        : () => void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds)
+                        : activeTab === "hood"
+                          ? () => void controller.handleCreateProductForHoodSiteIds(activeMarketplaceSiteIds)
+                          : () => void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds)
                     }
                     onReset={controller.resetFields}
                   />
+                  {activeTab === "hood" ? (
+                    <HoodCreateFieldsPanel
+                      fields={controller.hoodFields}
+                      fieldErrors={controller.hoodFieldErrors}
+                      onFieldsChange={controller.setHoodFields}
+                    />
+                  ) : null}
                   <CreateProductJobPanel
                     t={t}
                     latestJobId={controller.latestJobId}

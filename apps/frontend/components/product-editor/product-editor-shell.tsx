@@ -21,14 +21,17 @@ import { ProductEditorHeaderCard } from "./product-editor-header-card";
 import {
   buildHoodChangedFields,
   buildJvChangedFields,
+  buildKauflandChangedFields,
   createEmptyHoodDraft,
   createEmptyJvDraft,
+  createEmptyKauflandDraft,
   findGroup,
   findTarget,
   hasActionableHoodTarget,
   hasActionableJvTarget,
   hydrateHoodDraft,
-  hydrateJvDraft
+  hydrateJvDraft,
+  hydrateKauflandDraft
 } from "./product-editor-model";
 import {
   buildHoodDraftFromApiItem,
@@ -47,6 +50,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorJobResponse,
   ProductEditorJvDraft,
+  ProductEditorKauflandDraft,
   ProductEditorPlanResponse,
   ProductEditorJvSiteKey,
   ProductEditorTarget
@@ -91,6 +95,11 @@ function ProductEditorContent() {
   const [jvDraft, setJvDraft] = useState<ProductEditorJvDraft>(createEmptyJvDraft());
   const [initialJvDraft, setInitialJvDraft] = useState<ProductEditorJvDraft>(createEmptyJvDraft());
   const [jvWarnings, setJvWarnings] = useState<ProductEditorDiscoverResponse["warnings"]>([]);
+  const [kauflandLoading, setKauflandLoading] = useState(false);
+  const [kauflandApplyLoading, setKauflandApplyLoading] = useState(false);
+  const [kauflandDraft, setKauflandDraft] = useState<ProductEditorKauflandDraft>(createEmptyKauflandDraft());
+  const [initialKauflandDraft, setInitialKauflandDraft] = useState<ProductEditorKauflandDraft>(createEmptyKauflandDraft());
+  const [kauflandWarnings, setKauflandWarnings] = useState<ProductEditorDiscoverResponse["warnings"]>([]);
 
   const [planLoading, setPlanLoading] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -103,6 +112,7 @@ function ProductEditorContent() {
   const skipNextAutoJvLoadKeyRef = useRef<string | null>(null);
   const jvAutoLoadInFlightKeyRef = useRef<string | null>(null);
   const loadedJvAutoLoadKeyRef = useRef<string | null>(null);
+  const kauflandLoadInFlightEanRef = useRef<string | null>(null);
 
   const activeTabEanInput = tabEanInputs[activeTabKey] ?? "";
   const effectiveTabEanInput = activeTabEanInput.trim() || eanInput.trim();
@@ -121,8 +131,10 @@ function ProductEditorContent() {
   const hasLocalLoadedHood =
     activeGroupId === "HOOD" &&
     isLoadedHoodDraft(hoodDraft, effectiveTabEanInput, getSourceVariantFromTab(activeTabKey));
+  const hasLocalLoadedKaufland = activeGroupId === "KAUFLAND" && isLoadedKauflandDraft(kauflandDraft, effectiveTabEanInput);
   const hoodChangedFields = useMemo(() => buildHoodChangedFields(initialHoodDraft, hoodDraft), [hoodDraft, initialHoodDraft]);
   const jvChangedFields = useMemo(() => buildJvChangedFields(initialJvDraft, jvDraft), [initialJvDraft, jvDraft]);
+  const kauflandChangedFields = useMemo(() => buildKauflandChangedFields(initialKauflandDraft, kauflandDraft), [initialKauflandDraft, kauflandDraft]);
   const targetStats = useMemo(() => {
     const targets = (discover?.groups ?? [])
       .flatMap((group) => group.targets)
@@ -162,7 +174,12 @@ function ProductEditorContent() {
       }
       void loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
     }
-  }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft]);
+    if (activeGroupId === "KAUFLAND" && !hasLocalLoadedKaufland) {
+      if (kauflandLoadInFlightEanRef.current === discover.ean) return;
+      kauflandLoadInFlightEanRef.current = discover.ean;
+      void loadKauflandDraft(discover, discover.recommended_baseline_target_id);
+    }
+  }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland]);
 
   useEffect(() => {
     if (!jobResponse) return;
@@ -212,6 +229,15 @@ function ProductEditorContent() {
           return;
         }
         showToast(t.productEditorTabLoadedForEan.replace("{tab}", activeTabKey.replace("_", " ")).replace("{ean}", ean), "success");
+        return;
+      }
+      if (activeGroupId === "KAUFLAND") {
+        const loaded = await loadKauflandDraftByEan(ean);
+        if (!loaded) {
+          showToast(`Product ${ean} could not be loaded for Kaufland.`, "error");
+          return;
+        }
+        showToast(`Kaufland tab loaded for ${ean}.`, "success");
         return;
       }
       showToast("Local tab search is currently available for JV, XL, and HOOD tabs.", "error");
@@ -364,6 +390,55 @@ function ProductEditorContent() {
     }
   }
 
+  async function loadKauflandDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
+    setKauflandLoading(true);
+    setPageError(null);
+    try {
+      const response = await loadProductEditorGroup({
+        ean: currentDiscover.ean,
+        activeGroup: "KAUFLAND",
+        baselineTargetId: preferredTargetId
+      });
+      const hydrated = hydrateKauflandDraft(response.draft as unknown as ProductEditorKauflandDraft);
+      setKauflandDraft(hydrated);
+      setInitialKauflandDraft(hydrated);
+      setKauflandWarnings(response.warnings);
+      clearPlanAndJobState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Kaufland draft load failed.";
+      setPageError(message);
+      showToast(message, "error");
+    } finally {
+      if (kauflandLoadInFlightEanRef.current === currentDiscover.ean) kauflandLoadInFlightEanRef.current = null;
+      setKauflandLoading(false);
+    }
+  }
+
+  async function loadKauflandDraftByEan(ean: string): Promise<boolean> {
+    setKauflandLoading(true);
+    kauflandLoadInFlightEanRef.current = ean;
+    try {
+      const discovered = await discoverProductEditor(ean, "KAUFLAND");
+      setDiscover(limitDiscoverToActiveGroup(discovered, "KAUFLAND"));
+      const response = await loadProductEditorGroup({
+        ean,
+        activeGroup: "KAUFLAND",
+        baselineTargetId: discovered.recommended_baseline_target_id
+      });
+      if (!response.supported) return false;
+      const hydrated = hydrateKauflandDraft(response.draft as unknown as ProductEditorKauflandDraft);
+      if (!hydrated.target_id) return false;
+      setKauflandDraft(hydrated);
+      setInitialKauflandDraft(hydrated);
+      setKauflandWarnings(response.warnings);
+      clearPlanAndJobState();
+      return true;
+    } finally {
+      if (kauflandLoadInFlightEanRef.current === ean) kauflandLoadInFlightEanRef.current = null;
+      setKauflandLoading(false);
+    }
+  }
+
   async function loadHoodDraftByEan(ean: string): Promise<boolean> {
     const tabKey = getHoodTabKey(activeTabKey) ?? "HOOD_JV";
     setHoodTabLoading(tabKey, true);
@@ -416,6 +491,11 @@ function ProductEditorContent() {
 
   function patchJvDraft(patch: Partial<ProductEditorJvDraft>) {
     setJvDraft((current) => ({ ...current, ...patch }));
+    clearPlanStateOnly();
+  }
+
+  function patchKauflandDraft(patch: Partial<ProductEditorKauflandDraft>) {
+    setKauflandDraft((current) => ({ ...current, ...patch }));
     clearPlanStateOnly();
   }
 
@@ -760,6 +840,53 @@ function ProductEditorContent() {
     }
   }
 
+  async function handleApplyKauflandEditedProducts() {
+    const ean = kauflandDraft.ean.trim();
+    if (!isValidProductIdentifier(ean)) {
+      showToast("Kaufland EAN is invalid.", "error");
+      return;
+    }
+    if (kauflandChangedFields.length === 0) {
+      showToast("No edited Kaufland fields to apply.", "error");
+      return;
+    }
+    const selectedTargetIds = discover?.groups
+      .find((group) => group.id === "KAUFLAND")
+      ?.targets.filter((target) => target.status === "found" || target.status === "missing")
+      .map((target) => target.id) ?? [];
+    if (selectedTargetIds.length === 0) {
+      showToast("No reachable Kaufland targets are available for apply.", "error");
+      return;
+    }
+    setKauflandApplyLoading(true);
+    setPageError(null);
+    try {
+      const plan = await planProductEditor({
+        ean,
+        activeGroup: "KAUFLAND",
+        changedFields: kauflandChangedFields,
+        draft: kauflandDraft as unknown as Record<string, unknown>,
+        selectedTargetIds
+      });
+      setPlanResponse(plan);
+      const response = await applyProductEditorPlan(plan.plan_id);
+      setApplyResponse(response);
+      const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
+      if (String(finalJob.status).toLowerCase() === "completed") {
+        setInitialKauflandDraft(kauflandDraft);
+        showToast("Kaufland changes applied.", "success");
+      } else {
+        showToast("Kaufland apply completed with failed targets.", "error");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Kaufland apply failed.";
+      setPageError(message);
+      showToast(message, "error");
+    } finally {
+      setKauflandApplyLoading(false);
+    }
+  }
+
   function handleRemoveHoodImage(imageUrl: string) {
     applyHoodImagesUpdate(removeHoodImage(hoodDraft.images, imageUrl));
   }
@@ -1006,6 +1133,7 @@ function ProductEditorContent() {
     setDiscover(null);
     jvAutoLoadInFlightKeyRef.current = null;
     loadedJvAutoLoadKeyRef.current = null;
+    kauflandLoadInFlightEanRef.current = null;
     setHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setInitialHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setHoodWarningsByTab(createEmptyHoodWarningsByTab());
@@ -1015,6 +1143,9 @@ function ProductEditorContent() {
     setJvDraft(createEmptyJvDraft());
     setInitialJvDraft(createEmptyJvDraft());
     setJvWarnings([]);
+    setKauflandDraft(createEmptyKauflandDraft());
+    setInitialKauflandDraft(createEmptyKauflandDraft());
+    setKauflandWarnings([]);
     setPlanResponse(null);
     setApplyResponse(null);
     setJobResponse(null);
@@ -1125,6 +1256,13 @@ function ProductEditorContent() {
           onUploadHoodFiles={(files) => void handleUploadHoodFiles(files)}
           onApplyHoodEditedProducts={() => void handleApplyHoodEditedProducts()}
           onApplyJvEditedProducts={() => void handleApplyJvEditedProducts()}
+          kauflandDraft={kauflandDraft}
+          kauflandWarnings={kauflandWarnings}
+          kauflandLoading={kauflandLoading}
+          kauflandChangedFields={kauflandChangedFields}
+          kauflandApplyLoading={kauflandApplyLoading}
+          onPatchKaufland={patchKauflandDraft}
+          onApplyKauflandEditedProducts={() => void handleApplyKauflandEditedProducts()}
         />
       </div>
     </AppShell>
@@ -1135,7 +1273,7 @@ function limitDiscoverToActiveGroup(
   response: ProductEditorDiscoverResponse,
   activeGroup: ProductEditorGroupId | null
 ): ProductEditorDiscoverResponse {
-  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD" && activeGroup !== "XL")) {
+  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD" && activeGroup !== "XL" && activeGroup !== "KAUFLAND")) {
     return response;
   }
   const activeGroupResponse = response.groups.find((group) => group.id === activeGroup);
@@ -1179,6 +1317,10 @@ function isLoadedJvDraft(draft: ProductEditorJvDraft, ean: string): boolean {
     .filter(Boolean);
 
   return canonicalEanCandidates.some((candidate) => normalizedIdentifier.includes(candidate));
+}
+
+function isLoadedKauflandDraft(draft: ProductEditorKauflandDraft, ean: string): boolean {
+  return Boolean(draft.target_id) && draft.ean.trim() === ean.trim();
 }
 
 function normalizeProductIdentifier(value: string): string {

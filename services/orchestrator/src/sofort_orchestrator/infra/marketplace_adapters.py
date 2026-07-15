@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..domain.models import ChannelTarget, Marketplace
+from ..domain.models import ChannelTarget, Marketplace, Operation
 from .http_client import HttpClient
 
 
@@ -18,7 +18,15 @@ class MarketplaceAdapters:
         self.http = http_client
         self.service_auth_token = service_auth_token
 
-    def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict) -> AdapterResult:
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ) -> AdapterResult:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
@@ -26,7 +34,8 @@ class MarketplaceAdapters:
         if channel.marketplace is Marketplace.HOOD:
             account = (channel.account or "jv").strip().lower()
             url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
-            response = self.http.request("PATCH", url, headers=headers, params={"account": account}, json=payload)
+            method = "POST" if operation is Operation.PUBLISH else "PATCH"
+            response = self.http.request(method, url, headers=headers, params={"account": account}, json=payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
         if channel.marketplace is Marketplace.KAUFLAND:

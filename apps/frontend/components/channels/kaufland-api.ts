@@ -10,21 +10,30 @@ export type KauflandResponse = {
 
 type JsonBodyOf<T> = T extends { content: { "application/json": infer B } } ? B : Record<string, unknown>;
 type KauflandChangeBody = JsonBodyOf<paths["/api/v1/services/kaufland/products/ean/change"]["post"]["requestBody"]>;
-type KauflandCreateBody = {
+export type KauflandWriteBody = {
   ean: string;
   controller: "jv" | "xl";
+  category?: string[];
   title?: string;
-  description: string;
-  picture: unknown;
-  price: number;
-  size: string;
-  color: string;
-  material: string;
-  delivery: string;
-  height: string;
-  length: string;
-  width: string;
-  picture_urls?: string[];
+  mpn?: string;
+  short_description?: string[];
+  description?: string;
+  picture?: string[];
+  manufacturer?: string;
+  product_dimensions?: string;
+  colour?: string;
+  length?: string;
+  width?: string;
+  height?: string;
+  material?: string;
+  storefront?: string;
+  product_safety_contact?: Record<string, unknown>[];
+  category_detail?: Record<string, unknown>[];
+  material_composition?: string;
+  abnehmbarer_bezug?: string;
+  parts_of_animal_origin?: string;
+  price?: number;
+  unit_id?: number;
 };
 type KauflandDeleteBody = {
   ean: string;
@@ -96,7 +105,7 @@ export async function deleteKauflandByEan(payload: KauflandDeleteBody): Promise<
   return { response, rawText, parsed };
 }
 
-export async function createKauflandByEan(payload: KauflandCreateBody): Promise<{
+export async function createKauflandByEan(payload: KauflandWriteBody): Promise<{
   response: Response;
   rawText: string;
   parsed: unknown;
@@ -121,5 +130,3 @@ export async function createKauflandByEan(payload: KauflandCreateBody): Promise<
 
   return { response, rawText, parsed };
 }
-
-export type { KauflandCreateBody };

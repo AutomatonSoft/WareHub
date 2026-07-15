@@ -7,7 +7,7 @@ import { Button } from "../../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Input } from "../../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
-import { Textarea } from "../../ui/textarea";
+import { KauflandProductFields } from "./kaufland-product-fields";
 
 type Props = {
   form: KauflandCreatePayload;
@@ -35,17 +35,7 @@ export function KauflandCreateCard({ form, loading, onSetForm, onSubmit }: Props
               <SelectItem value="jv">JV</SelectItem>
             </SelectContent>
           </Select>
-          <Input className="md:col-span-2" placeholder={t.title} value={form.title} onChange={(event) => onSetForm((prev) => ({ ...prev, title: event.target.value }))} />
-          <Textarea className="min-h-[120px] bg-muted/30 md:col-span-2" placeholder={`${t.description} (required)`} value={form.description} onChange={(event) => onSetForm((prev) => ({ ...prev, description: event.target.value }))} />
-          <Textarea className="min-h-[90px] bg-muted/30 md:col-span-2" placeholder={t.kauflandPictureJsonRequired} value={form.picture} onChange={(event) => onSetForm((prev) => ({ ...prev, picture: event.target.value }))} />
-          <Input placeholder={t.kauflandPriceRequired} value={form.price} onChange={(event) => onSetForm((prev) => ({ ...prev, price: event.target.value }))} />
-          <Input placeholder={t.kauflandSizeRequired} value={form.size} onChange={(event) => onSetForm((prev) => ({ ...prev, size: event.target.value }))} />
-          <Input placeholder={t.kauflandColorRequired} value={form.color} onChange={(event) => onSetForm((prev) => ({ ...prev, color: event.target.value }))} />
-          <Input placeholder={t.kauflandMaterialRequired} value={form.material} onChange={(event) => onSetForm((prev) => ({ ...prev, material: event.target.value }))} />
-          <Input placeholder={t.kauflandDeliveryRequiredInteger} value={form.delivery} onChange={(event) => onSetForm((prev) => ({ ...prev, delivery: event.target.value }))} />
-          <Input placeholder={t.kauflandHeightRequiredInteger} value={form.height} onChange={(event) => onSetForm((prev) => ({ ...prev, height: event.target.value }))} />
-          <Input placeholder={t.kauflandLengthRequiredInteger} value={form.length} onChange={(event) => onSetForm((prev) => ({ ...prev, length: event.target.value }))} />
-          <Input placeholder={t.kauflandWidthRequiredInteger} value={form.width} onChange={(event) => onSetForm((prev) => ({ ...prev, width: event.target.value }))} />
+          <KauflandProductFields form={form} onSetForm={onSetForm} />
           <div className="md:col-span-2">
             <Button type="submit" disabled={loading}>{loading ? t.loading : t.kauflandCreateProductAction}</Button>
           </div>
@@ -54,4 +44,3 @@ export function KauflandCreateCard({ form, loading, onSetForm, onSubmit }: Props
     </Card>
   );
 }
-

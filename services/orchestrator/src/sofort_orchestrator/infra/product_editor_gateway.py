@@ -37,6 +37,24 @@ class ProductEditorGateway:
         response = self.http.request("PATCH", url, headers=headers, params={"account": account}, json=payload)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id)
+        url = f"{self.base_url}/api/v1/kaufland/{ean}/{controller}/"
+        response = self.http.request("GET", url, headers=headers)
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def change_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str, payload: dict) -> GatewayResult:
+        headers = self._headers(request_id, content_type="application/json")
+        url = f"{self.base_url}/api/v1/kaufland/products/ean/change/"
+        response = self.http.request("POST", url, headers=headers, json={"ean": ean, "controller": controller, **payload})
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def create_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str, payload: dict) -> GatewayResult:
+        headers = self._headers(request_id, content_type="application/json")
+        url = f"{self.base_url}/api/v1/kaufland/products/create/"
+        response = self.http.request("POST", url, headers=headers, json={"ean": ean, "controller": controller, **payload})
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/jv/sites/by-artikelnr/{ean}/"

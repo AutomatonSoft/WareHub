@@ -20,7 +20,11 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
     ),
     Marketplace.KAUFLAND: MarketplaceFieldSpec(
         allowed_fields={
-            "title", "description", "picture_urls", "unit_id", "storefront", "price",
+            "category", "title", "mpn", "short_description", "description", "picture",
+            "manufacturer", "product_dimensions", "colour", "length", "width", "height",
+            "material", "storefront", "product_safety_contact", "category_detail",
+            "material_composition", "abnehmbarer_bezug", "parts_of_animal_origin", "price",
+            "unit_id",
         },
         required_fields={"title", "price", "storefront"},
     ),
