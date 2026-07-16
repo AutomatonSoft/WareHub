@@ -72,7 +72,8 @@ jobs:
             echo "apps/mobile/pubspec.yaml must use X.Y.Z-stage.N+BUILD for a stage release." >&2
             exit 1
           }
-          echo "version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "version=v${declared_version}" >> "$GITHUB_OUTPUT"
+          echo "display_version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           echo "build_number=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java
@@ -134,11 +135,13 @@ jobs:
           python3 - <<'PY' > mobile-release.json
           import json
           import os
+          from urllib.parse import urlencode
 
+          version = os.environ["VERSION"]
           payload = {
               "channel": "stage",
-              "version": os.environ["VERSION"],
-              "apk_url": "https://stagewarehub.automatonsoft.de/warehubstage.apk",
+              "version": version,
+              "apk_url": f"https://stagewarehub.automatonsoft.de/warehubstage.apk?{urlencode({'v': version})}",
               "sha256": os.environ["SHA256"],
               "published_at": os.environ["PUBLISHED_AT"],
               "release_notes": os.environ.get("RELEASE_NOTES", "").strip() or None,

@@ -1,7 +1,7 @@
 name: sofortbot_mobile
 description: SofortBot mobile thin client built with Flutter.
 publish_to: "none"
-version: 0.5.7-stage.1+1000
+version: 0.5.7-stage.2+1001
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
