@@ -92,10 +92,16 @@ function New-ValidStageEnvLines {
     'JV_SOURCE_JV_CO_UK_DB_PREFIX=',
     'AFTERBUY_JV_LOGIN=placeholder-user',
     'AFTERBUY_JV_PASS=placeholder-secret',
+    'AFTERBUY_JV_PARTNER_TOKEN=placeholder-secret',
+    'AFTERBUY_JV_ACCOUNT_TOKEN=placeholder-secret',
     'AFTERBUY_XL_LOGIN=placeholder-user',
     'AFTERBUY_XL_PASS=placeholder-secret',
+    'AFTERBUY_XL_PARTNER_TOKEN=placeholder-secret',
+    'AFTERBUY_XL_ACCOUNT_TOKEN=placeholder-secret',
     'AFTERBUY_CH_LOGIN=placeholder-user',
     'AFTERBUY_CH_PASS=placeholder-secret',
+    'AFTERBUY_CH_PARTNER_TOKEN=placeholder-secret',
+    'AFTERBUY_CH_ACCOUNT_TOKEN=placeholder-secret',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
     'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
@@ -244,10 +250,16 @@ function New-TemplateStageEnvLines {
     'JV_SOURCE_JV_CO_UK_DB_PREFIX=',
     'AFTERBUY_JV_LOGIN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_JV_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_JV_PARTNER_TOKEN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_JV_ACCOUNT_TOKEN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_LOGIN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_XL_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_XL_PARTNER_TOKEN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_XL_ACCOUNT_TOKEN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_CH_LOGIN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_CH_PASS=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_PARTNER_TOKEN=**SET_OUTSIDE_GIT**',
+    'AFTERBUY_CH_ACCOUNT_TOKEN=**SET_OUTSIDE_GIT**',
     'AFTERBUY_JV_LOGIN_URL=https://example.test/jv/login',
     'AFTERBUY_XL_LOGIN_URL=https://example.test/xl/login',
     'AFTERBUY_CH_LOGIN_URL=https://example.test/ch/login',
@@ -607,6 +619,13 @@ try {
     $result = Invoke-Validator (Write-Fixture 'runtime-missing-afterbuy-login.env' $lines) -InputKind Runtime
     Assert-ExitCode $result 1
     Assert-True (($result.Stderr + $result.Stdout) -match 'AFTERBUY_JV_LOGIN') 'Missing Afterbuy key was not reported.'
+  }
+
+  Test-Case 'Runtime requires Afterbuy API tokens' {
+    $lines = New-ValidStageEnvLines | Where-Object { $_ -notmatch '^AFTERBUY_JV_PARTNER_TOKEN=' }
+    $result = Invoke-Validator (Write-Fixture 'runtime-missing-afterbuy-api-token.env' $lines) -InputKind Runtime
+    Assert-ExitCode $result 1
+    Assert-True (($result.Stderr + $result.Stdout) -match 'AFTERBUY_JV_PARTNER_TOKEN') 'Missing Afterbuy API token was not reported.'
   }
 
   Test-Case 'optional Sentry DSN Runtime placeholder nonempty fails' {

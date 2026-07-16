@@ -272,6 +272,12 @@ jobs:
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_WEBHOOK_SECRET_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          AFTERBUY_JV_PARTNER_TOKEN_SECRET: ${{ secrets.AFTERBUY_JV_PARTNER_TOKEN }}
+          AFTERBUY_JV_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_JV_ACCOUNT_TOKEN }}
+          AFTERBUY_XL_PARTNER_TOKEN_SECRET: ${{ secrets.AFTERBUY_XL_PARTNER_TOKEN }}
+          AFTERBUY_XL_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_XL_ACCOUNT_TOKEN }}
+          AFTERBUY_CH_PARTNER_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_PARTNER_TOKEN }}
+          AFTERBUY_CH_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_ACCOUNT_TOKEN }}
           TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
@@ -295,6 +301,12 @@ jobs:
             printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "${TELEGRAM_WEBHOOK_SECRET_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_PATH=%s\n' "${TELEGRAM_WEBHOOK_PATH_VALUE:-}"
+            printf 'AFTERBUY_JV_PARTNER_TOKEN=%s\n' "${AFTERBUY_JV_PARTNER_TOKEN_SECRET:-}"
+            printf 'AFTERBUY_JV_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_JV_ACCOUNT_TOKEN_SECRET:-}"
+            printf 'AFTERBUY_XL_PARTNER_TOKEN=%s\n' "${AFTERBUY_XL_PARTNER_TOKEN_SECRET:-}"
+            printf 'AFTERBUY_XL_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_XL_ACCOUNT_TOKEN_SECRET:-}"
+            printf 'AFTERBUY_CH_PARTNER_TOKEN=%s\n' "${AFTERBUY_CH_PARTNER_TOKEN_SECRET:-}"
+            printf 'AFTERBUY_CH_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_CH_ACCOUNT_TOKEN_SECRET:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/stage/env.stage.sanitized.template \
