@@ -369,8 +369,8 @@ def build_inventory_rows() -> list[dict]:
         memos_seen: set[str] = set()
         skus: list[str] = []
         skus_seen: set[str] = set()
-        payment_statuses: list[str] = []
-        payment_statuses_seen: set[str] = set()
+        full_amounts: list[str] = []
+        full_amounts_seen: set[str] = set()
         statuses: list[str] = []
         statuses_seen: set[str] = set()
         latest_date = None
@@ -379,8 +379,8 @@ def build_inventory_rows() -> list[dict]:
             order = entry["order"]
             if order_db_id is None:
                 order_db_id = order.id
-            if latest_date is None or (order.date is not None and order.date > latest_date):
-                latest_date = order.date
+            if latest_date is None or (order.order_date is not None and order.order_date > latest_date):
+                latest_date = order.order_date
 
             _append_unique_text(parent_order_ids, parent_order_id_seen, entry["parent_order_id"])
             for additional_order_id in entry["additional_order_ids"]:
@@ -396,7 +396,7 @@ def build_inventory_rows() -> list[dict]:
             _append_unique_text(titles, titles_seen, order.title)
             _append_unique_text(memos, memos_seen, order.memo)
             _append_unique_text(skus, skus_seen, order.sku)
-            _append_unique_text(payment_statuses, payment_statuses_seen, order.payment_status)
+            _append_unique_text(full_amounts, full_amounts_seen, order.full_amount)
             _append_unique_text(statuses, statuses_seen, order.status)
 
         secondary_parent_order_ids = [value for value in parent_order_ids[1:] if value not in additional_order_id_seen]
@@ -451,15 +451,15 @@ def build_inventory_rows() -> list[dict]:
                 "title": _join_unique_text(titles, empty=primary_kid or "Kid without orders"),
                 "memo": _join_unique_text(memos, empty=(kid.commentary or "-")),
                 "sku": _join_unique_text(skus),
-                "payment_status": _join_unique_text(payment_statuses),
-                "global_price": _join_unique_text(payment_statuses),
+                "full_amount": _join_unique_text(full_amounts),
+                "global_price": _join_unique_text(full_amounts),
                 "color": attrs.get("color"),
                 "size": attrs.get("size"),
                 "material": attrs.get("material"),
                 "price": str(attrs.get("price")) if attrs.get("price") is not None else None,
                 "price_currency": attrs.get("currency"),
                 "status": _join_unique_text(statuses, empty="no_paid"),
-                "date": latest_date or (kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None),
+                "order_date": latest_date or (kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None),
             }
         )
 
@@ -547,7 +547,7 @@ def build_kid_ean_summary(kid_id: int) -> dict:
                         main_photo = candidate
                         break
 
-        last_dates = [row.get("date") for row in kid_rows if row.get("date")]
+        last_dates = [row.get("order_date") for row in kid_rows if row.get("order_date")]
         kid_snapshot = {
             "place": str(base_row.get("place") or "").strip(),
             "room": str(base_row.get("room") or "").strip(),

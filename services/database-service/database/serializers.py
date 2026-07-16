@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from .ftp_upload import normalize_managed_public_photo_value
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
-from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .models import EANPool, EANUsage, Ean, EanStatus, Kid, Orders, ProductAttributes
 from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
@@ -160,6 +160,12 @@ class ProductAttributesPatchSerializer(serializers.ModelSerializer):
         exclude = ("kid", "created_at", "updated_at")
 
 
+class EanStatusReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EanStatus
+        exclude = ("ean",)
+
+
 class OrderCompositePatchItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     order_id = serializers.CharField(required=False, allow_blank=False, max_length=255)
@@ -169,8 +175,8 @@ class OrderCompositePatchItemSerializer(serializers.Serializer):
     title = serializers.CharField(required=False, allow_blank=False)
     memo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     status = serializers.CharField(required=False, allow_blank=False, max_length=10)
-    date = serializers.DateTimeField(required=False, allow_null=True)
-    payment_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    order_date = serializers.DateTimeField(required=False, allow_null=True)
+    full_amount = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
     additional_items = serializers.JSONField(required=False)
 
     def validate(self, attrs):

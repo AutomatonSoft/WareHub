@@ -490,6 +490,59 @@ function createEditDraft(row: SofortListRow): EditDraftState {
   };
 }
 
+function buildKidDetailsHref(row: SofortListRow): string {
+  const kidSlug = encodeURIComponent((row.kidNumber || String(row.kidId)).trim());
+  const params = new URLSearchParams();
+  params.set("kidId", String(row.kidId));
+  if (row.orderDbId !== null) {
+    params.set("orderDbId", String(row.orderDbId));
+  }
+  if (row.photoUrls[0]) {
+    params.set("photo", row.photoUrls[0]);
+  } else if (row.photo) {
+    params.set("photo", row.photo);
+  }
+  params.set("place", row.place);
+  if (row.section) {
+    params.set("section", row.section);
+  }
+  if (row.room) {
+    params.set("room", row.room);
+  }
+  if (row.furnitureType) {
+    params.set("type", row.furnitureType);
+  }
+  if (row.company) {
+    params.set("company", row.company);
+  }
+  if (row.color) {
+    params.set("color", row.color);
+  }
+  if (row.size) {
+    params.set("size", row.size);
+  }
+  if (row.material) {
+    params.set("material", row.material);
+  }
+  params.set("quantity", String(row.quantity));
+  if (row.price) {
+    params.set("price", row.price);
+  }
+  if (row.priceCurrency) {
+    params.set("currency", row.priceCurrency);
+  }
+  if (row.ean) {
+    params.set("ean", row.ean);
+  }
+  if (row.commentary) {
+    params.set("commentary", row.commentary);
+  }
+  if (row.bWare) {
+    params.set("bWare", "true");
+  }
+  return `/sofort-list/${kidSlug}?${params.toString()}`;
+}
+
 function FieldError({ message }: { message?: string | null }) {
   if (!message) return null;
   return <p className="text-xs text-destructive">{message}</p>;
@@ -1068,7 +1121,13 @@ export function SofortListTableShell(props: {
                       <div className="wh-sofort-product-cell__content">
                         <p className="wh-sofort-product-cell__title wh-inventory-title-text">
                           <span className="wh-sofort-product-cell__title-label ui-table-data-meta">{t.kid}: </span>
-                          <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
+                          {row.kidNumber && row.kidNumber !== "-" ? (
+                            <Link href={buildKidDetailsHref(row)} className="wh-sofort-kid-value-link">
+                              {row.kidNumber}
+                            </Link>
+                          ) : (
+                            <span className="wh-sofort-product-cell__title-value">—</span>
+                          )}
                         </p>
                         <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `${t.price} ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `${t.price} ${displayNullable(row.price)}`}>
                           {t.price}: {props.highlightText(
@@ -1202,7 +1261,13 @@ export function SofortListTableShell(props: {
                     <div className="wh-sofort-mobile-card__section wh-sofort-mobile-card__section--summary">
                       <p className="wh-sofort-mobile-card__title">
                         <span>{t.kid}:</span>
-                        <strong>{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</strong>
+                        {row.kidNumber && row.kidNumber !== "-" ? (
+                          <Link href={buildKidDetailsHref(row)} className="wh-sofort-kid-value-link">
+                            {row.kidNumber}
+                          </Link>
+                        ) : (
+                          <strong>—</strong>
+                        )}
                       </p>
                       <p className="wh-sofort-mobile-card__meta">{t.quantity}: {props.highlightText(String(row.quantity), props.query)}</p>
                       <p className="wh-sofort-mobile-card__meta">

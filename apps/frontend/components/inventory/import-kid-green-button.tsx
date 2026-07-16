@@ -169,8 +169,8 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
 
       {(isImporting || progressLabel)
         ? renderOverlay(
-            <div className="pointer-events-none fixed right-3 top-3 z-[76] w-[min(88vw,18rem)] sm:right-4 sm:top-4">
-              <div className="pointer-events-auto rounded-2xl border border-border/80 bg-background/95 px-3 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-md">
+            <div className="wh-kid-green-import-dvd" role="status" aria-live="polite">
+              <div className="wh-kid-green-import-dvd__card rounded-2xl border border-border/80 bg-background/95 px-3 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-md">
                 <div className="mb-2 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.kidGreenImport}</p>

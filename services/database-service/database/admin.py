@@ -21,8 +21,8 @@ class KidAdmin(admin.ModelAdmin):
 
 @admin.register(Orders)
 class OrdersAdmin(admin.ModelAdmin):
-    list_display = ("id", "order_id", "kid", "platform", "buyer", "sku", "status", "date")
-    list_filter = ("status", "date")
+    list_display = ("id", "order_id", "kid", "platform", "buyer", "sku", "status", "order_date")
+    list_filter = ("status", "order_date")
     search_fields = ("order_id", "platform", "buyer", "sku")
 
     def get_search_results(self, request, queryset, search_term):

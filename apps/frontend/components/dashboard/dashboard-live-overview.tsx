@@ -22,7 +22,7 @@ function parsePrice(value?: string | null): number {
 
 function getPaidRevenueAmount(order: OrderDto): number | null {
   if (order.status !== "paid") return null;
-  const amount = parsePrice(order.payment_status);
+  const amount = parsePrice(order.full_amount);
   return amount > 0 ? amount : null;
 }
 

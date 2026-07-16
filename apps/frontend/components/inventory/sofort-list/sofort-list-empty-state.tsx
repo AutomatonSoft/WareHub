@@ -9,7 +9,7 @@ export function SofortListEmptyState({ clearLabel, onReset }: { clearLabel: stri
     <EmptyState
       title={t.noSofortRowsFound}
       description={t.noRowsMatchCurrentFilters}
-      className="min-h-32 border-0 bg-transparent shadow-none"
+      className="wh-sofort-empty-state"
     >
       <Button type="button" variant="outline" onClick={onReset}>
         {clearLabel}
