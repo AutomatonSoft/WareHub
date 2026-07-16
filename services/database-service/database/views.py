@@ -27,8 +27,8 @@ import urllib.request
 from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
-from .models import EANPool, EANUsage, Ean, EanStatus, Kid, Orders, ProductAttributes
-from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, record_inventory_change, request_actor, retained_inventory_history_photo_urls
+from .models import EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, Orders, ProductAttributes
+from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
 from .place_rules import (
@@ -65,6 +65,7 @@ from .serializers import (
     EANUsageMarkSerializer,
     EANUsageSerializer,
     EanPatchSerializer,
+    EanStatusReadSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
     KidModelSerializer,
@@ -781,9 +782,9 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
                     "title": title,
                     "sku": sku,
                     "memo": memo,
-                    "date": parse_afterbuy_datetime(verkaufsdatum),
+                    "order_date": parse_afterbuy_datetime(verkaufsdatum),
                     "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                    "payment_status": rechnungssumme or None,
+                    "full_amount": rechnungssumme or None,
                     "additional_items": additional_items,
                 }
 
@@ -1371,6 +1372,45 @@ class KidOrderIDsAPIView(APIView):
             Orders.objects.filter(kid_id=kid.id).values_list("order_id", flat=True)
         )
         return Response({"kid_id": kid.id, "order_ids": order_ids})
+
+
+class KidDetailViewAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request, pk: int):
+        kid = get_object_or_404(Kid, pk=pk)
+        purge_expired_inventory_change_history()
+
+        ean_row = Ean.objects.filter(kid=kid).first()
+        status_row = EanStatus.objects.filter(ean_id=kid.id).first()
+        attrs_row = ProductAttributes.objects.filter(kid=kid).first()
+        orders = list(Orders.objects.filter(kid=kid).order_by("-order_date", "-id"))
+        change_log_rows = list(
+            InventoryChangeLog.objects.filter(kid=kid)
+            .order_by("-created_at", "-id")[:50]
+        )
+
+        payload = {
+            "kid": KidModelSerializer(kid).data,
+            "ean": EanPatchSerializer(ean_row).data if ean_row is not None else None,
+            "ean_status": EanStatusReadSerializer(status_row).data if status_row is not None else None,
+            "product_attributes": ProductAttributesPatchSerializer(attrs_row).data if attrs_row is not None else None,
+            "orders": OrderModelSerializer(orders, many=True).data,
+            "inventory_change_log": [
+                {
+                    "id": row.id,
+                    "occurred_at": row.created_at.isoformat(),
+                    "actor": {"login": row.actor_login, "name": row.actor_name},
+                    "action": row.action,
+                    "kid_number": row.kid_number,
+                    "place": row.place,
+                    "changes": row.changes,
+                    "metadata": row.metadata,
+                }
+                for row in change_log_rows
+            ],
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class KidEanSummaryAPIView(APIView):
@@ -2632,5 +2672,5 @@ class UploadImagesToFtpAPIView(APIView):
 #         title = order.title
 #         memo = order.memo
 #         status = order.status
-#         date = order.date
-#         return Response({"kid": kid, "order_id": orders_id, "sku": sku, "title": title, "memo": memo, "status": status, "date": date})
+#         order_date = order.order_date
+#         return Response({"kid": kid, "order_id": orders_id, "sku": sku, "title": title, "memo": memo, "status": status, "order_date": order_date})

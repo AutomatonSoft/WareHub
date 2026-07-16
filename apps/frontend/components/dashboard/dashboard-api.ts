@@ -6,8 +6,8 @@ import { resolveServicesApiBase } from "../../lib/api/services-base";
 export type DashboardOrderDto = {
   id?: number | string;
   status?: string | null;
-  date?: string | null;
-  payment_status?: string | null;
+  order_date?: string | null;
+  full_amount?: string | null;
   quantity?: number | null;
   title?: string | null;
   sku?: string | null;

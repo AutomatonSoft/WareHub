@@ -102,9 +102,21 @@ class Orders(Model):
     title = TextField()
     memo = TextField(null=True, blank=True)
     status = CharField(max_length=10, choices=Paymant.STATUS_CHOICES, default="no_paid")
-    date = DateTimeField(null=True, blank=True)
-    payment_status = CharField(max_length=255, null=True, blank=True)
+    order_date = DateTimeField(null=True, blank=True)
+    full_amount = CharField(max_length=255, null=True, blank=True)
     additional_items = JSONField(default=list, blank=True)
+
+    invoice_number = CharField(max_length=255, null=True, blank=True)
+    already_paid = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    shipping_tax_rate = DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    delivery_date = DateTimeField(null=True, blank=True)
+    invoice_amount = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    paid_amount = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    payment_date = DateTimeField(null=True, blank=True)
+    payment_method = CharField(max_length=255, null=True, blank=True)
+    payment_id = CharField(max_length=255, null=True, blank=True)
+    payment_function = CharField(max_length=255, null=True, blank=True)
+    shipping_method = CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -112,6 +124,98 @@ class Orders(Model):
                              name="unique_order_per_kid"
                              )
                                ]
+
+
+class OrderItem(Model):
+    """One immutable Afterbuy sold-item position belonging to an order."""
+
+    order = ForeignKey(Orders, on_delete=CASCADE, related_name="items")
+    afterbuy_item_id = CharField(max_length=255)
+    article_number = CharField(max_length=255, blank=True, default="")
+    alternative_item_number = CharField(max_length=255, blank=True, default="")
+    alternative_item_number_1 = CharField(max_length=255, blank=True, default="")
+    platform_item_id = CharField(max_length=255, blank=True, default="")
+    platform_order_id = CharField(max_length=255, blank=True, default="")
+    title = TextField(blank=True, default="")
+    quantity = IntegerField(null=True, blank=True)
+    item_price = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    original_item_price = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    currency = CharField(max_length=8, blank=True, default="")
+    item_shipping_amount = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    eco_fee = DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    tax_rate = DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    tax_collected_by = CharField(max_length=255, blank=True, default="")
+    item_weight = DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    item_end_date = DateTimeField(null=True, blank=True)
+    afterbuy_item_modified_at = DateTimeField(null=True, blank=True)
+    platform_name = CharField(max_length=255, blank=True, default="")
+    user_defined_flag = CharField(max_length=255, blank=True, default="")
+    internal_item_type = CharField(max_length=255, blank=True, default="")
+    item_details_done = BooleanField(default=False)
+    is_amazon_invoiced = BooleanField(default=False)
+    is_external_invoice = BooleanField(default=False)
+    ebay_transaction_id = CharField(max_length=255, blank=True, default="")
+    is_ebay_plus_transaction = BooleanField(default=False)
+    ebay_feedback_completed = BooleanField(default=False)
+    ebay_feedback_received = BooleanField(default=False)
+    created_at = DateTimeField(auto_now_add=True)
+    updated_at = DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "database_order_items"
+        constraints = [
+            UniqueConstraint(
+                fields=["order", "afterbuy_item_id"],
+                name="unique_afterbuy_item_per_order",
+            )
+        ]
+
+
+class Client(Model):
+    """Afterbuy buyer and shipping details associated with one warehouse KID."""
+
+    kid = OneToOneField(Kid, on_delete=CASCADE, related_name="client")
+
+    afterbuy_user_id = CharField(max_length=255, blank=True, default="", db_index=True)
+    afterbuy_user_id_alt = CharField(max_length=255, blank=True, default="")
+    user_id_platform = CharField(max_length=255, blank=True, default="")
+
+    billing_first_name = CharField(max_length=255, blank=True, default="")
+    billing_last_name = CharField(max_length=255, blank=True, default="")
+    billing_title = CharField(max_length=255, blank=True, default="")
+    billing_company = CharField(max_length=255, blank=True, default="")
+    billing_street = CharField(max_length=255, blank=True, default="")
+    billing_street_2 = CharField(max_length=255, blank=True, default="")
+    billing_postal_code = CharField(max_length=32, blank=True, default="")
+    billing_city = CharField(max_length=255, blank=True, default="")
+    billing_state_or_province = CharField(max_length=255, blank=True, default="")
+    billing_country = CharField(max_length=255, blank=True, default="")
+    billing_country_iso = CharField(max_length=8, blank=True, default="")
+    billing_phone = CharField(max_length=128, blank=True, default="")
+    billing_fax = CharField(max_length=128, blank=True, default="")
+    billing_email = CharField(max_length=320, blank=True, default="")
+    billing_is_merchant = BooleanField(default=False)
+    billing_tax_id_number = CharField(max_length=255, blank=True, default="")
+
+    shipping_first_name = CharField(max_length=255, blank=True, default="")
+    shipping_last_name = CharField(max_length=255, blank=True, default="")
+    shipping_company = CharField(max_length=255, blank=True, default="")
+    shipping_street = CharField(max_length=255, blank=True, default="")
+    shipping_street_2 = CharField(max_length=255, blank=True, default="")
+    shipping_postal_code = CharField(max_length=32, blank=True, default="")
+    shipping_city = CharField(max_length=255, blank=True, default="")
+    shipping_state_or_province = CharField(max_length=255, blank=True, default="")
+    shipping_phone = CharField(max_length=128, blank=True, default="")
+    shipping_country = CharField(max_length=255, blank=True, default="")
+    shipping_country_iso = CharField(max_length=8, blank=True, default="")
+    shipping_tax_id_number = CharField(max_length=255, blank=True, default="")
+
+    contains_ebay_plus_transaction = BooleanField(default=False)
+    created_at = DateTimeField(auto_now_add=True)
+    updated_at = DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "database_client"
 
 
 class IdempotencyRecord(Model):

@@ -251,7 +251,7 @@ function buildCriticalInventoryItem(row: CriticalInventorySourceRow, t: ReturnTy
   const reasons: CriticalReason[] = [];
   const place = normalizePlaceValue(row.place);
   const photos = normalizePhotoList(row.photo);
-  const daysInWarehouse = parseDaysInWarehouse(row.date);
+  const daysInWarehouse = parseDaysInWarehouse(row.order_date);
   const ageRisk = ageWeight(daysInWarehouse);
 
   if (ageRisk > 0) {

@@ -629,6 +629,57 @@ export type KidDetailsModel = {
   inTransit: boolean;
 };
 
+export type KidDetailViewModel = {
+  kid: {
+    id: number;
+    kidNumber: string;
+    account: "JV" | "XL" | "CH" | "" | null;
+    place: string;
+    section: string;
+    photoUrls: string[];
+    room: string;
+    furnitureType: string;
+    bWare: boolean;
+    store: boolean;
+    commentary: string;
+    inTransit: boolean;
+  };
+  ean: Record<string, string> | null;
+  eanStatus: Record<string, boolean> | null;
+  productAttributes: {
+    quantity: number | null;
+    company: string | null;
+    color: string | null;
+    size: string | null;
+    material: string | null;
+    price: string | null;
+    currency: string | null;
+  } | null;
+  orders: Array<{
+    id: number;
+    orderId: string;
+    platform: string | null;
+    buyer: string | null;
+    sku: string | null;
+    title: string;
+    memo: string | null;
+    status: string;
+    orderDate: string | null;
+    fullAmount: string | null;
+    additionalItems: unknown[];
+  }>;
+  inventoryChangeLog: Array<{
+    id: number;
+    occurredAt: string;
+    actor: { login: string; name: string };
+    action: string;
+    kidNumber: string;
+    place: string;
+    changes: Array<{ field?: string; before?: unknown; after?: unknown }>;
+    metadata: Record<string, unknown>;
+  }>;
+};
+
 export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
   const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/`);
   let response = await requestFactory();
@@ -664,6 +715,117 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
     store: payload.store === true,
     commentary: String(payload.commentary || "").trim(),
     inTransit: payload.in_transit === true,
+  };
+}
+
+export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/detail-view/`);
+  let response = await requestFactory();
+
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`${inventoryLabel("failedLoadKidDetails", "Failed to load kid details.")}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const kidPayload = (payload.kid as Record<string, unknown> | null) ?? {};
+  const photoRaw = kidPayload.photo;
+  const photoUrls = Array.isArray(photoRaw)
+    ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const account = typeof kidPayload.account === "string" && kidPayload.account.trim()
+    ? (kidPayload.account.trim().toUpperCase() as "JV" | "XL" | "CH")
+    : null;
+
+  const productAttributesPayload = payload.product_attributes && typeof payload.product_attributes === "object"
+    ? (payload.product_attributes as Record<string, unknown>)
+    : null;
+  const eanPayload = payload.ean && typeof payload.ean === "object"
+    ? (payload.ean as Record<string, unknown>)
+    : null;
+  const eanStatusPayload = payload.ean_status && typeof payload.ean_status === "object"
+    ? (payload.ean_status as Record<string, unknown>)
+    : null;
+
+  return {
+    kid: {
+      id: typeof kidPayload.id === "number" ? kidPayload.id : kidId,
+      kidNumber: String(kidPayload.kid_number || "").trim(),
+      account: account ?? "",
+      place: String(kidPayload.place || "").trim(),
+      section: String(kidPayload.section || "").trim(),
+      photoUrls,
+      room: String(kidPayload.room || "").trim(),
+      furnitureType: String(kidPayload.furniture_type || "").trim(),
+      bWare: kidPayload.b_ware === true,
+      store: kidPayload.store === true,
+      commentary: String(kidPayload.commentary || "").trim(),
+      inTransit: kidPayload.in_transit === true,
+    },
+    ean: eanPayload
+      ? Object.fromEntries(
+        Object.entries(eanPayload).map(([key, value]) => [key, String(value ?? "").trim()])
+      )
+      : null,
+    eanStatus: eanStatusPayload
+      ? Object.fromEntries(
+        Object.entries(eanStatusPayload).map(([key, value]) => [key, value === true])
+      )
+      : null,
+    productAttributes: productAttributesPayload
+      ? {
+        quantity: typeof productAttributesPayload.quantity === "number" ? productAttributesPayload.quantity : null,
+        company: typeof productAttributesPayload.company === "string" ? productAttributesPayload.company : null,
+        color: typeof productAttributesPayload.color === "string" ? productAttributesPayload.color : null,
+        size: typeof productAttributesPayload.size === "string" ? productAttributesPayload.size : null,
+        material: typeof productAttributesPayload.material === "string" ? productAttributesPayload.material : null,
+        price: productAttributesPayload.price == null ? null : String(productAttributesPayload.price),
+        currency: typeof productAttributesPayload.currency === "string" ? productAttributesPayload.currency : null,
+      }
+      : null,
+    orders: Array.isArray(payload.orders)
+      ? payload.orders.map((raw) => {
+        const item = (raw as Record<string, unknown> | null) ?? {};
+        return {
+          id: typeof item.id === "number" ? item.id : 0,
+          orderId: String(item.order_id || "").trim(),
+          platform: typeof item.platform === "string" ? item.platform : null,
+          buyer: typeof item.buyer === "string" ? item.buyer : null,
+          sku: typeof item.sku === "string" ? item.sku : null,
+          title: String(item.title || "").trim(),
+          memo: typeof item.memo === "string" ? item.memo : null,
+          status: String(item.status || "").trim(),
+          orderDate: typeof item.order_date === "string" ? item.order_date : null,
+          fullAmount: typeof item.full_amount === "string" ? item.full_amount : null,
+          additionalItems: Array.isArray(item.additional_items) ? item.additional_items : [],
+        };
+      })
+      : [],
+    inventoryChangeLog: Array.isArray(payload.inventory_change_log)
+      ? payload.inventory_change_log.map((raw) => {
+        const item = (raw as Record<string, unknown> | null) ?? {};
+        const actorRaw = item.actor && typeof item.actor === "object" ? (item.actor as Record<string, unknown>) : {};
+        return {
+          id: typeof item.id === "number" ? item.id : 0,
+          occurredAt: String(item.occurred_at || "").trim(),
+          actor: {
+            login: String(actorRaw.login || "").trim(),
+            name: String(actorRaw.name || "").trim(),
+          },
+          action: String(item.action || "").trim(),
+          kidNumber: String(item.kid_number || "").trim(),
+          place: String(item.place || "").trim(),
+          changes: Array.isArray(item.changes) ? item.changes as Array<{ field?: string; before?: unknown; after?: unknown }> : [],
+          metadata: item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {},
+        };
+      })
+      : [],
   };
 }
 

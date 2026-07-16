@@ -10,7 +10,6 @@ import { trackLatency, trackUiError } from "../../app/telemetry";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
-import { TableShell } from "../ui/table-shell";
 import { AddProductButton } from "./add-item-button";
 import { ImportKidGreenButton } from "./import-kid-green-button";
 import { deleteInventoryEntity, fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
@@ -672,9 +671,12 @@ export function SofortListTable() {
           />
         </CardContent>
       </Card>
-      <Card className="wh-sofort-table-card wh-section-card">
-        <CardContent className="wh-section-card__body wh-sofort-table-body p-0">
-          {error ? (
+      {!error && !loading && sortedRows.length === 0 ? (
+        <SofortListEmptyState clearLabel={t.clear} onReset={resetFiltersAndSearch} />
+      ) : (
+        <Card className="wh-sofort-table-card wh-section-card">
+          <CardContent className="wh-section-card__body wh-sofort-table-body p-0">
+            {error ? (
             <div className="wh-section-card__body--center">
               <ErrorState
                 title={t.inventoryServiceUnavailableTitle}
@@ -687,10 +689,6 @@ export function SofortListTable() {
             </div>
           ) : loading ? (
             <SofortListLoadingState />
-          ) : sortedRows.length === 0 ? (
-            <TableShell bodyClassName="p-4">
-              <SofortListEmptyState clearLabel={t.clear} onReset={resetFiltersAndSearch} />
-            </TableShell>
           ) : (
             <>
               <SofortListTableShell
@@ -739,9 +737,10 @@ export function SofortListTable() {
                 }}
               />
             </>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {!error && rows.length > 0 && !loading ? (
         <SofortListPagination
           page={backendPage}

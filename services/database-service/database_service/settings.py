@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'catalog_core',
     'database',
     'orders_pars',
+    'afterbuy_service',
     'otto_service',
     'hood_service',
     'jv_services',

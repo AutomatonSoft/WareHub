@@ -22,7 +22,7 @@ from .kid_green_import_service import (
 )
 from .kid_number_utils import primary_kid_number
 from .inventory_audit_service import record_inventory_change, retained_inventory_history_photo_urls
-from .models import Ean, EanStatus, InventoryChangeLog, Kid, Orders, ProductAttributes
+from .models import Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -48,7 +48,7 @@ class DatabaseApiTests(APITestCase):
             title="Test order",
             memo="Test memo",
             status="no_paid",
-            date="2026-04-06T10:00:00Z",
+            order_date="2026-04-06T10:00:00Z",
         )
 
     def test_primary_kid_number_uses_last_list_item(self):
@@ -179,6 +179,65 @@ class DatabaseApiTests(APITestCase):
                 [{"field": "attributes.price", "before": "100.00", "after": "125.50"}],
                 [{"field": "attributes.color", "before": "Black", "after": "White"}],
             ],
+        )
+
+    def test_kid_detail_view_returns_related_inventory_tables_for_selected_kid(self):
+        self.kid.account = "JV"
+        self.kid.place = "155A"
+        self.kid.section = "C"
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Sofa"
+        self.kid.commentary = "Test commentary"
+        self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
+        self.kid.save(
+            update_fields=["account", "place", "section", "room", "furniture_type", "commentary", "photo"]
+        )
+        Ean.objects.create(
+            kid=self.kid,
+            main_ean="4062292498370",
+            jv="1111111111111",
+            xl="2222222222222",
+            otto_jv="B_WARE",
+        )
+        EanStatus.objects.create(
+            ean=self.kid,
+            jv=True,
+            xl=False,
+            otto_jv=True,
+            ebay_jv=False,
+        )
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=2,
+            company="omide",
+            color="Grey",
+            size="3-Sitzer",
+            material="Metall",
+            price=Decimal("761.00"),
+            currency="EUR",
+        )
+        record_inventory_change(
+            kid=self.kid,
+            actor={"login": "ravil", "name": "Ravil Raykhanov"},
+            action="product_updated",
+            changes=[{"field": "attributes.price", "before": "750.00", "after": "761.00"}],
+        )
+
+        response = self.client.get(f"/api/v1/kids/{self.kid.id}/detail-view/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["kid"]["id"], self.kid.id)
+        self.assertEqual(response.data["kid"]["place"], "155A")
+        self.assertEqual(response.data["ean"]["main_ean"], "4062292498370")
+        self.assertEqual(response.data["ean_status"]["jv"], True)
+        self.assertEqual(response.data["product_attributes"]["price"], "761.00")
+        self.assertEqual(response.data["product_attributes"]["company"], "omide")
+        self.assertEqual(len(response.data["orders"]), 1)
+        self.assertEqual(response.data["orders"][0]["order_id"], "ORDER-001")
+        self.assertEqual(len(response.data["inventory_change_log"]), 1)
+        self.assertEqual(
+            response.data["inventory_change_log"][0]["changes"],
+            [{"field": "attributes.price", "before": "750.00", "after": "761.00"}],
         )
 
     def test_inventory_dashboard_summary_reports_inventory_readiness(self):
@@ -2085,7 +2144,7 @@ class DatabaseApiTests(APITestCase):
             "title": "New order",
             "memo": "New memo",
             "status": "paid",
-            "date": "2026-04-07T11:00:00Z",
+            "order_date": "2026-04-07T11:00:00Z",
         }
         create_response = self.client.post("/api/v1/orders/", payload, format="json")
         order_id = create_response.data["id"]
@@ -2094,6 +2153,33 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.data["order_id"], "ORDER-002")
+
+    def test_order_exposes_expanded_afterbuy_fields_and_item_positions(self):
+        self.order.invoice_number = "INV-100"
+        self.order.full_amount = "2834.10"
+        self.order.already_paid = Decimal("0.00")
+        self.order.invoice_amount = Decimal("2834.10")
+        self.order.paid_amount = Decimal("0.00")
+        self.order.payment_method = "otto"
+        self.order.payment_id = "INVOICE"
+        self.order.payment_function = "TRANSFER"
+        self.order.save()
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="753100115",
+            title="Main item",
+            quantity=1,
+            item_price=Decimal("2834.10"),
+            currency="EUR",
+        )
+
+        response = self.client.get(f"/api/v1/orders/{self.order.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["invoice_number"], "INV-100")
+        self.assertEqual(response.data["full_amount"], "2834.10")
+        self.assertEqual(response.data["payment_method"], "otto")
+        self.assertEqual(self.order.items.count(), 1)
 
     def test_get_order_ids_by_kid_id(self):
         response = self.client.get(f"/api/v1/kids/{self.kid.id}/order-ids/")
@@ -2323,7 +2409,7 @@ class DatabaseApiTests(APITestCase):
             "title": "Bad order",
             "memo": "Bad memo",
             "status": "unknown",
-            "date": "2026-04-07T11:00:00Z",
+            "order_date": "2026-04-07T11:00:00Z",
         }
         response = self.client.post("/api/v1/orders/", payload, format="json")
 
@@ -2450,7 +2536,7 @@ class DatabaseApiTests(APITestCase):
             title="Second kid order",
             memo="Second memo",
             status="no_paid",
-            date="2026-04-06T12:00:00Z",
+            order_date="2026-04-06T12:00:00Z",
         )
 
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
@@ -2703,10 +2789,10 @@ class DatabaseApiTests(APITestCase):
             title="Second order title",
             memo="Second order memo",
             status="paid",
-            payment_status="249.99 EUR",
+            full_amount="249.99 EUR",
             buyer="Second Buyer",
             platform="ebay",
-            date="2026-04-07T12:00:00Z",
+            order_date="2026-04-07T12:00:00Z",
         )
 
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
@@ -2719,7 +2805,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(row["order_id"], "ORDER-001")
         self.assertEqual(row["additional_order_ids_text"], "ORDER-002, ORDER-002-A")
         self.assertEqual(row["buyer"], "Second Buyer")
-        self.assertEqual(row["payment_status"], "249.99 EUR")
+        self.assertEqual(row["full_amount"], "249.99 EUR")
         self.assertEqual(row["global_price"], "249.99 EUR")
         self.assertIn("13234455", row["sku_eans"])
         self.assertIn("4006381333931", row["sku_eans"])
@@ -2743,7 +2829,7 @@ class DatabaseApiTests(APITestCase):
             title="Flags order",
             memo="Flags memo",
             status="no_paid",
-            date="2026-04-08T10:00:00Z",
+            order_date="2026-04-08T10:00:00Z",
         )
 
         b_ware_response = self.client.get("/api/v1/inventory/rows/?b_ware=true&page_size=100")
@@ -2853,8 +2939,8 @@ class DatabaseApiTests(APITestCase):
         self.order.title = "Title Search Token"
         self.order.memo = "Memo Search Token"
         self.order.sku = "SKU-SEARCH-999"
-        self.order.payment_status = "1560.00 EUR"
-        self.order.save(update_fields=["order_id", "title", "memo", "sku", "payment_status"])
+        self.order.full_amount = "1560.00 EUR"
+        self.order.save(update_fields=["order_id", "title", "memo", "sku", "full_amount"])
         ProductAttributes.objects.create(
             kid=self.kid,
             quantity=3,
@@ -2975,9 +3061,9 @@ class DatabaseApiTests(APITestCase):
 
     def test_inventory_rows_include_direct_database_order_fields(self):
         self.order.buyer = "John Buyer"
-        self.order.payment_status = "199.99 EUR"
+        self.order.full_amount = "199.99 EUR"
         self.order.additional_items = [{"order_id": "ORDER-001-A"}, {"order_id": "ORDER-001-B"}]
-        self.order.save(update_fields=["buyer", "payment_status", "additional_items"])
+        self.order.save(update_fields=["buyer", "full_amount", "additional_items"])
 
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
 
@@ -2986,7 +3072,7 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(rows)
         row = rows[0]
         self.assertEqual(row["buyer"], "John Buyer")
-        self.assertEqual(row["payment_status"], "199.99 EUR")
+        self.assertEqual(row["full_amount"], "199.99 EUR")
         self.assertEqual(row["global_price"], "199.99 EUR")
         self.assertEqual(row["order_id"], "ORDER-001")
         self.assertEqual(row["additional_order_ids_text"], "ORDER-001-A, ORDER-001-B")

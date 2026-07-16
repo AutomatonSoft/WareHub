@@ -1498,12 +1498,25 @@ export interface components {
             additional_items?: Record<string, never>;
             buyer?: string | null;
             /** Format: date-time */
-            date?: string | null;
+            order_date?: string | null;
             readonly id?: number;
             kid: number;
             memo?: string | null;
             order_id: string;
-            payment_status?: string | null;
+            full_amount?: string | null;
+            invoice_number?: string | null;
+            already_paid?: string | null;
+            shipping_tax_rate?: string | null;
+            /** Format: date-time */
+            delivery_date?: string | null;
+            invoice_amount?: string | null;
+            paid_amount?: string | null;
+            /** Format: date-time */
+            payment_date?: string | null;
+            payment_method?: string | null;
+            payment_id?: string | null;
+            payment_function?: string | null;
+            shipping_method?: string | null;
             platform?: string | null;
             quantity?: number;
             sku?: string | null;
