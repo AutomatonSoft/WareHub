@@ -5,12 +5,12 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
+from django.db.models import BooleanField, Case, F, Prefetch, When
 from django.utils import timezone
 from datetime import date, datetime, time, timedelta
 from queue import Queue
 import logging
 import ast
-from decimal import Decimal, InvalidOperation
 import re
 import threading
 from rest_framework import generics, status
@@ -27,7 +27,8 @@ import urllib.request
 from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
-from .models import EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, Orders, ProductAttributes
+from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
+from .order_amounts import parse_order_amount
 from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
 from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
@@ -68,8 +69,10 @@ from .serializers import (
     EanStatusReadSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
+    ClientDetailViewSerializer,
     KidModelSerializer,
     KidUserReadSerializer,
+    OrderDetailViewSerializer,
     OrderModelSerializer,
     OrderUserReadSerializer,
     ProductAttributesPatchSerializer,
@@ -79,6 +82,7 @@ from orders_pars.service import (
     parse_afterbuy_datetime,
     search_items_auktionsliste,
 )
+from afterbuy_service.memo_sync import AfterbuyOrderMemoSyncService
 
 
 logger = logging.getLogger(__name__)
@@ -655,27 +659,9 @@ class InventoryRowsPagination(PageNumberPagination):
         )
 
 
-def _to_decimal_amount(value: str) -> Decimal | None:
-    raw = (value or "").strip().upper().replace("EUR", "")
-    if not raw:
-        return None
-    raw = raw.replace("\xa0", " ").replace(" ", "")
-    raw = "".join(ch for ch in raw if ch.isdigit() or ch in {".", ",", "-"})
-    if not raw:
-        return None
-    if "," in raw and "." in raw:
-        raw = raw.replace(".", "").replace(",", ".")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
-    try:
-        return Decimal(raw)
-    except InvalidOperation:
-        return None
-
-
 def _status_by_amounts(zahlungssumme: str, rechnungssumme: str) -> str:
-    zahlung = _to_decimal_amount(zahlungssumme)
-    rechnung = _to_decimal_amount(rechnungssumme)
+    zahlung = parse_order_amount(zahlungssumme)
+    rechnung = parse_order_amount(rechnungssumme)
     if zahlung is not None and rechnung is not None and zahlung == rechnung:
         return "paid"
     return "no_paid"
@@ -942,7 +928,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         raw_price = KidListCreateAPIView._coalesce_value(data, query, "price")
         if raw_price not in (None, ""):
-            parsed_price = _to_decimal_amount(str(raw_price))
+            parsed_price = parse_order_amount(str(raw_price))
             if parsed_price is None:
                 raise ValidationError({"price": ["Price must be a numeric value."]})
             attrs["price"] = parsed_price
@@ -1268,6 +1254,7 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
+        previous_memo = instance.memo
         payload = request.data.copy()
         if "kid" in payload or "kid_number" in payload:
             return Response(
@@ -1278,8 +1265,36 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         payload.pop("kid_number", None)
         serializer = self.get_serializer(instance, data=payload, partial=partial)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        memo_was_updated = "memo" in serializer.validated_data
+        save_kwargs = {}
+        if memo_was_updated:
+            save_kwargs = {
+                "memo_sync_status": "pending",
+                "memo_sync_error": None,
+                "memo_sync_error_type": None,
+            }
+        updated_order = serializer.save(**save_kwargs)
+        if memo_was_updated:
+            updated_order = AfterbuyOrderMemoSyncService().sync_order(updated_order)
+            if previous_memo != updated_order.memo:
+                record_inventory_change(
+                    kid=updated_order.kid,
+                    actor=request_actor(request),
+                    action="order_memo_updated",
+                    changes=[
+                        {
+                            "field": "order.memo",
+                            "before": previous_memo or "",
+                            "after": updated_order.memo or "",
+                        }
+                    ],
+                    metadata={
+                        "entity": "order",
+                        "order_db_id": updated_order.id,
+                        "order_id": updated_order.order_id,
+                    },
+                )
+        return Response(OrderModelSerializer(updated_order).data, status=status.HTTP_200_OK)
 
 
 class KidCompositeUpdateAPIView(APIView):
@@ -1384,7 +1399,22 @@ class KidDetailViewAPIView(APIView):
         ean_row = Ean.objects.filter(kid=kid).first()
         status_row = EanStatus.objects.filter(ean_id=kid.id).first()
         attrs_row = ProductAttributes.objects.filter(kid=kid).first()
-        orders = list(Orders.objects.filter(kid=kid).order_by("-order_date", "-id"))
+        client_row = Client.objects.filter(kid=kid).first()
+        order_items = (
+            OrderItem.objects.annotate(
+                is_main_item=Case(
+                    When(afterbuy_item_id=F("order__order_id"), then=True),
+                    default=False,
+                    output_field=BooleanField(),
+                )
+            )
+            .order_by("id")
+        )
+        orders = list(
+            Orders.objects.filter(kid=kid)
+            .prefetch_related(Prefetch("items", queryset=order_items))
+            .order_by("-order_date", "-id")
+        )
         change_log_rows = list(
             InventoryChangeLog.objects.filter(kid=kid)
             .order_by("-created_at", "-id")[:50]
@@ -1395,7 +1425,8 @@ class KidDetailViewAPIView(APIView):
             "ean": EanPatchSerializer(ean_row).data if ean_row is not None else None,
             "ean_status": EanStatusReadSerializer(status_row).data if status_row is not None else None,
             "product_attributes": ProductAttributesPatchSerializer(attrs_row).data if attrs_row is not None else None,
-            "orders": OrderModelSerializer(orders, many=True).data,
+            "client": ClientDetailViewSerializer(client_row).data if client_row is not None else None,
+            "orders": OrderDetailViewSerializer(orders, many=True).data,
             "inventory_change_log": [
                 {
                     "id": row.id,
@@ -2154,7 +2185,7 @@ class KidsBulkUpdateAPIView(APIView):
             if "currency" in raw:
                 patch_data["currency"] = str(raw.get("currency") or "").strip()
             if "price" in raw:
-                parsed_price = _to_decimal_amount(str(raw.get("price") or ""))
+                parsed_price = parse_order_amount(str(raw.get("price") or ""))
                 if parsed_price is None:
                     return Response(
                         {"detail": "price must be a numeric value."},

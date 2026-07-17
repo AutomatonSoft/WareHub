@@ -81,7 +81,8 @@ def record_inventory_change(
     try:
         purge_expired_inventory_change_history()
         normalized_changes = _json_value(changes or [])
-        change_groups = [[change] for change in normalized_changes] if action == "product_updated" and normalized_changes else [[]]
+        split_change_actions = {"product_updated", "order_memo_updated"}
+        change_groups = [[change] for change in normalized_changes] if action in split_change_actions and normalized_changes else [[]]
         common_values = {
             "kid": kid,
             "kid_number": primary_kid_number(kid.kid_number),

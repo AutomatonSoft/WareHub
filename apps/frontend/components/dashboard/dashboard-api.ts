@@ -48,10 +48,10 @@ export type InventoryChangeHistoryEntryDto = {
   id: number;
   occurred_at: string;
   actor: { login: string; name: string };
-  action: "product_created" | "product_updated" | "marketplace_activated" | "marketplace_deactivated";
+  action: "product_created" | "product_updated" | "marketplace_activated" | "marketplace_deactivated" | "order_memo_updated";
   product: { kid_number: string; place: string };
   changes: Array<{ field: string; before: unknown; after: unknown }>;
-  metadata: { channel?: string };
+  metadata: { channel?: string; entity?: string };
 };
 
 export type InventoryChangeHistoryActorDto = {
