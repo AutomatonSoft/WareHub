@@ -116,6 +116,10 @@ export type ProductEditorKauflandDraft = {
   parts_of_animal_origin: string;
   price: string;
   unit_id: string;
+  picture_urls: string[];
+  size: string;
+  color: string;
+  delivery: string;
 };
 
 export type ProductEditorJvDescription = {

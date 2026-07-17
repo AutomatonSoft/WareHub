@@ -68,7 +68,8 @@ export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
   return {
     target_id: "", ean: "", controller: "jv", category: [], title: "", mpn: "", short_description: [], description: "", picture: [],
     manufacturer: "", product_dimensions: "", colour: "", length: "", width: "", height: "", material: "", storefront: "de",
-    product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: ""
+    product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: "",
+    picture_urls: [], size: "", color: "", delivery: ""
   };
 }
 
@@ -82,10 +83,14 @@ export function hydrateKauflandDraft(input?: Partial<ProductEditorKauflandDraft>
     category: Array.isArray(input.category) ? input.category.map(String) : [],
     short_description: Array.isArray(input.short_description) ? input.short_description.map(String) : [],
     picture: Array.isArray(input.picture) ? input.picture.map(String) : [],
+    picture_urls: Array.isArray(input.picture_urls) ? input.picture_urls.map(String) : [],
     product_safety_contact: Array.isArray(input.product_safety_contact) ? input.product_safety_contact : [],
     category_detail: Array.isArray(input.category_detail) ? input.category_detail : [],
     price: String(input.price ?? ""),
-    unit_id: String(input.unit_id ?? "")
+    unit_id: String(input.unit_id ?? ""),
+    size: String(input.size ?? ""),
+    color: String(input.color ?? ""),
+    delivery: String(input.delivery ?? "")
   };
 }
 

@@ -112,7 +112,7 @@ class ProductEditorKauflandFlow:
         if not target_ids:
             raise ProductEditorKauflandFlowError("product_editor_no_kaufland_targets", "No reachable Kaufland targets are available for this EAN.", 409)
 
-        payload = filtered_payload(Marketplace.KAUFLAND, draft if isinstance(draft, dict) else {})
+        payload = _normalize_kaufland_plan_payload(draft if isinstance(draft, dict) else {})
         missing = missing_required_fields(Marketplace.KAUFLAND, payload)
         if missing:
             raise ProductEditorKauflandFlowError("product_editor_kaufland_required_fields_missing", "Kaufland title, price, and storefront are required.", 400, {"missing_fields": missing})
@@ -203,6 +203,7 @@ def _normalize_kaufland_draft(body: dict, target_id: str, fallback_ean: str) -> 
         "product_safety_contact": rows("product_safety_contact"), "category_detail": rows("category_detail"),
         "material_composition": text("material_composition"), "abnehmbarer_bezug": text("abnehmbarer_bezug"),
         "parts_of_animal_origin": text("parts_of_animal_origin"), "price": text("price"), "unit_id": text("unit_id"),
+        "picture_urls": rows("picture_urls"), "size": text("size"), "color": text("color"), "delivery": text("delivery"),
     }
 
 
@@ -213,7 +214,36 @@ def _empty_kaufland_draft(*, target_id: str, ean: str) -> dict:
         "manufacturer": "", "product_dimensions": "", "colour": "", "length": "", "width": "", "height": "",
         "material": "", "storefront": "de", "product_safety_contact": [], "category_detail": [],
         "material_composition": "", "abnehmbarer_bezug": "", "parts_of_animal_origin": "", "price": "", "unit_id": "",
+        "picture_urls": [], "size": "", "color": "", "delivery": "",
     }
+
+
+def _normalize_kaufland_plan_payload(draft: dict) -> dict:
+    payload = filtered_payload(Marketplace.KAUFLAND, draft)
+    for field in ("unit_id", "delivery"):
+        if field not in payload:
+            continue
+        raw_value = payload[field]
+        if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+            payload.pop(field)
+            continue
+        if isinstance(raw_value, bool):
+            raise ProductEditorKauflandFlowError(
+                f"product_editor_kaufland_{field}_invalid",
+                f"Kaufland {field} must be an integer.",
+                400,
+                {field: raw_value},
+            )
+        try:
+            payload[field] = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ProductEditorKauflandFlowError(
+                f"product_editor_kaufland_{field}_invalid",
+                f"Kaufland {field} must be an integer.",
+                400,
+                {field: raw_value},
+            ) from exc
+    return payload
 
 
 def _first_text(value) -> str:

@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import serializers
 from .models import Product
 
@@ -9,6 +11,25 @@ class UrlListOrStringField(serializers.ListField):
         if isinstance(data, str):
             data = [data] if data.strip() else []
         return super().to_internal_value(data)
+
+
+class DecimalStringField(serializers.Field):
+    default_error_messages = {"invalid": "A decimal value is required."}
+
+    def to_internal_value(self, data):
+        try:
+            value = Decimal(str(data))
+        except (InvalidOperation, TypeError, ValueError):
+            self.fail("invalid")
+        if not value.is_finite():
+            self.fail("invalid")
+        normalized = format(value.normalize(), "f")
+        if "." in normalized:
+            normalized = normalized.rstrip("0").rstrip(".")
+        return normalized or "0"
+
+    def to_representation(self, value):
+        return str(value)
 
 
 KAUFLAND_PRODUCT_WRITE_FIELDS = (
@@ -85,6 +106,40 @@ class KauflandDeleteByEANSerializer(serializers.Serializer):
     controller = serializers.ChoiceField(choices=["jv", "xl"], required=True)
 
 
-class KauflandCreateByEANSerializer(KauflandProductWriteFieldsSerializer):
+class KauflandControllerSerializer(serializers.Serializer):
+    controller = serializers.ChoiceField(choices=["jv", "xl"], required=True)
+
+
+DEFAULT_KAUFLAND_STOREFRONTS = ("de", "cz", "sk", "pl", "at", "fr", "it")
+
+
+class KauflandCreateByEANSerializer(serializers.Serializer):
     ean = serializers.CharField(max_length=64)
     controller = serializers.ChoiceField(choices=["jv", "xl"], required=True)
+    title = serializers.CharField()
+    description = serializers.CharField()
+    picture = UrlListOrStringField(child=serializers.URLField(), required=False, allow_empty=True)
+    price = DecimalStringField()
+    size = serializers.CharField()
+    color = serializers.CharField()
+    material = serializers.CharField()
+    delivery = serializers.IntegerField()
+    height = DecimalStringField()
+    length = DecimalStringField()
+    width = DecimalStringField()
+    amount = serializers.IntegerField(required=False, default=20, min_value=1)
+    id_offer = serializers.CharField(required=False, allow_blank=True)
+    storefronts = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list(DEFAULT_KAUFLAND_STOREFRONTS),
+        allow_empty=False,
+    )
+    picture_urls = UrlListOrStringField(child=serializers.URLField(), required=False, allow_empty=True)
+
+    def validate(self, attrs):
+        if not attrs.get("picture") and not attrs.get("picture_urls"):
+            raise serializers.ValidationError({"picture": "Provide at least one picture or picture_urls value."})
+        if not attrs.get("id_offer"):
+            attrs["id_offer"] = attrs["ean"]
+        return attrs

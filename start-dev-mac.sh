@@ -53,7 +53,16 @@ app_pid_filenames=(
 )
 started_log_paths=("" "" "" "" "" "")
 
-required_python_version="$(tr -d '[:space:]' < "$repo_root/.python-version")"
+python_version_file="$repo_root/.python-version"
+if [[ ! -f "$python_version_file" ]]; then
+  printf 'Error: Missing Python version file: %s\n' "$python_version_file" >&2
+  exit 1
+fi
+required_python_version="$(tr -d '[:space:]' <"$python_version_file")"
+if [[ -z "$required_python_version" ]]; then
+  printf 'Error: Python version file is empty: %s\n' "$python_version_file" >&2
+  exit 1
+fi
 python_search_targets=()
 python_search_findings=()
 loaded_root_env_keys=()
@@ -424,7 +433,7 @@ ensure_frontend_dependencies() {
   printf '%s\n' "$current_hash" >"$hash_file_path"
 }
 
-test_python313_2() {
+test_managed_python_version() {
   local python_path="$1"
   test_required_python_version "$python_path"
 }
@@ -470,7 +479,7 @@ ensure_python_service_dependencies() {
   if [[ ! -x "$venv_python_path" ]]; then
     recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
     recreated=true
-  elif ! test_python313_2 "$venv_python_path"; then
+  elif ! test_managed_python_version "$venv_python_path"; then
     info "$service_name virtual environment is not using Python $required_python_version; recreating $venv_path"
     recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
     recreated=true

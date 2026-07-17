@@ -15,6 +15,7 @@ const JSON_FIELDS: Array<[keyof KauflandProductPayload, string]> = [
   ["picture", "Pictures (JSON array)"],
   ["product_safety_contact", "Product safety contact (JSON array)"],
   ["category_detail", "Category detail (JSON array)"],
+  ["picture_urls", "Picture URLs (JSON array)"],
 ];
 
 const TEXT_FIELDS: Array<[keyof KauflandProductPayload, string]> = [
@@ -22,13 +23,16 @@ const TEXT_FIELDS: Array<[keyof KauflandProductPayload, string]> = [
   ["colour", "Colour"], ["material", "Material"], ["length", "Length"], ["width", "Width"], ["height", "Height"],
   ["storefront", "Storefront"], ["material_composition", "Material composition"], ["abnehmbarer_bezug", "Removable cover"],
   ["parts_of_animal_origin", "Parts of animal origin"], ["price", "Price"], ["unit_id", "Unit ID"],
+  ["size", "Size"], ["color", "Color"], ["delivery", "Delivery ID"],
 ];
+
+const INTEGER_FIELDS = new Set<keyof KauflandProductPayload>(["price", "unit_id", "delivery"]);
 
 export function KauflandProductFields({ form, onSetForm }: Props) {
   const change = (field: keyof KauflandProductPayload, value: string) => onSetForm((previous) => ({ ...previous, [field]: value }));
   return (
     <>
-      {TEXT_FIELDS.map(([field, label]) => <Input key={field} placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
+      {TEXT_FIELDS.map(([field, label]) => <Input key={field} type={INTEGER_FIELDS.has(field) ? "number" : "text"} placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
       <Textarea className="min-h-[120px] bg-muted/30 md:col-span-2" placeholder="Description" value={form.description} onChange={(event) => change("description", event.target.value)} />
       {JSON_FIELDS.map(([field, label]) => <Textarea key={field} className="min-h-[90px] bg-muted/30 md:col-span-2" placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
     </>

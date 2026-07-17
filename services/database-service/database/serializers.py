@@ -337,6 +337,10 @@ class MarketplaceXLDeactivateByKidSerializer(serializers.Serializer):
         return str(value).strip()
 
 
+class MarketplaceKauflandToggleByKidSerializer(MarketplaceXLDeactivateByKidSerializer):
+    pass
+
+
 class EANPoolTakeNextSerializer(serializers.Serializer):
     reserved_by = serializers.CharField(max_length=150, required=False, allow_blank=True)
 

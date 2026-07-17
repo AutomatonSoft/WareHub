@@ -1382,7 +1382,109 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertEqual(kid.place, "18")
 
-    def test_marketplace_deactivate_by_kid_keeps_hood_status_for_dedicated_hood_flow(self):
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_deactivate_by_kid_calls_jv_and_xl(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-DEACTIVATE"], place="4")
+        Ean.objects.create(
+            kid=kid,
+            kaufland_jv="4062292028939",
+            kaufland_xl="4062292028946",
+        )
+        EanStatus.objects.create(ean=kid, kaufland_jv=True, kaufland_xl=True)
+
+        mocked_apply.side_effect = lambda **kwargs: {
+            "ok": True,
+            "site_key": kwargs["site_key"],
+            "channel": "KAUFLAND",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": kwargs["ean"],
+                "controller": kwargs["controller"],
+                "inactive": kwargs["inactive"],
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-DEACTIVATE", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "kaufland_jv_xl")
+        self.assertEqual(response.data["summary"], {"total": 2, "success": 2, "failed": 0})
+        self.assertEqual(mocked_apply.call_count, 2)
+        self.assertEqual(
+            {call.kwargs["controller"] for call in mocked_apply.call_args_list},
+            {"jv", "xl"},
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_activate_updates_only_successful_site(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-ACTIVATE"], place="-4")
+        Ean.objects.create(
+            kid=kid,
+            kaufland_jv="4062292028939",
+            kaufland_xl="4062292028946",
+        )
+        EanStatus.objects.create(ean=kid, kaufland_jv=False, kaufland_xl=False)
+
+        mocked_apply.side_effect = [
+            {
+                "ok": True,
+                "site_key": "KAUFLAND_JV",
+                "channel": "KAUFLAND",
+                "status_code": status.HTTP_200_OK,
+                "details": {},
+            },
+            {
+                "ok": False,
+                "site_key": "KAUFLAND_XL",
+                "channel": "KAUFLAND",
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "details": {"code": "kaufland_toggle_failed"},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_207_MULTI_STATUS)
+        self.assertEqual(response.data["status"], "partial")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
+
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_toggle_is_noop_when_status_is_already_requested(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-NOOP"], place="-4")
+        Ean.objects.create(kid=kid, kaufland_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, kaufland_jv=False)
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-NOOP", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["results"][0]["details"]["code"], "marketplace_kaufland_toggle_noop")
+        mocked_apply.assert_not_called()
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
         Ean.objects.create(
             kid=kid,
@@ -1542,7 +1644,7 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.hood_jv)
         self.assertTrue(status_row.otto_jv)
         self.assertTrue(status_row.ebay_jv)
-        self.assertTrue(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_jv)
 
     def test_marketplace_local_statuses_by_kid_is_successful_noop_for_hood_only_mapping(self):
         kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])

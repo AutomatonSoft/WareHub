@@ -18,6 +18,7 @@ import { useToast } from "../../components/shared/toast-provider";
 import { useLabels } from "../use-labels";
 import { CreateProductFormPanel, HoodCreateFieldsPanel } from "./create-product-form-panel";
 import { CreateProductJobPanel } from "./create-product-job-panel";
+import { KauflandCreateProductPanel } from "./kaufland-create-product-panel";
 import { MarketplaceSiteSelectorPanel } from "./marketplace-site-selector-panel";
 import { useCreateProductController } from "./use-create-product-controller";
 
@@ -1448,6 +1449,10 @@ export default function CreateProductPage() {
       return void controller.handleCreateProductForHoodSiteIds(activeMarketplaceSiteIds);
     }
 
+    if (activeTab === "kaufland") {
+      return;
+    }
+
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
   }
 
@@ -1481,6 +1486,7 @@ export default function CreateProductPage() {
           </div>
 
           <div className="flex min-h-10 items-center justify-end gap-3">
+            {activeTab !== "kaufland" ? (
             <button
               type="button"
               onClick={handlePrimaryCreateAction}
@@ -1496,6 +1502,7 @@ export default function CreateProductPage() {
             >
               {primaryActionLabel}
             </button>
+            ) : null}
             {isLoading ? (
               <div
                 className="size-5 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
@@ -1999,7 +2006,11 @@ export default function CreateProductPage() {
               </div>
             ) : null}
 
-            {activeTab === "main" ? (
+            {activeTab === "kaufland" ? (
+              <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
+                <KauflandCreateProductPanel />
+              </div>
+            ) : activeTab === "main" ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px]">
                 <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
                   <CreateProductFormPanel

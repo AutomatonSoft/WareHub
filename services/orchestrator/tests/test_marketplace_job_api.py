@@ -146,13 +146,6 @@ class FakeMarketplaceGateway:
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive},
                         },
-                        {
-                            "ok": True,
-                            "site_key": "KAUFLAND_JV",
-                            "channel": "KAUFLAND",
-                            "status_code": 200,
-                            "details": {"kid_number": kid_number, "inactive": inactive},
-                        },
                     ],
                 },
             },
@@ -172,6 +165,28 @@ class FakeMarketplaceGateway:
                             "ok": True,
                             "site_key": "HOOD_JV",
                             "channel": "HOOD",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
+                        }
+                    ],
+                },
+            },
+        )()
+
+    def toggle_kaufland_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
+        return type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "body": {
+                    "status": "ok",
+                    "inactive": inactive,
+                    "results": [
+                        {
+                            "ok": True,
+                            "site_key": "KAUFLAND_JV",
+                            "channel": "KAUFLAND",
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
                         }

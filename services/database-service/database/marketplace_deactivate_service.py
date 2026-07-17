@@ -38,6 +38,7 @@ from jv_services.sync_utils import (
 from jv_services.view_helpers import to_date_or_none, to_datetime_or_none
 from jv_services.views_push_state import mark_push_failed, mark_push_pending, mark_push_pushed
 from jv_services.views_write_products import create_local_product_from_source, update_local_product_from_source
+from kaufland.external_requests import set_product_active_state
 from xl_services.models import ImportedProduct as XLImportedProduct
 from xl_services.source_client import (
     fetch_xl_product_brief_by_ean,
@@ -1765,8 +1766,6 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
         ("otto_xl", "OTTO"),
         ("ebay_jv", "EBAY"),
         ("ebay_xl", "EBAY"),
-        ("kaufland_jv", "KAUFLAND"),
-        ("kaufland_xl", "KAUFLAND"),
     ):
         ean_value = str(getattr(ean_row, field_name, "") or "").strip()
         if not ean_value:
@@ -1818,6 +1817,162 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     )
     payload["payload"]["kid_id"] = kid.id
     payload["payload"]["mode"] = "local_status_only"
+    return payload
+
+
+def _apply_kaufland_active_state(*, ean: str, site_key: str, controller: str, inactive: bool) -> dict:
+    try:
+        upstream_payload = set_product_active_state(
+            ean=ean,
+            controller=controller,
+            active=not bool(inactive),
+        )
+    except requests.HTTPError as exc:
+        response = exc.response
+        status_code = response.status_code if response is not None else status.HTTP_502_BAD_GATEWAY
+        try:
+            upstream_payload = response.json() if response is not None else {"detail": str(exc)}
+        except ValueError:
+            upstream_payload = {"detail": response.text if response is not None else str(exc)}
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "KAUFLAND",
+            "status_code": status_code,
+            "details": {
+                "code": "kaufland_toggle_failed",
+                "detail": "Kaufland activate/deactivate request failed.",
+                "ean": ean,
+                "controller": controller,
+                "inactive": bool(inactive),
+                "upstream_response": upstream_payload,
+            },
+        }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "KAUFLAND",
+            "status_code": status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "kaufland_toggle_transport_failed",
+                "detail": "Kaufland activate/deactivate request failed before response.",
+                "ean": ean,
+                "controller": controller,
+                "inactive": bool(inactive),
+                "reason": str(exc),
+            },
+        }
+
+    return {
+        "ok": True,
+        "site_key": site_key,
+        "channel": "KAUFLAND",
+        "status_code": status.HTTP_200_OK,
+        "details": {
+            "code": "kaufland_toggled",
+            "ean": ean,
+            "controller": controller,
+            "inactive": bool(inactive),
+            "status": not bool(inactive),
+            "upstream_response": upstream_payload,
+        },
+    }
+
+
+def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
+    kid = _find_kid_by_number(kid_number)
+    if kid is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_not_found",
+                "detail": "Kid с таким kid_number не найден.",
+                "kid_number": str(kid_number or "").strip(),
+            },
+            "status_code": status.HTTP_404_NOT_FOUND,
+        }
+
+    ean_row = getattr(kid, "ean", None)
+    if ean_row is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_mapping_missing",
+                "detail": "У Kid отсутствует связанный Ean.",
+                "kid_number": _primary_kid_number_value(kid),
+            },
+            "status_code": status.HTTP_409_CONFLICT,
+        }
+
+    status_row, _ = EanStatus.objects.get_or_create(ean=kid)
+    desired_status = not bool(inactive)
+    results: list[dict] = []
+
+    for source_field, site_key, controller in (
+        ("kaufland_jv", "KAUFLAND_JV", "jv"),
+        ("kaufland_xl", "KAUFLAND_XL", "xl"),
+    ):
+        ean_value = str(getattr(ean_row, source_field, "") or "").strip()
+        if not ean_value:
+            continue
+        if bool(getattr(status_row, source_field, False)) == desired_status:
+            continue
+
+        result = _apply_kaufland_active_state(
+            ean=ean_value,
+            site_key=site_key,
+            controller=controller,
+            inactive=inactive,
+        )
+        if result.get("ok") and result.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
+            setattr(status_row, source_field, desired_status)
+            status_row.save(update_fields=[source_field])
+        results.append(result)
+
+    if not results:
+        results.append(
+            {
+                "ok": True,
+                "site_key": "KAUFLAND",
+                "channel": "KAUFLAND",
+                "status_code": status.HTTP_200_OK,
+                "details": {
+                    "code": "marketplace_kaufland_toggle_noop",
+                    "detail": "У Kid нет Kaufland targets, требующих изменения статуса.",
+                    "inactive": bool(inactive),
+                },
+            }
+        )
+
+    successful_results = [
+        row
+        for row in results
+        if row.get("ok") and row.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}
+        and row.get("details", {}).get("code") != "marketplace_kaufland_toggle_noop"
+    ]
+    if successful_results:
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
+
+    response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_207_MULTI_STATUS
+
+    payload = _build_success_response(
+        entity_name="kid_number",
+        entity_value=_primary_kid_number_value(kid),
+        inactive=inactive,
+        results=results,
+        response_status=response_status,
+    )
+    payload["payload"]["kid_id"] = kid.id
+    payload["payload"]["mode"] = "kaufland_jv_xl"
     return payload
 
 
