@@ -22,7 +22,7 @@ from .kid_green_import_service import (
 )
 from .kid_number_utils import primary_kid_number
 from .inventory_audit_service import record_inventory_change, retained_inventory_history_photo_urls
-from .models import Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
+from .models import Client, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -216,6 +216,60 @@ class DatabaseApiTests(APITestCase):
             price=Decimal("761.00"),
             currency="EUR",
         )
+        Client.objects.create(
+            kid=self.kid,
+            billing_first_name="Maria",
+            billing_last_name="Haase",
+            billing_street="Hauptstr. 26",
+            billing_postal_code="37434",
+            billing_city="Obernfeld",
+            billing_country_iso="DE",
+            billing_phone="015111650993",
+            billing_fax="055279999",
+            billing_email="maria@example.com",
+            shipping_first_name="Stefanie",
+            shipping_last_name="Haase",
+            shipping_street="Hauptstr. 77",
+            shipping_postal_code="37434",
+            shipping_city="Rollshausen",
+            shipping_country_iso="DE",
+        )
+        self.order.full_amount = "761.00"
+        self.order.invoice_number = "INV-001"
+        self.order.invoice_amount = Decimal("761.00")
+        self.order.already_paid = Decimal("500.00")
+        self.order.payment_date = timezone.now()
+        self.order.payment_method = "Transfer"
+        self.order.shipping_method = "DHL"
+        self.order.status = "no_paid"
+        self.order.save(update_fields=[
+            "full_amount",
+            "invoice_number",
+            "invoice_amount",
+            "already_paid",
+            "payment_date",
+            "payment_method",
+            "shipping_method",
+            "status",
+        ])
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="ORDER-001",
+            title="Основная позиция",
+            quantity=1,
+            item_price=Decimal("761.00"),
+            item_end_date=timezone.now(),
+            currency="EUR",
+        )
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="ORDER-001-EXTRA",
+            title="Дополнительная позиция",
+            quantity=1,
+            item_price=Decimal("0.00"),
+            item_end_date=timezone.now(),
+            currency="EUR",
+        )
         record_inventory_change(
             kid=self.kid,
             actor={"login": "ravil", "name": "Ravil Raykhanov"},
@@ -232,8 +286,30 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["ean_status"]["jv"], True)
         self.assertEqual(response.data["product_attributes"]["price"], "761.00")
         self.assertEqual(response.data["product_attributes"]["company"], "omide")
+        self.assertEqual(response.data["client"]["billing_first_name"], "Maria")
+        self.assertEqual(response.data["client"]["billing_phone"], "015111650993")
+        self.assertEqual(response.data["client"]["billing_fax"], "055279999")
+        self.assertEqual(response.data["client"]["billing_email"], "maria@example.com")
+        self.assertEqual(response.data["client"]["shipping_city"], "Rollshausen")
         self.assertEqual(len(response.data["orders"]), 1)
         self.assertEqual(response.data["orders"][0]["order_id"], "ORDER-001")
+        self.assertEqual(response.data["orders"][0]["invoice_number"], "INV-001")
+        self.assertEqual(response.data["orders"][0]["invoice_amount"], "761.00")
+        self.assertIsNotNone(response.data["orders"][0]["payment_date"])
+        self.assertEqual(response.data["orders"][0]["payment_method"], "Transfer")
+        self.assertEqual(response.data["orders"][0]["shipping_method"], "DHL")
+        self.assertEqual(response.data["orders"][0]["already_paid"], "500.00")
+        self.assertEqual(response.data["orders"][0]["outstanding_amount"], "261.00")
+        self.assertFalse(response.data["orders"][0]["is_fully_paid"])
+        self.assertEqual(len(response.data["orders"][0]["items"]), 2)
+        self.assertEqual(response.data["orders"][0]["items"][0]["afterbuy_item_id"], "ORDER-001")
+        self.assertEqual(response.data["orders"][0]["items"][0]["title"], "Основная позиция")
+        self.assertEqual(response.data["orders"][0]["items"][0]["quantity"], 1)
+        self.assertEqual(response.data["orders"][0]["items"][0]["item_price"], "761.00")
+        self.assertIsNotNone(response.data["orders"][0]["items"][0]["item_end_date"])
+        self.assertEqual(response.data["orders"][0]["items"][0]["currency"], "EUR")
+        self.assertTrue(response.data["orders"][0]["items"][0]["is_main_item"])
+        self.assertFalse(response.data["orders"][0]["items"][1]["is_main_item"])
         self.assertEqual(len(response.data["inventory_change_log"]), 1)
         self.assertEqual(
             response.data["inventory_change_log"][0]["changes"],
@@ -2255,6 +2331,29 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.data["order_id"], "ORDER-002")
+
+    @patch("database.views.AfterbuyOrderMemoSyncService.sync_order")
+    def test_order_memo_update_is_added_to_kid_change_history(self, sync_order):
+        sync_order.side_effect = lambda order: order
+
+        response = self.client.patch(
+            f"/api/v1/orders/{self.order.id}/",
+            {"memo": "Updated memo"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history_entry = InventoryChangeLog.objects.get(action="order_memo_updated")
+        self.assertEqual(history_entry.kid_id, self.kid.id)
+        self.assertEqual(
+            history_entry.changes,
+            [{"field": "order.memo", "before": "Test memo", "after": "Updated memo"}],
+        )
+        self.assertEqual(
+            history_entry.metadata,
+            {"entity": "order", "order_db_id": self.order.id, "order_id": "ORDER-001"},
+        )
+        sync_order.assert_called_once()
 
     def test_order_exposes_expanded_afterbuy_fields_and_item_positions(self):
         self.order.invoice_number = "INV-100"

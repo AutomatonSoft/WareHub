@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -20,10 +21,26 @@ from .contracts import (
 
 AFTERBUY_API_URL: Final = "https://api.afterbuy.de/afterbuy/ABInterface.aspx"
 DEFAULT_TIMEOUT_SECONDS: Final = 20
+logger = logging.getLogger(__name__)
 
 
 class AfterbuyApiError(RuntimeError):
     """Raised when Afterbuy returns an unusable response."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        retryable: bool = False,
+        error_description: str | None = None,
+        error_long_description: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+        self.error_description = error_description
+        self.error_long_description = error_long_description
 
 
 class AfterbuyCredentialsError(AfterbuyApiError):
@@ -73,6 +90,30 @@ class AfterbuyApiClient:
             raise ValueError("kid_number must not be empty")
         return self._fetch_sold_items("AfterbuyUserID", normalized_kid)
 
+    def update_order_memo(self, *, order_id: str, memo: str) -> None:
+        normalized_order_id = order_id.strip()
+        if not _is_positive_identifier(normalized_order_id):
+            raise ValueError("Afterbuy internal order_id must be a positive integer")
+
+        payload = self._build_update_order_memo_request(
+            order_id=normalized_order_id,
+            memo=memo,
+        )
+        try:
+            response = self._session.post(
+                AFTERBUY_API_URL,
+                data=payload,
+                headers={"Content-Type": "application/xml; charset=utf-8"},
+                timeout=self._timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            raise AfterbuyApiError(
+                f"Afterbuy memo update failed for profile '{self._profile}'.",
+                retryable=True,
+            ) from error
+        self._ensure_update_succeeded(response.content, order_id=normalized_order_id)
+
     def _fetch_sold_items(self, filter_name: str, filter_value: str) -> tuple[AfterbuyOrder, ...]:
         payload = self._build_get_sold_items_request(filter_name, filter_value)
         try:
@@ -106,6 +147,22 @@ class AfterbuyApiClient:
         ElementTree.SubElement(values, "FilterValue").text = filter_value
         return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
 
+    def _build_update_order_memo_request(self, *, order_id: str, memo: str) -> bytes:
+        root = ElementTree.Element("Request")
+        global_request = ElementTree.SubElement(root, "AfterbuyGlobal")
+        ElementTree.SubElement(global_request, "CallName").text = "UpdateSoldItems"
+        ElementTree.SubElement(global_request, "PartnerToken").text = self._credentials.partner_token
+        ElementTree.SubElement(global_request, "AccountToken").text = self._credentials.account_token
+        ElementTree.SubElement(global_request, "DetailLevel").text = "0"
+        ElementTree.SubElement(global_request, "ErrorLanguage").text = "DE"
+        orders = ElementTree.SubElement(root, "Orders")
+        order = ElementTree.SubElement(orders, "Order")
+        # UpdateSoldItems accepts the order reference in OrderID. ItemID remains
+        # absent because OrderMemo is updated for the complete order.
+        ElementTree.SubElement(order, "OrderID").text = order_id
+        ElementTree.SubElement(order, "OrderMemo").text = memo
+        return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+
     def _parse_orders(self, response_body: bytes) -> tuple[AfterbuyOrder, ...]:
         try:
             root = ElementTree.fromstring(response_body)
@@ -120,6 +177,35 @@ class AfterbuyApiClient:
             _parse_order(order_node, self._profile)
             for order_node in root.findall(".//Orders/Order")
         )
+
+    def _ensure_update_succeeded(self, response_body: bytes, *, order_id: str) -> None:
+        try:
+            root = ElementTree.fromstring(response_body)
+        except ElementTree.ParseError as error:
+            raise AfterbuyApiError("Afterbuy returned malformed XML.") from error
+
+        call_status = _text(root, "CallStatus")
+        error_code = _text(root, "Result/ErrorList/Error/ErrorCode") or _text(root, "ErrorList/Error/ErrorCode")
+        error_text = _text(root, "Result/ErrorList/Error/ErrorDescription") or _text(root, "ErrorList/Error/ErrorDescription")
+        error_long_text = _text(root, "Result/ErrorList/Error/ErrorLongDescription") or _text(root, "ErrorList/Error/ErrorLongDescription")
+        logger.info(
+            "AFTERBUY_ORDER_MEMO_UPDATE operation=UpdateSoldItems internal_order_id=%s "
+            "item_id_included=false updated_fields=OrderMemo call_status=%s error_code=%s "
+            "error_description=%s error_long_description=%s",
+            order_id,
+            call_status or "missing",
+            error_code or "none",
+            error_text or "none",
+            error_long_text or "none",
+        )
+        has_api_error = any((error_code, error_text, error_long_text))
+        if call_status.casefold() != "success" or has_api_error:
+            raise AfterbuyApiError(
+                f"Afterbuy rejected memo update for profile '{self._profile}'.",
+                code=error_code or None,
+                error_description=error_text or None,
+                error_long_description=error_long_text or None,
+            )
 
 
 def _parse_order(node: ElementTree.Element, profile: str) -> AfterbuyOrder:
@@ -246,3 +332,7 @@ def _integer(value: str) -> Optional[int]:
 
 def _boolean(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes"}
+
+
+def _is_positive_identifier(value: str) -> bool:
+    return value.isdecimal() and int(value) > 0

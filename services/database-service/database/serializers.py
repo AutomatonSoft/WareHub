@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .ftp_upload import normalize_managed_public_photo_value
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
-from .models import EANPool, EANUsage, Ean, EanStatus, Kid, Orders, ProductAttributes
+from .models import Client, EANPool, EANUsage, Ean, EanStatus, Kid, OrderItem, Orders, ProductAttributes
+from .order_amounts import parse_order_amount
 from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
@@ -92,6 +95,13 @@ class OrderModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Orders
         fields = "__all__"
+        read_only_fields = (
+            "afterbuy_profile",
+            "memo_sync_status",
+            "memo_sync_error",
+            "memo_sync_error_type",
+            "memo_last_synced_at",
+        )
         extra_kwargs = {
             "kid": {"error_messages": {"required": "Укажите kid."}},
             "order_id": {"error_messages": {"required": "Укажите order_id."}},
@@ -135,6 +145,69 @@ class OrderModelSerializer(serializers.ModelSerializer):
         if value in (None, ""):
             return value
         return value.strip()
+
+
+class OrderItemDetailViewSerializer(serializers.ModelSerializer):
+    is_main_item = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ("id", "afterbuy_item_id", "title", "quantity", "item_price", "item_end_date", "currency", "is_main_item")
+
+
+class OrderDetailViewSerializer(OrderModelSerializer):
+    items = OrderItemDetailViewSerializer(many=True, read_only=True)
+    is_fully_paid = serializers.SerializerMethodField()
+    outstanding_amount = serializers.SerializerMethodField()
+
+    class Meta(OrderModelSerializer.Meta):
+        fields = "__all__"
+
+    def get_is_fully_paid(self, obj):
+        full_amount = parse_order_amount(obj.full_amount)
+        if full_amount is not None and obj.already_paid is not None:
+            return full_amount == obj.already_paid
+        return obj.status == "paid"
+
+    def get_outstanding_amount(self, obj):
+        full_amount = parse_order_amount(obj.full_amount)
+        if full_amount is None or obj.already_paid is None:
+            return None
+
+        outstanding_amount = max(full_amount - obj.already_paid, Decimal("0.00"))
+        return format(outstanding_amount.quantize(Decimal("0.01")), ".2f")
+
+
+class ClientDetailViewSerializer(serializers.ModelSerializer):
+    """Buyer addresses safe to show on the authenticated KID detail screen."""
+
+    class Meta:
+        model = Client
+        fields = (
+            "billing_first_name",
+            "billing_last_name",
+            "billing_company",
+            "billing_street",
+            "billing_street_2",
+            "billing_postal_code",
+            "billing_city",
+            "billing_state_or_province",
+            "billing_country",
+            "billing_country_iso",
+            "billing_phone",
+            "billing_fax",
+            "billing_email",
+            "shipping_first_name",
+            "shipping_last_name",
+            "shipping_company",
+            "shipping_street",
+            "shipping_street_2",
+            "shipping_postal_code",
+            "shipping_city",
+            "shipping_state_or_province",
+            "shipping_country",
+            "shipping_country_iso",
+        )
 
 
 class OrderUserReadSerializer(serializers.ModelSerializer):

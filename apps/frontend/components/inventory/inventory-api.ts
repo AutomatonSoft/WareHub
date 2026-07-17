@@ -488,6 +488,41 @@ export async function patchOrderAdditionalItems(params: {
   }
 }
 
+export type OrderMemoSyncResult = {
+  syncStatus: "synced" | "pending" | "failed";
+  syncError: string | null;
+  syncErrorType: string | null;
+};
+
+export async function patchOrderMemo(params: {
+  orderDbId: number;
+  memo: string;
+}): Promise<OrderMemoSyncResult> {
+  const response = await apiFetch(`${getServicesApiBase()}/orders/${params.orderDbId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      memo: params.memo.trim() || null,
+    } satisfies PatchOrderBody),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${inventoryLabel("failedUpdateOrder", "Failed to update order.")}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const syncStatus = payload.memo_sync_status;
+  return {
+    syncStatus: syncStatus === "pending" || syncStatus === "failed" ? syncStatus : "synced",
+    syncError: typeof payload.memo_sync_error === "string" && payload.memo_sync_error.trim()
+      ? payload.memo_sync_error
+      : null,
+    syncErrorType: typeof payload.memo_sync_error_type === "string" && payload.memo_sync_error_type.trim()
+      ? payload.memo_sync_error_type
+      : null,
+  };
+}
+
 export async function deleteInventoryEntity(params: {
   entity: "order" | "kid";
   orderDbId: number | null;
@@ -655,6 +690,31 @@ export type KidDetailViewModel = {
     price: string | null;
     currency: string | null;
   } | null;
+  client: {
+    billingFirstName: string;
+    billingLastName: string;
+    billingCompany: string;
+    billingStreet: string;
+    billingStreet2: string;
+    billingPostalCode: string;
+    billingCity: string;
+    billingStateOrProvince: string;
+    billingCountry: string;
+    billingCountryIso: string;
+    billingPhone: string;
+    billingFax: string;
+    billingEmail: string;
+    shippingFirstName: string;
+    shippingLastName: string;
+    shippingCompany: string;
+    shippingStreet: string;
+    shippingStreet2: string;
+    shippingPostalCode: string;
+    shippingCity: string;
+    shippingStateOrProvince: string;
+    shippingCountry: string;
+    shippingCountryIso: string;
+  } | null;
   orders: Array<{
     id: number;
     orderId: string;
@@ -663,10 +723,31 @@ export type KidDetailViewModel = {
     sku: string | null;
     title: string;
     memo: string | null;
+    memoSyncStatus: "synced" | "pending" | "failed";
+    memoSyncError: string | null;
+    memoSyncErrorType: string | null;
     status: string;
     orderDate: string | null;
+    invoiceNumber: string | null;
+    invoiceAmount: string | null;
+    paymentDate: string | null;
+    paymentMethod: string | null;
+    shippingMethod: string | null;
     fullAmount: string | null;
+    alreadyPaid: string | null;
+    outstandingAmount: string | null;
+    isFullyPaid: boolean;
     additionalItems: unknown[];
+    items: Array<{
+      id: number;
+      afterbuyItemId: string;
+      title: string;
+      quantity: number | null;
+      itemPrice: string | null;
+      itemEndDate: string | null;
+      currency: string;
+      isMainItem: boolean;
+    }>;
   }>;
   inventoryChangeLog: Array<{
     id: number;
@@ -752,6 +833,9 @@ export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewMo
   const eanStatusPayload = payload.ean_status && typeof payload.ean_status === "object"
     ? (payload.ean_status as Record<string, unknown>)
     : null;
+  const clientPayload = payload.client && typeof payload.client === "object"
+    ? (payload.client as Record<string, unknown>)
+    : null;
 
   return {
     kid: {
@@ -789,6 +873,33 @@ export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewMo
         currency: typeof productAttributesPayload.currency === "string" ? productAttributesPayload.currency : null,
       }
       : null,
+    client: clientPayload
+      ? {
+        billingFirstName: String(clientPayload.billing_first_name || "").trim(),
+        billingLastName: String(clientPayload.billing_last_name || "").trim(),
+        billingCompany: String(clientPayload.billing_company || "").trim(),
+        billingStreet: String(clientPayload.billing_street || "").trim(),
+        billingStreet2: String(clientPayload.billing_street_2 || "").trim(),
+        billingPostalCode: String(clientPayload.billing_postal_code || "").trim(),
+        billingCity: String(clientPayload.billing_city || "").trim(),
+        billingStateOrProvince: String(clientPayload.billing_state_or_province || "").trim(),
+        billingCountry: String(clientPayload.billing_country || "").trim(),
+        billingCountryIso: String(clientPayload.billing_country_iso || "").trim(),
+        billingPhone: String(clientPayload.billing_phone || "").trim(),
+        billingFax: String(clientPayload.billing_fax || "").trim(),
+        billingEmail: String(clientPayload.billing_email || "").trim(),
+        shippingFirstName: String(clientPayload.shipping_first_name || "").trim(),
+        shippingLastName: String(clientPayload.shipping_last_name || "").trim(),
+        shippingCompany: String(clientPayload.shipping_company || "").trim(),
+        shippingStreet: String(clientPayload.shipping_street || "").trim(),
+        shippingStreet2: String(clientPayload.shipping_street_2 || "").trim(),
+        shippingPostalCode: String(clientPayload.shipping_postal_code || "").trim(),
+        shippingCity: String(clientPayload.shipping_city || "").trim(),
+        shippingStateOrProvince: String(clientPayload.shipping_state_or_province || "").trim(),
+        shippingCountry: String(clientPayload.shipping_country || "").trim(),
+        shippingCountryIso: String(clientPayload.shipping_country_iso || "").trim(),
+      }
+      : null,
     orders: Array.isArray(payload.orders)
       ? payload.orders.map((raw) => {
         const item = (raw as Record<string, unknown> | null) ?? {};
@@ -800,10 +911,42 @@ export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewMo
           sku: typeof item.sku === "string" ? item.sku : null,
           title: String(item.title || "").trim(),
           memo: typeof item.memo === "string" ? item.memo : null,
+          memoSyncStatus: item.memo_sync_status === "pending" || item.memo_sync_status === "failed"
+            ? item.memo_sync_status
+            : "synced",
+          memoSyncError: typeof item.memo_sync_error === "string" && item.memo_sync_error.trim()
+            ? item.memo_sync_error
+            : null,
+          memoSyncErrorType: typeof item.memo_sync_error_type === "string" && item.memo_sync_error_type.trim()
+            ? item.memo_sync_error_type
+            : null,
           status: String(item.status || "").trim(),
           orderDate: typeof item.order_date === "string" ? item.order_date : null,
+          invoiceNumber: typeof item.invoice_number === "string" ? item.invoice_number : null,
+          invoiceAmount: item.invoice_amount == null ? null : String(item.invoice_amount),
+          paymentDate: typeof item.payment_date === "string" ? item.payment_date : null,
+          paymentMethod: typeof item.payment_method === "string" ? item.payment_method : null,
+          shippingMethod: typeof item.shipping_method === "string" ? item.shipping_method : null,
           fullAmount: typeof item.full_amount === "string" ? item.full_amount : null,
+          alreadyPaid: item.already_paid == null ? null : String(item.already_paid),
+          outstandingAmount: item.outstanding_amount == null ? null : String(item.outstanding_amount),
+          isFullyPaid: item.is_fully_paid === true,
           additionalItems: Array.isArray(item.additional_items) ? item.additional_items : [],
+          items: Array.isArray(item.items)
+            ? item.items.map((rawItem) => {
+              const orderItem = (rawItem as Record<string, unknown> | null) ?? {};
+              return {
+                id: typeof orderItem.id === "number" ? orderItem.id : 0,
+                afterbuyItemId: String(orderItem.afterbuy_item_id || "").trim(),
+                title: String(orderItem.title || "").trim(),
+                quantity: typeof orderItem.quantity === "number" ? orderItem.quantity : null,
+                itemPrice: orderItem.item_price == null ? null : String(orderItem.item_price),
+                itemEndDate: typeof orderItem.item_end_date === "string" ? orderItem.item_end_date : null,
+                currency: String(orderItem.currency || "").trim(),
+                isMainItem: orderItem.is_main_item === true,
+              };
+            })
+            : [],
         };
       })
       : [],

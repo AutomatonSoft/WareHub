@@ -105,3 +105,14 @@ class AfterbuyOrder:
 class AfterbuyLookupResult:
     profile: str
     orders: tuple[AfterbuyOrder, ...]
+
+
+@dataclass(frozen=True)
+class AfterbuyOrderIdentity:
+    """Canonical Afterbuy identity resolved from a local/external order reference."""
+
+    profile: str
+    order_id: str
+    main_item_id: str = ""
+    marketplace: str = ""
+    marketplace_account: str = ""

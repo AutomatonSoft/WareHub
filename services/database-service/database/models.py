@@ -94,6 +94,12 @@ class EanStatus(Model):
 
 
 class Orders(Model):
+    MEMO_SYNC_STATUS_CHOICES = (
+        ("synced", "Synced"),
+        ("pending", "Pending"),
+        ("failed", "Failed"),
+    )
+
     kid = ForeignKey(Kid, on_delete=CASCADE, related_name="orders")
     order_id = CharField(max_length=255, null=False)
     platform = CharField(max_length=255, null=True, blank=True)
@@ -117,6 +123,11 @@ class Orders(Model):
     payment_id = CharField(max_length=255, null=True, blank=True)
     payment_function = CharField(max_length=255, null=True, blank=True)
     shipping_method = CharField(max_length=255, null=True, blank=True)
+    afterbuy_profile = CharField(max_length=8, null=True, blank=True, db_index=True)
+    memo_sync_status = CharField(max_length=16, choices=MEMO_SYNC_STATUS_CHOICES, default="synced")
+    memo_sync_error = TextField(null=True, blank=True)
+    memo_sync_error_type = CharField(max_length=64, null=True, blank=True)
+    memo_last_synced_at = DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

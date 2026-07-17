@@ -18,6 +18,7 @@ import { fetchInventoryChangeHistory, type InventoryChangeHistoryActorDto, type 
 
 const ALL_PARTICIPANTS = "__all_participants__";
 const HISTORY_PAGE_SIZE = 8;
+const EXPANDABLE_CHANGE_LENGTH = 180;
 const FIELD_LABELS: Record<string, string> = {
   photo: "inventoryFieldPhoto",
   place: "inventoryFieldPlace",
@@ -160,6 +161,7 @@ export function InventoryChangeHistory() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [maxHeight, setMaxHeight] = useState<number | null>(null);
+  const [expandedChangeKeys, setExpandedChangeKeys] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     setPage(1);
@@ -219,6 +221,9 @@ export function InventoryChangeHistory() {
   const actionLabel = (entry: InventoryChangeHistoryEntryDto) => {
     if (entry.action === "product_created") return t.inventoryChangeCreated;
     if (entry.action === "product_updated") return t.inventoryChangeUpdated;
+    if (entry.action === "order_memo_updated") {
+      return lang === "ru" ? "изменил Memo заказа" : lang === "de" ? "hat die Bestellnotiz geändert" : "updated the order memo";
+    }
     const channel = entry.metadata.channel ? ` ${entry.metadata.channel}` : "";
     return entry.action === "marketplace_activated"
       ? `${t.inventoryChangeActivated}${channel}`
@@ -244,6 +249,22 @@ export function InventoryChangeHistory() {
     if (remaining <= 80) {
       setPage((current) => current + 1);
     }
+  };
+
+  const fieldLabel = (field: string) => field === "order.memo"
+    ? "Memo"
+    : t[FIELD_LABELS[field] as keyof typeof t] ?? field;
+
+  const toggleExpandedChange = (changeKey: string) => {
+    setExpandedChangeKeys((current) => {
+      const next = new Set(current);
+      if (next.has(changeKey)) {
+        next.delete(changeKey);
+      } else {
+        next.add(changeKey);
+      }
+      return next;
+    });
   };
 
   return (
@@ -281,23 +302,48 @@ export function InventoryChangeHistory() {
             <p className="wh-dashboard-history__empty">{t.noInventoryChanges}</p>
           ) : (
             <ol className="wh-dashboard-history">
-              {entries.map((entry) => (
-                <li key={entry.id} className="wh-dashboard-history__item">
-                  <time dateTime={entry.occurred_at}>{new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(entry.occurred_at))}</time>
-                  <div><strong>{entry.actor.name}</strong><span>{actionLabel(entry)}</span></div>
-                  <div className="wh-dashboard-history__product">KID {entry.product.kid_number || "-"}{entry.product.place ? ` · ${entry.product.place}` : ""}</div>
-                  {entry.changes.length > 0 && (
-                    <div className="wh-dashboard-history__changes">
-                      {entry.changes.map((change, index) => (
-                        <div key={`${change.field}-${index}`} className="wh-dashboard-history__change">
-                          <span>{t[FIELD_LABELS[change.field] as keyof typeof t] ?? change.field}:</span>
-                          {change.field === "photo" ? <PhotoChangePreview before={change.before} after={change.after} /> : <span>{valueText(change.before)} → {valueText(change.after)}</span>}
+              {entries.map((entry) => {
+                const actorName = entry.actor.name || entry.actor.login || (lang === "ru" ? "Система" : "System");
+
+                return (
+                  <li key={entry.id} className="wh-dashboard-history__item">
+                    <time dateTime={entry.occurred_at}>{new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(entry.occurred_at))}</time>
+                    <div className="wh-dashboard-history__details">
+                      <p className="wh-dashboard-history__summary">
+                        <strong>{actorName}</strong>
+                        <span>{actionLabel(entry)}</span>
+                        <span className="wh-dashboard-history__product">KID {entry.product.kid_number || "-"}{entry.product.place ? ` · ${entry.product.place}` : ""}</span>
+                      </p>
+                      {entry.changes.length > 0 ? (
+                        <div className="wh-dashboard-history__changes">
+                          {entry.changes.map((change, index) => {
+                            const changeKey = `${entry.id}:${change.field}:${index}`;
+                            const changeText = `${valueText(change.before)} → ${valueText(change.after)}`;
+                            const isExpandable = change.field !== "photo" && changeText.length > EXPANDABLE_CHANGE_LENGTH;
+                            const isExpanded = expandedChangeKeys.has(changeKey);
+
+                            return (
+                              <div key={changeKey} className="wh-dashboard-history__change">
+                                <span className="wh-dashboard-history__change-field">{fieldLabel(change.field)}:</span>
+                                {change.field === "photo" ? <PhotoChangePreview before={change.before} after={change.after} /> : (
+                                  <div className="wh-dashboard-history__change-value-wrap">
+                                    <span className={isExpandable && !isExpanded ? "wh-dashboard-history__change-value is-collapsed" : "wh-dashboard-history__change-value"}>{changeText}</span>
+                                    {isExpandable ? (
+                                      <Button type="button" variant="link" size="xs" className="wh-dashboard-history__change-toggle" onClick={() => toggleExpandedChange(changeKey)} aria-expanded={isExpanded}>
+                                        {isExpanded ? (lang === "ru" ? "Скрыть" : lang === "de" ? "Ausblenden" : "Hide") : (lang === "ru" ? "Показать полностью" : lang === "de" ? "Vollständig anzeigen" : "Show more")}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      ) : null}
                     </div>
-                  )}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ol>
           )}
           {!loading && loadingMore ? (

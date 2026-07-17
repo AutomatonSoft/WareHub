@@ -96,10 +96,15 @@ class AfterbuyKidSyncService:
 
 def _order_defaults(order: AfterbuyOrder) -> dict[str, object]:
     return {
+        "afterbuy_profile": order.profile,
         "platform": order.marketplace or None,
         "buyer": _full_name(order.billing_address) or None,
         "title": order.items[0].title if order.items else f"Order {order.order_id}",
         "memo": order.memo or None,
+        "memo_sync_status": "synced",
+        "memo_sync_error": None,
+        "memo_sync_error_type": None,
+        "memo_last_synced_at": timezone.now(),
         "order_date": _datetime_or_none(order.order_date),
         "invoice_number": order.invoice_number or None,
         "already_paid": order.payment.paid_amount,
@@ -131,6 +136,8 @@ def _upsert_order(kid: Kid, afterbuy_order: AfterbuyOrder) -> tuple[Orders, bool
     if exact_order is None and legacy_orders:
         order = legacy_orders.pop(0)
         order.order_id = afterbuy_order.order_id
+        if order.memo_sync_status != "synced":
+            _preserve_local_memo_sync_state(defaults)
         for field_name, value in defaults.items():
             setattr(order, field_name, value)
         order.save(update_fields=["order_id", *defaults.keys()])
@@ -142,12 +149,25 @@ def _upsert_order(kid: Kid, afterbuy_order: AfterbuyOrder) -> tuple[Orders, bool
                 exact_order.additional_items = legacy_order.additional_items
                 exact_order.save(update_fields=["additional_items"])
             legacy_order.delete()
+        if exact_order.memo_sync_status != "synced":
+            _preserve_local_memo_sync_state(defaults)
         for field_name, value in defaults.items():
             setattr(exact_order, field_name, value)
         exact_order.save(update_fields=list(defaults.keys()))
         return exact_order, False
 
     return Orders.objects.create(kid=kid, order_id=afterbuy_order.order_id, **defaults), True
+
+
+def _preserve_local_memo_sync_state(defaults: dict[str, object]) -> None:
+    for field_name in (
+        "memo",
+        "memo_sync_status",
+        "memo_sync_error",
+        "memo_sync_error_type",
+        "memo_last_synced_at",
+    ):
+        defaults.pop(field_name, None)
 
 
 def _split_order_ids(value: str) -> set[str]:
