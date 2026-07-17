@@ -348,6 +348,10 @@ export function SofortListTable() {
   const rowIds = useMemo(() => new Set(sortedRows.map((row) => row.id)), [sortedRows]);
   const selectedRows = useMemo(() => sortedRows.filter((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const selectedVisibleCount = selectedRows.length;
+  const hasSelectedActiveMarketplace = useMemo(
+    () => selectedRows.some((row) => row.marketplaceActive === true),
+    [selectedRows],
+  );
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / backendPageSize)), [backendPageSize, totalCount]);
   const fallbackPlaceOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.place.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
   const fallbackSectionOptions = useMemo(() => Array.from(new Set(rows.map((row) => row.section?.trim() ?? "").filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })), [rows]);
@@ -539,7 +543,7 @@ export function SofortListTable() {
   }
 
   async function deleteSelectedRows() {
-    if (deletingSelected || selectedRows.length === 0) return;
+    if (deletingSelected || selectedRows.length === 0 || hasSelectedActiveMarketplace) return;
     const confirmed = window.confirm(`Вы хотите удалить ${selectedRows.length} товаров из базы данных?`);
     if (!confirmed) return;
 
@@ -590,7 +594,13 @@ export function SofortListTable() {
             }
             trailingAction={
               selectedVisibleCount > 0 ? (
-                <Button type="button" variant="destructive" onClick={() => void deleteSelectedRows()} disabled={deletingSelected}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void deleteSelectedRows()}
+                  disabled={deletingSelected || hasSelectedActiveMarketplace}
+                  title={hasSelectedActiveMarketplace ? t.deleteBlockedByMarketplace : undefined}
+                >
                   {deletingSelected ? `${t.deleting} (${selectedVisibleCount})` : `${t.delete} (${selectedVisibleCount})`}
                 </Button>
               ) : null
@@ -715,6 +725,7 @@ export function SofortListTable() {
                   delete: t.delete,
                   deactivate: t.deactivate,
                   deleteFailed: t.deleteFailed,
+                  deleteBlockedByMarketplace: t.deleteBlockedByMarketplace,
                   markedActive: t.markedActive,
                   markedInactive: t.markedInactive,
                   resultSuccessSites: t.resultSuccessSites,

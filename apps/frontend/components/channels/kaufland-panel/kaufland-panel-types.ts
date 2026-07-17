@@ -22,6 +22,10 @@ export type KauflandProductPayload = {
   parts_of_animal_origin: string;
   price: string;
   unit_id: string;
+  picture_urls: string;
+  size: string;
+  color: string;
+  delivery: string;
 };
 
 export const createEmptyKauflandProductPayload = (controller: "jv" | "xl" = "xl"): KauflandProductPayload => ({
@@ -48,6 +52,10 @@ export const createEmptyKauflandProductPayload = (controller: "jv" | "xl" = "xl"
   parts_of_animal_origin: "",
   price: "",
   unit_id: "",
+  picture_urls: "[]",
+  size: "",
+  color: "",
+  delivery: "",
 });
 
 export type KauflandChangePayload = KauflandProductPayload;

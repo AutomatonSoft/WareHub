@@ -141,6 +141,8 @@ class FakeProductEditorGateway:
                 "response_data": {
                     "ean": ["4012345678901"], "title": ["Desk Kaufland JV"], "price": [19900],
                     "storefront": ["de"], "category": ["desks"], "picture": ["https://img/kaufland.jpg"],
+                    "picture_urls": ["https://img/kaufland-secondary.jpg"], "size": ["large"],
+                    "color": ["walnut"], "delivery": [7],
                 }
             },
             "xl": {"detail": "not found"},
@@ -359,6 +361,10 @@ def test_product_editor_kaufland_load_plan_and_apply_updates_found_and_creates_m
     draft = load_response.json()["draft"]
     assert draft["title"] == "Desk Kaufland JV"
     assert draft["price"] == "19900"
+    assert draft["picture_urls"] == ["https://img/kaufland-secondary.jpg"]
+    assert draft["size"] == "large"
+    assert draft["color"] == "walnut"
+    assert draft["delivery"] == "7"
 
     plan_response = client.post(
         "/api/v1/orchestrator/product-editor/plan",
@@ -377,6 +383,88 @@ def test_product_editor_kaufland_load_plan_and_apply_updates_found_and_creates_m
     assert gateway.kaufland_change_calls[0]["controller"] == "jv"
     assert gateway.kaufland_change_calls[0]["payload"]["changed_fields"] == ["title"]
     assert gateway.kaufland_create_calls[0]["controller"] == "xl"
+
+
+def test_product_editor_kaufland_update_omits_blank_unit_id(tmp_path):
+    client, gateway = _client(tmp_path)
+    load_response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND", "baseline_target_id": "KAUFLAND_JV"},
+    )
+    draft = load_response.json()["draft"]
+    assert draft["unit_id"] == ""
+
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "KAUFLAND",
+            "changed_fields": ["title"],
+            "draft": {**draft, "title": "Updated desk"},
+            "selected_target_ids": ["KAUFLAND_JV"],
+        },
+    )
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+
+    assert apply_response.status_code == 200
+    assert "unit_id" not in gateway.kaufland_change_calls[0]["payload"]
+
+
+def test_product_editor_kaufland_update_converts_unit_id_to_integer(tmp_path):
+    client, gateway = _client(tmp_path)
+    load_response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND", "baseline_target_id": "KAUFLAND_JV"},
+    )
+    draft = load_response.json()["draft"]
+
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "KAUFLAND",
+            "changed_fields": ["unit_id"],
+            "draft": {**draft, "unit_id": "17"},
+            "selected_target_ids": ["KAUFLAND_JV"],
+        },
+    )
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+
+    assert apply_response.status_code == 200
+    assert gateway.kaufland_change_calls[0]["payload"]["unit_id"] == 17
+
+
+def test_product_editor_kaufland_update_converts_delivery_to_integer(tmp_path):
+    client, gateway = _client(tmp_path)
+    load_response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND", "baseline_target_id": "KAUFLAND_JV"},
+    )
+    draft = load_response.json()["draft"]
+
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "KAUFLAND",
+            "changed_fields": ["delivery"],
+            "draft": {**draft, "delivery": "14"},
+            "selected_target_ids": ["KAUFLAND_JV"],
+        },
+    )
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+
+    assert apply_response.status_code == 200
+    assert gateway.kaufland_change_calls[0]["payload"]["delivery"] == 14
 
 
 def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local(tmp_path):

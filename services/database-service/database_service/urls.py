@@ -56,6 +56,7 @@ from database.views_dectivate import (
     MarketplaceDeactivateByKidAPIView,
     MarketplaceHoodDeactivateByKidAPIView,
     MarketplaceJVDeactivateSofortByKidAPIView,
+    MarketplaceKauflandToggleByKidAPIView,
     MarketplaceLocalStatusesByKidAPIView,
     MarketplaceXLDeactivateByKidAPIView,
 )
@@ -104,8 +105,10 @@ from xl_services.views import (
     XLSitesByEANAPIView,
 )
 from kaufland.views import (
+    ActivateProductByEANAPIView,
     ChangeProductByEANAPIView,
     CreateProductByEANAPIView,
+    DeactivateProductByEANAPIView,
     DeleteProductByEANAPIView,
     GetProductAPIView
 )
@@ -155,6 +158,7 @@ api_v1_patterns = [
     path("api/v1/marketplace/jv/deactivate-sofort-by-kid/", MarketplaceJVDeactivateSofortByKidAPIView.as_view(), name="marketplace-jv-deactivate-sofort-by-kid-v1"),
     path("api/v1/marketplace/xl/deactivate-by-kid/", MarketplaceXLDeactivateByKidAPIView.as_view(), name="marketplace-xl-deactivate-by-kid-v1"),
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
+    path("api/v1/marketplace/kaufland/toggle-by-kid/", MarketplaceKauflandToggleByKidAPIView.as_view(), name="marketplace-kaufland-toggle-by-kid-v1"),
     path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
     path("api/v1/inventory/dashboard-summary/", InventoryDashboardSummaryAPIView.as_view(), name="inventory-dashboard-summary-v1"),
@@ -213,6 +217,16 @@ api_v1_patterns = [
         "api/v1/kaufland/products/create/",
         CreateProductByEANAPIView.as_view(),
         name="kaufland-create-product-by-ean-v1",
+    ),
+    path(
+        "api/v1/kaufland/products/deactivate/<str:ean>/",
+        DeactivateProductByEANAPIView.as_view(),
+        name="kaufland-deactivate-product-by-ean-v1",
+    ),
+    path(
+        "api/v1/kaufland/products/activate/<str:ean>/",
+        ActivateProductByEANAPIView.as_view(),
+        name="kaufland-activate-product-by-ean-v1",
     ),
     path(
         "api/v1/kaufland/<str:ean>/<str:site>/",

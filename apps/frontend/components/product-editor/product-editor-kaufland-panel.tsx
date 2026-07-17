@@ -25,11 +25,11 @@ const textFields: Array<[keyof ProductEditorKauflandDraft, string]> = [
   ["title", "Title"], ["mpn", "MPN"], ["manufacturer", "Manufacturer"], ["product_dimensions", "Product dimensions"],
   ["colour", "Colour"], ["material", "Material"], ["length", "Length"], ["width", "Width"], ["height", "Height"],
   ["storefront", "Storefront"], ["material_composition", "Material composition"], ["abnehmbarer_bezug", "Removable cover"],
-  ["parts_of_animal_origin", "Parts of animal origin"], ["price", "Price"], ["unit_id", "Unit ID"],
+  ["parts_of_animal_origin", "Parts of animal origin"], ["size", "Size"], ["color", "Color"], ["price", "Price"], ["unit_id", "Unit ID"], ["delivery", "Delivery"],
 ];
 
 const jsonFields: Array<[keyof ProductEditorKauflandDraft, string]> = [
-  ["category", "Category"], ["short_description", "Short description"], ["picture", "Pictures"],
+  ["category", "Category"], ["short_description", "Short description"], ["picture", "Pictures"], ["picture_urls", "Picture URLs"],
   ["product_safety_contact", "Product safety contact"], ["category_detail", "Category detail"],
 ];
 

@@ -65,9 +65,11 @@ function buildKauflandWritePayload(form: KauflandCreatePayload): KauflandWriteBo
     storefront: form.storefront, product_safety_contact: list("product_safety_contact") as Record<string, unknown>[],
     category_detail: list("category_detail") as Record<string, unknown>[], material_composition: form.material_composition,
     abnehmbarer_bezug: form.abnehmbarer_bezug, parts_of_animal_origin: form.parts_of_animal_origin,
+    picture_urls: list("picture_urls").map(String), size: form.size, color: form.color,
   };
   if (form.price.trim()) payload.price = Number(form.price);
   if (form.unit_id.trim()) payload.unit_id = Number(form.unit_id);
+  if (form.delivery.trim()) payload.delivery = Number(form.delivery);
   return payload;
 }
 
@@ -164,6 +166,10 @@ export function KauflandSearchPanel() {
         parts_of_animal_origin: firstOrEmpty(responseData.parts_of_animal_origin),
         price: firstOrEmpty(responseData.price),
         unit_id: firstOrEmpty(responseData.unit_id),
+        picture_urls: jsonArrayValue(responseData.picture_urls),
+        size: firstOrEmpty(responseData.size),
+        color: firstOrEmpty(responseData.color),
+        delivery: firstOrEmpty(responseData.delivery),
       };
       setChangeForm(nextForm);
       setCreateForm(nextForm);

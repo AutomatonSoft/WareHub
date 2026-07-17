@@ -646,6 +646,7 @@ export function SofortListTableShell(props: {
     activate: string;
     delete: string;
     deleteFailed: string;
+    deleteBlockedByMarketplace: string;
     markedActive: string;
     markedInactive: string;
     deactivate: string;
@@ -1018,7 +1019,7 @@ export function SofortListTableShell(props: {
   }
 
   async function runDeleteAction(row: SofortListRow) {
-    if (deletingRowId || deactivatingRowId) return;
+    if (deletingRowId || deactivatingRowId || row.marketplaceActive === true) return;
 
     setDeletingRowId(row.id);
     try {
@@ -1208,7 +1209,8 @@ export function SofortListTableShell(props: {
                         variant="destructive"
                         size="sm"
                         onClick={() => void runDeleteAction(row)}
-                        disabled={deletingRowId === row.id || deactivatingRowId === row.id}
+                        disabled={deletingRowId === row.id || deactivatingRowId === row.id || row.marketplaceActive === true}
+                        title={row.marketplaceActive === true ? props.labels.deleteBlockedByMarketplace : undefined}
                       >
                         {deletingRowId === row.id ? t.deleting : props.labels.delete}
                       </Button>
@@ -1341,7 +1343,8 @@ export function SofortListTableShell(props: {
                     variant="destructive"
                     size="sm"
                     onClick={() => void runDeleteAction(row)}
-                    disabled={deletingRowId === row.id || deactivatingRowId === row.id}
+                    disabled={deletingRowId === row.id || deactivatingRowId === row.id || row.marketplaceActive === true}
+                    title={row.marketplaceActive === true ? props.labels.deleteBlockedByMarketplace : undefined}
                   >
                     {deletingRowId === row.id ? t.deleting : props.labels.delete}
                   </Button>
