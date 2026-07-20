@@ -52,6 +52,20 @@ class TimeoutAdapters(FakeAdapters):
         raise RetryExhaustedError("timed out", kind="timeout")
 
 
+class SuccessfulAdapters(FakeAdapters):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
+        self.calls += 1
+        return type("R", (), {"status_code": 200, "body": {"ok": True, "ean": ean, "payload": payload}})()
+
+
 class BrokenIdempotencyStore:
     def ping(self) -> bool:
         raise RuntimeError("sqlite unavailable")
@@ -332,6 +346,37 @@ def test_orchestrator_publishes_to_hood(tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "success"
     assert fake.calls == 1
+
+
+def test_orchestrator_publishes_to_all_main_create_marketplaces(tmp_path):
+    fake = FakeAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+    body = {
+        "operation": "publish",
+        "payload": {
+            "title": "Desk",
+            "description": "Oak",
+            "price": "199.99",
+            "quantity": 1,
+            "source_model": "4012345678901",
+        },
+        "channels": [
+            {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+            {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+            {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+            {"marketplace": "hood", "account": "xl", "changed_fields": ["title", "description", "price", "quantity"]},
+            {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+            {"marketplace": "kaufland", "account": "xl", "changed_fields": ["title", "description", "price"]},
+        ],
+    }
+
+    response = client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "partial_success"
+    assert len(payload["results"]) == 6
+    assert fake.calls == 6
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):
@@ -750,6 +795,55 @@ def test_orchestrator_worker_processes_queued_job_when_enabled(tmp_path):
             assert attempts_payload[0]["attempt_no"] == 1
             assert attempts_payload[0]["status"] == "completed"
             assert attempts_payload[0]["finished_at_unix_ms"] is not None
+    finally:
+        settings.enable_job_worker = False
+
+
+def test_orchestrator_worker_processes_main_create_publish_job(tmp_path):
+    settings.enable_job_worker = True
+    settings.job_worker_poll_interval_seconds = 0.05
+    try:
+        fake = SuccessfulAdapters()
+        with _client_with_fake_adapters(fake, tmp_path) as client:
+            body = {
+                "ean": "4012345678901",
+                "command": {
+                    "operation": "publish",
+                    "payload": {
+                        "title": "Desk",
+                        "description": "Oak desk",
+                        "price": "199.99",
+                        "quantity": 1,
+                        "source_model": "4012345678901",
+                    },
+                    "channels": [
+                        {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                        {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                        {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+                        {"marketplace": "hood", "account": "xl", "changed_fields": ["title", "description", "price", "quantity"]},
+                        {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+                        {"marketplace": "kaufland", "account": "xl", "changed_fields": ["title", "description", "price"]},
+                    ],
+                },
+            }
+            created = client.post("/api/v1/orchestrator/jobs", json=body)
+            assert created.status_code == 200
+            job_id = created.json()["job_id"]
+
+            deadline = time.time() + 2.0
+            job = None
+            while time.time() < deadline:
+                job = client.get(f"/api/v1/orchestrator/jobs/{job_id}").json()
+                if job["status"] == "completed":
+                    break
+                time.sleep(0.05)
+
+            assert job is not None
+            assert job["status"] == "completed"
+            assert job["operation"] == "publish"
+            assert job["result"]["status"] == "success"
+            assert len(job["result"]["results"]) == 6
+            assert fake.calls == 6
     finally:
         settings.enable_job_worker = False
 

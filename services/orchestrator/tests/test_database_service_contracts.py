@@ -63,6 +63,65 @@ def test_hood_publish_contract_uses_post():
     assert call["params"] == {"account": "xl"}
 
 
+def test_kaufland_publish_contract_uses_create_endpoint():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="r-create-kaufland",
+        channel=ChannelTarget(marketplace=Marketplace.KAUFLAND, account="jv"),
+        payload={"title": "Desk", "price": "19.99"},
+        operation=Operation.PUBLISH,
+    )
+
+    call = fake_http.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://database-service:8000/api/v1/kaufland/products/create/"
+    assert call["json"]["ean"] == "4012345678901"
+    assert call["json"]["controller"] == "jv"
+
+
+def test_jv_publish_contract_uses_create_and_push_endpoint():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="r-create-jv",
+        channel=ChannelTarget(marketplace=Marketplace.XLJV, site="JV", site_key="JV_DE"),
+        payload={"title": "Desk", "description": "Oak", "price": "19.99", "images": ["https://cdn.test/desk.jpg"]},
+        operation=Operation.PUBLISH,
+    )
+
+    call = fake_http.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://database-service:8000/api/v1/jv/products/create-and-push/"
+    assert call["params"] == {"site": "JV", "site_key": "JV_DE"}
+    assert call["json"]["ean"] == "4012345678901"
+    assert call["json"]["descriptions"][0]["name"] == "Desk"
+
+
+def test_xl_publish_contract_uses_create_and_push_endpoint():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="r-create-xl",
+        channel=ChannelTarget(marketplace=Marketplace.XLJV, site="XL", site_key="XLMOEBEL_DE"),
+        payload={"title": "Desk", "description": "Oak", "price": "19.99", "images": ["https://cdn.test/desk.jpg"], "jv_fields": {"lieferzeitid": 12}},
+        operation=Operation.PUBLISH,
+    )
+
+    call = fake_http.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://database-service:8000/api/v1/xl/products/create-and-push/"
+    assert call["params"] == {"site_key": "XLMOEBEL_DE"}
+    assert call["json"]["image"] == "https://cdn.test/desk.jpg"
+    assert "jv_fields" not in call["json"]
+
+
 def test_kaufland_contract_path_and_body():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)

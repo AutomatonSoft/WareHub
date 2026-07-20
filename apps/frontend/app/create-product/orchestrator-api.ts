@@ -197,6 +197,100 @@ export async function createOrchestratorJob(input: {
   return { jobId, raw };
 }
 
+export async function createMainMarketplaceProductJob(input: {
+  ean: string;
+  productName: string;
+  description: string;
+  price: string;
+  imageUrls: string[];
+  xljvPayload: Record<string, unknown>;
+  hoodPayload: Record<string, unknown>;
+  kauflandPayload: Record<string, unknown>;
+}): Promise<{ jobId: string; raw: Record<string, unknown> }> {
+  const xljvChangedFields = [
+    "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
+  ];
+  const hoodChangedFields = [
+    "title", "description", "price", "quantity", "categoryID", "condition", "itemMode", "itemNumber", "images", "productProperties",
+  ];
+  const kauflandChangedFields = [
+    "title", "description", "picture", "price", "size", "color", "material", "delivery", "height", "length", "width", "amount", "id_offer", "storefronts",
+  ];
+  const primaryImage = input.imageUrls[0] || "";
+  const payload = {
+    title: input.productName,
+    description: input.description,
+    price: input.price,
+    quantity: 1,
+    images: input.imageUrls,
+    source_model: input.ean,
+    source_ean_field: input.ean,
+    status: true,
+    image: primaryImage,
+    ...input.xljvPayload,
+  };
+  const channels: OrchestratorChannel[] = [
+    {
+      marketplace: Marketplace.xljv,
+      site: "JV",
+      site_key: "JV_DE",
+      changed_fields: xljvChangedFields,
+    },
+    {
+      marketplace: Marketplace.xljv,
+      site: "XL",
+      site_key: "XLMOEBEL_DE",
+      changed_fields: xljvChangedFields,
+    },
+    {
+      marketplace: Marketplace.hood,
+      account: "jv",
+      changed_fields: hoodChangedFields,
+      overrides: input.hoodPayload,
+    },
+    {
+      marketplace: Marketplace.hood,
+      account: "xl",
+      changed_fields: hoodChangedFields,
+      overrides: input.hoodPayload,
+    },
+    {
+      marketplace: Marketplace.kaufland,
+      account: "jv",
+      changed_fields: kauflandChangedFields,
+      overrides: input.kauflandPayload,
+    },
+    {
+      marketplace: Marketplace.kaufland,
+      account: "xl",
+      changed_fields: kauflandChangedFields,
+      overrides: input.kauflandPayload,
+    },
+  ];
+
+  const response = await apiFetch("/api/v1/orchestrator/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ean: input.ean,
+      command: { operation: Operation.publish, payload, channels },
+    }),
+  });
+  const raw = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new ApiError(
+      formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Main marketplace create job failed."),
+      response.status,
+    );
+  }
+  const jobIdRaw = raw.job_id ?? raw.id ?? raw.jobId;
+  const jobId = typeof jobIdRaw === "string" ? jobIdRaw : "";
+  if (!jobId) {
+    throw new ApiError("Orchestrator did not return job_id", 502);
+  }
+  return { jobId, raw };
+}
+
 export async function getOrchestratorJob(jobId: string): Promise<Record<string, unknown>> {
   const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}`);
   const raw = (await response.json()) as Record<string, unknown>;
