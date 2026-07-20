@@ -36,7 +36,7 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
     ),
     Marketplace.XLJV: MarketplaceFieldSpec(
         allowed_fields={
-            "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "descriptions", "categories", "stores", "images", "specials", "jv_fields",
+            "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "descriptions", "categories", "stores", "images", "specials", "jv_fields",
         },
         required_fields={"source_model", "price"},
     ),

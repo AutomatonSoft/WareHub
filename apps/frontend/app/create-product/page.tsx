@@ -16,7 +16,7 @@ import { Input } from "../../components/ui/input";
 import { apiFetch } from "../../lib/api/client";
 import { useToast } from "../../components/shared/toast-provider";
 import { useLabels } from "../use-labels";
-import { CreateProductFormPanel, HoodCreateFieldsPanel } from "./create-product-form-panel";
+import { CreateProductFormPanel, HoodCreateFieldsPanel, MainMarketplaceCreateFieldsPanel } from "./create-product-form-panel";
 import { CreateProductJobPanel } from "./create-product-job-panel";
 import { KauflandCreateProductPanel } from "./kaufland-create-product-panel";
 import { MarketplaceSiteSelectorPanel } from "./marketplace-site-selector-panel";
@@ -717,10 +717,19 @@ export default function CreateProductPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "jv") {
+    if (activeTab !== "main") {
       return;
     }
-    if (JV_RUBRIC_SITE_TABS.every((site) => Array.isArray(rubricTreesBySite[site.key]))) {
+    setRubricSiteKey("JV_DE");
+    setDeliverySiteKey("JV_DE");
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "jv" && activeTab !== "main") {
+      return;
+    }
+    const rubricSites = activeTab === "main" ? [JV_RUBRIC_SITE_TABS[0]] : JV_RUBRIC_SITE_TABS;
+    if (rubricSites.every((site) => Array.isArray(rubricTreesBySite[site.key]))) {
       return;
     }
 
@@ -729,7 +738,7 @@ export default function CreateProductPage() {
     setRubricTreeError("");
 
     void Promise.all(
-      JV_RUBRIC_SITE_TABS.map(async (site) => {
+      rubricSites.map(async (site) => {
         const response = await apiFetch(
           `/api/v1/jv/rubrics/tree/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
@@ -758,8 +767,8 @@ export default function CreateProductPage() {
           nextCache[result.key] = result.tree;
           nextExpandedBySite[result.key] = new Set(collectExpandableRubricIds(result.tree));
         }
-        setRubricTreesBySite(nextCache);
-        setExpandedRubricIdsBySite(nextExpandedBySite);
+        setRubricTreesBySite((current) => ({ ...current, ...nextCache }));
+        setExpandedRubricIdsBySite((current) => ({ ...current, ...nextExpandedBySite }));
       })
       .catch((error) => {
         if (!active) {
@@ -779,10 +788,11 @@ export default function CreateProductPage() {
   }, [activeTab, rubricSiteKey, rubricTreesBySite, t.createProductFailedLoadRubricTree, t.createProductFailedLoadRubricTreeGeneric]);
 
   useEffect(() => {
-    if (activeTab !== "jv") {
+    if (activeTab !== "jv" && activeTab !== "main") {
       return;
     }
-    if (JV_RUBRIC_SITE_TABS.every((site) => Array.isArray(deliveryOptionsBySite[site.key]))) {
+    const deliverySites = activeTab === "main" ? [JV_RUBRIC_SITE_TABS[0]] : JV_RUBRIC_SITE_TABS;
+    if (deliverySites.every((site) => Array.isArray(deliveryOptionsBySite[site.key]))) {
       return;
     }
 
@@ -791,7 +801,7 @@ export default function CreateProductPage() {
     setDeliveryOptionsError("");
 
     void Promise.all(
-      JV_RUBRIC_SITE_TABS.map(async (site) => {
+      deliverySites.map(async (site) => {
         const response = await apiFetch(
           `/api/v1/jv/delivery-options/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
@@ -818,7 +828,7 @@ export default function CreateProductPage() {
         for (const result of results) {
           nextCache[result.key] = result.items;
         }
-        setDeliveryOptionsBySite(nextCache);
+        setDeliveryOptionsBySite((current) => ({ ...current, ...nextCache }));
       })
       .catch((error) => {
         if (!active) {
@@ -1442,7 +1452,7 @@ export default function CreateProductPage() {
     }
 
     if (activeTab === "main") {
-      return void controller.handleCreateProduct();
+      return void handleMainCreate();
     }
 
     if (activeTab === "hood") {
@@ -1454,6 +1464,44 @@ export default function CreateProductPage() {
     }
 
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
+  }
+
+  function handleMainCreate() {
+    const siteKey = "JV_DE";
+    const selectedCategoryIds = [...(selectedRubricIdsBySite[siteKey] ?? new Set<number>())];
+    const mainCategoryId = mainRubricIdBySite[siteKey] ?? null;
+    const selectedDeliveryId = [...(selectedDeliveryIdsBySite[siteKey] ?? new Set<number>())][0];
+
+    if (selectedCategoryIds.length === 0) {
+      showToast("Select at least one JV DE category before creating the job.", "error");
+      return;
+    }
+    if (!mainCategoryId || !selectedCategoryIds.includes(mainCategoryId)) {
+      showToast("Select one main JV DE category before creating the job.", "error");
+      return;
+    }
+    if (selectedDeliveryId === undefined) {
+      showToast("Select one JV DE delivery option before creating the job.", "error");
+      return;
+    }
+
+    const orderedCategoryIds = selectedCategoryIds.sort((left, right) => {
+      if (left === mainCategoryId) return -1;
+      if (right === mainCategoryId) return 1;
+      return left - right;
+    });
+
+    return void controller.handleCreateProduct({
+      categories: orderedCategoryIds.map((categoryId) => ({
+        category_id: categoryId,
+        main_category: categoryId === mainCategoryId,
+      })),
+      jv_fields: {
+        lieferzeitid: selectedDeliveryId,
+        lieferzeit: selectedDeliveryId,
+        lieferzeit_id: selectedDeliveryId,
+      },
+    });
   }
 
   return (
@@ -2011,7 +2059,7 @@ export default function CreateProductPage() {
                 <KauflandCreateProductPanel />
               </div>
             ) : activeTab === "main" ? (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px]">
+              <div className="space-y-4">
                 <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
                   <CreateProductFormPanel
                     t={t}
@@ -2028,9 +2076,137 @@ export default function CreateProductPage() {
                     onProductNameChange={controller.setProductName}
                     onImagesTextChange={controller.setImagesText}
                     onImageFilesChange={controller.setImageFiles}
-                    onSubmit={controller.handleCreateProduct}
+                    onSubmit={handleMainCreate}
                     onReset={controller.resetFields}
                   />
+                  <MainMarketplaceCreateFieldsPanel
+                    hoodFields={controller.hoodFields}
+                    hoodFieldErrors={controller.hoodFieldErrors}
+                    onHoodFieldsChange={controller.setHoodFields}
+                    kauflandFields={controller.mainKauflandFields}
+                    kauflandFieldErrors={controller.mainKauflandFieldErrors}
+                    onKauflandFieldsChange={controller.setMainKauflandFields}
+                    xljvFields={controller.mainXljvFields}
+                    xljvFieldErrors={controller.mainXljvFieldErrors}
+                    onXljvFieldsChange={controller.setMainXljvFields}
+                  />
+                  <section className="mt-4 space-y-4 rounded-[var(--radius-control)] border border-border/70 bg-muted/20 p-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-foreground">JV DE categories and delivery</h2>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Select the JV DE categories and one delivery option for the shared create job. The checked star column marks the main category.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <div className="space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                            {t.createProductRubricTree}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedRubricIdsBySite((current) => ({
+                                ...current,
+                                JV_DE: areAllRubricsExpanded ? new Set<number>() : new Set(expandableRubricIds),
+                              }))
+                            }
+                            disabled={expandableRubricIds.length === 0}
+                            className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {areAllRubricsExpanded ? t.createProductCollapseAll : t.createProductExpandAll}
+                          </button>
+                        </div>
+                        <Input
+                          value={rubricSearch}
+                          onChange={(event) => setRubricSearch(event.target.value)}
+                          placeholder={t.createProductSearchRubric}
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setShowOnlySelectedRubrics((current) => !current)}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1.5 text-xs font-semibold uppercase transition",
+                              showOnlySelectedRubrics
+                                ? "bg-primary text-primary-foreground"
+                                : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
+                            ].join(" ")}
+                          >
+                            {t.xljvSelectedOnly}
+                          </button>
+                        </div>
+                        {rubricTreeLoading ? <div className="text-sm text-muted-foreground">{t.createProductLoadingRubricTree}</div> : null}
+                        {rubricTreeError ? <div className="text-sm text-destructive">{rubricTreeError}</div> : null}
+                        {!rubricTreeLoading && !rubricTreeError && rubricTree.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">{t.createProductNoRubricTreeData}</div>
+                        ) : null}
+                        {!rubricTreeLoading && !rubricTreeError && rubricTree.length > 0 && filteredRubricTree.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">{t.createProductNoRubricsFound}</div>
+                        ) : null}
+                        {!rubricTreeLoading && !rubricTreeError && filteredRubricTree.length > 0 ? (
+                          <div className="max-h-[360px] overflow-auto rounded-[var(--radius-control)] border border-border/70 bg-card py-2">
+                            {renderRubricTree(filteredRubricTree)}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          {t.xljvAvailabilityDeliveryTime}
+                        </div>
+                        <Input
+                          value={deliverySearch}
+                          onChange={(event) => setDeliverySearch(event.target.value)}
+                          placeholder={t.createProductSearchDelivery}
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setShowOnlySelectedDelivery((current) => !current)}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1.5 text-xs font-semibold uppercase transition",
+                              showOnlySelectedDelivery
+                                ? "bg-primary text-primary-foreground"
+                                : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
+                            ].join(" ")}
+                          >
+                            {t.xljvSelectedOnly}
+                          </button>
+                        </div>
+                        {deliveryOptionsLoading ? <div className="text-sm text-muted-foreground">{t.xljvLoadingDeliveryOptions}</div> : null}
+                        {deliveryOptionsError ? <div className="text-sm text-destructive">{deliveryOptionsError}</div> : null}
+                        {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptions}</div>
+                        ) : null}
+                        {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length > 0 && filteredDeliveryOptions.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptionsFound}</div>
+                        ) : null}
+                        {!deliveryOptionsLoading && !deliveryOptionsError && filteredDeliveryOptions.length > 0 ? (
+                          <div className="max-h-[360px] overflow-auto rounded-[var(--radius-control)] border border-border/70 bg-card py-2">
+                            {filteredDeliveryOptions.map((option) => {
+                              const optionId = option.id;
+                              const isSelected = selectedDeliveryIds.has(optionId);
+                              const label = String(option.label || t.createProductDeliveryOption.replace("{id}", String(optionId))).trim();
+                              return (
+                                <label key={`main-${optionId}`} className="flex items-center gap-3 px-3 py-1.5 text-sm text-foreground">
+                                  <input
+                                    type="radio"
+                                    name="main-jv-de-delivery"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectedDelivery(optionId)}
+                                    className="size-4 shrink-0 border border-[#cfd8e3] bg-white accent-[#1677ff]"
+                                  />
+                                  <span className="min-w-0 flex-1">{label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </section>
                   <CreateProductJobPanel
                     t={t}
                     latestJobId={controller.latestJobId}
@@ -2050,19 +2226,16 @@ export default function CreateProductPage() {
                   />
                 </div>
 
-                <MarketplaceSiteSelectorPanel
-                  t={t}
-                  selectedSitesCount={controller.selectedSites.length}
-                  sitesQuery={controller.sitesQuery}
-                  showSelectedOnly={controller.showSelectedOnly}
-                  visibleSites={controller.visibleSites}
-                  selectedSiteIds={controller.selectedSites}
-                  onSitesQueryChange={controller.setSitesQuery}
-                  onSelectAllSites={controller.selectAllSites}
-                  onClearAllSites={controller.clearAllSites}
-                  onToggleShowSelectedOnly={() => controller.setShowSelectedOnly((prev) => !prev)}
-                  onToggleSite={controller.toggleSite}
-                />
+                <aside className="rounded-[var(--radius-card)] border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                  <div className="font-semibold text-foreground">Main create job targets</div>
+                  <p className="mt-2">One queued orchestrator job creates the product in all configured main targets.</p>
+                  <ul className="mt-3 list-disc space-y-1 pl-5">
+                    <li>JV DE</li>
+                    <li>XL DE</li>
+                    <li>HOOD JV and HOOD XL</li>
+                    <li>Kaufland JV and Kaufland XL</li>
+                  </ul>
+                </aside>
               </div>
             ) : (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px]">

@@ -36,7 +36,11 @@ class OrchestratorService:
 
         for channel in command.channels:
             target_label = _target_label(channel)
-            if command.operation is Operation.PUBLISH and channel.marketplace is not Marketplace.HOOD:
+            if command.operation is Operation.PUBLISH and channel.marketplace not in {
+                Marketplace.HOOD,
+                Marketplace.KAUFLAND,
+                Marketplace.XLJV,
+            }:
                 results.append(
                     ChannelResult(
                         marketplace=channel.marketplace,
@@ -45,7 +49,7 @@ class OrchestratorService:
                         status_code=501,
                         error=ErrorContract(
                             code="orchestrator_operation_not_supported",
-                            message="Publish is currently supported only for HOOD.",
+                            message="Publish is not supported for this marketplace.",
                             request_id=request_id,
                             details={"operation": command.operation.value, "marketplace": channel.marketplace.value},
                         ),

@@ -8,6 +8,7 @@ import {
   xljvUploadImages,
 } from "../../components/xljv/xljv-api";
 import {
+  createMainMarketplaceProductJob,
   createOrchestratorJob,
   getReconciliationReport,
   getOrchestratorJob,
@@ -17,14 +18,24 @@ import {
   pushProductToOrchestrator
 } from "./orchestrator-api";
 import {
+  buildMainKauflandCreatePayload,
+  buildMainXljvCreatePayload,
   buildHoodCreatePayload,
+  DEFAULT_MAIN_KAUFLAND_CREATE_FIELDS,
+  DEFAULT_MAIN_XLJV_CREATE_FIELDS,
   DEFAULT_HOOD_CREATE_FIELDS,
   normalizeCreateProductInput,
   validateCreateProductInput,
   validateHoodCreateFields,
+  validateMainKauflandCreateFields,
+  validateMainXljvCreateFields,
   type CreateProductFieldKey,
   type HoodCreateFieldKey,
-  type HoodCreateFields
+  type HoodCreateFields,
+  type MainKauflandCreateFieldKey,
+  type MainKauflandCreateFields,
+  type MainXljvCreateFieldKey,
+  type MainXljvCreateFields,
 } from "./create-product-model";
 import { normalizeJobId, parseJobEventsSummary } from "./job-status-model";
 import { buildJobStatusDetails } from "./job-status-details-model";
@@ -70,6 +81,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [hoodFields, setHoodFields] = useState<HoodCreateFields>(DEFAULT_HOOD_CREATE_FIELDS);
   const [hoodFieldErrors, setHoodFieldErrors] = useState<Partial<Record<HoodCreateFieldKey, string>>>({});
+  const [mainKauflandFields, setMainKauflandFields] = useState<MainKauflandCreateFields>(DEFAULT_MAIN_KAUFLAND_CREATE_FIELDS);
+  const [mainKauflandFieldErrors, setMainKauflandFieldErrors] = useState<Partial<Record<MainKauflandCreateFieldKey, string>>>({});
+  const [mainXljvFields, setMainXljvFields] = useState<MainXljvCreateFields>(DEFAULT_MAIN_XLJV_CREATE_FIELDS);
+  const [mainXljvFieldErrors, setMainXljvFieldErrors] = useState<Partial<Record<MainXljvCreateFieldKey, string>>>({});
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CreateProductFieldKey, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [useControlledJob, setUseControlledJob] = useState(true);
@@ -254,6 +269,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setImageFiles([]);
     setHoodFields(DEFAULT_HOOD_CREATE_FIELDS);
     setHoodFieldErrors({});
+    setMainKauflandFields(DEFAULT_MAIN_KAUFLAND_CREATE_FIELDS);
+    setMainKauflandFieldErrors({});
+    setMainXljvFields(DEFAULT_MAIN_XLJV_CREATE_FIELDS);
+    setMainXljvFieldErrors({});
     showToast(t.fieldsReset, "info");
   }
 
@@ -335,8 +354,74 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
   }
 
-  async function handleCreateProduct() {
-    await submitCreateProduct();
+  async function handleCreateProduct(xljvOverrides: Record<string, unknown> = {}) {
+    if (!validateCreateFields()) {
+      showToast(t.fixFormErrorsBeforeCreate, "error");
+      return;
+    }
+    const hoodErrors = validateHoodCreateFields(hoodFields);
+    const kauflandErrors = validateMainKauflandCreateFields(mainKauflandFields);
+    const xljvErrors = validateMainXljvCreateFields(mainXljvFields);
+    setHoodFieldErrors(hoodErrors);
+    setMainKauflandFieldErrors(kauflandErrors);
+    setMainXljvFieldErrors(xljvErrors);
+    if (Object.keys(hoodErrors).length > 0 || Object.keys(kauflandErrors).length > 0 || Object.keys(xljvErrors).length > 0) {
+      showToast("Correct the highlighted marketplace fields before creating the job.", "error");
+      return;
+    }
+
+    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    if (normalized.imageUrls.length === 0) {
+      showToast("Provide at least one image URL before creating the marketplace job.", "error");
+      return;
+    }
+    const hoodPayload = buildHoodCreatePayload({ ean: normalized.ean, fields: hoodFields });
+    const baseXljvPayload = buildMainXljvCreatePayload({ ean: normalized.ean, fields: mainXljvFields });
+    const baseJvFields =
+      baseXljvPayload.jv_fields && typeof baseXljvPayload.jv_fields === "object"
+        ? (baseXljvPayload.jv_fields as Record<string, unknown>)
+        : {};
+    const overrideJvFields =
+      xljvOverrides.jv_fields && typeof xljvOverrides.jv_fields === "object"
+        ? (xljvOverrides.jv_fields as Record<string, unknown>)
+        : {};
+    const xljvPayload = {
+      ...baseXljvPayload,
+      ...xljvOverrides,
+      jv_fields: {
+        ...baseJvFields,
+        ...overrideJvFields,
+      },
+    };
+    const kauflandPayload = {
+      ...buildMainKauflandCreatePayload({
+        ean: normalized.ean,
+        imageUrls: normalized.imageUrls,
+        description: hoodFields.description,
+        fields: mainKauflandFields,
+      }),
+      price: normalized.price,
+    };
+
+    setSubmitting(true);
+    try {
+      const created = await createMainMarketplaceProductJob({
+        ean: normalized.ean,
+        productName: normalized.productName,
+        description: hoodFields.description.trim(),
+        price: normalized.price,
+        imageUrls: normalized.imageUrls,
+        xljvPayload,
+        hoodPayload,
+        kauflandPayload,
+      });
+      setLatestJobId(created.jobId);
+      showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
+    } catch (error) {
+      showToast(normalizeCreateProductRuntimeError(error, t.failedPushProductToOrchestrator), "error");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleCreateProductForSiteIds(siteIds: string[]) {
@@ -542,6 +627,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     imageFiles,
     hoodFields,
     hoodFieldErrors,
+    mainKauflandFields,
+    mainKauflandFieldErrors,
+    mainXljvFields,
+    mainXljvFieldErrors,
     fieldErrors,
     submitting,
     useControlledJob,
@@ -573,6 +662,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setImagesText,
     setImageFiles,
     setHoodFields,
+    setMainKauflandFields,
+    setMainXljvFields,
     setFieldErrors,
     setUseControlledJob,
     setLatestJobId,
