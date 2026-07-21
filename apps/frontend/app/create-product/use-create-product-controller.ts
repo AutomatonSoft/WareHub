@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Operation } from "../../lib/api/generated/orchestrator-openapi-types";
 import { allMarketplaceSites } from "../../lib/marketplace-sites";
@@ -65,10 +65,21 @@ type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
   sourceSite: CreateProductSourceSiteKind;
+  preferredSourceSiteKey?: string;
 };
 
+type SourceCache = {
+  sitesBySource: Map<string, CreateProductJvSourceSite[]>;
+  snapshotsBySource: Map<string, CreateProductJvSourceSnapshot>;
+  selectedSiteKeyBySource: Map<string, string>;
+};
+
+function sourceCacheKey(mainEan: string, sourceSite: CreateProductSourceSiteKind, siteKey = ""): string {
+  return [mainEan.trim(), sourceSite, siteKey.trim()].join(":");
+}
+
 export function useCreateProductController(input: UseCreateProductControllerInput) {
-  const { t, showToast, sourceSite } = input;
+  const { t, showToast, sourceSite, preferredSourceSiteKey = "" } = input;
   const searchParams = useSearchParams();
 
   const [selectedSites, setSelectedSites] = useState<string[]>(() => allMarketplaceSites.map((site) => site.id));
@@ -101,6 +112,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [sourceSites, setSourceSites] = useState<CreateProductJvSourceSite[]>([]);
   const [sourceSitesLoading, setSourceSitesLoading] = useState(false);
   const [sourceSitesError, setSourceSitesError] = useState<string | null>(null);
+  const [loadedSourceSitesCacheKey, setLoadedSourceSitesCacheKey] = useState("");
   const [selectedSourceSiteKey, setSelectedSourceSiteKey] = useState("");
   const [sourceSnapshot, setSourceSnapshot] = useState<CreateProductJvSourceSnapshot | null>(null);
   const [sourceSnapshotLoading, setSourceSnapshotLoading] = useState(false);
@@ -111,10 +123,53 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     productName: string;
     imagesText: string;
   } | null>(null);
+  const sourceCacheRef = useRef<SourceCache>({
+    sitesBySource: new Map(),
+    snapshotsBySource: new Map(),
+    selectedSiteKeyBySource: new Map(),
+  });
+  const prefetchedMainEansRef = useRef(new Set<string>());
 
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
   const sourceKidId = Number.parseInt(sourceKidParam, 10);
+
+  const applySourceSnapshot = useCallback((snapshot: CreateProductJvSourceSnapshot, mainEan: string, site: CreateProductSourceSiteKind) => {
+    setSourceSnapshot(snapshot);
+    setEan(mainEan);
+    setPrice(snapshot.price);
+    setProductName(snapshot.productName);
+    setImagesText(snapshot.imagesText);
+    if (site === "HOOD") {
+      setHoodFields((current) => ({
+        ...current,
+        ...(snapshot.description ? { description: snapshot.description } : {}),
+        ...(snapshot.hoodFields?.quantity ? { quantity: snapshot.hoodFields.quantity } : {}),
+        ...(snapshot.hoodFields?.condition ? { condition: snapshot.hoodFields.condition } : {}),
+        ...(snapshot.hoodFields?.itemMode ? { itemMode: snapshot.hoodFields.itemMode } : {}),
+        ...(snapshot.hoodFields?.itemNumber ? { itemNumber: snapshot.hoodFields.itemNumber } : {}),
+        ...(snapshot.hoodFields?.productPropertiesText !== undefined
+          ? { productPropertiesText: snapshot.hoodFields.productPropertiesText }
+          : {}),
+      }));
+    }
+    setPrefillSnapshot({
+      ean: mainEan,
+      price: snapshot.price,
+      productName: snapshot.productName,
+      imagesText: snapshot.imagesText,
+    });
+  }, []);
+
+  const selectSourceSite = useCallback((siteKey: string) => {
+    setSelectedSourceSiteKey(siteKey);
+    if (kidContext?.mainEan) {
+      sourceCacheRef.current.selectedSiteKeyBySource.set(
+        sourceCacheKey(kidContext.mainEan, sourceSite),
+        siteKey,
+      );
+    }
+  }, [kidContext?.mainEan, sourceSite]);
 
   useEffect(() => {
     if (!Number.isFinite(sourceKidId) || sourceKidId <= 0) {
@@ -124,12 +179,16 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setSourceSites([]);
       setSourceSitesError(null);
       setSourceSitesLoading(false);
+      setLoadedSourceSitesCacheKey("");
       setSelectedSourceSiteKey("");
       setSourceSnapshot(null);
       setSourceSnapshotError(null);
       setSourceSnapshotLoading(false);
       setPrefillSnapshot(null);
       setImageFiles([]);
+      sourceCacheRef.current.sitesBySource.clear();
+      sourceCacheRef.current.snapshotsBySource.clear();
+      sourceCacheRef.current.selectedSiteKeyBySource.clear();
       return;
     }
 
@@ -163,27 +222,53 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setSourceSites([]);
       setSourceSitesError(null);
       setSourceSitesLoading(false);
+      setLoadedSourceSitesCacheKey("");
       setSelectedSourceSiteKey("");
       return;
     }
 
     let active = true;
+    const cacheKey = sourceCacheKey(kidContext.mainEan, sourceSite);
+    const selectCachedSite = (sites: CreateProductJvSourceSite[]) => {
+      setSelectedSourceSiteKey((current) => {
+        const preferredSiteKey = preferredSourceSiteKey.trim();
+        const rememberedSiteKey = sourceCacheRef.current.selectedSiteKeyBySource.get(cacheKey);
+        const siteKey = [preferredSiteKey, rememberedSiteKey, current, sites[0]?.siteKey].find(
+          (candidate): candidate is string => Boolean(candidate && sites.some((site) => site.siteKey === candidate)),
+        ) ?? "";
+        if (siteKey) sourceCacheRef.current.selectedSiteKeyBySource.set(cacheKey, siteKey);
+        return siteKey;
+      });
+    };
+    const cachedSites = sourceCacheRef.current.sitesBySource.get(cacheKey);
+    if (cachedSites) {
+      setSourceSites(cachedSites);
+      setLoadedSourceSitesCacheKey(cacheKey);
+      setSourceSitesError(null);
+      setSourceSitesLoading(false);
+      selectCachedSite(cachedSites);
+      return () => {
+        active = false;
+      };
+    }
+
     setSourceSitesLoading(true);
     setSourceSitesError(null);
 
     void fetchCreateProductSourceSitesByMainEan({ mainEan: kidContext.mainEan, site: sourceSite })
       .then((sites) => {
         if (!active) return;
+        sourceCacheRef.current.sitesBySource.set(cacheKey, sites);
         setSourceSites(sites);
-        setSelectedSourceSiteKey((current) => {
-          if (current && sites.some((site) => site.siteKey === current)) return current;
-          return sites[0]?.siteKey ?? "";
-        });
+        setLoadedSourceSitesCacheKey(cacheKey);
+        selectCachedSite(sites);
       })
       .catch((error) => {
         if (!active) return;
+        const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source sites.`);
         setSourceSites([]);
-        setSourceSitesError(normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source sites.`));
+        setSourceSitesError(message);
+        showToast(message, "error");
       })
       .finally(() => {
         if (active) setSourceSitesLoading(false);
@@ -192,10 +277,60 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, sourceSite]);
+  }, [kidContext?.mainEan, preferredSourceSiteKey, showToast, sourceSite]);
 
   useEffect(() => {
-    if (!kidContext?.mainEan || !selectedSourceSiteKey) {
+    const mainEan = kidContext?.mainEan.trim() || "";
+    if (!mainEan || prefetchedMainEansRef.current.has(mainEan)) {
+      return;
+    }
+
+    prefetchedMainEansRef.current.add(mainEan);
+    let active = true;
+    const sourceKinds: CreateProductSourceSiteKind[] = ["JV", "XL", "HOOD", "KAUFLAND"];
+
+    void Promise.allSettled(
+      sourceKinds.map(async (site) => {
+        try {
+          const sites = await fetchCreateProductSourceSitesByMainEan({ mainEan, site });
+          if (!active) return;
+
+          sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site), sites);
+          await Promise.allSettled(
+            sites.map(async (sourceSite) => {
+              const snapshot = await fetchCreateProductSourceSnapshot({
+                mainEan,
+                site,
+                siteKey: sourceSite.siteKey,
+              });
+              if (active) {
+                sourceCacheRef.current.snapshotsBySource.set(
+                  sourceCacheKey(mainEan, site, sourceSite.siteKey),
+                  snapshot,
+                );
+              }
+            }),
+          );
+        } catch {
+          // A marketplace can be unavailable without blocking the remaining tabs.
+        }
+      }),
+    );
+
+    return () => {
+      active = false;
+    };
+  }, [kidContext?.mainEan]);
+
+  useEffect(() => {
+    const sourceSitesCacheKey = kidContext?.mainEan
+      ? sourceCacheKey(kidContext.mainEan, sourceSite)
+      : "";
+    if (
+      !kidContext?.mainEan
+      || !selectedSourceSiteKey
+      || loadedSourceSitesCacheKey !== sourceSitesCacheKey
+    ) {
       setSourceSnapshot(null);
       setSourceSnapshotError(null);
       setSourceSnapshotLoading(false);
@@ -203,6 +338,17 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     let active = true;
+    const cacheKey = sourceCacheKey(kidContext.mainEan, sourceSite, selectedSourceSiteKey);
+    const cachedSnapshot = sourceCacheRef.current.snapshotsBySource.get(cacheKey);
+    if (cachedSnapshot) {
+      applySourceSnapshot(cachedSnapshot, kidContext.mainEan, sourceSite);
+      setSourceSnapshotError(null);
+      setSourceSnapshotLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
     setSourceSnapshotLoading(true);
     setSourceSnapshotError(null);
 
@@ -213,22 +359,15 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     })
       .then((snapshot) => {
         if (!active) return;
-        setSourceSnapshot(snapshot);
-        setEan(kidContext.mainEan);
-        setPrice(snapshot.price);
-        setProductName(snapshot.productName);
-        setImagesText(snapshot.imagesText);
-        setPrefillSnapshot({
-          ean: kidContext.mainEan,
-          price: snapshot.price,
-          productName: snapshot.productName,
-          imagesText: snapshot.imagesText,
-        });
+        sourceCacheRef.current.snapshotsBySource.set(cacheKey, snapshot);
+        applySourceSnapshot(snapshot, kidContext.mainEan, sourceSite);
       })
       .catch((error) => {
         if (!active) return;
+        const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source product.`);
         setSourceSnapshot(null);
-        setSourceSnapshotError(normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source product.`));
+        setSourceSnapshotError(message);
+        showToast(message, "error");
       })
       .finally(() => {
         if (active) setSourceSnapshotLoading(false);
@@ -237,7 +376,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, selectedSourceSiteKey, sourceSite]);
+  }, [applySourceSnapshot, kidContext?.mainEan, loadedSourceSitesCacheKey, selectedSourceSiteKey, showToast, sourceSite]);
 
   function toggleSite(siteId: string) {
     setSelectedSites((prev) =>
@@ -668,7 +807,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setUseControlledJob,
     setLatestJobId,
     setReconciliationReportId,
-    setSelectedSourceSiteKey,
+    selectSourceSite,
     toggleSite,
     selectAllSites,
     clearAllSites,

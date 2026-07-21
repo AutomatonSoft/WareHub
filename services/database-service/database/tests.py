@@ -22,7 +22,7 @@ from .kid_green_import_service import (
 )
 from .kid_number_utils import primary_kid_number
 from .inventory_audit_service import record_inventory_change, retained_inventory_history_photo_urls
-from .models import Client, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
+from .models import Client, EANPool, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -50,6 +50,24 @@ class DatabaseApiTests(APITestCase):
             status="no_paid",
             order_date="2026-04-06T10:00:00Z",
         )
+
+    def test_ean_pool_claim_for_job_is_idempotent_and_can_be_marked_used(self):
+        first = EANPool.objects.create(ean="4012345678901")
+        EANPool.objects.create(ean="4012345678902")
+        job_id = "b1d878f1-7a89-4c7b-a5fb-1b3a0e310ac1"
+
+        first_claim = self.client.post("/api/v1/ean-pool/claim-for-job/", {"job_id": job_id}, format="json")
+        repeated_claim = self.client.post("/api/v1/ean-pool/claim-for-job/", {"job_id": job_id}, format="json")
+
+        self.assertEqual(first_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(repeated_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(first_claim.data["ean"], first.ean)
+        self.assertEqual(repeated_claim.data["ean"], first.ean)
+
+        marked = self.client.post("/api/v1/ean-pool/mark-job-used/", {"job_id": job_id}, format="json")
+        self.assertEqual(marked.status_code, status.HTTP_200_OK)
+        first.refresh_from_db()
+        self.assertEqual(first.status, "used")
 
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]

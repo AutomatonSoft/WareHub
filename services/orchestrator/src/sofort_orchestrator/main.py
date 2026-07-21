@@ -23,6 +23,7 @@ from .application.orchestrator_service import OrchestratorService
 from .domain.models import ErrorContract
 from .infra.channel_limiter import InMemoryChannelLimiter
 from .infra.circuit_breaker import InMemoryCircuitBreaker
+from .infra.ean_pool_gateway import EanPoolGateway
 from .infra.http_client import HttpClient
 from .infra.idempotency import SqliteIdempotencyStore
 from .infra.job_store import SqliteJobStore
@@ -74,7 +75,17 @@ def _build_service() -> OrchestratorService:
         max_inflight_per_key=settings.channel_limiter_max_inflight_per_key,
         enabled=settings.enable_channel_limiter,
     )
-    return OrchestratorService(adapters=adapters, circuit_breaker=circuit_breaker, channel_limiter=channel_limiter)
+    ean_pool_gateway = EanPoolGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
+    return OrchestratorService(
+        adapters=adapters,
+        circuit_breaker=circuit_breaker,
+        channel_limiter=channel_limiter,
+        ean_pool_gateway=ean_pool_gateway,
+    )
 
 
 def _build_marketplace_job_store() -> SqliteMarketplaceJobStore:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { uploadKauflandImages } from "../../components/channels/kaufland-api";
 import {
@@ -9,14 +9,16 @@ import {
   getProductEditorJob,
   planProductEditor,
 } from "../../components/product-editor/product-editor-api";
+import { useToast } from "../../components/shared/toast-provider";
 import { Button } from "../../components/ui/button";
 import { FormField } from "../../components/ui/form-field";
 import { Input } from "../../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
+import type { CreateProductJvSourceSnapshot } from "./create-product-source-api";
 
 const DEFAULT_STOREFRONTS = ["de", "cz", "sk", "pl", "at", "fr", "it"];
 const TARGET_BY_CONTROLLER = { jv: "KAUFLAND_JV", xl: "KAUFLAND_XL" } as const;
+type KauflandAccount = keyof typeof TARGET_BY_CONTROLLER;
 
 type KauflandCreateForm = {
   ean: string;
@@ -65,6 +67,52 @@ function splitValues(value: string): string[] {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function sourceRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function firstText(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0] ?? "").trim();
+  return String(value ?? "").trim();
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function prefillKauflandForm(
+  current: KauflandCreateForm,
+  snapshot: CreateProductJvSourceSnapshot,
+): KauflandCreateForm {
+  const source = sourceRecord(snapshot.rawPayload.response_data);
+  const imageUrls = Array.from(new Set([
+    ...stringList(source.picture),
+    ...stringList(source.picture_urls),
+    ...snapshot.imageUrls,
+  ]));
+
+  return {
+    ...current,
+    ean: snapshot.ean || current.ean,
+    controller: snapshot.siteKey === "KAUFLAND_XL" ? "xl" : "jv",
+    title: firstText(source.title) || snapshot.productName || current.title,
+    description: firstText(source.description) || snapshot.description || current.description,
+    picture: imageUrls.join("\n") || current.picture,
+    pictureUrls: imageUrls.join("\n") || current.pictureUrls,
+    price: firstText(source.price) || snapshot.price || current.price,
+    size: firstText(source.size) || current.size,
+    color: firstText(source.color) || firstText(source.colour) || current.color,
+    material: firstText(source.material) || current.material,
+    delivery: firstText(source.delivery) || current.delivery,
+    height: firstText(source.height) || current.height,
+    length: firstText(source.length) || current.length,
+    width: firstText(source.width) || current.width,
+  };
 }
 
 function buildDraft(form: KauflandCreateForm): Record<string, unknown> {
@@ -132,13 +180,27 @@ function buildDraft(form: KauflandCreateForm): Record<string, unknown> {
   };
 }
 
-export function KauflandCreateProductPanel() {
+export function KauflandCreateProductPanel({
+  account,
+  prefill,
+}: {
+  account: KauflandAccount;
+  prefill: CreateProductJvSourceSnapshot | null;
+}) {
+  const { showToast } = useToast();
   const [form, setForm] = useState<KauflandCreateForm>(createEmptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [error, setError] = useState("");
-  const [jobStatus, setJobStatus] = useState("");
+
+  useEffect(() => {
+    setForm((current) => {
+      if (!prefill) {
+        return { ...current, controller: account };
+      }
+      return { ...prefillKauflandForm(current, prefill), controller: account };
+    });
+  }, [account, prefill]);
 
   function updateField(field: keyof KauflandCreateForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -147,16 +209,15 @@ export function KauflandCreateProductPanel() {
   async function uploadImages() {
     const ean = form.ean.trim();
     if (!ean) {
-      setError("Enter an EAN before uploading images.");
+      showToast("Enter an EAN before uploading images.", "error");
       return;
     }
     if (imageFiles.length === 0) {
-      setError("Choose at least one image file.");
+      showToast("Choose at least one image file.", "error");
       return;
     }
 
     setUploadingImages(true);
-    setError("");
     try {
       const uploadedUrls = await uploadKauflandImages({ ean, files: imageFiles });
       setForm((current) => ({
@@ -164,9 +225,9 @@ export function KauflandCreateProductPanel() {
         picture: [...splitValues(current.picture), ...uploadedUrls].join("\n"),
       }));
       setImageFiles([]);
-      setJobStatus(`${uploadedUrls.length} image URL(s) added to Picture URLs.`);
+      showToast(`${uploadedUrls.length} image URL(s) added.`, "success");
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Kaufland image upload failed.");
+      showToast(uploadError instanceof Error ? uploadError.message : "Kaufland image upload failed.", "error");
     } finally {
       setUploadingImages(false);
     }
@@ -175,13 +236,11 @@ export function KauflandCreateProductPanel() {
   async function createProduct() {
     const ean = form.ean.trim();
     if (!ean) {
-      setError("EAN is required.");
+      showToast("EAN is required.", "error");
       return;
     }
 
     setSubmitting(true);
-    setError("");
-    setJobStatus("");
     try {
       const targetId = TARGET_BY_CONTROLLER[form.controller];
       const discover = await discoverProductEditor(ean, "KAUFLAND");
@@ -204,9 +263,9 @@ export function KauflandCreateProductPanel() {
       });
       const apply = await applyProductEditorPlan(plan.plan_id);
       const job = await getProductEditorJob(apply.job_id);
-      setJobStatus(`Job ${apply.job_id}: ${job.status}.`);
+      showToast(`Kaufland job ${apply.job_id}: ${job.status}.`, "success");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Kaufland product creation failed.");
+      showToast(createError instanceof Error ? createError.message : "Kaufland product creation failed.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -214,12 +273,8 @@ export function KauflandCreateProductPanel() {
 
   return (
     <section className="space-y-4">
-      <p className="rounded-[var(--radius-control)] border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-        Creates one product in the selected Kaufland account. Use one URL per line or comma-separated URLs for images and storefronts.
-      </p>
       <div className="grid gap-3 md:grid-cols-2">
         <FormField label="EAN"><Input value={form.ean} onChange={(event) => updateField("ean", event.target.value)} placeholder="EAN" /></FormField>
-        <FormField label="Kaufland account"><Select value={form.controller} onValueChange={(value) => updateField("controller", value === "xl" ? "xl" : "jv")}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="jv">JV</SelectItem><SelectItem value="xl">XL</SelectItem></SelectContent></Select></FormField>
         <FormField label="Title"><Input value={form.title} onChange={(event) => updateField("title", event.target.value)} /></FormField>
         <FormField label="Price"><Input type="number" step="0.01" value={form.price} onChange={(event) => updateField("price", event.target.value)} placeholder="199.99" /></FormField>
         <FormField label="Size"><Input value={form.size} onChange={(event) => updateField("size", event.target.value)} /></FormField>
@@ -241,9 +296,6 @@ export function KauflandCreateProductPanel() {
         <Button type="button" variant="secondary" onClick={() => void uploadImages()} disabled={submitting || uploadingImages || imageFiles.length === 0}>{uploadingImages ? "Uploading images" : "Upload images"}</Button>
         <Button type="button" onClick={() => void createProduct()} disabled={submitting || uploadingImages}>{submitting ? "Creating" : "Create Kaufland product"}</Button>
       </div>
-      {imageFiles.length > 0 ? <p className="text-sm text-muted-foreground">Selected images: {imageFiles.map((file) => file.name).join(", ")}</p> : null}
-      {error ? <p role="alert" className="rounded-[var(--radius-control)] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-      {jobStatus ? <p className="rounded-[var(--radius-control)] border border-primary/25 bg-primary/5 px-3 py-2 text-sm text-foreground">{jobStatus}</p> : null}
     </section>
   );
 }

@@ -21,8 +21,8 @@ function xljvBasePath(site: Site): string {
   return site === "JV" ? "/api/v1/jv" : "/api/v1/xl";
 }
 
-function xljvIdentifierSegment(site: Site): "by-artikelnr" | "by-ean" {
-  return site === "JV" ? "by-artikelnr" : "by-ean";
+function xljvIdentifierSegment(_site: Site): "by-ean" {
+  return "by-ean";
 }
 
 function xljvLocalIdentifierSegment(site: Site): "local-by-artikelnr" | "local-by-ean" {

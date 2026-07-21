@@ -418,6 +418,10 @@ class EANPoolTakeNextSerializer(serializers.Serializer):
     reserved_by = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
 
+class EANPoolClaimForJobSerializer(serializers.Serializer):
+    job_id = serializers.UUIDField()
+
+
 class EANUsageMarkSerializer(serializers.Serializer):
     ean = serializers.CharField(max_length=64)
     site = serializers.CharField(max_length=8)

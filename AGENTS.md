@@ -1,5 +1,11 @@
 # AGENTS.md -- WareHub Engineering Rules
 
+## Codebase Memory MCP
+
+- Before searching, tracing, reviewing, or modifying repository code, use `DeusData/codebase-memory-mcp` for architecture discovery, symbol search, call/data-flow tracing, and impact analysis.
+- Prefer its graph tools over broad filesystem scans to keep investigation focused and token-efficient. Use direct file reads only after the graph identifies the relevant files or symbols, or when the MCP is temporarily unavailable.
+- Refresh the local index when the repository structure changes materially before relying on graph results.
+
 ## 1. Главный принцип
 
 WareHub - production-grade система. Любое изменение в этом репозитории должно повышать или сохранять безопасность, читаемость, поддерживаемость и масштабируемость.

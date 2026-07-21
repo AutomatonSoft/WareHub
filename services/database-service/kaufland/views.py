@@ -1,5 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.http import HttpResponse
+from django.utils.http import url_has_allowed_host_and_scheme
+from urllib.parse import urlparse
+from database.permissions import SessionRolePermission
 from .external_requests import (
     change_product_by_ean,
     create_product_by_ean,
@@ -18,6 +22,41 @@ import requests
 import re
 import json
 from html import unescape
+
+
+KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS = {"automatonsoft.de", "www.automatonsoft.de"}
+KAUFLAND_IMAGE_PROXY_MAX_BYTES = 15 * 1024 * 1024
+
+
+class KauflandImageProxyAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        source_url = str(request.query_params.get("url") or "").strip()
+        parsed_url = urlparse(source_url)
+        host = (parsed_url.hostname or "").lower()
+        if (
+            not url_has_allowed_host_and_scheme(source_url, allowed_hosts=KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS)
+            or parsed_url.scheme != "https"
+            or host not in KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS
+        ):
+            return Response({"detail": "Unsupported Kaufland image URL."}, status=400)
+
+        try:
+            upstream = requests.get(source_url, timeout=(5, 20), allow_redirects=False)
+            upstream.raise_for_status()
+        except requests.RequestException:
+            return Response({"detail": "Kaufland image is unavailable."}, status=502)
+
+        content_type = str(upstream.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if not content_type.startswith("image/"):
+            return Response({"detail": "Kaufland image response has an invalid content type."}, status=502)
+        if len(upstream.content) > KAUFLAND_IMAGE_PROXY_MAX_BYTES:
+            return Response({"detail": "Kaufland image is too large."}, status=413)
+
+        response = HttpResponse(upstream.content, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=300"
+        return response
 
 
 def _compact_external_error(detail: object) -> object:

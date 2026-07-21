@@ -61,6 +61,7 @@ from .permissions import SessionRolePermission
 from .serializers import (
     EANPoolImportSerializer,
     EANPoolReserveSerializer,
+    EANPoolClaimForJobSerializer,
     EANPoolTakeNextSerializer,
     EANPoolSerializer,
     EANUsageMarkSerializer,
@@ -2484,6 +2485,65 @@ class EANPoolTakeNextFreeAPIView(APIView):
         item.reserved_by = actor
         item.reserved_at = timezone.now()
         item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
+        return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
+
+
+class EANPoolClaimForJobAPIView(APIView):
+    """Atomically return one stable pool EAN for an orchestrator job."""
+
+    permission_classes = [SessionRolePermission]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = EANPoolClaimForJobSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+
+        item = (
+            EANPool.objects.select_for_update()
+            .filter(reserved_by=reservation_key, status__in=["reserved", "used"])
+            .order_by("id")
+            .first()
+        )
+        if item is None:
+            item = (
+                EANPool.objects.select_for_update()
+                .filter(status="free")
+                .order_by("ean", "id")
+                .first()
+            )
+            if item is None:
+                return Response(
+                    {
+                        "code": "ean_pool_empty",
+                        "detail": "Свободные EAN в пуле закончились.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            item.status = "reserved"
+            item.reserved_by = reservation_key
+            item.reserved_at = timezone.now()
+            item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
+
+        return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
+
+
+class EANPoolMarkJobUsedAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = EANPoolClaimForJobSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+        item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
+        if item is None:
+            return Response({"detail": "Резерв EAN для задания не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        if item.status == "reserved":
+            item.status = "used"
+            item.used_at = timezone.now()
+            item.save(update_fields=["status", "used_at", "updated_at"])
         return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
 

@@ -20,7 +20,7 @@ async def run_job_worker(*, service: OrchestratorService, job_store: SqliteJobSt
         command = claimed["command"]
         attempt_no = job_store.mark_attempt_started(job_id=job_id)
         try:
-            result = service.execute(ean=ean, request_id=request_id, command=command)
+            result = service.execute(ean=ean, request_id=request_id, command=command, job_id=job_id)
             job_store.mark_completed(job_id=job_id, result=result)
             job_store.mark_attempt_finished(job_id=job_id, attempt_no=attempt_no, status=JobStatus.COMPLETED)
         except Exception as exc:  # noqa: BLE001
