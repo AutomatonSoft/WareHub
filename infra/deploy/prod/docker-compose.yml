@@ -64,6 +64,9 @@ services:
       MOBILE_STAGE_APK_URL: ${MOBILE_STAGE_APK_URL:-}
       MOBILE_PROD_APP_VERSION: ${MOBILE_PROD_APP_VERSION:-}
       MOBILE_PROD_APK_URL: ${MOBILE_PROD_APK_URL:-}
+      MOBILE_PROD_RELEASE_MANIFEST_PATH: /var/lib/warehub/mobile-release/current.json
+    volumes:
+      - ./mobile-release:/var/lib/warehub/mobile-release:ro
 
   frontend:
     image: ${FRONTEND_IMAGE}:${FRONTEND_APP_VERSION}
