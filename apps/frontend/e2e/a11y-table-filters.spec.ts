@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import { login, requireAuthEnv } from "./helpers/auth";
 import {
   gotoSofortList,
-  sofortListingFilter,
   sofortRoomFilter,
   sofortSearchInput,
   sofortTypeFilter,
@@ -17,12 +16,10 @@ test("sofort-list filters are keyboard-focusable and have ARIA labels", async ({
   const searchInput = sofortSearchInput(page);
   const roomFilter = sofortRoomFilter(page);
   const typeFilter = sofortTypeFilter(page);
-  const listingFilter = sofortListingFilter(page);
 
   await expect(searchInput).toBeVisible();
   await expect(roomFilter).toBeVisible();
   await expect(typeFilter).toBeVisible();
-  await expect(listingFilter).toBeVisible();
 
   await searchInput.focus();
   await expect(searchInput).toBeFocused();
@@ -32,7 +29,4 @@ test("sofort-list filters are keyboard-focusable and have ARIA labels", async ({
 
   await typeFilter.focus();
   await expect(typeFilter).toBeFocused();
-
-  await listingFilter.focus();
-  await expect(listingFilter).toBeFocused();
 });

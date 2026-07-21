@@ -1,14 +1,118 @@
 import re
 import logging
 
+from django.db.models import Count, Q
+
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
+from .ftp_upload import normalize_managed_public_photo_value
 from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN = ""
+MARKETPLACE_STATUS_FIELDS = (
+    "jv",
+    "xl",
+    "otto_jv",
+    "otto_xl",
+    "ebay_jv",
+    "ebay_xl",
+    "kaufland_jv",
+    "kaufland_xl",
+    "hood_jv",
+    "hood_xl",
+)
+
+
+def _has_photo_value(value: object) -> bool:
+    if isinstance(value, list):
+        return any(str(item or "").strip() for item in value)
+    return bool(str(value or "").strip())
+
+
+def _has_main_ean(value: object) -> bool:
+    normalized = str(value or "").strip()
+    return bool(normalized) and normalized != "0000000000000"
+
+
+def build_inventory_dashboard_summary() -> dict[str, object]:
+    rows = Kid.objects.values(
+        "place",
+        "photo",
+        "in_transit",
+        "b_ware",
+        "ean__main_ean",
+        "product_attributes__price",
+    )
+
+    total_products = 0
+    placed_products = 0
+    without_photos = 0
+    without_ean = 0
+    without_price = 0
+    ready_for_listing = 0
+    in_transit_products = 0
+    b_ware_products = 0
+
+    for row in rows.iterator():
+        total_products += 1
+        has_place = bool(str(row["place"] or "").strip())
+        has_photo = _has_photo_value(row["photo"])
+        has_ean = _has_main_ean(row["ean__main_ean"])
+        has_price = row["product_attributes__price"] is not None
+
+        if has_place:
+            placed_products += 1
+        if not has_photo:
+            without_photos += 1
+        if not has_ean:
+            without_ean += 1
+        if not has_price:
+            without_price += 1
+        if has_photo and has_ean and has_price:
+            ready_for_listing += 1
+        if row["in_transit"]:
+            in_transit_products += 1
+        if row["b_ware"]:
+            b_ware_products += 1
+
+    readiness_percent = 0
+    if total_products:
+        readiness_percent = round((ready_for_listing / total_products) * 100)
+
+    status_aggregate = EanStatus.objects.aggregate(
+        **{
+            f"{field_name}_true": Count("id", filter=Q(**{field_name: True}))
+            for field_name in MARKETPLACE_STATUS_FIELDS
+        },
+        **{
+            f"{field_name}_false": Count("id", filter=Q(**{field_name: False}))
+            for field_name in MARKETPLACE_STATUS_FIELDS
+        },
+    )
+    marketplace_statuses = {
+        field_name: {
+            "true_count": status_aggregate[f"{field_name}_true"],
+            "false_count": status_aggregate[f"{field_name}_false"],
+        }
+        for field_name in MARKETPLACE_STATUS_FIELDS
+    }
+
+    return {
+        "total_products": total_products,
+        "placed_products": placed_products,
+        "unplaced_products": total_products - placed_products,
+        "without_photos": without_photos,
+        "without_ean": without_ean,
+        "without_price": without_price,
+        "ready_for_listing": ready_for_listing,
+        "readiness_percent": readiness_percent,
+        "in_transit_products": in_transit_products,
+        "b_ware_products": b_ware_products,
+        "marketplace_statuses": marketplace_statuses,
+    }
 
 def _norm_ean(value: object) -> str:
     normalized = str(value or "").strip()
@@ -132,6 +236,18 @@ def build_external_ean_links(eans: set[str]) -> tuple[dict[str, list[dict]], dic
     return catalog_map, hood_map
 
 
+def _append_unique_text(target: list[str], seen: set[str], value: object) -> None:
+    normalized = str(value or "").strip()
+    if not normalized or normalized in seen:
+        return
+    seen.add(normalized)
+    target.append(normalized)
+
+
+def _join_unique_text(values: list[str], empty: str = "-") -> str:
+    return " | ".join(values) if values else empty
+
+
 def build_inventory_rows() -> list[dict]:
     orders = list(Orders.objects.select_related("kid").all().order_by("id"))
     kids = list(Kid.objects.all().order_by("id"))
@@ -181,13 +297,11 @@ def build_inventory_rows() -> list[dict]:
             "currency",
         )
     }
-    order_meta: list[tuple[Orders, list[dict], list[str], list[str]]] = []
+    orders_by_kid_id: dict[int, list[dict]] = {}
     all_eans: set[str] = set()
     rows: list[dict] = []
-    kid_ids_with_orders: set[int] = set()
 
     for order in orders:
-        kid_ids_with_orders.add(order.kid_id)
         additional_items = order.additional_items if isinstance(order.additional_items, list) else []
         sku_eans = extract_order_eans(order, additional_items)
         for ean in sku_eans:
@@ -200,12 +314,26 @@ def build_inventory_rows() -> list[dict]:
             entry_order_id = str(entry.get("order_id") or "").strip()
             if entry_order_id:
                 additional_order_ids.append(entry_order_id)
-        order_meta.append((order, additional_items, additional_order_ids, sku_eans))
+        parent_order_id = str(order.order_id or "").strip()
+        if not additional_order_ids:
+            fallback_ids = split_order_ids(order.order_id)
+            if fallback_ids:
+                parent_order_id = fallback_ids[0]
+                additional_order_ids = fallback_ids[1:]
+
+        orders_by_kid_id.setdefault(order.kid_id, []).append(
+            {
+                "order": order,
+                "additional_items": additional_items,
+                "additional_order_ids": additional_order_ids,
+                "sku_eans": sku_eans,
+                "parent_order_id": parent_order_id,
+            }
+        )
 
     catalog_map, hood_map = build_external_ean_links(all_eans)
 
-    for order, additional_items, additional_order_ids, sku_eans in order_meta:
-        kid = order.kid
+    for kid in kids:
         attrs = attributes_by_kid_id.get(kid.id) or {}
         ean_row = eans_by_kid_id.get(kid.id) or {}
         status_row = statuses_by_kid_id.get(kid.id) or {}
@@ -221,33 +349,81 @@ def build_inventory_rows() -> list[dict]:
         kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl"))
         hood_jv_ean = _norm_ean(ean_row.get("hood_jv"))
         hood_xl_ean = _norm_ean(ean_row.get("hood_xl"))
-        mapped_ean = main_ean
-        parent_order_id = str(order.order_id or "").strip()
-        if not additional_order_ids:
-            fallback_ids = split_order_ids(order.order_id)
-            if fallback_ids:
-                parent_order_id = fallback_ids[0]
-                additional_order_ids = fallback_ids[1:]
+        order_entries = orders_by_kid_id.get(kid.id) or []
+
+        order_db_id = None
+        parent_order_ids: list[str] = []
+        parent_order_id_seen: set[str] = set()
+        additional_order_ids: list[str] = []
+        additional_order_id_seen: set[str] = set()
+        additional_items: list[dict] = []
+        sku_eans: list[str] = []
+        sku_eans_seen: set[str] = set()
+        platforms: list[str] = []
+        platforms_seen: set[str] = set()
+        buyers: list[str] = []
+        buyers_seen: set[str] = set()
+        titles: list[str] = []
+        titles_seen: set[str] = set()
+        memos: list[str] = []
+        memos_seen: set[str] = set()
+        skus: list[str] = []
+        skus_seen: set[str] = set()
+        full_amounts: list[str] = []
+        full_amounts_seen: set[str] = set()
+        statuses: list[str] = []
+        statuses_seen: set[str] = set()
+        latest_date = None
+
+        for entry in order_entries:
+            order = entry["order"]
+            if order_db_id is None:
+                order_db_id = order.id
+            if latest_date is None or (order.order_date is not None and order.order_date > latest_date):
+                latest_date = order.order_date
+
+            _append_unique_text(parent_order_ids, parent_order_id_seen, entry["parent_order_id"])
+            for additional_order_id in entry["additional_order_ids"]:
+                _append_unique_text(additional_order_ids, additional_order_id_seen, additional_order_id)
+            for additional_item in entry["additional_items"]:
+                if isinstance(additional_item, dict):
+                    additional_items.append(additional_item)
+            for sku_ean in entry["sku_eans"]:
+                _append_unique_text(sku_eans, sku_eans_seen, sku_ean)
+
+            _append_unique_text(platforms, platforms_seen, order.platform)
+            _append_unique_text(buyers, buyers_seen, order.buyer)
+            _append_unique_text(titles, titles_seen, order.title)
+            _append_unique_text(memos, memos_seen, order.memo)
+            _append_unique_text(skus, skus_seen, order.sku)
+            _append_unique_text(full_amounts, full_amounts_seen, order.full_amount)
+            _append_unique_text(statuses, statuses_seen, order.status)
+
+        secondary_parent_order_ids = [value for value in parent_order_ids[1:] if value not in additional_order_id_seen]
+        combined_additional_order_ids = [*secondary_parent_order_ids, *additional_order_ids]
 
         rows.append(
             {
-                "id": f"ORD-{order.id}",
-                "entity": "order",
+                "id": f"KID-{kid.id}",
+                "entity": "kid",
                 "kid_id": kid.id,
                 "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,
+                "section": kid.section,
+                "b_ware": bool(kid.b_ware),
+                "in_transit": bool(kid.in_transit),
                 "store": bool(kid.store),
-                "photo": kid.photo,
+                "photo": normalize_managed_public_photo_value(kid.photo),
                 "photo_count": len(kid.photo or []) if isinstance(kid.photo, list) else 0,
-                "order_db_id": order.id,
-                "order_id": parent_order_id or "-",
-                "parent_order_id": parent_order_id or "-",
-                "additional_order_ids": additional_order_ids,
-                "additional_order_ids_text": ", ".join(additional_order_ids) if additional_order_ids else "-",
+                "order_db_id": order_db_id,
+                "order_id": parent_order_ids[0] if parent_order_ids else "-",
+                "parent_order_id": parent_order_ids[0] if parent_order_ids else "-",
+                "additional_order_ids": combined_additional_order_ids,
+                "additional_order_ids_text": ", ".join(combined_additional_order_ids) if combined_additional_order_ids else "-",
                 "additional_items": additional_items,
                 "sku_eans": sku_eans,
-                "ean": mapped_ean,
+                "ean": main_ean,
                 "main_ean": main_ean,
                 "database_ean": main_ean,
                 "jv_ean": cosmoshop_ean,
@@ -265,105 +441,25 @@ def build_inventory_rows() -> list[dict]:
                     "catalog": {ean: catalog_map.get(ean, []) for ean in sku_eans},
                     "hood_service": {ean: hood_map.get(ean, []) for ean in sku_eans},
                 },
-                "platform": order.platform or "-",
-                "buyer": order.buyer or "-",
+                "platform": _join_unique_text(platforms),
+                "buyer": _join_unique_text(buyers),
                 "quantity": attrs.get("quantity"),
                 "company": attrs.get("company"),
                 "room": kid.room,
                 "type": kid.furniture_type,
                 "commentary": kid.commentary,
-                "listing_status": kid.listing_status or "unlisted",
-                "title": order.title or "-",
-                "memo": order.memo or "-",
-                "sku": order.sku or "-",
-                "payment_status": order.payment_status or "-",
-                "global_price": order.payment_status or "-",
+                "title": _join_unique_text(titles, empty=primary_kid or "Kid without orders"),
+                "memo": _join_unique_text(memos, empty=(kid.commentary or "-")),
+                "sku": _join_unique_text(skus),
+                "full_amount": _join_unique_text(full_amounts),
+                "global_price": _join_unique_text(full_amounts),
                 "color": attrs.get("color"),
                 "size": attrs.get("size"),
                 "material": attrs.get("material"),
                 "price": str(attrs.get("price")) if attrs.get("price") is not None else None,
                 "price_currency": attrs.get("currency"),
-                "status": order.status or "no_paid",
-                "date": order.date,
-            }
-        )
-
-    for kid in kids:
-        if kid.id in kid_ids_with_orders:
-            continue
-
-        attrs = attributes_by_kid_id.get(kid.id) or {}
-        ean_row = eans_by_kid_id.get(kid.id) or {}
-        status_row = statuses_by_kid_id.get(kid.id) or {}
-        primary_kid = primary_kid_number(kid.kid_number)
-        main_ean = _norm_ean(ean_row.get("main_ean"))
-        cosmoshop_ean = _norm_ean(ean_row.get("jv"))
-        opencart_ean = _norm_ean(ean_row.get("xl"))
-        otto_jv_ean = _norm_ean(ean_row.get("otto_jv"))
-        otto_xl_ean = _norm_ean(ean_row.get("otto_xl"))
-        ebay_jv_ean = _norm_ean(ean_row.get("ebay_jv"))
-        ebay_xl_ean = _norm_ean(ean_row.get("ebay_xl"))
-        kaufland_jv_ean = _norm_ean(ean_row.get("kaufland_jv"))
-        kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl"))
-        hood_jv_ean = _norm_ean(ean_row.get("hood_jv"))
-        hood_xl_ean = _norm_ean(ean_row.get("hood_xl"))
-
-        rows.append(
-            {
-                "id": f"KID-{kid.id}",
-                "entity": "kid",
-                "kid_id": kid.id,
-                "kid_number": primary_kid,
-                "kid_account": kid.account or "-",
-                "place": kid.place,
-                "store": bool(kid.store),
-                "photo": kid.photo,
-                "photo_count": len(kid.photo or []) if isinstance(kid.photo, list) else 0,
-                "order_db_id": None,
-                "order_id": "-",
-                "parent_order_id": "-",
-                "additional_order_ids": [],
-                "additional_order_ids_text": "-",
-                "additional_items": [],
-                "sku_eans": [],
-                "ean": main_ean,
-                "main_ean": main_ean,
-                "database_ean": main_ean,
-                "jv_ean": cosmoshop_ean,
-                "xl_ean": opencart_ean,
-                "otto_jv_ean": otto_jv_ean,
-                "otto_xl_ean": otto_xl_ean,
-                "ebay_jv_ean": ebay_jv_ean,
-                "ebay_xl_ean": ebay_xl_ean,
-                "kaufland_jv_ean": kaufland_jv_ean,
-                "kaufland_xl_ean": kaufland_xl_ean,
-                "hood_jv_ean": hood_jv_ean,
-                "hood_xl_ean": hood_xl_ean,
-                "ean_status": status_row,
-                "linked_products_by_ean": {
-                    "catalog": {},
-                    "hood_service": {},
-                },
-                "platform": "-",
-                "buyer": "-",
-                "quantity": attrs.get("quantity"),
-                "company": attrs.get("company"),
-                "room": kid.room,
-                "type": kid.furniture_type,
-                "commentary": kid.commentary,
-                "listing_status": kid.listing_status or "unlisted",
-                "title": primary_kid or "Kid without orders",
-                "memo": kid.commentary or "-",
-                "sku": "-",
-                "payment_status": "-",
-                "global_price": "-",
-                "color": attrs.get("color"),
-                "size": attrs.get("size"),
-                "material": attrs.get("material"),
-                "price": str(attrs.get("price")) if attrs.get("price") is not None else None,
-                "price_currency": attrs.get("currency"),
-                "status": "no_paid",
-                "date": kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None,
+                "status": _join_unique_text(statuses, empty="no_paid"),
+                "order_date": latest_date or (kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None),
             }
         )
 
@@ -409,7 +505,6 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "place": "",
         "room": "",
         "furniture_type": "",
-        "listing_status": "unlisted",
         "store": False,
         "main_ean": "",
         "database_ean": "",
@@ -452,12 +547,11 @@ def build_kid_ean_summary(kid_id: int) -> dict:
                         main_photo = candidate
                         break
 
-        last_dates = [row.get("date") for row in kid_rows if row.get("date")]
+        last_dates = [row.get("order_date") for row in kid_rows if row.get("order_date")]
         kid_snapshot = {
             "place": str(base_row.get("place") or "").strip(),
             "room": str(base_row.get("room") or "").strip(),
             "furniture_type": str(base_row.get("type") or "").strip(),
-            "listing_status": str(base_row.get("listing_status") or "unlisted").strip(),
             "store": bool(base_row.get("store")),
             "main_ean": _norm_ean(base_row.get("main_ean") or base_row.get("database_ean") or base_row.get("ean")),
             "database_ean": _norm_ean(base_row.get("database_ean") or base_row.get("main_ean") or base_row.get("ean")),
@@ -470,7 +564,6 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "missing_place": not bool(kid_snapshot.get("place")),
         "missing_room": not bool(kid_snapshot.get("room")),
         "missing_photo": int(kid_snapshot.get("photo_count") or 0) == 0,
-        "listed": str(kid_snapshot.get("listing_status") or "").lower() == "listed",
     }
 
     return {

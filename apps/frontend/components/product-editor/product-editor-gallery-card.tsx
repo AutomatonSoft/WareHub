@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { cn } from "../../lib/cn";
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { ProductEditorPreviewImage } from "./product-editor-preview-image";
 
@@ -26,6 +27,7 @@ export function ProductEditorGalleryCard(props: {
   onReorderItems?: (sourceItemId: string, targetItemId: string) => void;
   onUploadFiles?: (files: FileList | null) => void;
 }) {
+  const t = useLabels();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [draggedItemId, setDraggedItemId] = useState("");
   const [internalSelectedItemId, setInternalSelectedItemId] = useState<string>("");
@@ -61,11 +63,11 @@ export function ProductEditorGalleryCard(props: {
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
-          <p className="text-xl font-semibold text-foreground">Product Gallery</p>
-          <p className="text-sm text-muted-foreground">Manage product images, delete old images, upload new product photos.</p>
+          <p className="text-xl font-semibold text-foreground">{t.productEditorGalleryTitle}</p>
+          <p className="text-sm text-muted-foreground">{t.productEditorGallerySubtitle}</p>
         </div>
         <span className="inline-flex items-center rounded-full border border-emerald-300/70 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-          {props.items.length} images
+          {t.productEditorImagesCount.replace("{count}", String(props.items.length))}
         </span>
       </div>
 
@@ -78,13 +80,13 @@ export function ProductEditorGalleryCard(props: {
             />
             {activeItemId === props.items[0]?.id ? (
               <span className="absolute left-2 top-2 z-10 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-white">
-                Main
+                {t.productEditorMainBadge}
               </span>
             ) : null}
           </>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {props.emptyPreviewLabel ?? "No image"}
+            {props.emptyPreviewLabel ?? t.productEditorNoImage}
           </div>
         )}
       </div>
@@ -130,7 +132,7 @@ export function ProductEditorGalleryCard(props: {
 
               {index === 0 ? (
                 <span className="absolute left-1 top-1 z-10 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-500/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-white">
-                  Main
+                  {t.productEditorMainBadge}
                 </span>
               ) : null}
 
@@ -142,8 +144,8 @@ export function ProductEditorGalleryCard(props: {
                     props.onRemoveItem?.(item.id);
                   }}
                   className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-red-500/90 text-sm font-bold leading-none text-white shadow-sm transition hover:scale-105 hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-                  aria-label={`Remove image ${index + 1}`}
-                  title="Remove image"
+                  aria-label={t.productEditorRemoveImageAria.replace("{index}", String(index + 1))}
+                  title={t.productEditorRemoveImageTitle}
                 >
                   <Trash2 size={14} aria-hidden="true" />
                 </button>
@@ -153,7 +155,7 @@ export function ProductEditorGalleryCard(props: {
         </div>
       ) : (
         <div className="mt-3 rounded-[var(--radius-control)] border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
-          {props.emptyGalleryLabel ?? "No gallery images"}
+          {props.emptyGalleryLabel ?? t.productEditorNoGalleryImages}
         </div>
       )}
 
@@ -178,7 +180,7 @@ export function ProductEditorGalleryCard(props: {
             disabled={props.uploadLoading}
             onClick={() => fileInputRef.current?.click()}
           >
-            {props.uploadButtonLabel ?? "Upload images"}
+            {props.uploadButtonLabel ?? t.productEditorUploadImagesAction}
           </Button>
         </>
       ) : null}

@@ -18,6 +18,8 @@ mod app_runtime;
 mod app_types;
 mod auth;
 mod bootstrap;
+mod database_inventory;
+mod database_kid_sync;
 mod email;
 mod intake_ws;
 mod intakes_photo_cleanup_service;

@@ -20,9 +20,13 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
     ),
     Marketplace.KAUFLAND: MarketplaceFieldSpec(
         allowed_fields={
-            "title", "description", "picture_urls", "unit_id", "storefront", "price",
+            "category", "title", "mpn", "short_description", "description", "picture",
+            "manufacturer", "product_dimensions", "colour", "length", "width", "height",
+            "material", "storefront", "product_safety_contact", "category_detail",
+            "material_composition", "abnehmbarer_bezug", "parts_of_animal_origin", "price",
+            "unit_id", "picture_urls", "size", "color", "delivery", "amount", "id_offer", "storefronts",
         },
-        required_fields={"title", "price", "storefront"},
+        required_fields={"title", "price"},
     ),
     Marketplace.OTTO: MarketplaceFieldSpec(
         allowed_fields={
@@ -32,7 +36,7 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
     ),
     Marketplace.XLJV: MarketplaceFieldSpec(
         allowed_fields={
-            "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "descriptions", "categories", "stores", "images", "specials", "jv_fields",
+            "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "descriptions", "categories", "stores", "images", "specials", "jv_fields",
         },
         required_fields={"source_model", "price"},
     ),

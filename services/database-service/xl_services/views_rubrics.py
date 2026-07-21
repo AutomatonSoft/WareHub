@@ -49,6 +49,7 @@ class XLRubricsTreeAPIView(APIView):
                 password=db_config["password"],
                 database=db_config["database"],
                 port=db_config["port"],
+                use_pure=True,
             )
             cur = conn.cursor(dictionary=True)
             cur.execute("SHOW TABLES LIKE %s", (f"{prefix}category",))

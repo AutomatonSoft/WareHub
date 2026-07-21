@@ -1,6 +1,7 @@
 import type { AfterbuyKidOrderMatch, AfterbuyKidOrdersData, AfterbuyOrderData } from "./client-api-types";
 import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
 import { authorizedFetch, parseError } from "./client-api-shared";
+import { readStoredLabel } from "./i18n";
 
 export function parseOrderIdFromQr(qrCode: string): string | null {
   const source = qrCode.trim();
@@ -22,7 +23,7 @@ export async function fetchAfterbuyOrder(
   const response = await authorizedFetch(buildApiV1Url(apiBase, API_V1_ROUTES.afterbuy.order(orderId)), {}, { apiBase, token });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(parseError(payload, `Afterbuy request failed: HTTP ${response.status}`));
+    throw new Error(parseError(payload, `${readStoredLabel("failedLoadAfterbuyOrder", "Failed to load Afterbuy order.")}: HTTP ${response.status}`));
   }
   return (await response.json()) as AfterbuyOrderData;
 }
@@ -39,7 +40,7 @@ export async function fetchAfterbuyOrdersByKid(
   );
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(parseError(payload, `Afterbuy KID search failed: HTTP ${response.status}`));
+    throw new Error(parseError(payload, `${readStoredLabel("failedLoadAfterbuyKidOrders", "Failed to search Afterbuy orders by KID.")}: HTTP ${response.status}`));
   }
   const payload = (await response.json()) as Partial<AfterbuyKidOrdersData> | null;
   const safeMatches = Array.isArray(payload?.matches)

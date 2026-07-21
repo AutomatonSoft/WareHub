@@ -24,7 +24,7 @@ export function ProfileAuthRequiredCard({ profileStatus, onLogin, onRegister }: 
           <Button onClick={onLogin}>{t.login}</Button>
           <Button variant="secondary" onClick={onRegister}>{t.register}</Button>
         </div>
-        {profileStatus ? <div className="mt-4"><ErrorState title="Profile access" description={profileStatus} /></div> : null}
+        {profileStatus ? <div className="mt-4"><ErrorState title={t.profileAccess} description={profileStatus} /></div> : null}
       </CardContent>
     </Card>
   );

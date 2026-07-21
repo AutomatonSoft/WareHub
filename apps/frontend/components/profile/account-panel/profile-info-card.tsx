@@ -40,13 +40,13 @@ export function ProfileInfoCard(props: Props) {
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Workspace profile</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t.profileWorkspaceProfileEyebrow}</p>
             <CardTitle className="mt-2">{t.profileAccess}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Keep your account details current so marketplace activity, approvals, and notifications stay aligned.
+              {t.profileKeepDetailsAligned}
             </p>
           </div>
-          {isProfileDirty ? <Badge variant="secondary">Unsaved changes</Badge> : <Badge variant="outline">Synced</Badge>}
+          {isProfileDirty ? <Badge variant="secondary">{t.profileUnsavedChanges}</Badge> : <Badge variant="outline">{t.profileSynced}</Badge>}
         </div>
       </CardHeader>
       <CardContent>
@@ -75,7 +75,7 @@ export function ProfileInfoCard(props: Props) {
             <FormField label={t.phoneNumber} error={profileFieldErrors.phoneNumber}>
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={phoneNumber} onChange={(event) => onSetPhoneNumber(event.target.value)} placeholder="+7 (777) 123-45-67" className={profileFieldErrors.phoneNumber ? "border-destructive pl-9" : "pl-9"} />
+                <Input value={phoneNumber} onChange={(event) => onSetPhoneNumber(event.target.value)} placeholder={t.profilePhonePlaceholder} className={profileFieldErrors.phoneNumber ? "border-destructive pl-9" : "pl-9"} />
               </div>
             </FormField>
           </div>
@@ -86,9 +86,9 @@ export function ProfileInfoCard(props: Props) {
                   <ImagePlus data-icon="inline-start" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">Avatar update</p>
+                  <p className="text-sm font-semibold text-foreground">{t.profileAvatarUpdateTitle}</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Upload a clean square photo for a sharper identity across workspace views.
+                    {t.profileAvatarUpdateHint}
                   </p>
                 </div>
               </div>
@@ -100,7 +100,7 @@ export function ProfileInfoCard(props: Props) {
                   </span>
                   <span className="inline-flex h-9 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-border bg-card px-3 text-xs font-semibold">
                     <Upload data-icon="inline-start" />
-                    Upload
+                    {t.uploadAction}
                   </span>
                   <input type="file" accept="image/*" onChange={onAvatarChange} className="hidden" disabled={loading} />
                 </label>

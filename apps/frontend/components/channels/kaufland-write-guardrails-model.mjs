@@ -18,6 +18,6 @@ export function buildKauflandWriteConfirmMessage(input) {
   });
 }
 
-export function buildKauflandRequiredEanMessage(action) {
-  return buildActionEanRequiredMessage(action);
+export function buildKauflandRequiredEanMessage(action, labels) {
+  return buildActionEanRequiredMessage(action, labels);
 }

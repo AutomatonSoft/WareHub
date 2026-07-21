@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sys
 import threading
@@ -13,12 +14,17 @@ from typing import Callable
 import requests
 from django.db import transaction
 
+from afterbuy_service.contracts import AfterbuyLookupResult
+from afterbuy_service.sync import AfterbuyKidSyncService
 from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .place_rules import find_place_conflict, normalize_place, suggest_next_free_base_place
 from orders_pars.service import (
     collapse_items_to_orders,
     parse_afterbuy_datetime,
     search_items_auktionsliste,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -66,7 +72,6 @@ class KidPayload:
     otto_xl: str | None
     quantity: int | None
     commentary: str
-    listing_status: str | None
 
 
 @dataclass
@@ -306,7 +311,7 @@ def load_kid_payloads_from_bytes(raw_bytes: bytes) -> dict[tuple[str, str], KidP
         kid_number = _normalize_text(row.get("kid"))
         if not kid_number:
             continue
-        place = _normalize_text(row.get("place") or row.get("stoyanka"))
+        place = normalize_place(row.get("place") or row.get("stoyanka"))
         photo = _normalize_text(row.get("photo"))
         key = (kid_number, place)
         if key not in grouped:
@@ -324,7 +329,6 @@ def load_kid_payloads_from_bytes(raw_bytes: bytes) -> dict[tuple[str, str], KidP
                 otto_xl=_normalize_ean(row.get("Ean.otto_xl")),
                 quantity=_parse_quantity(row.get("ProductAttributes.quantity")),
                 commentary=_normalize_commentary(row),
-                listing_status=_normalize_optional_text(row.get("listing_status")),
             )
             continue
 
@@ -342,13 +346,16 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
 
     for payload in payloads.values():
         kid_number = payload.kid_number
-        target_place = payload.place
+        target_place = payload.place or (suggest_next_free_base_place() or "")
         existing = _find_kid_by_number_and_place(kid_number, target_place)
 
         if existing is not None:
             kid = existing
             skipped += 1
         else:
+            if find_place_conflict(target_place) is not None:
+                skipped += 1
+                continue
             with transaction.atomic():
                 kid = Kid.objects.create(
                     kid_number=[kid_number],
@@ -357,8 +364,8 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
                     room=payload.room,
                     store=payload.store,
                     b_ware=payload.b_ware,
-                    listing_status=payload.listing_status or "unlisted",
                     commentary=payload.commentary,
+                    section=None,
                 )
                 ean_row = Ean.objects.create(
                     kid=kid,
@@ -367,11 +374,10 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
                     otto_xl=payload.otto_xl,
                     ebay_xl=payload.ebay_xl,
                 )
-                if (payload.listing_status or "").lower() == "listed":
-                    EanStatus.objects.create(
-                        ean=kid,
-                        **_build_ean_status_defaults(ean_row),
-                    )
+                EanStatus.objects.create(
+                    ean=kid,
+                    **_build_ean_status_defaults(ean_row),
+                )
                 ProductAttributes.objects.create(
                     kid=kid,
                     quantity=payload.quantity,
@@ -550,9 +556,9 @@ def _upsert_orders_for_fetch_result(
                 "title": title,
                 "sku": sku,
                 "memo": memo,
-                "date": parse_afterbuy_datetime(verkaufsdatum),
+                "order_date": parse_afterbuy_datetime(verkaufsdatum),
                 "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                "payment_status": rechnungssumme or None,
+                "full_amount": rechnungssumme or None,
             }
             source_order_ids = [str(x).strip() for x in (item.get("source_order_ids") or []) if str(x).strip()]
             order_id_candidates = [order_id, *source_order_ids]
@@ -747,6 +753,134 @@ def upsert_orders_for_kids(
     )
 
 
+def upsert_afterbuy_api_orders_for_kids(
+    kid_map: dict[str, list[Kid]],
+    *,
+    workers: int,
+    progress_callback: Callable[[dict], None] | None = None,
+) -> tuple[list[str], OrderImportStats, list[KidGreenImportItemResult]]:
+    """Synchronise orders through the Afterbuy XML API without HTML scraping."""
+
+    sync_service = AfterbuyKidSyncService()
+    failed_kids: list[str] = []
+    item_results: list[KidGreenImportItemResult] = []
+    created = updated = 0
+    lookup_results: dict[str, AfterbuyLookupResult | None] = {}
+    lookup_errors: set[str] = set()
+    total_kid_numbers = len(kid_map)
+    fetched_count = 0
+
+    safe_workers = max(1, min(workers, len(kid_map)))
+    with ThreadPoolExecutor(max_workers=safe_workers) as executor:
+        future_to_kid = {
+            executor.submit(sync_service.lookup_kid, kid_number): kid_number
+            for kid_number in kid_map
+        }
+        for future in as_completed(future_to_kid):
+            kid_number = future_to_kid[future]
+            error = ""
+            try:
+                lookup_results[kid_number] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("AFTERBUY_API_LOOKUP_FAILED kid_number=%s", kid_number)
+                lookup_errors.add(kid_number)
+                error = str(exc)
+
+            fetched_count += 1
+            if progress_callback is not None:
+                lookup_result = lookup_results.get(kid_number)
+                progress_callback(
+                    {
+                        "type": "afterbuy_fetched",
+                        "kid_number": kid_number,
+                        "completed": fetched_count,
+                        "total": total_kid_numbers,
+                        "fetched_items": sum(len(order.items) for order in lookup_result.orders)
+                        if lookup_result is not None
+                        else 0,
+                        "error": error or None,
+                    }
+                )
+
+    processed_count = 0
+    for kid_number, kids in kid_map.items():
+        kid_created = kid_updated = synced_items = 0
+        try:
+            lookup_result = lookup_results.get(kid_number)
+            if lookup_result is None:
+                if kid_number in lookup_errors:
+                    raise RuntimeError("afterbuy_api_lookup_failed")
+                item_results.append(
+                    KidGreenImportItemResult(
+                        kid_number=kid_number,
+                        status="not_found",
+                        fetched_items=0,
+                        collapsed_items=0,
+                        orders_created=0,
+                        orders_updated=0,
+                        skipped_without_order_id=0,
+                    )
+                )
+                continue
+            for kid in kids:
+                sync_stats = sync_service.sync_lookup_result(kid=kid, lookup_result=lookup_result)
+                kid_created += sync_stats.orders_created
+                kid_updated += sync_stats.orders_updated
+                synced_items += sync_stats.items_created + sync_stats.items_updated
+
+            item_results.append(
+                KidGreenImportItemResult(
+                    kid_number=kid_number,
+                    status="ok" if kid_created or kid_updated or synced_items else "not_found",
+                    fetched_items=synced_items,
+                    collapsed_items=0,
+                    orders_created=kid_created,
+                    orders_updated=kid_updated,
+                    skipped_without_order_id=0,
+                )
+            )
+            created += kid_created
+            updated += kid_updated
+        except Exception:  # noqa: BLE001
+            logger.exception("AFTERBUY_API_SYNC_FAILED kid_number=%s", kid_number)
+            failed_kids.append(kid_number)
+            item_results.append(
+                KidGreenImportItemResult(
+                    kid_number=kid_number,
+                    status="sync_error",
+                    fetched_items=0,
+                    collapsed_items=0,
+                    orders_created=0,
+                    orders_updated=0,
+                    skipped_without_order_id=0,
+                    error="afterbuy_api_sync_failed",
+                )
+            )
+        finally:
+            processed_count += 1
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "type": "kid_processed",
+                        "completed": processed_count,
+                        "total": total_kid_numbers,
+                        **asdict(item_results[-1]),
+                    }
+                )
+
+    return (
+        failed_kids,
+        OrderImportStats(
+            created=created,
+            updated=updated,
+            collapsed_positions=0,
+            skipped_without_order_id=0,
+            failed_kids_count=len(failed_kids),
+        ),
+        item_results,
+    )
+
+
 def import_kid_green_json_bytes(
     raw_bytes: bytes,
     *,
@@ -773,14 +907,9 @@ def import_kid_green_json_bytes(
                 "unique_kids": len(kid_map),
             }
         )
-    failed_kids, order_stats, item_results = upsert_orders_for_kids(
+    failed_kids, order_stats, item_results = upsert_afterbuy_api_orders_for_kids(
         kid_map,
-        max_total=effective_options.max_total,
-        max_items_per_page=effective_options.max_items_per_page,
         workers=effective_options.workers,
-        timeout_retries=effective_options.timeout_retries,
-        timeout_retry_delay=effective_options.timeout_retry_delay,
-        show_progress=effective_options.show_progress,
         progress_callback=progress_callback,
     )
     unique_kids = len({payload.kid_number for payload in payloads.values()})

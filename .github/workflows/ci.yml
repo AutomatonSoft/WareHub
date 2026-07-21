@@ -330,19 +330,19 @@ jobs:
         run: uv venv --python 3.13
 
       - name: Install database-service dependencies
-        run: uv pip install -r requirements.txt
+        run: uv pip install --python .venv/bin/python -r requirements.txt
 
       - name: List installed dependencies
-        run: uv pip list
+        run: uv pip list --python .venv/bin/python
 
       - name: Compile Django settings
-        run: uv run python -m py_compile database_service/settings.py
+        run: .venv/bin/python -m py_compile database_service/settings.py
 
       - name: Compile orders parser service
-        run: uv run python -m py_compile orders_pars/service.py
+        run: .venv/bin/python -m py_compile orders_pars/service.py
 
       - name: Validate critical imports
-        run: uv run python -c "import django; import rest_framework; import requests; import dotenv; import corsheaders; import PIL; import mysql.connector"
+        run: .venv/bin/python -c "import django; import rest_framework; import requests; import dotenv; import corsheaders; import PIL; import mysql.connector"
 
   frontend:
     name: frontend
@@ -463,25 +463,25 @@ jobs:
         run: uv venv --python 3.13
 
       - name: Install orchestrator dependencies
-        run: uv pip install -r requirements.txt
+        run: uv pip install --python .venv/bin/python -r requirements.txt
 
       - name: List installed dependencies
-        run: uv pip list
+        run: uv pip list --python .venv/bin/python
 
       - name: Compile orchestrator main
-        run: uv run python -m py_compile src/sofort_orchestrator/main.py
+        run: .venv/bin/python -m py_compile src/sofort_orchestrator/main.py
 
       - name: Compile orchestrator service
-        run: uv run python -m py_compile src/sofort_orchestrator/application/orchestrator_service.py
+        run: .venv/bin/python -m py_compile src/sofort_orchestrator/application/orchestrator_service.py
 
       - name: Compile orchestrator job store
-        run: uv run python -m py_compile src/sofort_orchestrator/infra/job_store.py
+        run: .venv/bin/python -m py_compile src/sofort_orchestrator/infra/job_store.py
 
       - name: Compile orchestrator HTTP client
-        run: uv run python -m py_compile src/sofort_orchestrator/infra/http_client.py
+        run: .venv/bin/python -m py_compile src/sofort_orchestrator/infra/http_client.py
 
       - name: Run orchestrator tests
-        run: uv run pytest -q
+        run: .venv/bin/python -m pytest -q
 
   rust-backend:
     name: rust-backend

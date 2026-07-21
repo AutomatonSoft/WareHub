@@ -53,7 +53,16 @@ app_pid_filenames=(
 )
 started_log_paths=("" "" "" "" "" "")
 
-required_python_version="3.13.2"
+python_version_file="$repo_root/.python-version"
+if [[ ! -f "$python_version_file" ]]; then
+  printf 'Error: Missing Python version file: %s\n' "$python_version_file" >&2
+  exit 1
+fi
+required_python_version="$(tr -d '[:space:]' <"$python_version_file")"
+if [[ -z "$required_python_version" ]]; then
+  printf 'Error: Python version file is empty: %s\n' "$python_version_file" >&2
+  exit 1
+fi
 python_search_targets=()
 python_search_findings=()
 loaded_root_env_keys=()
@@ -90,6 +99,39 @@ die() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+configure_macos_libpq_env() {
+  local brew_path libpq_prefix libpq_bin libpq_lib
+
+  command_exists brew || return 0
+  brew_path="$(command -v brew)"
+  [[ -n "$brew_path" ]] || return 0
+
+  libpq_prefix="$("$brew_path" --prefix libpq 2>/dev/null || true)"
+  [[ -n "$libpq_prefix" ]] || return 0
+
+  libpq_bin="$libpq_prefix/bin"
+  libpq_lib="$libpq_prefix/lib"
+
+  if [[ -d "$libpq_bin" && ":$PATH:" != *":$libpq_bin:"* ]]; then
+    export PATH="$libpq_bin:$PATH"
+  fi
+
+  if [[ -x "$libpq_bin/pg_config" ]]; then
+    export PG_CONFIG="$libpq_bin/pg_config"
+  fi
+
+  if [[ -d "$libpq_lib" ]]; then
+    if [[ -n "${DYLD_FALLBACK_LIBRARY_PATH-}" ]]; then
+      case ":$DYLD_FALLBACK_LIBRARY_PATH:" in
+        *":$libpq_lib:"*) ;;
+        *) export DYLD_FALLBACK_LIBRARY_PATH="$libpq_lib:$DYLD_FALLBACK_LIBRARY_PATH" ;;
+      esac
+    else
+      export DYLD_FALLBACK_LIBRARY_PATH="$libpq_lib"
+    fi
+  fi
 }
 
 assert_repo_root() {
@@ -391,7 +433,7 @@ ensure_frontend_dependencies() {
   printf '%s\n' "$current_hash" >"$hash_file_path"
 }
 
-test_python313_2() {
+test_managed_python_version() {
   local python_path="$1"
   test_required_python_version "$python_path"
 }
@@ -437,7 +479,7 @@ ensure_python_service_dependencies() {
   if [[ ! -x "$venv_python_path" ]]; then
     recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
     recreated=true
-  elif ! test_python313_2 "$venv_python_path"; then
+  elif ! test_managed_python_version "$venv_python_path"; then
     info "$service_name virtual environment is not using Python $required_python_version; recreating $venv_path"
     recreate_managed_venv "$service_name" "$venv_path" "$python_bootstrap"
     recreated=true
@@ -671,7 +713,7 @@ get_command_for_app() {
   local app_name="$1"
 
   case "$app_name" in
-    frontend) printf '%s\n' "npm run dev" ;;
+    frontend) printf '%s\n' "script -q /dev/null /bin/bash -lc 'stty cols 120 rows 40; exec npm run dev'" ;;
     backend)
       if [[ "$with_backend_migrations" == true ]]; then
         printf '%s\n' "env SKIP_DB_MIGRATIONS=false cargo run"
@@ -681,9 +723,9 @@ get_command_for_app() {
       ;;
     services)
       if [[ "$with_migrations" == true ]]; then
-        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py migrate --fake-initial --noinput && \"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py migrate --fake-initial --noinput && \"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934 --noreload"
       else
-        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934"
+        printf '%s\n' "\"$DATABASE_SERVICE_PYTHON_EXE\" manage.py runserver 0.0.0.0:8934 --noreload"
       fi
       ;;
     services-jv-worker)
@@ -738,6 +780,16 @@ shell_command = (
 )
 
 child_env = os.environ.copy()
+for key in (
+    "VIRTUAL_ENV",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "PYTHONEXECUTABLE",
+    "__PYVENV_LAUNCHER__",
+):
+    child_env.pop(key, None)
+
+child_env["PYTHONUNBUFFERED"] = "1"
 for raw_line in runtime_env_lines.splitlines():
     line = raw_line.strip()
     if not line or "=" not in line:
@@ -963,6 +1015,7 @@ assert_docker
 assert_docker_daemon_ready
 assert_root_env_file
 import_root_env
+configure_macos_libpq_env
 initialize_local_runtime_env
 assert_compose_config
 ensure_local_dev_log_directory

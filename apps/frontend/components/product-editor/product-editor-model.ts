@@ -6,6 +6,7 @@ import type {
   ProductEditorGroupId,
   ProductEditorHoodDraft,
   ProductEditorHoodProperty,
+  ProductEditorKauflandDraft,
   ProductEditorJvDraft,
   ProductEditorPendingUpload,
   ProductEditorTarget,
@@ -51,11 +52,51 @@ export function createEmptyJvDraft(): ProductEditorJvDraft {
     descriptions: [],
     categories: [],
     categories_by_site_key: {},
+    stores: [],
     images: [],
+    specials: [],
+    xl_option_fields: [],
+    xl_attribute_fields: [],
+    xl_delivery_label: "",
     jv_fields: {},
     jv_fields_by_site_key: {},
     pending_uploads: []
   };
+}
+
+export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
+  return {
+    target_id: "", ean: "", controller: "jv", category: [], title: "", mpn: "", short_description: [], description: "", picture: [],
+    manufacturer: "", product_dimensions: "", colour: "", length: "", width: "", height: "", material: "", storefront: "de",
+    product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: "",
+    picture_urls: [], size: "", color: "", delivery: ""
+  };
+}
+
+export function hydrateKauflandDraft(input?: Partial<ProductEditorKauflandDraft>): ProductEditorKauflandDraft {
+  const empty = createEmptyKauflandDraft();
+  if (!input) return empty;
+  return {
+    ...empty,
+    ...input,
+    controller: input.controller === "xl" ? "xl" : "jv",
+    category: Array.isArray(input.category) ? input.category.map(String) : [],
+    short_description: Array.isArray(input.short_description) ? input.short_description.map(String) : [],
+    picture: Array.isArray(input.picture) ? input.picture.map(String) : [],
+    picture_urls: Array.isArray(input.picture_urls) ? input.picture_urls.map(String) : [],
+    product_safety_contact: Array.isArray(input.product_safety_contact) ? input.product_safety_contact : [],
+    category_detail: Array.isArray(input.category_detail) ? input.category_detail : [],
+    price: String(input.price ?? ""),
+    unit_id: String(input.unit_id ?? ""),
+    size: String(input.size ?? ""),
+    color: String(input.color ?? ""),
+    delivery: String(input.delivery ?? "")
+  };
+}
+
+export function buildKauflandChangedFields(initial: ProductEditorKauflandDraft, current: ProductEditorKauflandDraft): string[] {
+  const keys = Object.keys(current).filter((key) => !["target_id", "ean", "controller"].includes(key)) as Array<keyof ProductEditorKauflandDraft>;
+  return keys.filter((key) => JSON.stringify(initial[key]) !== JSON.stringify(current[key])).map(String);
 }
 
 export function hydrateHoodDraft(
@@ -103,7 +144,12 @@ export function hydrateJvDraft(input?: {
   descriptions: Array<Record<string, unknown>>;
   categories: Array<Record<string, unknown>>;
   categories_by_site_key?: Record<string, unknown>;
+  stores?: Array<Record<string, unknown>>;
   images: Array<Record<string, unknown>>;
+  specials?: Array<Record<string, unknown>>;
+  xl_option_fields?: Array<Record<string, unknown>>;
+  xl_attribute_fields?: Array<Record<string, unknown>>;
+  xl_delivery_label?: string;
   jv_fields: Record<string, unknown>;
   jv_fields_by_site_key?: Record<string, unknown>;
 }): ProductEditorJvDraft {
@@ -118,7 +164,7 @@ export function hydrateJvDraft(input?: {
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
     image: input.image || "",
-    image_public_url: String(input.image_public_url ?? ""),
+    image_public_url: String(input.image_public_url ?? input.image ?? ""),
     descriptions: Array.isArray(input.descriptions)
       ? input.descriptions.map((row) => ({
           language_id: Number(row.language_id ?? 1),
@@ -137,13 +183,42 @@ export function hydrateJvDraft(input?: {
         })).filter((row) => row.category_id > 0)
       : [],
     categories_by_site_key: normalizeCategoriesBySiteKey(input.categories_by_site_key),
-    images: Array.isArray(input.images)
-      ? input.images.map((row) => ({
-          image: String(row.image ?? ""),
-          public_url: String(row.public_url ?? ""),
-          sort_order: Number(row.sort_order ?? 0)
-        })).filter((row) => row.image.trim() !== "")
+    stores: Array.isArray(input.stores)
+      ? input.stores.map((row) => ({
+          id: Number(row.id ?? 0) || undefined,
+          store_id: Number(row.store_id ?? 0)
+        })).filter((row) => row.store_id >= 0)
       : [],
+    images: Array.isArray(input.images)
+      ? input.images.map((row) => {
+          if (typeof row === "string") {
+            return {
+              image: row,
+              public_url: row,
+              sort_order: 0
+            };
+          }
+          return {
+            image: String(row.image ?? ""),
+            public_url: String(row.public_url ?? row.image ?? ""),
+            sort_order: Number(row.sort_order ?? 0)
+          };
+        }).filter((row) => row.image.trim() !== "")
+      : [],
+    specials: Array.isArray(input.specials)
+      ? input.specials.map((row) => ({
+          id: Number(row.id ?? 0) || undefined,
+          customer_group_id: Number(row.customer_group_id ?? 1),
+          priority: Number(row.priority ?? 0),
+          price: String(row.price ?? ""),
+          date_start: row.date_start == null ? null : String(row.date_start),
+          date_end: row.date_end == null ? null : String(row.date_end),
+          is_modified_locally: Boolean(row.is_modified_locally)
+        }))
+      : [],
+    xl_option_fields: Array.isArray(input.xl_option_fields) ? input.xl_option_fields : [],
+    xl_attribute_fields: Array.isArray(input.xl_attribute_fields) ? input.xl_attribute_fields : [],
+    xl_delivery_label: String(input.xl_delivery_label ?? ""),
     jv_fields: input.jv_fields ?? {},
     jv_fields_by_site_key: normalizeFieldsBySiteKey(input.jv_fields_by_site_key),
     pending_uploads: []
@@ -171,22 +246,22 @@ export function getGroupStatusCopy(group: ProductEditorGroup | null): string {
   return "Active";
 }
 
-export function getTargetStatusLabel(status: ProductEditorTargetStatus): string {
+export function getTargetStatusLabel(status: ProductEditorTargetStatus, labels?: Record<string, string>): string {
   switch (status) {
     case "found":
-      return "Found";
+      return labels?.found || "Found";
     case "missing":
-      return "Missing";
+      return labels?.missing || "Missing";
     case "error":
-      return "Error";
+      return labels?.error || "Error";
     case "planned":
-      return "Planned";
+      return labels?.planned || "Planned";
     case "unsupported":
-      return "Unsupported";
+      return labels?.unsupported || "Unsupported";
     case "read_only":
-      return "Read-only";
+      return labels?.readOnly || "Read-only";
     default:
-      return "Unknown";
+      return labels?.unknown || "Unknown";
   }
 }
 
@@ -245,6 +320,12 @@ export function buildJvChangedFields(initial: ProductEditorJvDraft, current: Pro
   }
   if (JSON.stringify(current.images) !== JSON.stringify(initial.images)) {
     changed.add("images");
+  }
+  if (JSON.stringify(current.stores) !== JSON.stringify(initial.stores)) {
+    changed.add("stores");
+  }
+  if (JSON.stringify(current.specials) !== JSON.stringify(initial.specials)) {
+    changed.add("specials");
   }
   if (JSON.stringify(current.jv_fields) !== JSON.stringify(initial.jv_fields)) {
     changed.add("jv_fields");

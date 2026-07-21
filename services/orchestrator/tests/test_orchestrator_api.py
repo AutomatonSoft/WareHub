@@ -14,7 +14,7 @@ from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
 from src.sofort_orchestrator.main import app
 from src.sofort_orchestrator.infra.settings import settings
-from src.sofort_orchestrator.domain.models import JobPriority, OrchestrateRequest
+from src.sofort_orchestrator.domain.models import JobPriority, Operation, OrchestrateRequest
 
 
 settings.enable_job_worker = False
@@ -24,7 +24,15 @@ class FakeAdapters:
     def __init__(self) -> None:
         self.calls = 0
 
-    def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
         self.calls += 1
         if channel.marketplace is Marketplace.KAUFLAND:
             return type("R", (), {"status_code": 502, "body": {"code": "kaufland_down"}})()
@@ -32,8 +40,44 @@ class FakeAdapters:
 
 
 class TimeoutAdapters(FakeAdapters):
-    def dispatch(self, *, ean: str, request_id: str, channel: ChannelTarget, payload: dict):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
         raise RetryExhaustedError("timed out", kind="timeout")
+
+
+class SuccessfulAdapters(FakeAdapters):
+    def dispatch(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        channel: ChannelTarget,
+        payload: dict,
+        operation: Operation = Operation.UPDATE,
+    ):
+        self.calls += 1
+        return type("R", (), {"status_code": 200, "body": {"ok": True, "ean": ean, "payload": payload}})()
+
+
+class FakeEanPoolGateway:
+    def __init__(self, ean: str = "4098765432109") -> None:
+        self.ean = ean
+        self.claimed_job_ids: list[str] = []
+        self.used_job_ids: list[str] = []
+
+    def claim_for_job(self, *, job_id: str, request_id: str) -> str:
+        self.claimed_job_ids.append(job_id)
+        return self.ean
+
+    def mark_used_for_job(self, *, job_id: str, request_id: str) -> None:
+        self.used_job_ids.append(job_id)
 
 
 class BrokenIdempotencyStore:
@@ -277,7 +321,7 @@ def test_orchestrator_rejects_unknown_operation_value(tmp_path):
     assert payload["code"] == "orchestrator_request_validation_failed"
 
 
-@pytest.mark.parametrize("operation", ["publish", "unpublish", "relist"])
+@pytest.mark.parametrize("operation", ["unpublish", "relist"])
 def test_orchestrator_returns_not_supported_for_non_update_operations(tmp_path, operation: str):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)
@@ -294,6 +338,98 @@ def test_orchestrator_returns_not_supported_for_non_update_operations(tmp_path, 
     assert payload["results"][0]["error"]["code"] == "orchestrator_operation_not_supported"
     assert payload["results"][0]["error"]["details"]["operation"] == operation
     assert fake.calls == 0
+
+
+def test_orchestrator_publishes_to_hood(tmp_path):
+    fake = FakeAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+    body = {
+        "operation": "publish",
+        "payload": {"title": "Desk", "description": "Oak", "price": "199.99", "quantity": 1},
+        "channels": [
+            {
+                "marketplace": "hood",
+                "account": "jv",
+                "changed_fields": ["title", "description", "price", "quantity"],
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert fake.calls == 1
+
+
+def test_orchestrator_publishes_to_all_main_create_marketplaces(tmp_path):
+    fake = FakeAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+    body = {
+        "operation": "publish",
+        "payload": {
+            "title": "Desk",
+            "description": "Oak",
+            "price": "199.99",
+            "quantity": 1,
+            "source_model": "4012345678901",
+        },
+        "channels": [
+            {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+            {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+            {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+            {"marketplace": "hood", "account": "xl", "changed_fields": ["title", "description", "price", "quantity"]},
+            {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+            {"marketplace": "kaufland", "account": "xl", "changed_fields": ["title", "description", "price"]},
+        ],
+    }
+
+    response = client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "partial_success"
+    assert len(payload["results"]) == 6
+    assert fake.calls == 6
+
+
+def test_publish_uses_one_pool_ean_for_hood_and_kaufland_xl_accounts():
+    adapters = SuccessfulAdapters()
+    pool_gateway = FakeEanPoolGateway()
+    service = OrchestratorService(adapters=adapters, ean_pool_gateway=pool_gateway)
+    command = OrchestrateRequest.model_validate(
+        {
+            "operation": "publish",
+            "payload": {
+                "title": "Desk",
+                "description": "Oak",
+                "price": "199.99",
+                "quantity": 1,
+                "source_model": "4012345678901",
+            },
+            "channels": [
+                {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+                {"marketplace": "hood", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
+                {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+                {"marketplace": "kaufland", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
+            ],
+        }
+    )
+
+    result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+
+    assert result.status == "success"
+    assert pool_gateway.claimed_job_ids == ["job-1"]
+    assert pool_gateway.used_job_ids == ["job-1"]
+    by_target = {item.target: item.data["ean"] for item in result.results}
+    assert by_target["xljv,site=JV,site_key=JV_DE"] == "4012345678901"
+    assert by_target["xljv,site=XL,site_key=XLMOEBEL_DE"] == "4012345678901"
+    assert by_target["hood,account=jv"] == "4012345678901"
+    assert by_target["kaufland,account=jv"] == "4012345678901"
+    assert by_target["hood,account=xl"] == "4098765432109"
+    assert by_target["kaufland,account=xl"] == "4098765432109"
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):
@@ -712,6 +848,55 @@ def test_orchestrator_worker_processes_queued_job_when_enabled(tmp_path):
             assert attempts_payload[0]["attempt_no"] == 1
             assert attempts_payload[0]["status"] == "completed"
             assert attempts_payload[0]["finished_at_unix_ms"] is not None
+    finally:
+        settings.enable_job_worker = False
+
+
+def test_orchestrator_worker_processes_main_create_publish_job(tmp_path):
+    settings.enable_job_worker = True
+    settings.job_worker_poll_interval_seconds = 0.05
+    try:
+        fake = SuccessfulAdapters()
+        with _client_with_fake_adapters(fake, tmp_path) as client:
+            body = {
+                "ean": "4012345678901",
+                "command": {
+                    "operation": "publish",
+                    "payload": {
+                        "title": "Desk",
+                        "description": "Oak desk",
+                        "price": "199.99",
+                        "quantity": 1,
+                        "source_model": "4012345678901",
+                    },
+                    "channels": [
+                        {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                        {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                        {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+                        {"marketplace": "hood", "account": "xl", "changed_fields": ["title", "description", "price", "quantity"]},
+                        {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+                        {"marketplace": "kaufland", "account": "xl", "changed_fields": ["title", "description", "price"]},
+                    ],
+                },
+            }
+            created = client.post("/api/v1/orchestrator/jobs", json=body)
+            assert created.status_code == 200
+            job_id = created.json()["job_id"]
+
+            deadline = time.time() + 2.0
+            job = None
+            while time.time() < deadline:
+                job = client.get(f"/api/v1/orchestrator/jobs/{job_id}").json()
+                if job["status"] == "completed":
+                    break
+                time.sleep(0.05)
+
+            assert job is not None
+            assert job["status"] == "completed"
+            assert job["operation"] == "publish"
+            assert job["result"]["status"] == "success"
+            assert len(job["result"]["results"]) == 6
+            assert fake.calls == 6
     finally:
         settings.enable_job_worker = False
 

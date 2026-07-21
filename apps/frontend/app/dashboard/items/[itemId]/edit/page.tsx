@@ -107,7 +107,7 @@ export default function ItemEditPage() {
 
         <h1>{t.fillMissingData}</h1>
         <p className="subtitle">
-          {t.orderId}: {parseOrderIdFromQr(item.qr_code) ?? "n/a"} | {t.kid}: {item.kid_number}
+          {t.orderId}: {parseOrderIdFromQr(item.qr_code) ?? t.noValue} | {t.kid}: {item.kid_number}
         </p>
 
         <form className="form item-edit-form" onSubmit={onSubmit}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { useLabels } from "../../app/use-labels";
 import ReactCrop, {
   centerCrop,
   makeAspectCrop,
@@ -34,7 +35,7 @@ function centerAspectCrop(mediaWidth: number, mediaHeight: number, aspect: numbe
   );
 }
 
-async function buildCroppedBlob(image: HTMLImageElement, crop: PixelCrop): Promise<Blob> {
+async function buildCroppedBlob(image: HTMLImageElement, crop: PixelCrop, errorMessage: string): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
@@ -44,7 +45,7 @@ async function buildCroppedBlob(image: HTMLImageElement, crop: PixelCrop): Promi
 
   const context = canvas.getContext("2d");
   if (!context) {
-    throw new Error("Failed to prepare avatar image.");
+    throw new Error(errorMessage);
   }
 
   context.imageSmoothingQuality = "high";
@@ -65,7 +66,7 @@ async function buildCroppedBlob(image: HTMLImageElement, crop: PixelCrop): Promi
   });
 
   if (!blob) {
-    throw new Error("Failed to prepare avatar image.");
+    throw new Error(errorMessage);
   }
 
   return blob;
@@ -86,6 +87,7 @@ export function ProfileAvatarCropDialog({
   onCancel: () => void;
   onSave: (blob: Blob) => Promise<void>;
 }) {
+  const t = useLabels();
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
@@ -108,7 +110,7 @@ export function ProfileAvatarCropDialog({
       return;
     }
 
-    const blob = await buildCroppedBlob(imageRef.current, completedCrop);
+    const blob = await buildCroppedBlob(imageRef.current, completedCrop, t.failedPrepareAvatarImage);
     await onSave(blob);
   }
 
@@ -124,9 +126,9 @@ export function ProfileAvatarCropDialog({
     >
       <DialogContent className="!flex !flex-col !w-[min(960px,calc(100vw-32px))] !max-w-[960px] !gap-0 overflow-hidden !p-0 max-h-[calc(100vh-32px)]">
         <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
-          <DialogTitle>Adjust avatar</DialogTitle>
+          <DialogTitle>{t.adjustAvatar}</DialogTitle>
           <DialogDescription>
-            Drag and resize the crop area to control how your avatar will be displayed.
+            {t.cropAvatarHint}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,7 +147,7 @@ export function ProfileAvatarCropDialog({
                 <img
                   ref={imageRef}
                   src={imageUrl}
-                  alt="Avatar crop preview"
+                  alt={t.avatarCropPreview}
                   onLoad={handleImageLoad}
                   className="max-h-[70vh] max-w-full object-contain"
                 />
@@ -156,10 +158,10 @@ export function ProfileAvatarCropDialog({
 
         <DialogFooter className="border-t border-border px-4 py-4 sm:px-6">
           <Button type="button" variant="outline" disabled={uploading} onClick={onCancel}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button type="button" disabled={uploading || !completedCrop?.width || !completedCrop?.height} onClick={() => void handleSave()}>
-            {uploading ? "Saving..." : "Crop"}
+            {uploading ? t.saving : t.crop}
           </Button>
         </DialogFooter>
       </DialogContent>

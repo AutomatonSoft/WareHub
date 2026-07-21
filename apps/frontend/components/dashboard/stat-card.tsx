@@ -1,41 +1,70 @@
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, Gauge, Wallet } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, BadgeCheck, Banknote, Boxes, CreditCard, Tag, Truck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { StatCard as UIStatCard } from "../ui/stat-card";
+import { useLabels } from "../../app/use-labels";
 import { cn } from "../../lib/cn";
 import type { KpiMetric } from "../../lib/mock-data";
+import { StatCard as UIStatCard } from "../ui/stat-card";
 
-const iconByMetricLabel: Record<string, LucideIcon> = {
-  "Total Products": Boxes,
-  "Stock Value": Wallet,
-  "Low Stock Items": AlertTriangle,
-  "Avg Fulfillment Rate": Gauge
+const iconByMetricId: Record<KpiMetric["id"], LucideIcon> = {
+  total_products: Boxes,
+  stock_value: BadgeCheck,
+  low_stock_items: CreditCard,
+  avg_fulfillment_rate: Banknote,
+  in_transit_products: Truck,
+  b_ware_products: Tag
 };
 
-const descriptionByMetricLabel: Record<string, string> = {
-  "Total Products": "Warehouse catalog footprint",
-  "Stock Value": "Priced inventory exposure",
-  "Low Stock Items": "Orders pending replenishment",
-  "Avg Fulfillment Rate": "Paid orders against total volume"
-};
-
-const accentClassByMetricLabel: Record<string, string> = {
-  "Total Products": "wh-stat-card--products",
-  "Stock Value": "wh-stat-card--value",
-  "Low Stock Items": "wh-stat-card--risk",
-  "Avg Fulfillment Rate": "wh-stat-card--fulfillment"
+const accentClassByMetricId: Record<KpiMetric["id"], string> = {
+  total_products: "wh-stat-card--products",
+  stock_value: "wh-stat-card--value",
+  low_stock_items: "wh-stat-card--risk",
+  avg_fulfillment_rate: "wh-stat-card--fulfillment",
+  in_transit_products: "wh-stat-card--transit",
+  b_ware_products: "wh-stat-card--bware"
 };
 
 export function StatCard({ metric }: { metric: KpiMetric }) {
-  const MetricIcon = iconByMetricLabel[metric.label] ?? Boxes;
-  const accentClassName = accentClassByMetricLabel[metric.label] ?? "wh-stat-card--products";
+  const t = useLabels();
+  const MetricIcon = iconByMetricId[metric.id] ?? Boxes;
+  const accentClassName = accentClassByMetricId[metric.id] ?? "wh-stat-card--products";
+
+  const localizedMetric = {
+    total_products: {
+      label: t.totalProducts,
+      description: t.warehouseCatalogFootprint
+    },
+    stock_value: {
+      label: t.readyForListing,
+      description: metric.delta
+    },
+    low_stock_items: {
+      label: t.paidOrders,
+      description: metric.delta
+    },
+    avg_fulfillment_rate: {
+      label: t.paidRevenueLabel,
+      description: metric.delta
+    },
+    in_transit_products: {
+      label: t.inTransitProducts,
+      description: metric.delta
+    },
+    b_ware_products: {
+      label: t.bWareProducts,
+      description: metric.delta
+    }
+  }[metric.id] ?? {
+    label: metric.id,
+    description: ""
+  };
 
   return (
     <UIStatCard
       className={cn("wh-stat-card wh-section-card relative overflow-hidden", accentClassName)}
-      label={metric.label}
+      label={localizedMetric.label}
       value={metric.value}
-      description={descriptionByMetricLabel[metric.label]}
+      description={localizedMetric.description}
       icon={<MetricIcon aria-hidden="true" />}
     >
       <span

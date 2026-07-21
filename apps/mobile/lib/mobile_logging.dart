@@ -16,13 +16,13 @@ bool canOverrideApiBase([String? env]) {
 String defaultApiBaseForEnv(String env) {
   switch (env.trim().toLowerCase()) {
     case 'dev':
-      return 'http://192.168.0.103:8932/api/v1';
+      return 'http://10.0.2.2:8932/api/v1';
     case 'stage':
       return 'https://stagewarehub.automatonsoft.de/api/v1';
     case 'prod':
       return 'https://warehub.automatonsoft.de/api/v1';
     default:
-      return 'http://localhost:8932/api/v1';
+      return 'http://10.0.2.2:8932/api/v1';
   }
 }
 

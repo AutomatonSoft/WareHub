@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
+import { useLabels } from "@/app/use-labels";
 import { Input } from "../input";
 import { Toolbar, ToolbarGroup } from "@/components/ui/toolbar";
 
@@ -24,6 +25,7 @@ export function TableToolbar({
   filtersSlot,
   debounceMs = 250
 }: TableToolbarProps) {
+  const t = useLabels();
   const searchInputId = "table-search-input";
   const storageKey = useMemo(() => `sofortbot:table-query:${scope}`, [scope]);
   const [inputValue, setInputValue] = useState(query);
@@ -63,11 +65,11 @@ export function TableToolbar({
     <Toolbar className="ui-table-toolbar ui-enter-fade-up">
       <ToolbarGroup className="ui-toolbar-group ui-toolbar-group-primary flex-1">
         <div className="relative min-w-0 flex-1 basis-[220px]">
-          <label htmlFor={searchInputId} className="sr-only">Search in table</label>
+          <label htmlFor={searchInputId} className="sr-only">{t.searchInTable}</label>
           <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             id={searchInputId}
-            aria-label="Search in table"
+            aria-label={t.searchInTable}
             className="ui-soft-pop h-10 bg-background !pl-12 !pr-10"
             placeholder={searchPlaceholder}
             value={inputValue}
@@ -78,7 +80,7 @@ export function TableToolbar({
           {inputValue ? (
             <button
               type="button"
-              aria-label="Clear search"
+              aria-label={t.clearSearch}
               className="ui-icon-button ui-soft-pop absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius-control)]"
               onClick={() => setInputValue("")}
             >

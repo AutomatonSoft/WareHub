@@ -73,8 +73,8 @@ async function proxyToServices(request: NextRequest, path: string[]): Promise<Ne
         status === 204 ||
         status === 205 ||
         status === 304;
-      const text = shouldUseEmptyBody ? "" : await response.text();
-      const proxiedResponse = new NextResponse(shouldUseEmptyBody ? null : text, {
+      const responseBody = shouldUseEmptyBody ? null : await response.arrayBuffer();
+      const proxiedResponse = new NextResponse(responseBody, {
         status: response.status,
         headers: {
           "content-type": contentType,

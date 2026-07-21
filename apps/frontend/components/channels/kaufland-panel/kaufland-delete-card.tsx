@@ -19,11 +19,11 @@ export function KauflandDeleteCard({ form, loading, onSetForm, onSubmit }: Props
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Delete product by EAN</CardTitle>
+        <CardTitle className="text-sm">{t.kauflandDeleteByEanTitle}</CardTitle>
       </CardHeader>
       <CardContent>
         <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => void onSubmit(event)}>
-          <Input placeholder="EAN" value={form.ean} onChange={(event) => onSetForm((prev) => ({ ...prev, ean: event.target.value }))} />
+          <Input placeholder={t.ean} value={form.ean} onChange={(event) => onSetForm((prev) => ({ ...prev, ean: event.target.value }))} />
           <Select value={form.controller} onValueChange={(value) => value && onSetForm((prev) => ({ ...prev, controller: value as "jv" | "xl" }))}>
             <SelectTrigger className="h-9 w-full">
               <SelectValue placeholder={t.controller} />
@@ -34,7 +34,7 @@ export function KauflandDeleteCard({ form, loading, onSetForm, onSubmit }: Props
             </SelectContent>
           </Select>
           <div className="md:col-span-2">
-            <Button type="submit" variant="destructive" disabled={loading}>{loading ? t.loading : "Delete product"}</Button>
+            <Button type="submit" variant="destructive" disabled={loading}>{loading ? t.loading : t.kauflandDeleteProductAction}</Button>
           </div>
         </form>
       </CardContent>

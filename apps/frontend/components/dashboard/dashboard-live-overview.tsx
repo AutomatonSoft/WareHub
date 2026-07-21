@@ -1,37 +1,39 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  DashboardKidDto as KidDto,
-  DashboardOrderDto as OrderDto,
-  fetchDashboardOverviewData
-} from "./dashboard-api";
-import { LiveKpiGrid } from "./live-kpi-grid";
+
+import { useLabels, useLanguage } from "../../app/use-labels";
 import type { KpiMetric } from "../../lib/mock-data";
+import { DashboardOrderDto as OrderDto, DashboardWarehouseSummaryDto, fetchDashboardOverviewData } from "./dashboard-api";
+import { CriticalInventoryPanel } from "./critical-inventory-panel";
+import { LiveKpiGrid } from "./live-kpi-grid";
+import { MarketplacePublicationSummary } from "./marketplace-publication-summary";
+import { InventoryChangeHistory } from "./inventory-change-history";
 
 function parsePrice(value?: string | null): number {
-  if (!value) {
-    return 0;
-  }
-  const normalized = value.replace(",", ".").replace(/[^\d.-]/g, "");
+  if (!value) return 0;
+  const raw = value.replace(/[^\d,.-]/g, "");
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  const normalized = lastComma > lastDot ? raw.replace(/\./g, "").replace(",", ".") : raw.replace(/,/g, "");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatCurrencyCompact(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2
-  }).format(value);
+function getPaidRevenueAmount(order: OrderDto): number | null {
+  if (order.status !== "paid") return null;
+  const amount = parsePrice(order.full_amount);
+  return amount > 0 ? amount : null;
 }
 
 export function DashboardLiveOverview() {
-  const [kids, setKids] = useState<KidDto[]>([]);
+  const t = useLabels();
+  const lang = useLanguage();
   const [orders, setOrders] = useState<OrderDto[]>([]);
+  const [summary, setSummary] = useState<DashboardWarehouseSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const numberLocale = lang === "ru" ? "ru-RU" : lang === "de" ? "de-DE" : "en-US";
 
   useEffect(() => {
     let active = true;
@@ -40,18 +42,24 @@ export function DashboardLiveOverview() {
       setLoading(true);
       setError(null);
       try {
-        const { kids: kidsPayload, orders: ordersPayload } = await fetchDashboardOverviewData();
+        const { orders: ordersPayload, summary: summaryPayload } = await fetchDashboardOverviewData();
 
         if (active) {
-          setKids(kidsPayload);
           setOrders(ordersPayload);
+          setSummary(summaryPayload);
         }
       } catch (loadError) {
         console.error("DASHBOARD_OVERVIEW_LOAD_ERROR", loadError);
         if (active) {
-          setKids([]);
           setOrders([]);
-          setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard data right now.");
+          setSummary(null);
+          const message =
+            loadError instanceof Error && loadError.message === "dashboard_overview_request_failed"
+              ? t.dashboardOverviewRequestFailed
+              : loadError instanceof Error
+                ? loadError.message
+                : t.unableLoadRecentActivity;
+          setError(message);
         }
       } finally {
         if (active) {
@@ -64,57 +72,66 @@ export function DashboardLiveOverview() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [t.dashboardOverviewRequestFailed, t.unableLoadRecentActivity]);
 
   const metrics = useMemo<KpiMetric[]>(() => {
     if (error) {
       return [
-        { label: "Total Products", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Stock Value", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Low Stock Items", value: "N/A", delta: "Service unavailable", trend: "down" },
-        { label: "Avg Fulfillment Rate", value: "N/A", delta: "Service unavailable", trend: "down" }
+        { id: "total_products", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "avg_fulfillment_rate", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "in_transit_products", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" },
+        { id: "b_ware_products", value: t.notAvailable, delta: t.serviceUnavailable, trend: "down" }
       ];
     }
 
-    const totalProducts = kids.length;
-    const stockValue = orders.reduce((sum, order) => sum + parsePrice(order.global_price), 0);
-    const totalOrders = orders.length;
-    const paidOrders = orders.filter((order) => order.status === "paid").length;
-    const noPaidOrders = orders.filter((order) => order.status === "no_paid").length;
-    const pricedOrders = orders.filter((order) => parsePrice(order.global_price) > 0).length;
-    const fulfillmentRate = totalOrders === 0 ? 0 : (paidOrders / totalOrders) * 100;
+    if (!summary) {
+      return [];
+    }
+
+    const paidRevenue = orders.reduce((total, order) => total + (getPaidRevenueAmount(order) ?? 0), 0);
 
     return [
       {
-        label: "Total Products",
-        value: new Intl.NumberFormat("en-US").format(totalProducts),
-        delta: `${totalProducts} active`,
+        id: "total_products",
+        value: new Intl.NumberFormat(numberLocale).format(summary.total_products),
+        delta: t.warehouseCatalogFootprint,
         trend: "up"
       },
       {
-        label: "Stock Value",
-        value: formatCurrencyCompact(stockValue),
-        delta: `${pricedOrders} priced`,
+        id: "avg_fulfillment_rate",
+        value: new Intl.NumberFormat(numberLocale, {
+          style: "currency",
+          currency: "EUR",
+          maximumFractionDigits: 0
+        }).format(paidRevenue),
+        delta: t.allTimePaidRevenue,
         trend: "up"
       },
       {
-        label: "Low Stock Items",
-        value: new Intl.NumberFormat("en-US").format(noPaidOrders),
-        delta: `${noPaidOrders} unpaid`,
-        trend: "down"
+        id: "in_transit_products",
+        value: new Intl.NumberFormat(numberLocale).format(summary.in_transit_products),
+        delta: t.inTransitProductsDescription,
+        trend: "up"
       },
       {
-        label: "Avg Fulfillment Rate",
-        value: `${fulfillmentRate.toFixed(1)}%`,
-        delta: `${paidOrders}/${totalOrders} fulfilled`,
+        id: "b_ware_products",
+        value: new Intl.NumberFormat(numberLocale).format(summary.b_ware_products),
+        delta: t.bWareProductsDescription,
         trend: "up"
       }
     ];
-  }, [error, kids.length, orders]);
+  }, [error, numberLocale, orders, summary, t]);
 
   return (
     <div className="wh-dashboard">
       <LiveKpiGrid metrics={metrics} loading={loading} error={error} />
+      <MarketplacePublicationSummary statuses={summary?.marketplace_statuses} loading={loading} />
+      <div className="wh-dashboard__main-grid">
+        <div className="wh-dashboard__main-grid-left">
+          <CriticalInventoryPanel />
+        </div>
+        <InventoryChangeHistory />
+      </div>
     </div>
   );
 }

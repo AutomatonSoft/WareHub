@@ -243,7 +243,6 @@ def _format_kid_summary(kid: Kid) -> str:
         [
             f"KID: {primary_kid_number(kid.kid_number)}",
             f"Place: {kid.place or '-'}",
-            f"Listing: {getattr(kid, 'listing_status', '') or '-'}",
             f"JV EAN: {getattr(ean_row, 'jv', '') or '-'}",
             f"Main EAN: {getattr(ean_row, 'main_ean', '') or '-'}",
             f"Quantity: {getattr(product, 'quantity', '') or '-'}",

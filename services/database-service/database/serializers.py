@@ -1,10 +1,17 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
+from .ftp_upload import normalize_managed_public_photo_value
 from .kid_number_utils import normalize_kid_numbers, primary_kid_number
-from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .models import Client, EANPool, EANUsage, Ean, EanStatus, Kid, OrderItem, Orders, ProductAttributes
+from .order_amounts import parse_order_amount
+from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
 class KidModelSerializer(serializers.ModelSerializer):
+    place = serializers.CharField(required=False, allow_blank=True, allow_null=True, validators=[])
+
     class Meta:
         model = Kid
         fields = "__all__"
@@ -30,9 +37,28 @@ class KidModelSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_place(self, value):
+        if value in (None, ""):
+            return value
+        if is_invalid_multi_letter_pool_place(value):
+            raise serializers.ValidationError("Pool subplace may contain at most one letter from A to Z.")
+        return normalize_place(value)
+
+    def validate_section(self, value):
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip().upper()
+        if len(normalized) != 1 or not ("A" <= normalized <= "Z"):
+            raise serializers.ValidationError("Section must be a single English letter from A to Z.")
+        return normalized
+
+    def validate_photo(self, value):
+        return normalize_managed_public_photo_value(value)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["kid_number"] = primary_kid_number(instance.kid_number)
+        data["photo"] = normalize_managed_public_photo_value(data.get("photo"))
         return data
 
 
@@ -58,9 +84,9 @@ class KidCompositePatchSerializer(KidModelSerializer):
             "photo",
             "room",
             "furniture_type",
-            "listing_status",
             "b_ware",
             "commentary",
+            "section",
             "in_transit",
         )
 
@@ -69,6 +95,13 @@ class OrderModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Orders
         fields = "__all__"
+        read_only_fields = (
+            "afterbuy_profile",
+            "memo_sync_status",
+            "memo_sync_error",
+            "memo_sync_error_type",
+            "memo_last_synced_at",
+        )
         extra_kwargs = {
             "kid": {"error_messages": {"required": "Укажите kid."}},
             "order_id": {"error_messages": {"required": "Укажите order_id."}},
@@ -114,6 +147,69 @@ class OrderModelSerializer(serializers.ModelSerializer):
         return value.strip()
 
 
+class OrderItemDetailViewSerializer(serializers.ModelSerializer):
+    is_main_item = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ("id", "afterbuy_item_id", "title", "quantity", "item_price", "item_end_date", "currency", "is_main_item")
+
+
+class OrderDetailViewSerializer(OrderModelSerializer):
+    items = OrderItemDetailViewSerializer(many=True, read_only=True)
+    is_fully_paid = serializers.SerializerMethodField()
+    outstanding_amount = serializers.SerializerMethodField()
+
+    class Meta(OrderModelSerializer.Meta):
+        fields = "__all__"
+
+    def get_is_fully_paid(self, obj):
+        full_amount = parse_order_amount(obj.full_amount)
+        if full_amount is not None and obj.already_paid is not None:
+            return full_amount == obj.already_paid
+        return obj.status == "paid"
+
+    def get_outstanding_amount(self, obj):
+        full_amount = parse_order_amount(obj.full_amount)
+        if full_amount is None or obj.already_paid is None:
+            return None
+
+        outstanding_amount = max(full_amount - obj.already_paid, Decimal("0.00"))
+        return format(outstanding_amount.quantize(Decimal("0.01")), ".2f")
+
+
+class ClientDetailViewSerializer(serializers.ModelSerializer):
+    """Buyer addresses safe to show on the authenticated KID detail screen."""
+
+    class Meta:
+        model = Client
+        fields = (
+            "billing_first_name",
+            "billing_last_name",
+            "billing_company",
+            "billing_street",
+            "billing_street_2",
+            "billing_postal_code",
+            "billing_city",
+            "billing_state_or_province",
+            "billing_country",
+            "billing_country_iso",
+            "billing_phone",
+            "billing_fax",
+            "billing_email",
+            "shipping_first_name",
+            "shipping_last_name",
+            "shipping_company",
+            "shipping_street",
+            "shipping_street_2",
+            "shipping_postal_code",
+            "shipping_city",
+            "shipping_state_or_province",
+            "shipping_country",
+            "shipping_country_iso",
+        )
+
+
 class OrderUserReadSerializer(serializers.ModelSerializer):
     kid_number = serializers.SerializerMethodField()
 
@@ -137,6 +233,12 @@ class ProductAttributesPatchSerializer(serializers.ModelSerializer):
         exclude = ("kid", "created_at", "updated_at")
 
 
+class EanStatusReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EanStatus
+        exclude = ("ean",)
+
+
 class OrderCompositePatchItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     order_id = serializers.CharField(required=False, allow_blank=False, max_length=255)
@@ -146,8 +248,8 @@ class OrderCompositePatchItemSerializer(serializers.Serializer):
     title = serializers.CharField(required=False, allow_blank=False)
     memo = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     status = serializers.CharField(required=False, allow_blank=False, max_length=10)
-    date = serializers.DateTimeField(required=False, allow_null=True)
-    payment_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    order_date = serializers.DateTimeField(required=False, allow_null=True)
+    full_amount = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
     additional_items = serializers.JSONField(required=False)
 
     def validate(self, attrs):
@@ -291,8 +393,33 @@ class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
         return str(value).strip()
 
 
+class MarketplaceXLDeactivateByKidSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=255)
+    inactive = serializers.BooleanField(required=False, default=True)
+    place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+
+    def validate_kid_number(self, value):
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise serializers.ValidationError("kid_number не может быть пустым.")
+        return normalized
+
+    def validate_place(self, value):
+        if value in (None, ""):
+            return None
+        return str(value).strip()
+
+
+class MarketplaceKauflandToggleByKidSerializer(MarketplaceXLDeactivateByKidSerializer):
+    pass
+
+
 class EANPoolTakeNextSerializer(serializers.Serializer):
     reserved_by = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+
+class EANPoolClaimForJobSerializer(serializers.Serializer):
+    job_id = serializers.UUIDField()
 
 
 class EANUsageMarkSerializer(serializers.Serializer):

@@ -6,10 +6,10 @@ import { LoadingState } from "../../components/ui/loading-state";
 export default function MarketplacePage() {
   return (
     <AppShell
-      title="Marketplace"
-      subtitle="Integration command center for Otto, Kaufland, and Hood"
+      titleKey="navMarketplace"
+      subtitleKey="marketplaceSubtitle"
     >
-      <Suspense fallback={<LoadingState title="Loading marketplace..." />}>
+      <Suspense fallback={<LoadingState titleKey="loadingMarketplace" />}>
         <MarketplaceGrid />
       </Suspense>
     </AppShell>

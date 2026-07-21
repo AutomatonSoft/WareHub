@@ -1,0 +1,269 @@
+name: Stage Mobile APK Release
+
+on:
+  push:
+    branches:
+      - stage
+    paths:
+      - "apps/mobile/**"
+  workflow_dispatch:
+    inputs:
+      confirm_stage_apk_release:
+        description: "Type PUBLISH_STAGE_APK to publish the APK declared in apps/mobile/pubspec.yaml"
+        required: true
+      release_notes:
+        description: "Optional release notes shown to the mobile client"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: stage-mobile-apk-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build-and-publish-stage-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: stage
+    env:
+      STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
+      STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
+      STAGE_SSH_PORT: ${{ vars.STAGE_SSH_PORT }}
+      STAGE_APK_DEPLOY_PATH: ${{ vars.STAGE_APK_DEPLOY_PATH }}
+      STAGE_SSH_KNOWN_HOSTS: ${{ secrets.STAGE_SSH_KNOWN_HOSTS }}
+      STAGE_SSH_KEY_SECRET: ${{ secrets.STAGE_SSH_KEY }}
+      MOBILE_STAGE_KEYSTORE_BASE64: ${{ secrets.MOBILE_STAGE_KEYSTORE_BASE64 }}
+      MOBILE_STAGE_KEY_PROPERTIES: ${{ secrets.MOBILE_STAGE_KEY_PROPERTIES }}
+      STAGE_PUBLIC_BASE_URL: https://stagewarehub.automatonsoft.de
+
+    steps:
+      - name: Checkout stage
+        uses: actions/checkout@v4
+
+      - name: Validate release input and environment
+        shell: bash
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.confirm_stage_apk_release }}
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_REF:-}" = "refs/heads/stage" ] || { echo "Stage APK releases must run from stage." >&2; exit 1; }
+          if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ] && [ "${RELEASE_CONFIRMATION:-}" != "PUBLISH_STAGE_APK" ]; then
+            echo "confirm_stage_apk_release must equal PUBLISH_STAGE_APK." >&2
+            exit 1
+          fi
+
+          for key in STAGE_SSH_HOST STAGE_SSH_USER STAGE_SSH_PORT STAGE_APK_DEPLOY_PATH STAGE_SSH_KNOWN_HOSTS STAGE_SSH_KEY_SECRET MOBILE_STAGE_KEYSTORE_BASE64 MOBILE_STAGE_KEY_PROPERTIES; do
+            [ -n "${!key:-}" ] || { echo "Missing required stage configuration: $key" >&2; exit 1; }
+          done
+          [[ "$STAGE_APK_DEPLOY_PATH" = /* ]] || { echo "STAGE_APK_DEPLOY_PATH must be absolute." >&2; exit 1; }
+
+      - name: Read and validate mobile version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          declared_version="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*/\1/p' apps/mobile/pubspec.yaml | head -n 1)"
+          [[ "$declared_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+-stage\.[1-9][0-9]*)\+([1-9][0-9]*)$ ]] || {
+            echo "apps/mobile/pubspec.yaml must use X.Y.Z-stage.N+BUILD for a stage release." >&2
+            exit 1
+          }
+          echo "version=v${declared_version}" >> "$GITHUB_OUTPUT"
+          echo "display_version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.4"
+          channel: stable
+          cache: true
+
+      - name: Configure stage signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$MOBILE_STAGE_KEYSTORE_BASE64" | base64 --decode > apps/mobile/android/upload-keystore.jks
+          printf '%s\n' "$MOBILE_STAGE_KEY_PROPERTIES" > apps/mobile/android/key.properties
+          test -s apps/mobile/android/upload-keystore.jks
+          grep -Eq '^storeFile=upload-keystore\.jks$' apps/mobile/android/key.properties || {
+            echo "MOBILE_STAGE_KEY_PROPERTIES must contain storeFile=upload-keystore.jks." >&2
+            exit 1
+          }
+
+      - name: Validate and build signed stage APK
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd apps/mobile
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+          flutter build apk --release --flavor stage \
+            --dart-define=APP_ENV=stage \
+            --dart-define=API_BASE_URL=https://stagewarehub.automatonsoft.de/api/v1 \
+            --dart-define=APP_VERSION="$APP_VERSION"
+
+      - name: Prepare immutable release manifest
+        id: artifact
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          apk_path="apps/mobile/build/app/outputs/flutter-apk/app-stage-release.apk"
+          test -s "$apk_path"
+          sha256="$(sha256sum "$apk_path" | awk '{print $1}')"
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export SHA256="$sha256"
+          export PUBLISHED_AT="$published_at"
+          python3 - <<'PY' > mobile-release.json
+          import json
+          import os
+          from urllib.parse import urlencode
+
+          version = os.environ["VERSION"]
+          payload = {
+              "channel": "stage",
+              "version": version,
+              "apk_url": f"https://stagewarehub.automatonsoft.de/warehubstage.apk?{urlencode({'v': version})}",
+              "sha256": os.environ["SHA256"],
+              "published_at": os.environ["PUBLISHED_AT"],
+              "release_notes": os.environ.get("RELEASE_NOTES", "").strip() or None,
+              "mandatory": False,
+              "source_commit": os.environ["GITHUB_SHA"],
+          }
+          print(json.dumps({key: value for key, value in payload.items() if value is not None}, separators=(",", ":")))
+          PY
+          printf '%s\n' "$VERSION" > warehubstage.version
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
+
+      - name: Configure pinned SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$STAGE_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$STAGE_SSH_KEY_SECRET" > "$HOME/.ssh/stage_mobile_release_key"
+          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/stage_mobile_release_key"
+
+      - name: Wait for matching Stage Deploy
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 2700))
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run_json="$(gh run list --workflow stage-deploy.yml --branch stage --commit "$GITHUB_SHA" --limit 1 --json status,conclusion,databaseId 2>/dev/null || true)"
+            status="$(printf '%s' "$run_json" | jq -r '.[0].status // empty')"
+            conclusion="$(printf '%s' "$run_json" | jq -r '.[0].conclusion // empty')"
+            run_id="$(printf '%s' "$run_json" | jq -r '.[0].databaseId // empty')"
+
+            if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+              echo "Matching Stage Deploy succeeded: $run_id"
+              exit 0
+            fi
+            if [ "$status" = "completed" ]; then
+              echo "Matching Stage Deploy failed: $run_id, conclusion=$conclusion" >&2
+              exit 1
+            fi
+
+            echo "Waiting for Stage Deploy for $GITHUB_SHA..."
+            sleep 15
+          done
+
+          echo "Timed out waiting for matching Stage Deploy." >&2
+          exit 1
+
+      - name: Create remote release directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/stage_mobile_release_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            "set -euo pipefail; mkdir -p /opt/warehub/stage/mobile-release /opt/warehub/stage/mobile-release-backups '$STAGE_APK_DEPLOY_PATH'; test -w /opt/warehub/stage/mobile-release; test -w '$STAGE_APK_DEPLOY_PATH'"
+
+      - name: Upload release candidate
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.artifact.outputs.apk_path }}
+        run: |
+          set -euo pipefail
+          release_id="${GITHUB_SHA:0:12}"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/stage_mobile_release_key" -P "$STAGE_SSH_PORT" "$APK_PATH" "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_APK_DEPLOY_PATH/.warehubstage-$release_id.apk"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/stage_mobile_release_key" -P "$STAGE_SSH_PORT" warehubstage.version "$STAGE_SSH_USER@$STAGE_SSH_HOST:$STAGE_APK_DEPLOY_PATH/.warehubstage-$release_id.version"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/stage_mobile_release_key" -P "$STAGE_SSH_PORT" mobile-release.json "$STAGE_SSH_USER@$STAGE_SSH_HOST:/opt/warehub/stage/mobile-release/.current-$release_id.json"
+          echo "release_id=$release_id" >> "$GITHUB_ENV"
+
+      - name: Atomically publish APK and manifest
+        shell: bash
+        env:
+          EXPECTED_SHA256: ${{ steps.artifact.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/stage_mobile_release_key" -p "$STAGE_SSH_PORT" "$STAGE_SSH_USER@$STAGE_SSH_HOST" \
+            "set -euo pipefail
+             apk_tmp='$STAGE_APK_DEPLOY_PATH/.warehubstage-$release_id.apk'
+             apk_live='$STAGE_APK_DEPLOY_PATH/warehubstage.apk'
+             version_tmp='$STAGE_APK_DEPLOY_PATH/.warehubstage-$release_id.version'
+             version_live='$STAGE_APK_DEPLOY_PATH/warehubstage.version'
+             manifest_tmp='/opt/warehub/stage/mobile-release/.current-$release_id.json'
+             manifest_live='/opt/warehub/stage/mobile-release/current.json'
+             [ \"\$(sha256sum \"\$apk_tmp\" | awk '{print \$1}')\" = '$EXPECTED_SHA256' ]
+             python3 -m json.tool \"\$manifest_tmp\" >/dev/null
+             [ ! -f \"\$apk_live\" ] || cp -f \"\$apk_live\" /opt/warehub/stage/mobile-release-backups/previous.apk
+             mv -f \"\$apk_tmp\" \"\$apk_live\"
+             mv -f \"\$version_tmp\" \"\$version_live\"
+             mv -f \"\$manifest_tmp\" \"\$manifest_live\"
+             chmod 644 \"\$apk_live\" \"\$version_live\" \"\$manifest_live\""
+
+      - name: Verify public release
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --range 0-0 "$STAGE_PUBLIC_BASE_URL/warehubstage.apk" -o /dev/null
+          curl --fail --silent --show-error "$STAGE_PUBLIC_BASE_URL/api/v1/mobile/app-update" -o update.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.load(open("update.json", encoding="utf-8"))
+          assert payload["channel"] == "stage"
+          assert payload["latest_version"] == os.environ["VERSION"]
+          assert payload["apk_url"].startswith("https://stagewarehub.automatonsoft.de/warehubstage.apk")
+          PY
+
+      - name: Write release summary
+        if: success()
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.artifact.outputs.sha256 }}
+        run: |
+          {
+            echo "## Stage mobile APK release"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- SHA-256: \`$SHA256\`"
+            echo "- Public APK: \`$STAGE_PUBLIC_BASE_URL/warehubstage.apk\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -31,8 +31,11 @@ export type SofortListRow = {
     hoodXl: boolean | null;
   };
   photo: string;
+  photoUrls: string[];
   photoCount: number;
   place: string;
+  section: string | null;
+  bWare: boolean;
   store: boolean;
   quantity: number;
   room: string | null;
@@ -44,7 +47,6 @@ export type SofortListRow = {
   material: string | null;
   price: string | null;
   priceCurrency: string | null;
-  listingStatus: "listed" | "unlisted";
   marketplaceActive: boolean | null;
 };
 

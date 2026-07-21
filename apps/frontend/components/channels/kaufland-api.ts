@@ -10,26 +10,62 @@ export type KauflandResponse = {
 
 type JsonBodyOf<T> = T extends { content: { "application/json": infer B } } ? B : Record<string, unknown>;
 type KauflandChangeBody = JsonBodyOf<paths["/api/v1/services/kaufland/products/ean/change"]["post"]["requestBody"]>;
-type KauflandCreateBody = {
+export type KauflandWriteBody = {
   ean: string;
   controller: "jv" | "xl";
+  category?: string[];
   title?: string;
-  description: string;
-  picture: unknown;
-  price: number;
-  size: string;
-  color: string;
-  material: string;
-  delivery: string;
-  height: string;
-  length: string;
-  width: string;
+  mpn?: string;
+  short_description?: string[];
+  description?: string;
+  picture?: string[];
+  manufacturer?: string;
+  product_dimensions?: string;
+  colour?: string;
+  length?: string;
+  width?: string;
+  height?: string;
+  material?: string;
+  storefront?: string;
+  product_safety_contact?: Record<string, unknown>[];
+  category_detail?: Record<string, unknown>[];
+  material_composition?: string;
+  abnehmbarer_bezug?: string;
+  parts_of_animal_origin?: string;
+  price?: number;
+  unit_id?: number;
   picture_urls?: string[];
+  size?: string;
+  color?: string;
+  delivery?: number;
 };
 type KauflandDeleteBody = {
   ean: string;
   controller: "jv" | "xl";
 };
+
+export async function uploadKauflandImages(params: { ean: string; files: File[] }): Promise<string[]> {
+  const formData = new FormData();
+  for (const file of params.files) {
+    formData.append("images", file);
+  }
+  const query = new URLSearchParams({ site: "KAUFLAND", ean: params.ean.trim() });
+  const response = await apiFetch(`/api/v1/uploads/images/?${query.toString()}`, {
+    method: "POST",
+    body: formData,
+  });
+  const payload = (await response.json().catch(() => ({}))) as { uploaded_image_urls?: unknown; detail?: unknown };
+  if (!response.ok) {
+    throw new Error(String(payload.detail || `Kaufland image upload failed: HTTP ${response.status}`));
+  }
+  const urls = Array.isArray(payload.uploaded_image_urls)
+    ? payload.uploaded_image_urls.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (urls.length === 0) {
+    throw new Error("Kaufland image upload completed without image URLs.");
+  }
+  return urls;
+}
 
 export async function fetchKauflandByEan(params: {
   ean: string;
@@ -96,7 +132,7 @@ export async function deleteKauflandByEan(payload: KauflandDeleteBody): Promise<
   return { response, rawText, parsed };
 }
 
-export async function createKauflandByEan(payload: KauflandCreateBody): Promise<{
+export async function createKauflandByEan(payload: KauflandWriteBody): Promise<{
   response: Response;
   rawText: string;
   parsed: unknown;
@@ -121,5 +157,3 @@ export async function createKauflandByEan(payload: KauflandCreateBody): Promise<
 
   return { response, rawText, parsed };
 }
-
-export type { KauflandCreateBody };

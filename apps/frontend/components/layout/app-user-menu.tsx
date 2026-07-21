@@ -6,7 +6,8 @@ import { BookOpen, ChevronDown, Download, LogOut, User, UserCircle2 } from "luci
 import { useEffect, useMemo, useState } from "react";
 import { clearAuth, DEFAULT_API_BASE, logout, readAuth, resolvePhotoUrl } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
-import { resolveMobileApkUrlFromEnv } from "../../app/mobile-apk-url";
+import { MOBILE_APK_DOWNLOAD_PATH } from "../../app/mobile-apk-url";
+import { useLabels } from "../../app/use-labels";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import {
@@ -28,9 +29,10 @@ export function AppUserMenu({
   className?: string;
   onUserCleared: () => void;
 }) {
+  const t = useLabels();
   const router = useRouter();
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE;
-  const mobileApkUrl = resolveMobileApkUrlFromEnv();
+  const mobileApkUrl = MOBILE_APK_DOWNLOAD_PATH;
   const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function AppUserMenu({
           type="button"
           variant="outline"
           size="lg"
-          aria-label="User actions"
+          aria-label={t.userActions}
           className={cn("wh-header-control w-full px-3", collapsed ? "justify-center" : "justify-between", className)}
         >
           <span className="inline-flex min-w-0 items-center gap-2">
@@ -71,7 +73,7 @@ export function AppUserMenu({
               <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-muted">
                 <Image
                   src={avatarSrc}
-                  alt="User avatar"
+                  alt={t.userAvatarAlt}
                   width={28}
                   height={28}
                   unoptimized
@@ -96,23 +98,23 @@ export function AppUserMenu({
       >
         <DropdownMenuItem className="h-9 gap-2 px-3 text-sm" onClick={() => router.push("/profile")}>
           <User size={15} aria-hidden="true" />
-          Profile
+          {t.profile}
         </DropdownMenuItem>
         <DropdownMenuItem
           className="h-9 gap-2 px-3 text-sm"
           onClick={() => window.open(mobileApkUrl, "_blank", "noopener,noreferrer")}
         >
           <Download size={15} aria-hidden="true" />
-          Download APP
+          {t.downloadApp}
         </DropdownMenuItem>
         <DropdownMenuItem className="h-9 gap-2 px-3 text-sm" onClick={() => router.push("/docs/api")}>
           <BookOpen size={15} aria-hidden="true" />
-          API Docs
+          {t.apiDocs}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="h-9 gap-2 px-3 text-sm" variant="destructive" onClick={() => void handleLogout()}>
           <LogOut size={15} aria-hidden="true" />
-          Logout
+          {t.logout}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

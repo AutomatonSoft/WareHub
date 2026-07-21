@@ -49,6 +49,7 @@ def build_xl_source_payload(snapshot: dict, *, site: str, site_key: str, query_e
         "stores": snapshot["stores"],
         "images": snapshot["images"],
         "specials": snapshot["specials"],
+        "xl_attribute_fields": snapshot.get("attributes") if isinstance(snapshot.get("attributes"), list) else [],
         "local_exists": local_product is not None,
         "local_id": local_product.id if local_product else None,
         "local_conflict": local_conflict is not None,

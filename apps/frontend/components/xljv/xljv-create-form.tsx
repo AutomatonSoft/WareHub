@@ -94,10 +94,10 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
           {site === "JV" ? (
             <div><div className="mb-1 text-xs font-semibold">{t.sourceProductIdHint}</div><Input value={createForm.source_product_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_product_id: event.target.value } : prev)} /></div>
           ) : (
-            <div><div className="mb-1 text-xs font-semibold">OpenCart product_id</div><Input value="auto after send" readOnly /></div>
+            <div><div className="mb-1 text-xs font-semibold">{t.xljvOpenCartProductId}</div><Input value={t.xljvAutoAfterSend} readOnly /></div>
           )}
           <div>
-            <div className="mb-1 text-xs font-semibold">{site === "JV" ? "UVP Price" : t.price}</div>
+            <div className="mb-1 text-xs font-semibold">{site === "JV" ? t.xljvUvpPrice : t.price}</div>
             <Input
               value={site === "JV" ? computedJvUvp : createForm.price}
               onChange={(event) =>
@@ -127,7 +127,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
           {site === "JV" ? (
             <>
               <div className="md:col-span-2">
-                <div className="mb-1 text-xs font-semibold">Beschreibung (Admin)</div>
+                <div className="mb-1 text-xs font-semibold">{t.xljvDescriptionAdmin}</div>
                 <Textarea
                   className="min-h-[90px]"
                   value={createForm.short_description}
@@ -135,7 +135,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                 />
               </div>
               <div className="md:col-span-2">
-                <div className="mb-1 text-xs font-semibold">Kurzbeschreibung</div>
+                <div className="mb-1 text-xs font-semibold">{t.xljvShortDescriptionDe}</div>
                 <Textarea
                   className="min-h-[90px]"
                   value={createForm.short_description_real}
@@ -143,25 +143,25 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                 />
               </div>
               <div className="md:col-span-2">
-                <div className="mb-1 text-xs font-semibold">WYSIWYG Beschreibung (Detailansicht, HTML)</div>
+                <div className="mb-1 text-xs font-semibold">{t.xljvWysiwygDescription}</div>
                 <div className="rounded-xl border border-border bg-card">
                   <div className="flex flex-wrap gap-1 border-b border-border p-2">
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("bold")}>B</Button>
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("italic")}>I</Button>
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("underline")}>U</Button>
-                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("insertUnorderedList")}>- List</Button>
-                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("insertOrderedList")}>1. List</Button>
+                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("insertUnorderedList")}>{t.xljvBulletedList}</Button>
+                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("insertOrderedList")}>{t.xljvNumberedList}</Button>
                     <Button
                       type="button"
                       variant="ghost"
                       onClick={() => {
-                        const url = window.prompt("URL");
+                        const url = window.prompt(t.xljvPromptUrl);
                         if (url) applyHtmlCommand("createLink", url);
                       }}
                     >
-                      Link
+                      {t.xljvLink}
                     </Button>
-                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("removeFormat")}>Clear</Button>
+                    <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("removeFormat")}>{t.xljvClearFormatting}</Button>
                   </div>
                   <div
                     ref={htmlEditorRef}
@@ -185,7 +185,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                   className="mt-2 min-h-[90px] font-mono text-xs"
                   value={createForm.description_html}
                   onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, description_html: event.target.value } : prev)}
-                  placeholder="HTML preview/source"
+                  placeholder={t.xljvHtmlPreviewSource}
                 />
               </div>
             </>
@@ -207,34 +207,34 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
       <div className="md:col-span-2 rounded-xl border border-border bg-card p-3">
         <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--text-muted)]">{t.advancedFields}</div>
         <div className="grid gap-2 md:grid-cols-2">
-          <Input placeholder="source_model" value={createForm.source_model} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_model: event.target.value } : prev)} />
-          <Input placeholder="source_sku" value={createForm.source_sku} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_sku: event.target.value } : prev)} />
-          <Input placeholder="source_ean_field" value={createForm.source_ean_field} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_ean_field: event.target.value } : prev)} />
-          <Input placeholder="date_available YYYY-MM-DD" value={createForm.date_available} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, date_available: event.target.value } : prev)} />
-          <Input placeholder="manufacturer_id" value={createForm.manufacturer_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, manufacturer_id: event.target.value } : prev)} />
-          <Input placeholder="stock_status_id" value={createForm.stock_status_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, stock_status_id: event.target.value } : prev)} />
-          <Input placeholder="tax_class_id" value={createForm.tax_class_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, tax_class_id: event.target.value } : prev)} />
+          <Input placeholder={t.sourceModel} value={createForm.source_model} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_model: event.target.value } : prev)} />
+          <Input placeholder={t.sourceSku} value={createForm.source_sku} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_sku: event.target.value } : prev)} />
+          <Input placeholder={t.sourceEanField} value={createForm.source_ean_field} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, source_ean_field: event.target.value } : prev)} />
+          <Input placeholder={t.dateAvailableHint} value={createForm.date_available} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, date_available: event.target.value } : prev)} />
+          <Input placeholder={t.manufacturerId} value={createForm.manufacturer_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, manufacturer_id: event.target.value } : prev)} />
+          <Input placeholder={t.stockStatusId} value={createForm.stock_status_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, stock_status_id: event.target.value } : prev)} />
+          <Input placeholder={t.taxClassId} value={createForm.tax_class_id} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, tax_class_id: event.target.value } : prev)} />
           {site === "XL" ? (
             <>
-              <Input placeholder="minimum" value={createForm.minimum} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, minimum: event.target.value } : prev)} />
-              <Input placeholder="Konto / points" value={createForm.points} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, points: event.target.value } : prev)} />
-              <Input placeholder="sort_order" value={createForm.sort_order} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, sort_order: event.target.value } : prev)} />
-              <Input placeholder="SEO-URL" value={createForm.seo_url} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, seo_url: event.target.value } : prev)} />
+              <Input placeholder={t.xljvMinimum} value={createForm.minimum} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, minimum: event.target.value } : prev)} />
+              <Input placeholder={t.xljvPoints} value={createForm.points} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, points: event.target.value } : prev)} />
+              <Input placeholder={t.xljvSortOrder} value={createForm.sort_order} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, sort_order: event.target.value } : prev)} />
+              <Input placeholder={t.xljvSeoUrl} value={createForm.seo_url} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, seo_url: event.target.value } : prev)} />
               <label className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs">
                 <Checkbox checked={createForm.shipping} onCheckedChange={(value) => onSetCreateForm((prev) => prev ? { ...prev, shipping: Boolean(value) } : prev)} />
-                <span>Lieferung erforderlich</span>
+                <span>{t.xljvDeliveryRequired}</span>
               </label>
               <label className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs">
                 <Checkbox checked={createForm.subtract} onCheckedChange={(value) => onSetCreateForm((prev) => prev ? { ...prev, subtract: Boolean(value) } : prev)} />
-                <span>Vom Lager abziehen</span>
+                <span>{t.xljvSubtractFromStock}</span>
               </label>
             </>
           ) : null}
           {site === "JV" ? (
             <>
-              <Input placeholder="JV URL-Key" value={createForm.jv_urlkey} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_urlkey: event.target.value } : prev)} />
+              <Input placeholder={t.xljvUrlKey} value={createForm.jv_urlkey} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_urlkey: event.target.value } : prev)} />
               <Input
-                placeholder="JV Price"
+                placeholder={t.price}
                 value={createForm.price}
                 onChange={(event) =>
                   onSetCreateForm((prev) =>
@@ -248,12 +248,12 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                   )
                 }
               />
-              <Input placeholder="JV MwSt-Satz ID (mwstid)" value={createForm.jv_mwstid} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_mwstid: event.target.value } : prev)} />
+              <Input placeholder={t.xljvMwstId} value={createForm.jv_mwstid} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_mwstid: event.target.value } : prev)} />
               <div className="md:col-span-2 rounded-xl border border-border bg-card px-3 py-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-semibold">Verfugbarkeit (Lieferzeit)</span>
+                  <span className="text-xs font-semibold">{t.xljvAvailabilityDeliveryTime}</span>
                   <Button type="button" variant="ghost" onClick={() => void onLoadDeliveryOptions()} disabled={deliveryOptionsLoading}>
-                    {deliveryOptionsLoading ? "Loading..." : "Refresh"}
+                    {deliveryOptionsLoading ? t.loading : t.refresh}
                   </Button>
                 </div>
                 <select
@@ -261,7 +261,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                   value={createForm.jv_lieferzeitid || ""}
                   onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_lieferzeitid: event.target.value } : prev)}
                 >
-                  <option value="">Select delivery option</option>
+                  <option value="">{t.xljvSelectDeliveryOption}</option>
                   {deliveryOptions.map((option) => (
                     <option key={option.id} value={String(option.id)}>
                       {option.label}
@@ -269,11 +269,11 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                   ))}
                 </select>
               </div>
-              <Input placeholder="JV Einheit ID (einheitid)" value={createForm.jv_einheitid} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_einheitid: event.target.value } : prev)} />
-              <Input placeholder="JV Grundeinheit ID" value={createForm.jv_grundeinheit} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_grundeinheit: event.target.value } : prev)} />
-              <Input placeholder="JV VPE" value={createForm.jv_vpe} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_vpe: event.target.value } : prev)} />
-              <Input placeholder="JV Preisbasis (z.B. brutto)" value={createForm.jv_preisbasis} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_preisbasis: event.target.value } : prev)} />
-              <Input placeholder="JV Preisfilter (z.B. default)" value={createForm.jv_preisfilter} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_preisfilter: event.target.value } : prev)} />
+              <Input placeholder={t.xljvEinheitId} value={createForm.jv_einheitid} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_einheitid: event.target.value } : prev)} />
+              <Input placeholder={t.xljvGrundeinheitId} value={createForm.jv_grundeinheit} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_grundeinheit: event.target.value } : prev)} />
+              <Input placeholder={t.xljvVpe} value={createForm.jv_vpe} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_vpe: event.target.value } : prev)} />
+              <Input placeholder={t.xljvPreisbasis} value={createForm.jv_preisbasis} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_preisbasis: event.target.value } : prev)} />
+              <Input placeholder={t.xljvPreisfilter} value={createForm.jv_preisfilter} onChange={(event) => onSetCreateForm((prev) => prev ? { ...prev, jv_preisfilter: event.target.value } : prev)} />
               <label className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs">
                 <Checkbox
                   checked={Boolean(createForm.jv_is_sofort)}
@@ -281,7 +281,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                     onSetCreateForm((prev) => (prev ? { ...prev, jv_is_sofort: Boolean(value) } : prev))
                   }
                 />
-                <span>is sofort</span>
+                <span>{t.xljvIsSofort}</span>
               </label>
             </>
           ) : null}
@@ -291,8 +291,13 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
             createImageUploadLoading={createImageUploadLoading}
             labels={{
               uploadImageToFtp: t.uploadImageToFtp,
+              uploadXlImage: t.xljvUploadXlImage,
               uploading: t.uploading,
-              uploadedUrlsAutoAdded: t.uploadedUrlsAutoAdded
+              uploadedUrlsAutoAdded: t.uploadedUrlsAutoAdded,
+              uploadedImagePaths: t.xljvUploadedImagePaths,
+              mainImagePath: t.xljvMainImagePath,
+              additionalImagePathsJson: t.xljvAdditionalImagePathsJson,
+              willAppearAfterUpload: t.xljvWillAppearAfterUpload
             }}
             onCreateImageUpload={onCreateImageUpload}
           />

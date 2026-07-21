@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { useLabels } from "../../app/use-labels";
 
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -15,6 +16,7 @@ type ProductEditorJobPanelProps = {
 };
 
 export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditorJobPanelProps) {
+  const t = useLabels();
   if (!job) return null;
   const jobStatus = String(job.status || "").toLowerCase();
   const isInFlight = jobStatus === "queued" || jobStatus === "running";
@@ -28,31 +30,31 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
   const progressMessage = String(job.summary.progress_message || "").trim();
 
   return (
-    <SectionCard title="Apply Result" subtitle="Orchestrator job status and target results." className="rounded-xl border-border bg-card shadow-sm">
+    <SectionCard title={t.productEditorApplyResultTitle} subtitle={t.productEditorApplyResultSubtitle} className="rounded-xl border-border bg-card shadow-sm">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          The result panel reflects Product Editor job state, not a hidden direct marketplace call.
+          {t.productEditorApplyResultHint}
         </p>
         <Button type="button" variant="secondary" disabled={loading || !job.job_id} onClick={onRefresh}>
           {loading ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
-          Refresh Job
+          {t.productEditorRefreshJob}
         </Button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <JobStat label="Job ID" value={job.job_id ? job.job_id.slice(0, 8) : "pending"} />
-        <JobStat label="Status" value={String(job.status)} />
-        <JobStat label="Succeeded" value={String(job.summary.success ?? 0)} />
-        <JobStat label="Failed" value={String(job.summary.failed ?? 0)} />
+        <JobStat label={t.productEditorJobId} value={job.job_id ? job.job_id.slice(0, 8) : t.pending} />
+        <JobStat label={t.status} value={String(job.status)} />
+        <JobStat label={t.productEditorSucceeded} value={String(job.summary.success ?? 0)} />
+        <JobStat label={t.productEditorFailed} value={String(job.summary.failed ?? 0)} />
       </div>
 
       {isInFlight || progressPhase || total > 0 ? (
         <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
           <div className="flex items-center justify-between gap-3 text-sm">
             <div className="min-w-0">
-              <div className="font-medium text-foreground">{progressMessage || "JV batch progress"}</div>
+              <div className="font-medium text-foreground">{progressMessage || t.productEditorJvBatchProgress}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {progressPhase || "status"} / {completed}/{total || completed || 0}
+                {progressPhase || t.productEditorStatusLabel} / {completed}/{total || completed || 0}
               </div>
             </div>
             <StatusBadge tone="planned">{jobStatus}</StatusBadge>
@@ -86,7 +88,7 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
-                Target completed successfully.
+                {t.productEditorTargetCompleted}
               </div>
             )}
           </article>

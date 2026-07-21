@@ -3,6 +3,7 @@
 import { Loader2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useLabels } from "../../app/use-labels";
 import { useToast } from "../shared/toast-provider";
 import { Button } from "../ui/button";
 import { importKidGreenFile, type KidGreenImportProgressEvent } from "./inventory-api";
@@ -14,6 +15,7 @@ type ImportKidGreenButtonProps = {
 };
 
 export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) {
+  const t = useLabels();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -37,7 +39,7 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
   function handleProgressEvent(event: KidGreenImportProgressEvent) {
     if (event.type === "start") {
       setProgressPercent(18);
-      setProgressLabel(`Preparing ${event.unique_kids} item(s) for import...`);
+      setProgressLabel(t.kidGreenPreparingItems.replace("{count}", String(event.unique_kids)));
       return;
     }
 
@@ -47,8 +49,14 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
       setProgressPercent(Math.max(20, Math.min(55, percent)));
       setProgressLabel(
         event.error
-          ? `Afterbuy fetch failed for ${event.kid_number} (${event.completed}/${event.total}).`
-          : `Fetched Afterbuy data for ${event.kid_number} (${event.completed}/${event.total}).`
+          ? t.kidGreenAfterbuyFetchFailed
+              .replace("{kid}", event.kid_number)
+              .replace("{completed}", String(event.completed))
+              .replace("{total}", String(event.total))
+          : t.kidGreenAfterbuyFetched
+              .replace("{kid}", event.kid_number)
+              .replace("{completed}", String(event.completed))
+              .replace("{total}", String(event.total))
       );
       return;
     }
@@ -59,15 +67,24 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
       setProgressPercent(Math.max(55, Math.min(99, percent)));
       setProgressLabel(
         event.status === "ok"
-          ? `Imported ${event.kid_number} (${event.completed}/${event.total}), created ${event.orders_created}, updated ${event.orders_updated}.`
-          : `Processed ${event.kid_number} (${event.completed}/${event.total}): ${event.error || event.status}.`
+          ? t.kidGreenImportedProgress
+              .replace("{kid}", event.kid_number)
+              .replace("{completed}", String(event.completed))
+              .replace("{total}", String(event.total))
+              .replace("{created}", String(event.orders_created))
+              .replace("{updated}", String(event.orders_updated))
+          : t.kidGreenProcessedProgress
+              .replace("{kid}", event.kid_number)
+              .replace("{completed}", String(event.completed))
+              .replace("{total}", String(event.total))
+              .replace("{status}", String(event.error || event.status))
       );
       return;
     }
 
     if (event.type === "complete") {
       setProgressPercent(100);
-      setProgressLabel("Import completed.");
+      setProgressLabel(t.importCompleted);
       return;
     }
 
@@ -87,38 +104,38 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
     setSelectedFileName(file.name);
     setIsImporting(true);
     setProgressPercent(0);
-    setProgressLabel("Uploading file...");
+    setProgressLabel(t.uploadingFile);
     try {
       const result = await importKidGreenFile(file, {
         workers: DEFAULT_WORKERS,
         onUploadProgress: (percent) => {
           const scaledPercent = Math.max(1, Math.min(18, Math.round((percent / 90) * 18)));
           setProgressPercent(scaledPercent);
-          setProgressLabel(`Uploading file... ${percent}%`);
+          setProgressLabel(`${t.uploadingFile} ${percent}%`);
         },
         onProgressEvent: handleProgressEvent,
       });
       setProgressPercent(100);
-      setProgressLabel("Import completed.");
+      setProgressLabel(t.importCompleted);
       const summaryParts = [
-        typeof result.total_payloads === "number" ? `payloads: ${result.total_payloads}` : null,
-        typeof result.unique_kids === "number" ? `kids: ${result.unique_kids}` : null,
-        Array.isArray(result.failed_kids) ? `failed: ${result.failed_kids.length}` : null,
-        Array.isArray(result.item_results) ? `items: ${result.item_results.length}` : null,
+        typeof result.total_payloads === "number" ? t.payloadsLabel.replace("{count}", String(result.total_payloads)) : null,
+        typeof result.unique_kids === "number" ? t.kidsLabel.replace("{count}", String(result.unique_kids)) : null,
+        Array.isArray(result.failed_kids) ? t.failedLabel.replace("{count}", String(result.failed_kids.length)) : null,
+        Array.isArray(result.item_results) ? t.itemsLabel.replace("{count}", String(result.item_results.length)) : null,
       ].filter(Boolean);
 
       showToast(
-        summaryParts.length > 0 ? `Kid green import completed, ${summaryParts.join(", ")}.` : "Kid green import completed.",
+        summaryParts.length > 0 ? t.kidGreenImportCompletedSummary.replace("{summary}", summaryParts.join(", ")) : t.kidGreenImportCompleted,
         "success"
       );
 
       try {
         await onImported?.();
       } catch {
-        showToast("Import completed, but the inventory table did not refresh automatically.", "info");
+        showToast(t.inventoryRefreshNotAutomatic, "info");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Kid green import failed.";
+      const message = error instanceof Error ? error.message : t.kidGreenImportFailed;
       setProgressLabel(message);
       showToast(message, "error");
     } finally {
@@ -147,16 +164,16 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
         onClick={() => inputRef.current?.click()}
       >
         {isImporting ? <Loader2 className="animate-spin" /> : <Upload />}
-        Import JSON
+        {t.importJson}
       </Button>
 
       {(isImporting || progressLabel)
         ? renderOverlay(
-            <div className="pointer-events-none fixed right-3 top-3 z-[76] w-[min(88vw,18rem)] sm:right-4 sm:top-4">
-              <div className="pointer-events-auto rounded-2xl border border-border/80 bg-background/95 px-3 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-md">
+            <div className="wh-kid-green-import-dvd" role="status" aria-live="polite">
+              <div className="wh-kid-green-import-dvd__card rounded-2xl border border-border/80 bg-background/95 px-3 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-md">
                 <div className="mb-2 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Kid Green Import</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.kidGreenImport}</p>
                     <p className="truncate text-sm font-medium text-foreground">{selectedFileName ?? "kid_green.json"}</p>
                   </div>
                   <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{progressPercent}%</span>
@@ -167,7 +184,7 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
                     style={{ width: `${Math.max(4, progressPercent)}%` }}
                   />
                 </div>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">{progressLabel ?? "Preparing import..."}</p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">{progressLabel ?? t.preparingImport}</p>
               </div>
             </div>
           )

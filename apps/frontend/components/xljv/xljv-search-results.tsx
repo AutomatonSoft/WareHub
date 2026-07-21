@@ -75,9 +75,14 @@ export function XLJVSearchResults(props: XLJVSearchResultsProps) {
       {allXlResult ? (
         <Card>
           <CardHeader>
-            <CardTitle>All XL Sites</CardTitle>
+            <CardTitle>{t.xljvAllSitesTitle}</CardTitle>
             <CardDescription>
-            All XL sites for EAN {allXlResult.query_ean} | {t.found}: {allXlResult.found_count} | {t.missing}: {allXlResult.missing_count}
+            {t.xljvAllSitesDescription
+              .replace("{ean}", allXlResult.query_ean)
+              .replace("{foundLabel}", t.found)
+              .replace("{foundCount}", String(allXlResult.found_count))
+              .replace("{missingLabel}", t.missing)
+              .replace("{missingCount}", String(allXlResult.missing_count))}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -106,7 +111,7 @@ export function XLJVSearchResults(props: XLJVSearchResultsProps) {
                     {allXlResult.found.map((row) => (
                       <TableRow key={`${row.site_key}-${row.product_id}`}>
                         <TableCell>
-                          <Checkbox checked={selectedSiteKeys.includes(row.site_key)} onCheckedChange={() => onToggleSelectedSite(row.site_key)} aria-label={`Use ${row.site_key}`} />
+                          <Checkbox checked={selectedSiteKeys.includes(row.site_key)} onCheckedChange={() => onToggleSelectedSite(row.site_key)} aria-label={t.xljvUseSiteKeyAria.replace("{siteKey}", row.site_key)} />
                         </TableCell>
                         <TableCell>
                           <input className="ui-radio focus-ring" type="radio" name="template-site" checked={templateSiteKey === row.site_key} onChange={() => onSetTemplateSiteKey(row.site_key)} />

@@ -5,11 +5,12 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
+from django.db.models import BooleanField, Case, F, Prefetch, When
 from django.utils import timezone
+from datetime import date, datetime, time, timedelta
 from queue import Queue
 import logging
 import ast
-from decimal import Decimal, InvalidOperation
 import re
 import threading
 from rest_framework import generics, status
@@ -26,9 +27,20 @@ import urllib.request
 from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
-from .models import EANPool, EANUsage, Ean, Kid, Orders, ProductAttributes
+from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
+from .order_amounts import parse_order_amount
+from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
-from .inventory_service import build_inventory_rows, build_kid_ean_summary
+from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
+from .place_rules import (
+    find_place_conflict,
+    list_available_pool_places,
+    normalize_place,
+    parse_pool_place,
+    suggest_nearest_free_place,
+    suggest_next_free_base_place,
+    suggest_same_base_subplace,
+)
 from .kid_green_import_service import (
     KidGreenImportOptions,
     import_kid_green_json_bytes,
@@ -38,6 +50,7 @@ from .ftp_upload import (
     FtpUploadCorruptedFileError,
     collect_uploaded_files,
     delete_uploaded_photo_urls,
+    normalize_managed_public_photo_value,
     upload_kid_photo_file,
     upload_jv_product_file_for_site,
     upload_public_file,
@@ -48,15 +61,19 @@ from .permissions import SessionRolePermission
 from .serializers import (
     EANPoolImportSerializer,
     EANPoolReserveSerializer,
+    EANPoolClaimForJobSerializer,
     EANPoolTakeNextSerializer,
     EANPoolSerializer,
     EANUsageMarkSerializer,
     EANUsageSerializer,
     EanPatchSerializer,
+    EanStatusReadSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
+    ClientDetailViewSerializer,
     KidModelSerializer,
     KidUserReadSerializer,
+    OrderDetailViewSerializer,
     OrderModelSerializer,
     OrderUserReadSerializer,
     ProductAttributesPatchSerializer,
@@ -66,10 +83,35 @@ from orders_pars.service import (
     parse_afterbuy_datetime,
     search_items_auktionsliste,
 )
+from afterbuy_service.memo_sync import AfterbuyOrderMemoSyncService
 
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
+    if not photo_urls:
+        return
+    retained_urls = retained_inventory_history_photo_urls(photo_urls)
+    photo_urls = [url for url in photo_urls if url not in retained_urls]
+    if not photo_urls:
+        logger.info(
+            "KID_PHOTO_CLEANUP_DEFERRED_FOR_INVENTORY_HISTORY context=%s kid_id=%s photo_count=%s",
+            context,
+            kid_id,
+            len(retained_urls),
+        )
+        return
+    try:
+        delete_uploaded_photo_urls(photo_urls)
+    except Exception:
+        logger.exception(
+            "KID_PHOTO_CLEANUP_FAILED context=%s kid_id=%s photo_count=%s",
+            context,
+            kid_id,
+            len(photo_urls),
+        )
 KID_GREEN_IMPORT_JOBS: dict[str, dict] = {}
 KID_GREEN_IMPORT_JOBS_LOCK = threading.Lock()
 
@@ -129,9 +171,13 @@ def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
 
 def _normalize_photo_list(value: object) -> list[str]:
     if isinstance(value, list):
-        return [str(item or "").strip() for item in value if str(item or "").strip()]
+        return [
+            str(normalize_managed_public_photo_value(str(item or "").strip()) or "").strip()
+            for item in value
+            if str(item or "").strip()
+        ]
     if isinstance(value, str):
-        text = value.strip()
+        text = str(normalize_managed_public_photo_value(value) or "").strip()
         return [text] if text else []
     return []
 
@@ -194,11 +240,11 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
         "kid_id": _normalize_search_text(row.get("kid_id")),
         "account": _normalize_search_text(row.get("kid_account")),
         "place": _normalize_search_text(row.get("place")),
+        "section": _normalize_search_text(row.get("section")),
         "location": location_value,
         "room": _normalize_search_text(row.get("room")),
         "type": _normalize_search_text(row.get("type")),
         "commentary": _normalize_search_text(row.get("commentary")),
-        "listing_status": _normalize_search_text(row.get("listing_status")),
         "quantity": _normalize_search_text(row.get("quantity")),
         "company": _normalize_search_text(row.get("company")),
         "color": _normalize_search_text(row.get("color")),
@@ -285,9 +331,6 @@ def _sort_inventory_rows_by_place(rows: list[dict], descending: bool = False) ->
 
 
 INVENTORY_QUERY_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("listing status", "listing_status"),
-    ("listing", "listing_status"),
-    ("status", "listing_status"),
     ("kid number", "kid_number"),
     ("kid id", "kid_id"),
     ("kid", "kid"),
@@ -313,6 +356,69 @@ def _find_kid_by_number(kid_number: str):
     if not normalized:
         return None
     return Kid.objects.filter(kid_number__contains=[normalized]).order_by("id").first()
+
+
+def _find_kid_by_place(place: object):
+    normalized = normalize_place(place)
+    if not normalized:
+        return None
+    return Kid.objects.filter(place=normalized).order_by("id").first()
+
+
+def _place_conflict_error(place: object, *, exclude_kid_id: int | None = None) -> dict:
+    normalized = normalize_place(place)
+    same_base_subplace = suggest_same_base_subplace(normalized, exclude_kid_id=exclude_kid_id)
+    next_free_base_place = suggest_next_free_base_place(
+        exclude_kid_id=exclude_kid_id,
+        start_from=(parse_pool_place(normalized)[0] + 1) if parse_pool_place(normalized) is not None else 1,
+    )
+    suggested_place = same_base_subplace or next_free_base_place or suggest_nearest_free_place(normalized, exclude_kid_id=exclude_kid_id)
+    message_parts = [f"Place '{normalized}' is already occupied."]
+    if same_base_subplace:
+        message_parts.append(f"Nearest free subplace: '{same_base_subplace}'.")
+    if next_free_base_place:
+        message_parts.append(f"Nearest free base place: '{next_free_base_place}'.")
+    message = " ".join(message_parts)
+    return {
+        "code": "place_occupied",
+        "message": message,
+        "place": [message],
+        "details": {
+            "requested_place": normalized,
+            "suggested_place": suggested_place,
+            "same_base_subplace": same_base_subplace,
+            "next_free_base_place": next_free_base_place,
+        },
+    }
+
+
+def _existing_kid_requires_place_error(existing, *, exclude_kid_id: int | None = None) -> dict:
+    current_place = normalize_place(getattr(existing, "place", None))
+    same_base_subplace = suggest_same_base_subplace(current_place, exclude_kid_id=exclude_kid_id)
+    parsed_place = parse_pool_place(current_place)
+    next_free_base_place = suggest_next_free_base_place(
+        exclude_kid_id=exclude_kid_id,
+        start_from=(parsed_place[0] + 1) if parsed_place is not None else 1,
+    )
+    message_parts = [f"This kid already exists under place '{current_place}'."]
+    if same_base_subplace:
+        message_parts.append(f"Nearest free subplace: '{same_base_subplace}'.")
+    if next_free_base_place:
+        message_parts.append(f"Nearest free base place: '{next_free_base_place}'.")
+    message = " ".join(message_parts)
+    return {
+        "code": "kid_already_exists_place_required",
+        "message": message,
+        "place": [message],
+        "details": {
+            "kid_id": getattr(existing, "id", None),
+            "kid_number": primary_kid_number(getattr(existing, "kid_number", None)),
+            "current_place": current_place,
+            "same_base_subplace": same_base_subplace,
+            "next_free_base_place": next_free_base_place,
+            "suggested_place": same_base_subplace or next_free_base_place,
+        },
+    }
 
 
 class ServiceHealthAPIView(APIView):
@@ -480,6 +586,9 @@ class DevBackendSessionSyncAPIView(APIView):
         login = str(payload.get("login") or "").strip()
         username = str(payload.get("username") or "").strip()
         email = str(payload.get("email") or "").strip()
+        first_name = str(payload.get("first_name") or "").strip()
+        last_name = str(payload.get("last_name") or "").strip()
+        display_name = " ".join(value for value in (first_name, last_name) if value)
 
         if account_status != "approved":
             return Response(
@@ -506,6 +615,9 @@ class DevBackendSessionSyncAPIView(APIView):
         request.session["username"] = username or login or role
         request.session["login"] = login or username or role
         request.session["email"] = email
+        request.session["first_name"] = first_name
+        request.session["last_name"] = last_name
+        request.session["display_name"] = display_name or login or username or role
         request.session["auth_source"] = "backend_token_bridge"
         request.session["auth_request_id"] = request_id
         request.session.modified = True
@@ -548,27 +660,9 @@ class InventoryRowsPagination(PageNumberPagination):
         )
 
 
-def _to_decimal_amount(value: str) -> Decimal | None:
-    raw = (value or "").strip().upper().replace("EUR", "")
-    if not raw:
-        return None
-    raw = raw.replace("\xa0", " ").replace(" ", "")
-    raw = "".join(ch for ch in raw if ch.isdigit() or ch in {".", ",", "-"})
-    if not raw:
-        return None
-    if "," in raw and "." in raw:
-        raw = raw.replace(".", "").replace(",", ".")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
-    try:
-        return Decimal(raw)
-    except InvalidOperation:
-        return None
-
-
 def _status_by_amounts(zahlungssumme: str, rechnungssumme: str) -> str:
-    zahlung = _to_decimal_amount(zahlungssumme)
-    rechnung = _to_decimal_amount(rechnungssumme)
+    zahlung = parse_order_amount(zahlungssumme)
+    rechnung = parse_order_amount(rechnungssumme)
     if zahlung is not None and rechnung is not None and zahlung == rechnung:
         return "paid"
     return "no_paid"
@@ -675,9 +769,9 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
                     "title": title,
                     "sku": sku,
                     "memo": memo,
-                    "date": parse_afterbuy_datetime(verkaufsdatum),
+                    "order_date": parse_afterbuy_datetime(verkaufsdatum),
                     "status": _status_by_amounts(zahlungssumme, rechnungssumme),
-                    "payment_status": rechnungssumme or None,
+                    "full_amount": rechnungssumme or None,
                     "additional_items": additional_items,
                 }
 
@@ -835,7 +929,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         raw_price = KidListCreateAPIView._coalesce_value(data, query, "price")
         if raw_price not in (None, ""):
-            parsed_price = _to_decimal_amount(str(raw_price))
+            parsed_price = parse_order_amount(str(raw_price))
             if parsed_price is None:
                 raise ValidationError({"price": ["Price must be a numeric value."]})
             attrs["price"] = parsed_price
@@ -925,8 +1019,19 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             or self._coalesce_value(payload, query, "kid")
             or []
         )
+        primary_payload_kid_number = primary_kid_number(payload["kid_number"])
+        existing = _find_kid_by_number(primary_payload_kid_number)
         place = self._coalesce_value(payload, query, "place")
-        if place not in (None, ""):
+        if place in (None, ""):
+            if existing is not None:
+                return Response(
+                    _existing_kid_requires_place_error(existing, exclude_kid_id=existing.id),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            auto_place = suggest_next_free_base_place()
+            if auto_place is not None:
+                payload["place"] = auto_place
+        else:
             payload["place"] = str(place).strip()
         account = self._coalesce_value(payload, query, "account")
         if account not in (None, ""):
@@ -946,7 +1051,6 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             except Exception:
                 pass
 
-        primary_payload_kid_number = primary_kid_number(payload["kid_number"])
         uploaded_files = collect_uploaded_files(request)
         uploaded_photo_urls: list[str] = []
         if uploaded_files:
@@ -985,7 +1089,12 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         validated = serializer.validated_data
         kid_number = primary_kid_number(validated.get("kid_number"))
 
-        existing = _find_kid_by_number(kid_number)
+        existing = _find_kid_by_place(validated.get("place"))
+        target_place = validated.get("place")
+        conflict = find_place_conflict(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None)
+        if conflict is not None:
+            return Response(_place_conflict_error(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None), status=status.HTTP_400_BAD_REQUEST)
+
         if existing is None:
             with transaction.atomic():
                 kid, sync_summary = self.perform_create(serializer)
@@ -999,10 +1108,24 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             response_data = dict(output.data)
             response_data["sync"] = sync_summary
             response_data["enrichment"] = enrichment_summary
+            record_inventory_change(
+                kid=kid,
+                actor=request_actor(request),
+                action="product_created",
+                changes=[],
+            )
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
+        existing_kid_number = primary_kid_number(existing.kid_number)
+        if existing_kid_number != kid_number:
+            return Response(
+                _place_conflict_error(target_place, exclude_kid_id=None),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        before_values = {field: getattr(existing, field) for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit")}
         update_fields = []
-        for field in ("account", "place", "photo", "room", "furniture_type", "listing_status", "commentary", "b_ware", "store", "in_transit"):
+        for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit"):
             if field in validated:
                 next_value = validated.get(field)
                 if getattr(existing, field) != next_value:
@@ -1022,6 +1145,9 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         response_data = dict(output.data)
         response_data["sync"] = sync_summary
         response_data["enrichment"] = enrichment_summary
+        changes = changed_fields(before_values, {field: getattr(existing, field) for field in before_values})
+        if changes:
+            record_inventory_change(kid=existing, actor=request_actor(request), action="product_updated", changes=changes)
         return Response(response_data, status=status.HTTP_200_OK)
 
 class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -1042,6 +1168,13 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         payload = request.data.copy() if hasattr(request.data, "copy") else request.data
         serializer = self.get_serializer(instance, data=payload, partial=partial)
         serializer.is_valid(raise_exception=True)
+        before_values = {field: getattr(instance, field) for field in serializer.validated_data}
+
+        if "place" in serializer.validated_data:
+            target_place = serializer.validated_data.get("place")
+            conflict = find_place_conflict(target_place, exclude_kid_id=instance.id)
+            if conflict is not None:
+                return Response(_place_conflict_error(target_place, exclude_kid_id=instance.id), status=status.HTTP_400_BAD_REQUEST)
 
         photo_was_provided = "photo" in serializer.validated_data
         next_photos = _normalize_photo_list(serializer.validated_data.get("photo")) if photo_was_provided else old_photos
@@ -1049,8 +1182,12 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
 
         with transaction.atomic():
             self.perform_update(serializer)
-            if removed_photos:
-                delete_uploaded_photo_urls(removed_photos)
+
+        changes = changed_fields(before_values, {field: getattr(instance, field) for field in before_values})
+        if changes:
+            record_inventory_change(kid=instance, actor=request_actor(request), action="product_updated", changes=changes)
+        if removed_photos:
+            _delete_uploaded_photo_urls_safe(removed_photos, context="kid_partial_update", kid_id=instance.id)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1059,8 +1196,9 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         with transaction.atomic():
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
-                delete_uploaded_photo_urls(photo_urls)
+                _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
             Ean.objects.filter(kid_id=instance.id).delete()
+            EanStatus.objects.filter(ean_id=instance.id).delete()
             Orders.objects.filter(kid_id=instance.id).delete()
             ProductAttributes.objects.filter(kid_id=instance.id).delete()
             with default_connection.cursor() as cursor:
@@ -1117,6 +1255,7 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
+        previous_memo = instance.memo
         payload = request.data.copy()
         if "kid" in payload or "kid_number" in payload:
             return Response(
@@ -1127,8 +1266,36 @@ class OrderRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         payload.pop("kid_number", None)
         serializer = self.get_serializer(instance, data=payload, partial=partial)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        memo_was_updated = "memo" in serializer.validated_data
+        save_kwargs = {}
+        if memo_was_updated:
+            save_kwargs = {
+                "memo_sync_status": "pending",
+                "memo_sync_error": None,
+                "memo_sync_error_type": None,
+            }
+        updated_order = serializer.save(**save_kwargs)
+        if memo_was_updated:
+            updated_order = AfterbuyOrderMemoSyncService().sync_order(updated_order)
+            if previous_memo != updated_order.memo:
+                record_inventory_change(
+                    kid=updated_order.kid,
+                    actor=request_actor(request),
+                    action="order_memo_updated",
+                    changes=[
+                        {
+                            "field": "order.memo",
+                            "before": previous_memo or "",
+                            "after": updated_order.memo or "",
+                        }
+                    ],
+                    metadata={
+                        "entity": "order",
+                        "order_db_id": updated_order.id,
+                        "order_id": updated_order.order_id,
+                    },
+                )
+        return Response(OrderModelSerializer(updated_order).data, status=status.HTTP_200_OK)
 
 
 class KidCompositeUpdateAPIView(APIView):
@@ -1143,30 +1310,39 @@ class KidCompositeUpdateAPIView(APIView):
         old_photos = _normalize_photo_list(kid.photo)
         removed_photos: list[str] = []
         updated_orders: list[Orders] = []
+        audit_changes: list[dict] = []
 
         with transaction.atomic():
             kid_payload = payload.get("kid")
             if isinstance(kid_payload, dict):
                 kid_serializer = KidCompositePatchSerializer(kid, data=kid_payload, partial=True)
                 kid_serializer.is_valid(raise_exception=True)
+                before_values = {field: getattr(kid, field) for field in kid_serializer.validated_data}
                 if "photo" in kid_serializer.validated_data:
                     next_photos = _normalize_photo_list(kid_serializer.validated_data.get("photo"))
                     removed_photos = [url for url in old_photos if url not in next_photos]
                 kid_serializer.save()
+                audit_changes.extend(changed_fields(before_values, {field: getattr(kid, field) for field in before_values}))
 
             ean_payload = payload.get("ean")
             if isinstance(ean_payload, dict):
                 ean_row, _ = Ean.objects.get_or_create(kid=kid)
                 ean_serializer = EanPatchSerializer(ean_row, data=ean_payload, partial=True)
                 ean_serializer.is_valid(raise_exception=True)
+                ean_before = {f"ean.{field}": getattr(ean_row, field) for field in ean_serializer.validated_data}
                 ean_serializer.save()
+                ean_after = {field: getattr(ean_row, field.removeprefix("ean.")) for field in ean_before}
+                audit_changes.extend(changed_fields(ean_before, ean_after))
 
             attrs_payload = payload.get("product_attributes")
             if isinstance(attrs_payload, dict):
                 attrs_row, _ = ProductAttributes.objects.get_or_create(kid=kid)
                 attrs_serializer = ProductAttributesPatchSerializer(attrs_row, data=attrs_payload, partial=True)
                 attrs_serializer.is_valid(raise_exception=True)
+                attrs_before = {f"attributes.{field}": getattr(attrs_row, field) for field in attrs_serializer.validated_data}
                 attrs_serializer.save()
+                attrs_after = {field: getattr(attrs_row, field.removeprefix("attributes.")) for field in attrs_before}
+                audit_changes.extend(changed_fields(attrs_before, attrs_after))
 
             for order_payload in payload.get("orders") or []:
                 order_pk = int(order_payload["id"])
@@ -1182,8 +1358,11 @@ class KidCompositeUpdateAPIView(APIView):
                 order_serializer.is_valid(raise_exception=True)
                 updated_orders.append(order_serializer.save())
 
-            if removed_photos:
-                delete_uploaded_photo_urls(removed_photos)
+            if audit_changes:
+                record_inventory_change(kid=kid, actor=request_actor(request), action="product_updated", changes=audit_changes)
+
+        if removed_photos:
+            _delete_uploaded_photo_urls_safe(removed_photos, context="kid_composite_update", kid_id=kid.id)
 
         kid.refresh_from_db()
         response_orders = list(Orders.objects.filter(kid=kid, pk__in=[order.id for order in updated_orders]).order_by("id"))
@@ -1211,6 +1390,61 @@ class KidOrderIDsAPIView(APIView):
         return Response({"kid_id": kid.id, "order_ids": order_ids})
 
 
+class KidDetailViewAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request, pk: int):
+        kid = get_object_or_404(Kid, pk=pk)
+        purge_expired_inventory_change_history()
+
+        ean_row = Ean.objects.filter(kid=kid).first()
+        status_row = EanStatus.objects.filter(ean_id=kid.id).first()
+        attrs_row = ProductAttributes.objects.filter(kid=kid).first()
+        client_row = Client.objects.filter(kid=kid).first()
+        order_items = (
+            OrderItem.objects.annotate(
+                is_main_item=Case(
+                    When(afterbuy_item_id=F("order__order_id"), then=True),
+                    default=False,
+                    output_field=BooleanField(),
+                )
+            )
+            .order_by("id")
+        )
+        orders = list(
+            Orders.objects.filter(kid=kid)
+            .prefetch_related(Prefetch("items", queryset=order_items))
+            .order_by("-order_date", "-id")
+        )
+        change_log_rows = list(
+            InventoryChangeLog.objects.filter(kid=kid)
+            .order_by("-created_at", "-id")[:50]
+        )
+
+        payload = {
+            "kid": KidModelSerializer(kid).data,
+            "ean": EanPatchSerializer(ean_row).data if ean_row is not None else None,
+            "ean_status": EanStatusReadSerializer(status_row).data if status_row is not None else None,
+            "product_attributes": ProductAttributesPatchSerializer(attrs_row).data if attrs_row is not None else None,
+            "client": ClientDetailViewSerializer(client_row).data if client_row is not None else None,
+            "orders": OrderDetailViewSerializer(orders, many=True).data,
+            "inventory_change_log": [
+                {
+                    "id": row.id,
+                    "occurred_at": row.created_at.isoformat(),
+                    "actor": {"login": row.actor_login, "name": row.actor_name},
+                    "action": row.action,
+                    "kid_number": row.kid_number,
+                    "place": row.place,
+                    "changes": row.changes,
+                    "metadata": row.metadata,
+                }
+                for row in change_log_rows
+            ],
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class KidEanSummaryAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -1223,6 +1457,8 @@ class KidEanSummaryAPIView(APIView):
 
 class KidMarketplaceEansAPIView(APIView):
     permission_classes = [SessionRolePermission]
+    B_WARE_EAN_MARKER = "B_WARE"
+    OTTO_EAN_FIELDS = frozenset({"otto_jv_ean", "otto_xl_ean"})
 
     @staticmethod
     def _normalize_ean(value: object) -> str:
@@ -1238,6 +1474,13 @@ class KidMarketplaceEansAPIView(APIView):
             return None
         return normalized
 
+    @classmethod
+    def _normalize_marketplace_ean(cls, value: object, field_name: str) -> str | None:
+        normalized = cls._normalize_optional_ean(value)
+        if field_name in cls.OTTO_EAN_FIELDS and normalized and normalized.upper().replace("-", "_") == cls.B_WARE_EAN_MARKER:
+            return cls.B_WARE_EAN_MARKER
+        return normalized
+
     @staticmethod
     def _normalize_ean_for_response(value: object) -> str:
         normalized = str(value or "").strip()
@@ -1246,7 +1489,9 @@ class KidMarketplaceEansAPIView(APIView):
         return normalized
 
     @staticmethod
-    def _validate_ean(value: str, field_name: str) -> None:
+    def _validate_ean(value: str, field_name: str, *, allow_b_ware: bool = False) -> None:
+        if allow_b_ware and value == KidMarketplaceEansAPIView.B_WARE_EAN_MARKER:
+            return
         if len(value) != 13 or not value.isdigit():
             raise ValidationError({field_name: "EAN must be a 13-digit numeric string."})
 
@@ -1316,9 +1561,9 @@ class KidMarketplaceEansAPIView(APIView):
         for field in fields:
             if field not in payload:
                 continue
-            normalized = self._normalize_optional_ean(payload.get(field))
+            normalized = self._normalize_marketplace_ean(payload.get(field), field)
             if normalized is not None:
-                self._validate_ean(normalized, field)
+                self._validate_ean(normalized, field, allow_b_ware=field in self.OTTO_EAN_FIELDS)
             updates[field] = normalized
 
         if not updates:
@@ -1639,6 +1884,7 @@ class InventoryRowsAPIView(APIView):
 
         query_raw = str(request.query_params.get("q") or "").strip().lower()
         place_raw = str(request.query_params.get("place") or "").strip()
+        section_raw = str(request.query_params.get("section") or "").strip()
         location_raw = str(request.query_params.get("location") or "").strip().lower()
         quantity_raw = str(request.query_params.get("quantity") or "").strip()
         room_raw = str(request.query_params.get("room") or "").strip().lower()
@@ -1646,10 +1892,14 @@ class InventoryRowsAPIView(APIView):
         company_raw = str(request.query_params.get("company") or "").strip()
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
-        listing_raw = str(request.query_params.get("listing") or "").strip().lower()
+        b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
+        in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
             rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "place", place_raw)]
+
+        if section_raw:
+            rows = [row for row in rows if _inventory_row_matches_exact_text_filter(row, "section", section_raw)]
 
         if location_raw in {"warehouse", "store"}:
             rows = [row for row in rows if _inventory_row_text_filter_value(row, "location") == location_raw]
@@ -1672,12 +1922,11 @@ class InventoryRowsAPIView(APIView):
         if material_raw:
             rows = [row for row in rows if _inventory_row_matches_text_filter(row, "material", material_raw)]
 
-        if listing_raw in {"listed", "unlisted"}:
-            rows = [
-                row
-                for row in rows
-                if str(row.get("listing_status") or "unlisted").strip().lower() == listing_raw
-            ]
+        if b_ware_raw == "true":
+            rows = [row for row in rows if row.get("b_ware") is True]
+
+        if in_transit_raw == "true":
+            rows = [row for row in rows if row.get("in_transit") is True]
 
         if query_raw:
             query_tokens = [token for token in query_raw.split() if token]
@@ -1719,6 +1968,135 @@ class InventoryRowsAPIView(APIView):
         return paginator.get_paginated_response(page)
 
 
+class InventoryDashboardSummaryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        request_id = _request_id_from_request(request)
+        try:
+            return Response(build_inventory_dashboard_summary(), status=status.HTTP_200_OK)
+        except (ProgrammingError, OperationalError):
+            logger.exception(
+                "INVENTORY_DASHBOARD_SUMMARY_SCHEMA_ERROR request_id=%s",
+                request_id,
+            )
+            return Response(
+                {
+                    "code": "INVENTORY_DASHBOARD_SUMMARY_SCHEMA_ERROR",
+                    "message": "Inventory dashboard summary is unavailable due to a database schema mismatch.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("INVENTORY_DASHBOARD_SUMMARY_INTERNAL_ERROR request_id=%s", request_id)
+            return Response(
+                {
+                    "code": "INVENTORY_DASHBOARD_SUMMARY_INTERNAL_ERROR",
+                    "message": "Failed to load the inventory dashboard summary.",
+                    "request_id": request_id,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class InventoryChangeHistoryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    @staticmethod
+    def _date_range(request) -> tuple[datetime | None, datetime | None]:
+        def parse_date(parameter: str) -> date | None:
+            try:
+                return date.fromisoformat(str(request.query_params.get(parameter) or ""))
+            except (TypeError, ValueError):
+                return None
+
+        start_date = parse_date("date_from")
+        end_date = parse_date("date_to")
+        if start_date or end_date:
+            start_date = start_date or end_date
+            end_date = end_date or start_date
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+            current_timezone = timezone.get_current_timezone()
+            return (
+                timezone.make_aware(datetime.combine(start_date, time.min), current_timezone),
+                timezone.make_aware(datetime.combine(end_date + timedelta(days=1), time.min), current_timezone),
+            )
+
+        period = str(request.query_params.get("period") or "").strip().lower()
+        if period not in {"day", "week", "month"}:
+            return None, None
+        try:
+            selected_date = date.fromisoformat(str(request.query_params.get("date") or ""))
+        except ValueError:
+            selected_date = timezone.localdate()
+
+        if period == "week":
+            start_date = selected_date - timedelta(days=selected_date.weekday())
+            end_date = start_date + timedelta(days=7)
+        elif period == "month":
+            start_date = selected_date.replace(day=1)
+            end_date = (start_date.replace(year=start_date.year + 1, month=1) if start_date.month == 12 else start_date.replace(month=start_date.month + 1))
+        else:
+            start_date = selected_date
+            end_date = start_date + timedelta(days=1)
+
+        current_timezone = timezone.get_current_timezone()
+        return (
+            timezone.make_aware(datetime.combine(start_date, time.min), current_timezone),
+            timezone.make_aware(datetime.combine(end_date, time.min), current_timezone),
+        )
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        try:
+            page = int(request.query_params.get("page", 1))
+        except (TypeError, ValueError):
+            page = 1
+        search = str(request.query_params.get("q") or "").strip()
+        actor = str(request.query_params.get("actor") or "").strip()
+        occurred_after, occurred_before = self._date_range(request)
+        try:
+            history = list_inventory_change_history(
+                limit=limit,
+                page=page,
+                search=search,
+                actor=actor,
+                occurred_after=occurred_after,
+                occurred_before=occurred_before,
+            )
+            return Response(
+                {
+                    **history,
+                    "actors": list_inventory_change_history_actors(
+                        search=search,
+                        occurred_after=occurred_after,
+                        occurred_before=occurred_before,
+                    ),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except (ProgrammingError, OperationalError):
+            logger.exception("INVENTORY_CHANGE_HISTORY_SCHEMA_ERROR")
+            return Response(
+                {"code": "INVENTORY_CHANGE_HISTORY_SCHEMA_ERROR", "message": "Inventory change history is unavailable."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("INVENTORY_CHANGE_HISTORY_INTERNAL_ERROR")
+            return Response(
+                {
+                    "code": "INVENTORY_CHANGE_HISTORY_INTERNAL_ERROR",
+                    "message": "Failed to load inventory change history.",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class InventoryFilterOptionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -1754,6 +2132,8 @@ class InventoryFilterOptionsAPIView(APIView):
 
         payload = {
             "places": _inventory_filter_option_values(rows, "place"),
+            "available_places": list_available_pool_places(limit=250),
+            "sections": _inventory_filter_option_values(rows, "section"),
             "locations": sorted({_inventory_row_text_filter_value(row, "location") for row in rows if _inventory_row_text_filter_value(row, "location")}),
             "quantities": _inventory_filter_quantity_values(rows),
             "rooms": _inventory_filter_option_values(rows, "room"),
@@ -1777,7 +2157,6 @@ class KidsBulkUpdateAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        allowed_listing = {"listed", "unlisted"}
         kid_ids: set[int] = set()
         normalized_updates: list[dict] = []
 
@@ -1796,14 +2175,6 @@ class KidsBulkUpdateAPIView(APIView):
                 patch_data["room"] = str(raw.get("room") or "").strip()
             if "type" in raw:
                 patch_data["furniture_type"] = str(raw.get("type") or "").strip()
-            if "listing_status" in raw:
-                listing_status = str(raw.get("listing_status") or "").strip().lower()
-                if listing_status not in allowed_listing:
-                    return Response(
-                        {"detail": "listing_status must be 'listed' or 'unlisted'."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                patch_data["listing_status"] = listing_status
             if "color" in raw:
                 patch_data["color"] = str(raw.get("color") or "").strip()
             if "company" in raw:
@@ -1815,7 +2186,7 @@ class KidsBulkUpdateAPIView(APIView):
             if "currency" in raw:
                 patch_data["currency"] = str(raw.get("currency") or "").strip()
             if "price" in raw:
-                parsed_price = _to_decimal_amount(str(raw.get("price") or ""))
+                parsed_price = parse_order_amount(str(raw.get("price") or ""))
                 if parsed_price is None:
                     return Response(
                         {"detail": "price must be a numeric value."},
@@ -1852,39 +2223,57 @@ class KidsBulkUpdateAPIView(APIView):
             )
 
         updated_count = 0
+        inventory_changes: list[tuple[Kid, list[dict]]] = []
         with transaction.atomic():
             for patch_data in normalized_updates:
                 kid = kids[patch_data["kid_id"]]
+                audit_changes: list[dict] = []
+                kid_before = {
+                    field: getattr(kid, field)
+                    for field in ("room", "furniture_type")
+                    if field in patch_data
+                }
                 update_fields: list[str] = []
                 if "room" in patch_data and kid.room != patch_data["room"]:
                     kid.room = patch_data["room"]
                     update_fields.append("room")
-                if "listing_status" in patch_data and kid.listing_status != patch_data["listing_status"]:
-                    kid.listing_status = patch_data["listing_status"]
-                    update_fields.append("listing_status")
                 if "furniture_type" in patch_data and kid.furniture_type != patch_data["furniture_type"]:
                     kid.furniture_type = patch_data["furniture_type"]
                     update_fields.append("furniture_type")
                 if update_fields:
                     kid.save(update_fields=update_fields)
                     updated_count += 1
+                audit_changes.extend(changed_fields(kid_before, {field: getattr(kid, field) for field in kid_before}))
 
                 attrs_updates: dict = {}
                 for attr_key in ("quantity", "company", "color", "size", "material", "price", "currency"):
                     if attr_key in patch_data:
                         attrs_updates[attr_key] = patch_data[attr_key]
                 if attrs_updates:
-                    ProductAttributes.objects.update_or_create(
+                    existing_attrs = ProductAttributes.objects.filter(kid_id=kid.id).first()
+                    attrs_before = {
+                        f"attributes.{field}": getattr(existing_attrs, field) if existing_attrs is not None else None
+                        for field in attrs_updates
+                    }
+                    attrs_row, _ = ProductAttributes.objects.update_or_create(
                         kid_id=kid.id,
                         defaults=attrs_updates,
                     )
+                    attrs_after = {field: getattr(attrs_row, field.removeprefix("attributes.")) for field in attrs_before}
+                    audit_changes.extend(changed_fields(attrs_before, attrs_after))
+
+                if audit_changes:
+                    inventory_changes.append((kid, audit_changes))
+
+        for kid, changes in inventory_changes:
+            record_inventory_change(kid=kid, actor=request_actor(request), action="product_updated", changes=changes)
 
         return Response({"updated": updated_count}, status=status.HTTP_200_OK)
 
 
 class MarketplaceKauflandHealthAPIView(APIView):
     permission_classes = [SessionRolePermission]
-    kaufland_health_url = "https://kaufland.automatonsoft.de/api/health/"
+    kaufland_health_url = "https://kl.automatonsoft.de/api/health/"
 
     def get(self, request):
         req = urllib.request.Request(
@@ -2096,6 +2485,65 @@ class EANPoolTakeNextFreeAPIView(APIView):
         item.reserved_by = actor
         item.reserved_at = timezone.now()
         item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
+        return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
+
+
+class EANPoolClaimForJobAPIView(APIView):
+    """Atomically return one stable pool EAN for an orchestrator job."""
+
+    permission_classes = [SessionRolePermission]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = EANPoolClaimForJobSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+
+        item = (
+            EANPool.objects.select_for_update()
+            .filter(reserved_by=reservation_key, status__in=["reserved", "used"])
+            .order_by("id")
+            .first()
+        )
+        if item is None:
+            item = (
+                EANPool.objects.select_for_update()
+                .filter(status="free")
+                .order_by("ean", "id")
+                .first()
+            )
+            if item is None:
+                return Response(
+                    {
+                        "code": "ean_pool_empty",
+                        "detail": "Свободные EAN в пуле закончились.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            item.status = "reserved"
+            item.reserved_by = reservation_key
+            item.reserved_at = timezone.now()
+            item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
+
+        return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
+
+
+class EANPoolMarkJobUsedAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = EANPoolClaimForJobSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+        item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
+        if item is None:
+            return Response({"detail": "Резерв EAN для задания не найден."}, status=status.HTTP_404_NOT_FOUND)
+
+        if item.status == "reserved":
+            item.status = "used"
+            item.used_at = timezone.now()
+            item.save(update_fields=["status", "used_at", "updated_at"])
         return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
 
@@ -2315,5 +2763,5 @@ class UploadImagesToFtpAPIView(APIView):
 #         title = order.title
 #         memo = order.memo
 #         status = order.status
-#         date = order.date
-#         return Response({"kid": kid, "order_id": orders_id, "sku": sku, "title": title, "memo": memo, "status": status, "date": date})
+#         order_date = order.order_date
+#         return Response({"kid": kid, "order_id": orders_id, "sku": sku, "title": title, "memo": memo, "status": status, "order_date": order_date})

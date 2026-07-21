@@ -4,7 +4,7 @@ import { PageShell } from "@/components/ui/page-shell";
 export default function Loading() {
   return (
     <PageShell>
-      <LoadingState title="Loading dashboard..." />
+      <LoadingState titleKey="loadingDashboard" />
     </PageShell>
   );
 }

@@ -5,10 +5,32 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIClient
 
+from . import ftp_upload
 from .ftp_upload import _ensure_config_for_site_key
 
 
 class UploadImagesToFtpTests(SimpleTestCase):
+    def test_normalize_managed_public_base_url_prefers_prod_root_dir(self):
+        normalized = ftp_upload._normalize_managed_public_base_url(
+            "https://mediawarehub.veloxdesk.com/warehub/dev",
+            storage_root_dir="",
+            root_dir="warehub/prod",
+        )
+
+        self.assertEqual(normalized, "https://mediawarehub.veloxdesk.com/warehub/prod")
+
+    def test_normalize_managed_public_photo_url_rewrites_dev_record_to_prod(self):
+        with (
+            patch.object(ftp_upload, "UPLOAD_FTP_PUBLIC_BASE_URL", "https://mediawarehub.veloxdesk.com/warehub/dev"),
+            patch.object(ftp_upload, "UPLOAD_FTP_ROOT_DIR", "warehub/prod"),
+            patch.object(ftp_upload, "UPLOAD_FTP_STORAGE_ROOT_DIR", ""),
+        ):
+            normalized = ftp_upload.normalize_managed_public_photo_url(
+                "https://mediawarehub.veloxdesk.com/warehub/dev/images/example.png"
+            )
+
+        self.assertEqual(normalized, "https://mediawarehub.veloxdesk.com/warehub/prod/images/example.png")
+
     @override_settings(DEBUG=True)
     @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)
     @patch("database.views.upload_public_file_for_site_payload")

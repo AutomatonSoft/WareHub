@@ -1,9 +1,12 @@
+from decimal import Decimal
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import ProgrammingError
 from django.test import override_settings
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
+from datetime import timedelta
 import requests
 
 from catalog_core.models import ImportedProduct
@@ -18,7 +21,8 @@ from .kid_green_import_service import (
     upsert_orders_for_kids,
 )
 from .kid_number_utils import primary_kid_number
-from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .inventory_audit_service import record_inventory_change, retained_inventory_history_photo_urls
+from .models import Client, EANPool, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
 from .views import KidListCreateAPIView
 
 
@@ -44,8 +48,26 @@ class DatabaseApiTests(APITestCase):
             title="Test order",
             memo="Test memo",
             status="no_paid",
-            date="2026-04-06T10:00:00Z",
+            order_date="2026-04-06T10:00:00Z",
         )
+
+    def test_ean_pool_claim_for_job_is_idempotent_and_can_be_marked_used(self):
+        first = EANPool.objects.create(ean="4012345678901")
+        EANPool.objects.create(ean="4012345678902")
+        job_id = "b1d878f1-7a89-4c7b-a5fb-1b3a0e310ac1"
+
+        first_claim = self.client.post("/api/v1/ean-pool/claim-for-job/", {"job_id": job_id}, format="json")
+        repeated_claim = self.client.post("/api/v1/ean-pool/claim-for-job/", {"job_id": job_id}, format="json")
+
+        self.assertEqual(first_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(repeated_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(first_claim.data["ean"], first.ean)
+        self.assertEqual(repeated_claim.data["ean"], first.ean)
+
+        marked = self.client.post("/api/v1/ean-pool/mark-job-used/", {"job_id": job_id}, format="json")
+        self.assertEqual(marked.status_code, status.HTTP_200_OK)
+        first.refresh_from_db()
+        self.assertEqual(first.status, "used")
 
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]
@@ -54,6 +76,320 @@ class DatabaseApiTests(APITestCase):
         self.kid.refresh_from_db()
 
         self.assertEqual(primary_kid_number(self.kid.kid_number), "NEW-003")
+
+    def test_inventory_change_history_removes_records_older_than_90_days(self):
+        expired_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="EXPIRED-001",
+            action="product_updated",
+        )
+        InventoryChangeLog.objects.filter(pk=expired_entry.pk).update(
+            created_at=timezone.now() - timedelta(days=91)
+        )
+        recent_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="RECENT-001",
+            action="product_updated",
+        )
+
+        response = self.client.get("/api/v1/inventory/change-history/?limit=20")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["id"] for row in response.data["results"]], [recent_entry.id])
+        self.assertFalse(InventoryChangeLog.objects.filter(pk=expired_entry.pk).exists())
+
+    def test_inventory_change_history_filters_by_kid_place_actor_and_date_range(self):
+        matching_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="KID-SEARCH-001",
+            place="155A",
+            actor_login="ravil",
+            actor_name="Ravil Raykhanov",
+            action="product_updated",
+        )
+        other_entry = InventoryChangeLog.objects.create(
+            kid=self.kid,
+            kid_number="KID-OTHER-002",
+            place="39",
+            actor_login="other",
+            actor_name="Other User",
+            action="product_updated",
+        )
+        InventoryChangeLog.objects.filter(pk=other_entry.pk).update(
+            created_at=timezone.now() - timedelta(days=8)
+        )
+
+        response = self.client.get(
+            "/api/v1/inventory/change-history/",
+            {
+                "q": "155A",
+                "actor": "ravil",
+                "date_from": timezone.localdate().isoformat(),
+                "date_to": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["id"] for row in response.data["results"]], [matching_entry.id])
+        self.assertEqual(response.data["actors"], [{"value": "ravil", "label": "Ravil Raykhanov"}])
+
+    def test_inventory_change_history_paginates_ten_entries_per_page(self):
+        InventoryChangeLog.objects.bulk_create(
+            [
+                InventoryChangeLog(kid=self.kid, kid_number=f"KID-{index}", action="product_updated")
+                for index in range(12)
+            ]
+        )
+
+        response = self.client.get("/api/v1/inventory/change-history/", {"limit": 10, "page": 2})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["total"], 12)
+        self.assertEqual(response.data["page"], 2)
+        self.assertEqual(response.data["page_size"], 10)
+        self.assertEqual(len(response.data["results"]), 2)
+
+    def test_inventory_history_retains_removed_photo_urls_for_90_days(self):
+        retained_url = "https://example.test/removed-photo.png"
+        InventoryChangeLog.objects.create(
+            kid=self.kid,
+            action="product_updated",
+            changes=[{"field": "photo", "before": [retained_url], "after": []}],
+        )
+
+        self.assertEqual(
+            retained_inventory_history_photo_urls([retained_url, "https://example.test/unused-photo.png"]),
+            {retained_url},
+        )
+
+    def test_bulk_update_records_price_change_in_inventory_history(self):
+        ProductAttributes.objects.create(kid=self.kid, price="100.00")
+
+        response = self.client.patch(
+            "/api/v1/kids/bulk-update/",
+            {"updates": [{"kid_id": self.kid.id, "price": "125.50"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history_entry = InventoryChangeLog.objects.filter(kid=self.kid).latest("id")
+        self.assertEqual(
+            history_entry.changes,
+            [{"field": "attributes.price", "before": "100.00", "after": "125.50"}],
+        )
+
+    def test_inventory_history_records_each_product_field_change_separately(self):
+        record_inventory_change(
+            kid=self.kid,
+            actor={"login": "ravil", "name": "Ravil Raykhanov"},
+            action="product_updated",
+            changes=[
+                {"field": "attributes.price", "before": "100.00", "after": "125.50"},
+                {"field": "attributes.color", "before": "Black", "after": "White"},
+            ],
+        )
+
+        rows = list(InventoryChangeLog.objects.filter(kid=self.kid).order_by("id"))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            [row.changes for row in rows],
+            [
+                [{"field": "attributes.price", "before": "100.00", "after": "125.50"}],
+                [{"field": "attributes.color", "before": "Black", "after": "White"}],
+            ],
+        )
+
+    def test_kid_detail_view_returns_related_inventory_tables_for_selected_kid(self):
+        self.kid.account = "JV"
+        self.kid.place = "155A"
+        self.kid.section = "C"
+        self.kid.room = "Wohnzimmer"
+        self.kid.furniture_type = "Sofa"
+        self.kid.commentary = "Test commentary"
+        self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
+        self.kid.save(
+            update_fields=["account", "place", "section", "room", "furniture_type", "commentary", "photo"]
+        )
+        Ean.objects.create(
+            kid=self.kid,
+            main_ean="4062292498370",
+            jv="1111111111111",
+            xl="2222222222222",
+            otto_jv="B_WARE",
+        )
+        EanStatus.objects.create(
+            ean=self.kid,
+            jv=True,
+            xl=False,
+            otto_jv=True,
+            ebay_jv=False,
+        )
+        ProductAttributes.objects.create(
+            kid=self.kid,
+            quantity=2,
+            company="omide",
+            color="Grey",
+            size="3-Sitzer",
+            material="Metall",
+            price=Decimal("761.00"),
+            currency="EUR",
+        )
+        Client.objects.create(
+            kid=self.kid,
+            billing_first_name="Maria",
+            billing_last_name="Haase",
+            billing_street="Hauptstr. 26",
+            billing_postal_code="37434",
+            billing_city="Obernfeld",
+            billing_country_iso="DE",
+            billing_phone="015111650993",
+            billing_fax="055279999",
+            billing_email="maria@example.com",
+            shipping_first_name="Stefanie",
+            shipping_last_name="Haase",
+            shipping_street="Hauptstr. 77",
+            shipping_postal_code="37434",
+            shipping_city="Rollshausen",
+            shipping_country_iso="DE",
+        )
+        self.order.full_amount = "761.00"
+        self.order.invoice_number = "INV-001"
+        self.order.invoice_amount = Decimal("761.00")
+        self.order.already_paid = Decimal("500.00")
+        self.order.payment_date = timezone.now()
+        self.order.payment_method = "Transfer"
+        self.order.shipping_method = "DHL"
+        self.order.status = "no_paid"
+        self.order.save(update_fields=[
+            "full_amount",
+            "invoice_number",
+            "invoice_amount",
+            "already_paid",
+            "payment_date",
+            "payment_method",
+            "shipping_method",
+            "status",
+        ])
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="ORDER-001",
+            title="Основная позиция",
+            quantity=1,
+            item_price=Decimal("761.00"),
+            item_end_date=timezone.now(),
+            currency="EUR",
+        )
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="ORDER-001-EXTRA",
+            title="Дополнительная позиция",
+            quantity=1,
+            item_price=Decimal("0.00"),
+            item_end_date=timezone.now(),
+            currency="EUR",
+        )
+        record_inventory_change(
+            kid=self.kid,
+            actor={"login": "ravil", "name": "Ravil Raykhanov"},
+            action="product_updated",
+            changes=[{"field": "attributes.price", "before": "750.00", "after": "761.00"}],
+        )
+
+        response = self.client.get(f"/api/v1/kids/{self.kid.id}/detail-view/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["kid"]["id"], self.kid.id)
+        self.assertEqual(response.data["kid"]["place"], "155A")
+        self.assertEqual(response.data["ean"]["main_ean"], "4062292498370")
+        self.assertEqual(response.data["ean_status"]["jv"], True)
+        self.assertEqual(response.data["product_attributes"]["price"], "761.00")
+        self.assertEqual(response.data["product_attributes"]["company"], "omide")
+        self.assertEqual(response.data["client"]["billing_first_name"], "Maria")
+        self.assertEqual(response.data["client"]["billing_phone"], "015111650993")
+        self.assertEqual(response.data["client"]["billing_fax"], "055279999")
+        self.assertEqual(response.data["client"]["billing_email"], "maria@example.com")
+        self.assertEqual(response.data["client"]["shipping_city"], "Rollshausen")
+        self.assertEqual(len(response.data["orders"]), 1)
+        self.assertEqual(response.data["orders"][0]["order_id"], "ORDER-001")
+        self.assertEqual(response.data["orders"][0]["invoice_number"], "INV-001")
+        self.assertEqual(response.data["orders"][0]["invoice_amount"], "761.00")
+        self.assertIsNotNone(response.data["orders"][0]["payment_date"])
+        self.assertEqual(response.data["orders"][0]["payment_method"], "Transfer")
+        self.assertEqual(response.data["orders"][0]["shipping_method"], "DHL")
+        self.assertEqual(response.data["orders"][0]["already_paid"], "500.00")
+        self.assertEqual(response.data["orders"][0]["outstanding_amount"], "261.00")
+        self.assertFalse(response.data["orders"][0]["is_fully_paid"])
+        self.assertEqual(len(response.data["orders"][0]["items"]), 2)
+        self.assertEqual(response.data["orders"][0]["items"][0]["afterbuy_item_id"], "ORDER-001")
+        self.assertEqual(response.data["orders"][0]["items"][0]["title"], "Основная позиция")
+        self.assertEqual(response.data["orders"][0]["items"][0]["quantity"], 1)
+        self.assertEqual(response.data["orders"][0]["items"][0]["item_price"], "761.00")
+        self.assertIsNotNone(response.data["orders"][0]["items"][0]["item_end_date"])
+        self.assertEqual(response.data["orders"][0]["items"][0]["currency"], "EUR")
+        self.assertTrue(response.data["orders"][0]["items"][0]["is_main_item"])
+        self.assertFalse(response.data["orders"][0]["items"][1]["is_main_item"])
+        self.assertEqual(len(response.data["inventory_change_log"]), 1)
+        self.assertEqual(
+            response.data["inventory_change_log"][0]["changes"],
+            [{"field": "attributes.price", "before": "750.00", "after": "761.00"}],
+        )
+
+    def test_inventory_dashboard_summary_reports_inventory_readiness(self):
+        self.kid.place = "1A"
+        self.kid.photo = ["https://example.test/product.png"]
+        self.kid.in_transit = True
+        self.kid.b_ware = True
+        self.kid.save(update_fields=["place", "photo", "in_transit", "b_ware"])
+        Ean.objects.create(kid=self.kid, main_ean="4260174428871")
+        ProductAttributes.objects.create(kid=self.kid, price=Decimal("199.99"))
+        EanStatus.objects.create(
+            ean=self.kid,
+            jv=True,
+            otto_jv=True,
+            ebay_xl=True,
+            kaufland_jv=True,
+            hood_xl=True,
+        )
+
+        missing_photo = Kid.objects.create(kid_number="MISSING-PHOTO", place="2A", in_transit=True)
+        Ean.objects.create(kid=missing_photo, main_ean="4260174428872")
+        ProductAttributes.objects.create(kid=missing_photo, price=Decimal("49.99"))
+
+        Kid.objects.create(
+            kid_number="MISSING-METADATA",
+            photo=["https://example.test/other.png"],
+        )
+
+        response = self.client.get("/api/v1/inventory/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            {
+                "total_products": 3,
+                "placed_products": 2,
+                "unplaced_products": 1,
+                "without_photos": 1,
+                "without_ean": 1,
+                "without_price": 1,
+                "ready_for_listing": 1,
+                "readiness_percent": 33,
+                "in_transit_products": 2,
+                "b_ware_products": 1,
+                "marketplace_statuses": {
+                    "jv": {"true_count": 1, "false_count": 0},
+                    "xl": {"true_count": 0, "false_count": 1},
+                    "otto_jv": {"true_count": 1, "false_count": 0},
+                    "otto_xl": {"true_count": 0, "false_count": 1},
+                    "ebay_jv": {"true_count": 0, "false_count": 1},
+                    "ebay_xl": {"true_count": 1, "false_count": 0},
+                    "kaufland_jv": {"true_count": 1, "false_count": 0},
+                    "kaufland_xl": {"true_count": 0, "false_count": 1},
+                    "hood_jv": {"true_count": 0, "false_count": 1},
+                    "hood_xl": {"true_count": 1, "false_count": 0},
+                },
+            },
+        )
 
     def test_create_kid(self):
         payload = {"kid_number": "900900"}
@@ -78,6 +414,7 @@ class DatabaseApiTests(APITestCase):
         self.assertIn("sync", response.data)
         self.assertIsNone(response.data["sync"]["error"])
         self.assertIsNone(response.data["sync"]["error_detail"])
+        self.assertEqual(kid.place, "1")
 
     @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("Missing Afterbuy login credentials in .env for JV, XL or CH."))
     def test_create_kid_reports_missing_afterbuy_credentials(self, mocked_search):
@@ -275,7 +612,9 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(attrs.quantity, 5)
         self.assertEqual(str(attrs.price), "4564.00")
 
-    def test_create_kid_is_idempotent_by_kid_number(self):
+    def test_create_kid_is_idempotent_by_place_for_same_kid(self):
+        self.kid.place = "A1"
+        self.kid.save(update_fields=["place"])
         payload = {"kid_number": self.kid.kid_number, "place": "A1"}
         response = self.client.post("/api/v1/kids/", payload, format="json")
 
@@ -287,7 +626,56 @@ class DatabaseApiTests(APITestCase):
         self.kid.refresh_from_db()
         self.assertEqual(self.kid.place, "A1")
 
-    def test_create_kid_is_idempotent_and_updates_inventory_fields(self):
+    def test_create_kid_with_existing_kid_number_and_no_place_returns_place_suggestions(self):
+        self.kid.place = "2"
+        self.kid.save(update_fields=["place"])
+        Kid.objects.create(kid_number=["OTHER-001A"], place="2A")
+        Kid.objects.create(kid_number=["OTHER-001B"], place="2B")
+        for occupied_base in ("3", "4", "5", "6"):
+            Kid.objects.create(kid_number=[f"BASE-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": primary_kid_number(self.kid.kid_number)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "kid_already_exists_place_required")
+        self.assertEqual(response.data["details"]["current_place"], "2")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2C")
+        self.assertEqual(response.data["details"]["next_free_base_place"], "7")
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.place, "2")
+
+    def test_create_kid_same_kid_number_with_new_place_creates_new_kid(self):
+        self.kid.place = "2"
+        self.kid.save(update_fields=["place"])
+
+        payload = {
+            "kid_number": self.kid.kid_number,
+            "place": "2A",
+            "room": "Wohnzimmer",
+            "type": "Sofa",
+        }
+
+        response = self.client.post("/api/v1/kids/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.place, "2")
+        self.assertEqual(
+            Kid.objects.filter(kid_number__contains=[primary_kid_number(self.kid.kid_number)]).count(),
+            2,
+        )
+        created = Kid.objects.get(id=response.data["id"])
+        self.assertEqual(created.place, "2A")
+        self.assertEqual(created.room, "Wohnzimmer")
+        self.assertEqual(created.furniture_type, "Sofa")
+
+    def test_create_kid_is_idempotent_and_updates_inventory_fields_by_place(self):
+        self.kid.place = "A-01"
+        self.kid.save(update_fields=["place"])
         payload = {
             "kid_number": self.kid.kid_number,
             "place": "A-01",
@@ -300,7 +688,6 @@ class DatabaseApiTests(APITestCase):
             "material": "Wood",
             "price": "199.50",
             "currency": "USD",
-            "listing_status": "listed",
             "commentary": "Updated note",
             "b_ware": True,
             "store": True,
@@ -315,7 +702,6 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(self.kid.place, "A-01")
         self.assertEqual(self.kid.room, "Wohnzimmer")
         self.assertEqual(self.kid.furniture_type, "Sofa")
-        self.assertEqual(self.kid.listing_status, "listed")
         self.assertEqual(self.kid.commentary, "Updated note")
         self.assertTrue(self.kid.b_ware)
         self.assertTrue(self.kid.store)
@@ -330,6 +716,90 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(str(attrs.price), "199.50")
         self.assertEqual(attrs.currency, "EUR")
 
+    def test_create_kid_rejects_place_used_by_another_kid(self):
+        Kid.objects.create(kid_number=["OTHER-001"], place="2")
+        Kid.objects.create(kid_number=["OTHER-001A"], place="2A")
+        Kid.objects.create(kid_number=["OTHER-001B"], place="2B")
+        for occupied_base in ("3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"):
+            Kid.objects.create(kid_number=[f"BASE-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900911", "place": "2"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+        self.assertEqual(response.data["code"], "place_occupied")
+        self.assertEqual(response.data["details"]["requested_place"], "2")
+        self.assertEqual(response.data["details"]["suggested_place"], "2C")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2C")
+        self.assertEqual(response.data["details"]["next_free_base_place"], "18")
+        self.assertIn("2C", response.data["place"][0])
+        self.assertIn("18", response.data["place"][0])
+        self.assertEqual(Kid.objects.filter(kid_number__contains=["900911"]).count(), 0)
+
+    def test_update_kid_rejects_place_used_by_another_kid(self):
+        other_kid = Kid.objects.create(kid_number=["OTHER-002"], place="2")
+
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/",
+            {"place": "2"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+        self.assertEqual(response.data["details"]["requested_place"], "2")
+        self.assertEqual(response.data["details"]["suggested_place"], "2A")
+        self.assertEqual(response.data["details"]["same_base_subplace"], "2A")
+        self.kid.refresh_from_db()
+        self.assertNotEqual(self.kid.place, "2")
+
+    def test_create_kid_allows_subplace_when_base_place_exists(self):
+        Kid.objects.create(kid_number=["OTHER-003"], place="2")
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900912", "place": "2A"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Kid.objects.filter(kid_number__contains=["900912"], place="2A").exists())
+
+    def test_create_kid_rejects_multi_letter_subplace(self):
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900913", "place": "2AA"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("place", response.data)
+
+    def test_create_kid_suggests_next_free_base_place_after_z(self):
+        Kid.objects.create(kid_number=["POOL-BASE"], place="2")
+        for suffix in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            Kid.objects.create(kid_number=[f"POOL-{suffix}"], place=f"2{suffix}")
+        for occupied_base in ("3", "4", "5", "6"):
+            Kid.objects.create(kid_number=[f"POOL-{occupied_base}"], place=occupied_base)
+
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900914", "place": "2Z"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "place_occupied")
+        self.assertEqual(response.data["details"]["requested_place"], "2Z")
+        self.assertEqual(response.data["details"]["suggested_place"], "7")
+        self.assertIsNone(response.data["details"]["same_base_subplace"])
+        self.assertEqual(response.data["details"]["next_free_base_place"], "7")
+        self.assertIn("7", response.data["place"][0])
+
     def test_kid_composite_update_updates_kid_ean_product_attributes_and_order(self):
         ean_row = Ean.objects.create(kid=self.kid, jv="1111111111111")
         attrs_row = ProductAttributes.objects.create(kid=self.kid, quantity=1, company="Old Co")
@@ -338,8 +808,8 @@ class DatabaseApiTests(APITestCase):
             "kid": {
                 "place": "B-12",
                 "room": "Bedroom",
-                "listing_status": "listed",
                 "commentary": "Updated from composite endpoint",
+                "section": "c",
             },
             "ean": {
                 "jv": "4062292028939",
@@ -371,8 +841,8 @@ class DatabaseApiTests(APITestCase):
 
         self.assertEqual(self.kid.place, "B-12")
         self.assertEqual(self.kid.room, "Bedroom")
-        self.assertEqual(self.kid.listing_status, "listed")
         self.assertEqual(self.kid.commentary, "Updated from composite endpoint")
+        self.assertEqual(self.kid.section, "C")
         self.assertEqual(ean_row.jv, "4062292028939")
         self.assertEqual(ean_row.hood_jv, "4062292028939")
         self.assertEqual(attrs_row.quantity, 7)
@@ -486,8 +956,8 @@ class DatabaseApiTests(APITestCase):
         payloads = load_kid_payloads_from_bytes(
             b"""
             [
-              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"},
-              {"kid":"KID-001","place":"B-2","listing_status":"unlisted"}
+              {"kid":"KID-001","place":"A-1"},
+              {"kid":"KID-001","place":"B-2"}
             ]
             """
         )
@@ -507,7 +977,7 @@ class DatabaseApiTests(APITestCase):
         payloads = load_kid_payloads_from_bytes(
             b"""
             [
-              {"kid":"KID-001","place":"A-1","listing_status":"unlisted"}
+              {"kid":"KID-001","place":"A-1"}
             ]
             """
         )
@@ -518,16 +988,32 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(kid_stats.skipped, 1)
         self.assertEqual(Kid.objects.filter(kid_number__contains=["KID-001"]).count(), 1)
         self.assertEqual(len(kid_map["KID-001"]), 1)
+
+    def test_kid_green_import_skips_other_kid_with_same_place(self):
+        Kid.objects.create(kid_number=["KID-001"], place="A-1")
+        payloads = load_kid_payloads_from_bytes(
+            b"""
+            [
+              {"kid":"KID-002","place":"A-1"}
+            ]
+            """
+        )
+
+        kid_map, kid_stats = upsert_kids(payloads)
+
+        self.assertEqual(kid_stats.created, 0)
+        self.assertEqual(kid_stats.skipped, 1)
+        self.assertEqual(Kid.objects.filter(place="A-1").count(), 1)
+        self.assertEqual(kid_map, {})
         self.assertEqual(kid_map["KID-001"][0].place, "A-1")
 
-    def test_kid_green_import_sets_ean_status_true_for_listed_items_with_eans(self):
+    def test_kid_green_import_sets_ean_status_true_for_items_with_eans(self):
         payloads = load_kid_payloads_from_bytes(
             b"""
             [
               {
                 "kid":"KID-555",
                 "place":"A-1",
-                "listing_status":"listed",
                 "Ean.jv":"4062292028939",
                 "Ean.otto_jv":"5062292028939",
                 "Ean.ebay_xl":"6062292028939"
@@ -714,7 +1200,8 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
-    def test_marketplace_hood_deactivate_by_kid_uses_ean_as_item_number(self, mocked_delete):
+    @patch("database.marketplace_deactivate_service._store_hood_snapshot_before_delete")
+    def test_marketplace_hood_deactivate_by_kid_uses_ean_as_item_number(self, mocked_snapshot, mocked_delete):
         kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
         Ean.objects.create(
             kid=kid,
@@ -736,6 +1223,13 @@ class DatabaseApiTests(APITestCase):
                 "item_number": "4062292028939",
             },
         }
+        mocked_snapshot.return_value = {
+            "ok": True,
+            "site_key": "HOOD_JV",
+            "channel": "HOOD",
+            "status_code": status.HTTP_200_OK,
+            "details": {"snapshot_saved": True},
+        }
 
         response = self.client.post(
             "/api/v1/marketplace/hood/deactivate-by-kid/",
@@ -752,11 +1246,17 @@ class DatabaseApiTests(APITestCase):
             account="jv",
             item_number="4062292028939",
         )
+        mocked_snapshot.assert_called_once_with(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
         status_row = EanStatus.objects.get(ean=kid)
         self.assertFalse(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service._apply_hood_delete_by_item_number")
-    def test_marketplace_hood_deactivate_by_kid_updates_active_hood_targets(self, mocked_delete):
+    @patch("database.marketplace_deactivate_service._store_hood_snapshot_before_delete")
+    def test_marketplace_hood_deactivate_by_kid_updates_active_hood_targets(self, mocked_snapshot, mocked_delete):
         kid = Kid.objects.create(kid_number=["KID-HOOD-BOTH"])
         Ean.objects.create(
             kid=kid,
@@ -783,6 +1283,13 @@ class DatabaseApiTests(APITestCase):
             }
 
         mocked_delete.side_effect = _fake_apply
+        mocked_snapshot.side_effect = lambda *, ean, site_key, account: {
+            "ok": True,
+            "site_key": site_key,
+            "channel": "HOOD",
+            "status_code": status.HTTP_200_OK,
+            "details": {"ean": ean, "account": account, "snapshot_saved": True},
+        }
 
         response = self.client.post(
             "/api/v1/marketplace/hood/deactivate-by-kid/",
@@ -795,6 +1302,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["summary"]["total"], 2)
         self.assertEqual(response.data["summary"]["success"], 2)
         self.assertEqual(mocked_delete.call_count, 2)
+        self.assertEqual(mocked_snapshot.call_count, 2)
         first_call = mocked_delete.call_args_list[0].kwargs
         second_call = mocked_delete.call_args_list[1].kwargs
         self.assertEqual(first_call["item_number"], first_call["ean"])
@@ -802,6 +1310,273 @@ class DatabaseApiTests(APITestCase):
         status_row = EanStatus.objects.get(ean=kid)
         self.assertFalse(status_row.hood_jv)
         self.assertFalse(status_row.hood_xl)
+
+    @patch("database.marketplace_deactivate_service._apply_hood_restore_from_snapshot")
+    def test_marketplace_hood_activate_by_kid_restores_inactive_target(self, mocked_restore):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-RESTORE"])
+        Ean.objects.create(kid=kid, hood_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, hood_jv=False)
+        mocked_restore.return_value = {
+            "ok": True,
+            "site_key": "HOOD_JV",
+            "channel": "HOOD",
+            "status_code": status.HTTP_201_CREATED,
+            "details": {"restored_from_snapshot": True},
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/hood/deactivate-by-kid/",
+            {"kid_number": "KID-HOOD-RESTORE", "inactive": False, "place": "12"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertTrue(response.data["results"][0]["details"]["restored_from_snapshot"])
+        mocked_restore.assert_called_once_with(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "12")
+
+    @patch("database.marketplace_deactivate_service.set_external_push_status")
+    @patch("database.marketplace_deactivate_service.requests.post")
+    @patch("database.marketplace_deactivate_service.build_create_urls", return_value=["https://hood.example/items/4062292028939"])
+    @patch(
+        "database.marketplace_deactivate_service.get_hood_product_snapshot_payload",
+        return_value={
+            "items": [
+                {
+                    "itemID": "remote-item-1",
+                    "itemNumber": "4062292028939",
+                    "title": "Saved Hood title",
+                    "description": "Saved Hood description",
+                    "price": "99.99",
+                    "quantity": 3,
+                    "categoryID": "2412",
+                    "condition": "new",
+                    "itemMode": "shopProduct",
+                    "images": ["https://cdn.example/image.jpg"],
+                    "productProperties": [{"name": "Material", "value": "Wood"}],
+                }
+            ]
+        },
+    )
+    def test_hood_restore_posts_saved_snapshot_fields(
+        self,
+        mocked_snapshot,
+        mocked_urls,
+        mocked_post,
+        mocked_push_status,
+    ):
+        from .marketplace_deactivate_service import _apply_hood_restore_from_snapshot
+
+        mocked_post.return_value.status_code = status.HTTP_200_OK
+        mocked_post.return_value.json.return_value = {"success": True}
+
+        result = _apply_hood_restore_from_snapshot(
+            ean="4062292028939",
+            site_key="HOOD_JV",
+            account="jv",
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status_code"], status.HTTP_201_CREATED)
+        self.assertEqual(
+            mocked_post.call_args.kwargs["json"],
+            {
+                "description": "Saved Hood description",
+                "title": "Saved Hood title",
+                "price": "99.99",
+                "quantity": 3,
+                "categoryID": "2412",
+                "condition": "new",
+                "itemMode": "shopProduct",
+                "itemNumber": "4062292028939",
+                "images": ["https://cdn.example/image.jpg"],
+                "productProperties": [{"name": "Material", "value": "Wood"}],
+                "ean": "4062292028939",
+                "account": "jv",
+            },
+        )
+        mocked_push_status.assert_called_once_with(account="jv", ean="4062292028939", pushed=True)
+
+    @patch("database.marketplace_deactivate_service._apply_xl_deactivate")
+    def test_marketplace_xl_deactivate_by_kid_uses_only_xlmoebel_de_and_updates_status(self, mocked_apply_xl):
+        kid = Kid.objects.create(kid_number=["KID-XL-DEACTIVATE"], place="4")
+        Ean.objects.create(kid=kid, xl="4062292028939")
+        EanStatus.objects.create(ean=kid, xl=True)
+
+        mocked_apply_xl.return_value = {
+            "ok": True,
+            "site_key": "XLMOEBEL_DE",
+            "channel": "XL",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": "4062292028939",
+                "site_key": "XLMOEBEL_DE",
+                "inactive": True,
+                "status": False,
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/xl/deactivate-by-kid/",
+            {"kid_number": "KID-XL-DEACTIVATE", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "xl_de_only")
+        self.assertEqual(response.data["summary"]["total"], 1)
+        mocked_apply_xl.assert_called_once_with(
+            ean="4062292028939",
+            site_key="XLMOEBEL_DE",
+            inactive=True,
+            actor="admin",
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service._apply_xl_deactivate")
+    def test_marketplace_xl_activate_by_kid_updates_place_from_request(self, mocked_apply_xl):
+        kid = Kid.objects.create(kid_number=["KID-XL-ACTIVATE"], place="-4")
+        Ean.objects.create(kid=kid, xl="4062292028939")
+        EanStatus.objects.create(ean=kid, xl=False)
+
+        mocked_apply_xl.return_value = {
+            "ok": True,
+            "site_key": "XLMOEBEL_DE",
+            "channel": "XL",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": "4062292028939",
+                "site_key": "XLMOEBEL_DE",
+                "inactive": False,
+                "status": True,
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/xl/deactivate-by-kid/",
+            {"kid_number": "KID-XL-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "xl_de_only")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
+
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_deactivate_by_kid_calls_jv_and_xl(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-DEACTIVATE"], place="4")
+        Ean.objects.create(
+            kid=kid,
+            kaufland_jv="4062292028939",
+            kaufland_xl="4062292028946",
+        )
+        EanStatus.objects.create(ean=kid, kaufland_jv=True, kaufland_xl=True)
+
+        mocked_apply.side_effect = lambda **kwargs: {
+            "ok": True,
+            "site_key": kwargs["site_key"],
+            "channel": "KAUFLAND",
+            "status_code": status.HTTP_200_OK,
+            "details": {
+                "ean": kwargs["ean"],
+                "controller": kwargs["controller"],
+                "inactive": kwargs["inactive"],
+            },
+        }
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-DEACTIVATE", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["mode"], "kaufland_jv_xl")
+        self.assertEqual(response.data["summary"], {"total": 2, "success": 2, "failed": 0})
+        self.assertEqual(mocked_apply.call_count, 2)
+        self.assertEqual(
+            {call.kwargs["controller"] for call in mocked_apply.call_args_list},
+            {"jv", "xl"},
+        )
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertFalse(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
+
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_activate_updates_only_successful_site(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-ACTIVATE"], place="-4")
+        Ean.objects.create(
+            kid=kid,
+            kaufland_jv="4062292028939",
+            kaufland_xl="4062292028946",
+        )
+        EanStatus.objects.create(ean=kid, kaufland_jv=False, kaufland_xl=False)
+
+        mocked_apply.side_effect = [
+            {
+                "ok": True,
+                "site_key": "KAUFLAND_JV",
+                "channel": "KAUFLAND",
+                "status_code": status.HTTP_200_OK,
+                "details": {},
+            },
+            {
+                "ok": False,
+                "site_key": "KAUFLAND_XL",
+                "channel": "KAUFLAND",
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "details": {"code": "kaufland_toggle_failed"},
+            },
+        ]
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-ACTIVATE", "inactive": False, "place": "18"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_207_MULTI_STATUS)
+        self.assertEqual(response.data["status"], "partial")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_xl)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "18")
+
+    @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
+    def test_marketplace_kaufland_toggle_is_noop_when_status_is_already_requested(self, mocked_apply):
+        kid = Kid.objects.create(kid_number=["KID-KAUFLAND-NOOP"], place="-4")
+        Ean.objects.create(kid=kid, kaufland_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, kaufland_jv=False)
+
+        response = self.client.post(
+            "/api/v1/marketplace/kaufland/toggle-by-kid/",
+            {"kid_number": "KID-KAUFLAND-NOOP", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["results"][0]["details"]["code"], "marketplace_kaufland_toggle_noop")
+        mocked_apply.assert_not_called()
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-4")
 
     def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
@@ -830,13 +1605,13 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["status"], "ok")
         self.assertEqual(response.data["summary"]["failed"], 0)
         site_keys = {row["site_key"]: row for row in response.data["results"]}
-        self.assertEqual(site_keys["HOOD_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertNotIn("HOOD_JV", site_keys)
         self.assertEqual(site_keys["OTTO_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
         self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
         self.assertEqual(site_keys["KAUFLAND_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
 
         status_row = EanStatus.objects.get(ean=kid)
-        self.assertFalse(status_row.hood_jv)
+        self.assertTrue(status_row.hood_jv)
         self.assertFalse(status_row.otto_jv)
         self.assertFalse(status_row.ebay_jv)
         self.assertFalse(status_row.kaufland_jv)
@@ -931,7 +1706,7 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertIsNone(kid.place)
 
-    def test_marketplace_local_statuses_by_kid_updates_unsupported_channels_on_activate(self):
+    def test_marketplace_local_statuses_by_kid_keeps_hood_status_on_activate(self):
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
         Ean.objects.create(
             kid=kid,
@@ -957,11 +1732,30 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], "ok")
         self.assertEqual(response.data["summary"]["failed"], 0)
+        site_keys = {row["site_key"]: row for row in response.data["results"]}
+        self.assertNotIn("HOOD_JV", site_keys)
         status_row = EanStatus.objects.get(ean=kid)
-        self.assertTrue(status_row.hood_jv)
+        self.assertFalse(status_row.hood_jv)
         self.assertTrue(status_row.otto_jv)
         self.assertTrue(status_row.ebay_jv)
-        self.assertTrue(status_row.kaufland_jv)
+        self.assertFalse(status_row.kaufland_jv)
+
+    def test_marketplace_local_statuses_by_kid_is_successful_noop_for_hood_only_mapping(self):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
+        Ean.objects.create(kid=kid, hood_jv="4062292028939")
+        EanStatus.objects.create(ean=kid, hood_jv=True)
+
+        response = self.client.post(
+            "/api/v1/marketplace/local-statuses-by-kid/",
+            {"kid_number": "KID-HOOD-ONLY", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+        self.assertEqual(response.data["results"][0]["details"]["code"], "marketplace_local_status_no_targets")
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertTrue(status_row.hood_jv)
 
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_artikelnr")
     @patch("database.marketplace_deactivate_service.push_product_to_source")
@@ -1530,12 +2324,13 @@ class DatabaseApiTests(APITestCase):
 
     def test_update_kid(self):
         response = self.client.patch(
-            f"/api/v1/kids/{self.kid.id}/", {"place": "stoyanka-3000"}, format="json"
+            f"/api/v1/kids/{self.kid.id}/", {"place": "stoyanka-3000", "section": "b"}, format="json"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.kid.refresh_from_db()
         self.assertEqual(self.kid.place, "stoyanka-3000")
+        self.assertEqual(self.kid.section, "B")
 
     def test_create_and_retrieve_order(self):
         payload = {
@@ -1545,7 +2340,7 @@ class DatabaseApiTests(APITestCase):
             "title": "New order",
             "memo": "New memo",
             "status": "paid",
-            "date": "2026-04-07T11:00:00Z",
+            "order_date": "2026-04-07T11:00:00Z",
         }
         create_response = self.client.post("/api/v1/orders/", payload, format="json")
         order_id = create_response.data["id"]
@@ -1554,6 +2349,56 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.data["order_id"], "ORDER-002")
+
+    @patch("database.views.AfterbuyOrderMemoSyncService.sync_order")
+    def test_order_memo_update_is_added_to_kid_change_history(self, sync_order):
+        sync_order.side_effect = lambda order: order
+
+        response = self.client.patch(
+            f"/api/v1/orders/{self.order.id}/",
+            {"memo": "Updated memo"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history_entry = InventoryChangeLog.objects.get(action="order_memo_updated")
+        self.assertEqual(history_entry.kid_id, self.kid.id)
+        self.assertEqual(
+            history_entry.changes,
+            [{"field": "order.memo", "before": "Test memo", "after": "Updated memo"}],
+        )
+        self.assertEqual(
+            history_entry.metadata,
+            {"entity": "order", "order_db_id": self.order.id, "order_id": "ORDER-001"},
+        )
+        sync_order.assert_called_once()
+
+    def test_order_exposes_expanded_afterbuy_fields_and_item_positions(self):
+        self.order.invoice_number = "INV-100"
+        self.order.full_amount = "2834.10"
+        self.order.already_paid = Decimal("0.00")
+        self.order.invoice_amount = Decimal("2834.10")
+        self.order.paid_amount = Decimal("0.00")
+        self.order.payment_method = "otto"
+        self.order.payment_id = "INVOICE"
+        self.order.payment_function = "TRANSFER"
+        self.order.save()
+        OrderItem.objects.create(
+            order=self.order,
+            afterbuy_item_id="753100115",
+            title="Main item",
+            quantity=1,
+            item_price=Decimal("2834.10"),
+            currency="EUR",
+        )
+
+        response = self.client.get(f"/api/v1/orders/{self.order.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["invoice_number"], "INV-100")
+        self.assertEqual(response.data["full_amount"], "2834.10")
+        self.assertEqual(response.data["payment_method"], "otto")
+        self.assertEqual(self.order.items.count(), 1)
 
     def test_get_order_ids_by_kid_id(self):
         response = self.client.get(f"/api/v1/kids/{self.kid.id}/order-ids/")
@@ -1565,9 +2410,8 @@ class DatabaseApiTests(APITestCase):
         self.kid.place = "A-01"
         self.kid.room = "ROOM-1"
         self.kid.furniture_type = "chair"
-        self.kid.listing_status = "listed"
         self.kid.photo = ["https://cdn.example.com/photo-main.jpg"]
-        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "photo"])
+        self.kid.save(update_fields=["place", "room", "furniture_type", "photo"])
 
         self.order.additional_items = [
             {"sku": "extra sku 4006381333931"},
@@ -1602,7 +2446,6 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kid_snapshot"]["place"], "A-01")
         self.assertEqual(response.data["kid_snapshot"]["room"], "ROOM-1")
         self.assertEqual(response.data["kid_snapshot"]["furniture_type"], "chair")
-        self.assertEqual(response.data["kid_snapshot"]["listing_status"], "listed")
         self.assertEqual(response.data["kid_snapshot"]["main_ean"], "")
         self.assertEqual(response.data["kid_snapshot"]["database_ean"], "")
         self.assertEqual(
@@ -1616,7 +2459,6 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(response.data["inventory_flags"]["missing_place"])
         self.assertFalse(response.data["inventory_flags"]["missing_room"])
         self.assertFalse(response.data["inventory_flags"]["missing_photo"])
-        self.assertTrue(response.data["inventory_flags"]["listed"])
 
     def test_marketplace_eans_patch_updates_database_ean(self):
         ean_row = Ean.objects.create(
@@ -1658,6 +2500,17 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["main_ean"], "4444444444444")
         self.assertEqual(response.data["database_ean"], "4444444444444")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
+
+    def test_marketplace_eans_patch_allows_b_ware_for_otto_only(self):
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-eans/",
+            {"otto_jv_ean": "b-ware", "otto_xl_ean": "B_WARE"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["otto_jv_ean"], "B_WARE")
+        self.assertEqual(response.data["otto_xl_ean"], "B_WARE")
 
     def test_marketplace_eans_get_hides_placeholder_values(self):
         Ean.objects.create(
@@ -1775,7 +2628,7 @@ class DatabaseApiTests(APITestCase):
             "title": "Bad order",
             "memo": "Bad memo",
             "status": "unknown",
-            "date": "2026-04-07T11:00:00Z",
+            "order_date": "2026-04-07T11:00:00Z",
         }
         response = self.client.post("/api/v1/orders/", payload, format="json")
 
@@ -1902,7 +2755,7 @@ class DatabaseApiTests(APITestCase):
             title="Second kid order",
             memo="Second memo",
             status="no_paid",
-            date="2026-04-06T12:00:00Z",
+            order_date="2026-04-06T12:00:00Z",
         )
 
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
@@ -1912,12 +2765,12 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(rows)
         self.assertTrue(all(row["kid_id"] == self.kid.id for row in rows))
 
-    def test_kids_bulk_update_room_type_listing(self):
+    def test_kids_bulk_update_room_and_type(self):
         second_kid = Kid.objects.create(kid_number="KID-SECOND-2")
         payload = {
             "updates": [
-                {"kid_id": self.kid.id, "room": RU_LIVING_ROOM, "type": RU_SOFA, "listing_status": "listed"},
-                {"kid_id": second_kid.id, "room": RU_KITCHEN, "type": RU_TABLE, "listing_status": "unlisted"},
+                {"kid_id": self.kid.id, "room": RU_LIVING_ROOM, "type": RU_SOFA},
+                {"kid_id": second_kid.id, "room": RU_KITCHEN, "type": RU_TABLE},
             ]
         }
 
@@ -1931,8 +2784,6 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(second_kid.room, RU_KITCHEN)
         self.assertEqual(self.kid.furniture_type, RU_SOFA)
         self.assertEqual(second_kid.furniture_type, RU_TABLE)
-        self.assertEqual(self.kid.listing_status, "listed")
-        self.assertEqual(second_kid.listing_status, "unlisted")
 
     def test_kids_bulk_update_product_attributes(self):
         payload = {
@@ -1979,14 +2830,13 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(row["color"], "Blue")
         self.assertEqual(row["order_id"], "ORDER-001")
 
-    def test_inventory_rows_filter_by_room_type_listing_and_query(self):
-        self.kid.listing_status = "listed"
+    def test_inventory_rows_filter_by_room_type_and_query(self):
         self.kid.room = RU_LIVING_ROOM
         self.kid.furniture_type = RU_SOFA
-        self.kid.save(update_fields=["listing_status", "room", "furniture_type"])
+        self.kid.save(update_fields=["room", "furniture_type"])
 
         response = self.client.get(
-            f"/api/v1/inventory/rows/?room={RU_LIVING_ROOM}&type={RU_SOFA}&listing=listed&q=13234455"
+            f"/api/v1/inventory/rows/?room={RU_LIVING_ROOM}&type={RU_SOFA}&q=13234455"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1994,15 +2844,14 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(rows)
         self.assertTrue(all(row["room"] == RU_LIVING_ROOM for row in rows))
         self.assertTrue(all(row["type"] == RU_SOFA for row in rows))
-        self.assertTrue(all(row["listing_status"] == "listed" for row in rows))
 
     def test_inventory_rows_filter_by_place_location_quantity_and_attributes(self):
         self.kid.place = "A-12-BLUE"
+        self.kid.section = "Z"
         self.kid.room = "Wohnzimmer"
         self.kid.furniture_type = "Corner Sofa"
-        self.kid.listing_status = "listed"
         self.kid.store = True
-        self.kid.save(update_fields=["place", "room", "furniture_type", "listing_status", "store"])
+        self.kid.save(update_fields=["place", "section", "room", "furniture_type", "store"])
         ProductAttributes.objects.create(
             kid=self.kid,
             quantity=7,
@@ -2016,7 +2865,6 @@ class DatabaseApiTests(APITestCase):
             place="B-99",
             room="Bedroom",
             furniture_type="Chair",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(
@@ -2031,7 +2879,6 @@ class DatabaseApiTests(APITestCase):
             place="C-17",
             room="Office",
             furniture_type="Desk",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(
@@ -2044,21 +2891,21 @@ class DatabaseApiTests(APITestCase):
 
         response = self.client.get(
             "/api/v1/inventory/rows/?"
-            "place=A-12-BLUE&location=store&quantity=7&room=wohn&type=corner"
-            "&company=nordic&color=ocean&material=velvet&listing=listed&page_size=100"
+            "place=A-12-BLUE&section=Z&location=store&quantity=7&room=wohn&type=corner"
+            "&company=nordic&color=ocean&material=velvet&page_size=100"
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data["results"]
         self.assertTrue(rows)
         self.assertTrue(all(row["place"] == "A-12-BLUE" for row in rows))
+        self.assertTrue(all(row["section"] == "Z" for row in rows))
         self.assertTrue(all(row["quantity"] == 7 for row in rows))
         self.assertTrue(all(str(row["room"]).lower() == "wohnzimmer" for row in rows))
         self.assertTrue(all(str(row["type"]).lower() == "corner sofa" for row in rows))
         self.assertTrue(all(str(row["company"]).lower() == "nordic house" for row in rows))
         self.assertTrue(all(str(row["color"]).lower() == "ocean blue" for row in rows))
         self.assertTrue(all(str(row["material"]).lower() == "soft velvet" for row in rows))
-        self.assertTrue(all(row["listing_status"] == "listed" for row in rows))
         self.assertTrue(all(bool(row["store"]) is True for row in rows))
         self.assertFalse(any(int(row["kid_id"]) == other_kid.id for row in rows))
 
@@ -2077,7 +2924,6 @@ class DatabaseApiTests(APITestCase):
         first_kid = Kid.objects.create(
             kid_number="PLACE-SORT-001",
             place="A-12",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=first_kid, quantity=1)
@@ -2085,7 +2931,6 @@ class DatabaseApiTests(APITestCase):
         empty_place_kid = Kid.objects.create(
             kid_number="PLACE-SORT-EMPTY",
             place="",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=empty_place_kid, quantity=1)
@@ -2116,7 +2961,6 @@ class DatabaseApiTests(APITestCase):
         place_1 = Kid.objects.create(
             kid_number="PLACE-NATURAL-001",
             place="1",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=place_1, quantity=1)
@@ -2124,7 +2968,6 @@ class DatabaseApiTests(APITestCase):
         place_1a = Kid.objects.create(
             kid_number="PLACE-NATURAL-001A",
             place="1A",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=place_1a, quantity=1)
@@ -2132,7 +2975,6 @@ class DatabaseApiTests(APITestCase):
         place_1b = Kid.objects.create(
             kid_number="PLACE-NATURAL-001B",
             place="1B",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=place_1b, quantity=1)
@@ -2140,7 +2982,6 @@ class DatabaseApiTests(APITestCase):
         place_2 = Kid.objects.create(
             kid_number="PLACE-NATURAL-002",
             place="2",
-            listing_status="listed",
             store=False,
         )
         ProductAttributes.objects.create(kid=place_2, quantity=1)
@@ -2158,6 +2999,69 @@ class DatabaseApiTests(APITestCase):
             [row["place"] for row in relevant_rows],
             ["1", "1A", "1B", "2", "10"],
         )
+
+    def test_inventory_rows_merge_multiple_orders_under_same_kid(self):
+        Orders.objects.create(
+            kid=self.kid,
+            order_id="ORDER-002, ORDER-002-A",
+            sku="4006381333931",
+            title="Second order title",
+            memo="Second order memo",
+            status="paid",
+            full_amount="249.99 EUR",
+            buyer="Second Buyer",
+            platform="ebay",
+            order_date="2026-04-07T12:00:00Z",
+        )
+
+        response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["entity"], "kid")
+        self.assertEqual(row["order_id"], "ORDER-001")
+        self.assertEqual(row["additional_order_ids_text"], "ORDER-002, ORDER-002-A")
+        self.assertEqual(row["buyer"], "Second Buyer")
+        self.assertEqual(row["full_amount"], "249.99 EUR")
+        self.assertEqual(row["global_price"], "249.99 EUR")
+        self.assertIn("13234455", row["sku_eans"])
+        self.assertIn("4006381333931", row["sku_eans"])
+        self.assertEqual(row["status"], "no_paid | paid")
+
+    def test_inventory_rows_can_filter_by_b_ware_and_in_transit(self):
+        self.kid.b_ware = True
+        self.kid.in_transit = True
+        self.kid.save(update_fields=["b_ware", "in_transit"])
+
+        other_kid = Kid.objects.create(
+            kid_number="FILTER-FLAGS-002",
+            place="88",
+            b_ware=False,
+            in_transit=False,
+        )
+        Orders.objects.create(
+            kid=other_kid,
+            order_id="ORDER-FLAGS-002",
+            sku="4006381333932",
+            title="Flags order",
+            memo="Flags memo",
+            status="no_paid",
+            order_date="2026-04-08T10:00:00Z",
+        )
+
+        b_ware_response = self.client.get("/api/v1/inventory/rows/?b_ware=true&page_size=100")
+        self.assertEqual(b_ware_response.status_code, status.HTTP_200_OK)
+        b_ware_ids = {row["kid_id"] for row in b_ware_response.data["results"]}
+        self.assertIn(self.kid.id, b_ware_ids)
+        self.assertNotIn(other_kid.id, b_ware_ids)
+
+        in_transit_response = self.client.get("/api/v1/inventory/rows/?in_transit=true&page_size=100")
+        self.assertEqual(in_transit_response.status_code, status.HTTP_200_OK)
+        in_transit_ids = {row["kid_id"] for row in in_transit_response.data["results"]}
+        self.assertIn(self.kid.id, in_transit_ids)
+        self.assertNotIn(other_kid.id, in_transit_ids)
 
     def test_inventory_filter_options_return_distinct_values_from_all_rows(self):
         self.kid.place = "A-12-BLUE"
@@ -2193,6 +3097,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["locations"], ["warehouse", "store"])
         self.assertIn("A-12-BLUE", response.data["places"])
+        self.assertIn("1", response.data["available_places"])
+        self.assertIn("Z", response.data["sections"])
         self.assertIn("B-99", response.data["places"])
         self.assertIn("7", response.data["quantities"])
         self.assertIn("3", response.data["quantities"])
@@ -2221,7 +3127,6 @@ class DatabaseApiTests(APITestCase):
             kid = Kid.objects.create(
                 kid_number=kid_number,
                 place=place,
-                listing_status="listed",
                 store=False,
             )
             ProductAttributes.objects.create(kid=kid, quantity=1)
@@ -2230,6 +3135,17 @@ class DatabaseApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["places"][:5], ["1", "1A", "1B", "2", "10"])
+        self.assertEqual(response.data["available_places"][:6], ["3", "4", "5", "6", "7", "8"])
+
+    def test_inventory_filter_options_keep_base_place_available_when_only_subplace_is_used(self):
+        self.kid.place = "1A"
+        self.kid.save(update_fields=["place"])
+        ProductAttributes.objects.create(kid=self.kid, quantity=1)
+
+        response = self.client.get("/api/v1/inventory/filter-options/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("1", response.data["available_places"])
 
     def test_inventory_rows_query_searches_across_kid_order_attributes_and_ean_fields(self):
         self.kid.place = "Place 12"
@@ -2242,8 +3158,8 @@ class DatabaseApiTests(APITestCase):
         self.order.title = "Title Search Token"
         self.order.memo = "Memo Search Token"
         self.order.sku = "SKU-SEARCH-999"
-        self.order.payment_status = "1560.00 EUR"
-        self.order.save(update_fields=["order_id", "title", "memo", "sku", "payment_status"])
+        self.order.full_amount = "1560.00 EUR"
+        self.order.save(update_fields=["order_id", "title", "memo", "sku", "full_amount"])
         ProductAttributes.objects.create(
             kid=self.kid,
             quantity=3,
@@ -2364,9 +3280,9 @@ class DatabaseApiTests(APITestCase):
 
     def test_inventory_rows_include_direct_database_order_fields(self):
         self.order.buyer = "John Buyer"
-        self.order.payment_status = "199.99 EUR"
+        self.order.full_amount = "199.99 EUR"
         self.order.additional_items = [{"order_id": "ORDER-001-A"}, {"order_id": "ORDER-001-B"}]
-        self.order.save(update_fields=["buyer", "payment_status", "additional_items"])
+        self.order.save(update_fields=["buyer", "full_amount", "additional_items"])
 
         response = self.client.get(f"/api/v1/inventory/rows/?kid_id={self.kid.id}&page_size=100")
 
@@ -2375,14 +3291,14 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(rows)
         row = rows[0]
         self.assertEqual(row["buyer"], "John Buyer")
-        self.assertEqual(row["payment_status"], "199.99 EUR")
+        self.assertEqual(row["full_amount"], "199.99 EUR")
         self.assertEqual(row["global_price"], "199.99 EUR")
         self.assertEqual(row["order_id"], "ORDER-001")
         self.assertEqual(row["additional_order_ids_text"], "ORDER-001-A, ORDER-001-B")
 
     @patch("database.views.build_inventory_rows")
     def test_inventory_rows_returns_structured_500_on_schema_error(self, mocked_build_inventory_rows):
-        mocked_build_inventory_rows.side_effect = ProgrammingError("missing column database_kid.listing_status")
+        mocked_build_inventory_rows.side_effect = ProgrammingError("missing column database_kid.section")
 
         response = self.client.get("/api/v1/inventory/rows/", HTTP_X_REQUEST_ID="req-test-500")
 

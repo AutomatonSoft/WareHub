@@ -16,3 +16,18 @@ test("falls back to generic url when env-specific url is missing", () => {
   const url = resolveMobileApkUrl("prod", "", "", "https://cdn.example.com/default.apk");
   assert.equal(url, "https://cdn.example.com/default.apk");
 });
+
+test("stage env falls back to the stage APK endpoint", () => {
+  const url = resolveMobileApkUrl("stage", "", "", "");
+  assert.equal(url, "/warehubstage.apk");
+});
+
+test("production env falls back to the production APK endpoint", () => {
+  const url = resolveMobileApkUrl("prod", "", "", "");
+  assert.equal(url, "/warehub.apk");
+});
+
+test("ignores placeholder APK values", () => {
+  const url = resolveMobileApkUrl("prod", "", "TODO_UNKNOWN", "");
+  assert.equal(url, "/warehub.apk");
+});

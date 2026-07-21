@@ -54,7 +54,7 @@ export function CreateProductJobPanel(props: Props) {
         <Input
           value={latestJobId}
           onChange={(event) => onLatestJobIdChange(event.target.value)}
-          placeholder="job_id"
+          placeholder={t.productEditorJobId}
           className="max-w-[320px]"
         />
         <Button variant="secondary" onClick={onLoadJobStatus}>{t.loadJobStatus}</Button>

@@ -24,17 +24,22 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from database.views import (
     EANPoolImportAPIView,
+    EANPoolClaimForJobAPIView,
+    EANPoolMarkJobUsedAPIView,
     EANPoolMarkUsedAPIView,
     EANPoolReserveAPIView,
     EANPoolStatsAPIView,
     EANPoolTakeNextFreeAPIView,
     EANPoolUsageByEANAPIView,
+    InventoryDashboardSummaryAPIView,
+    InventoryChangeHistoryAPIView,
     InventoryFilterOptionsAPIView,
     InventoryRowsAPIView,
     KidGreenImportAPIView,
     KidGreenImportJobStatusAPIView,
     KidsBulkUpdateAPIView,
     KidCompositeUpdateAPIView,
+    KidDetailViewAPIView,
     KidListCreateAPIView,
     KidEanSummaryAPIView,
     KidMarketplaceEansAPIView,
@@ -53,7 +58,9 @@ from database.views_dectivate import (
     MarketplaceDeactivateByKidAPIView,
     MarketplaceHoodDeactivateByKidAPIView,
     MarketplaceJVDeactivateSofortByKidAPIView,
+    MarketplaceKauflandToggleByKidAPIView,
     MarketplaceLocalStatusesByKidAPIView,
+    MarketplaceXLDeactivateByKidAPIView,
 )
 from orders_pars.views import (
     AfterbuyItemSearchAPIView,
@@ -67,17 +74,24 @@ from otto_service.views import (
     OttoProductUpsertAPIView,
 )
 from jv_services.split_views import (
+    JVBatchApplyByArtikelnrAPIView,
     JVBatchApplyByEANAPIView,
     JVBatchJobStatusAPIView,
+    JVBatchPlanByArtikelnrAPIView,
     JVBatchPlanByEANAPIView,
     JVDeliveryOptionsAPIView,
+    JVLocalProductByArtikelnrAPIView,
     JVLocalProductByEANAPIView,
+    JVProductByArtikelnrAPIView,
     JVProductByEANAPIView,
     JVProductCreateAndPushAPIView,
     JVProductCreateJobEnqueueAPIView,
+    JVProductSyncByArtikelnrAPIView,
     JVProductSyncByEANAPIView,
+    JVProductUpdateByArtikelnrAPIView,
     JVProductUpdateByEANAPIView,
     JVRubricsTreeAPIView,
+    JVSitesByArtikelnrAPIView,
     JVSitesByEANAPIView,
 )
 from xl_services.views import (
@@ -93,10 +107,13 @@ from xl_services.views import (
     XLSitesByEANAPIView,
 )
 from kaufland.views import (
+    ActivateProductByEANAPIView,
     ChangeProductByEANAPIView,
     CreateProductByEANAPIView,
+    DeactivateProductByEANAPIView,
     DeleteProductByEANAPIView,
-    GetProductAPIView
+    GetProductAPIView,
+    KauflandImageProxyAPIView,
 )
 from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
@@ -135,21 +152,28 @@ api_v1_patterns = [
     path("api/v1/dev/session/sync/", DevBackendSessionSyncAPIView.as_view(), name="dev-backend-session-sync-v1"),
     path("api/v1/kids/", KidListCreateAPIView.as_view(), name="kid-list-create-v1"),
     path("api/v1/kids/<int:pk>/", KidRetrieveUpdateAPIView.as_view(), name="kid-detail-v1"),
+    path("api/v1/kids/<int:pk>/detail-view/", KidDetailViewAPIView.as_view(), name="kid-detail-view-v1"),
     path("api/v1/kids/<int:pk>/composite-update/", KidCompositeUpdateAPIView.as_view(), name="kid-composite-update-v1"),
     path("api/v1/kids/bulk-update/", KidsBulkUpdateAPIView.as_view(), name="kids-bulk-update-v1"),
     path("api/v1/orders/", OrderListCreateAPIView.as_view(), name="order-list-create-v1"),
     path("api/v1/orders/<int:pk>/", OrderRetrieveUpdateAPIView.as_view(), name="order-detail-v1"),
     path("api/v1/marketplace/deactivate-by-kid/", MarketplaceDeactivateByKidAPIView.as_view(), name="marketplace-deactivate-by-kid-v1"),
     path("api/v1/marketplace/jv/deactivate-sofort-by-kid/", MarketplaceJVDeactivateSofortByKidAPIView.as_view(), name="marketplace-jv-deactivate-sofort-by-kid-v1"),
+    path("api/v1/marketplace/xl/deactivate-by-kid/", MarketplaceXLDeactivateByKidAPIView.as_view(), name="marketplace-xl-deactivate-by-kid-v1"),
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
+    path("api/v1/marketplace/kaufland/toggle-by-kid/", MarketplaceKauflandToggleByKidAPIView.as_view(), name="marketplace-kaufland-toggle-by-kid-v1"),
     path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
+    path("api/v1/inventory/dashboard-summary/", InventoryDashboardSummaryAPIView.as_view(), name="inventory-dashboard-summary-v1"),
+    path("api/v1/inventory/change-history/", InventoryChangeHistoryAPIView.as_view(), name="inventory-change-history-v1"),
     path("api/v1/inventory/filter-options/", InventoryFilterOptionsAPIView.as_view(), name="inventory-filter-options-v1"),
     path("api/v1/kids/import-kid-green/", KidGreenImportAPIView.as_view(), name="kid-green-import-v1"),
     path("api/v1/kids/import-kid-green/jobs/<str:job_id>/", KidGreenImportJobStatusAPIView.as_view(), name="kid-green-import-job-status-v1"),
     path("api/v1/ean-pool/import/", EANPoolImportAPIView.as_view(), name="ean-pool-import-v1"),
     path("api/v1/ean-pool/stats/", EANPoolStatsAPIView.as_view(), name="ean-pool-stats-v1"),
     path("api/v1/ean-pool/take-next-free/", EANPoolTakeNextFreeAPIView.as_view(), name="ean-pool-take-next-free-v1"),
+    path("api/v1/ean-pool/claim-for-job/", EANPoolClaimForJobAPIView.as_view(), name="ean-pool-claim-for-job-v1"),
+    path("api/v1/ean-pool/mark-job-used/", EANPoolMarkJobUsedAPIView.as_view(), name="ean-pool-mark-job-used-v1"),
     path("api/v1/ean-pool/reserve/", EANPoolReserveAPIView.as_view(), name="ean-pool-reserve-v1"),
     path("api/v1/ean-pool/mark-used/", EANPoolMarkUsedAPIView.as_view(), name="ean-pool-mark-used-v1"),
     path("api/v1/ean-pool/<str:ean>/usage/", EANPoolUsageByEANAPIView.as_view(), name="ean-pool-usage-v1"),
@@ -200,9 +224,24 @@ api_v1_patterns = [
         name="kaufland-create-product-by-ean-v1",
     ),
     path(
+        "api/v1/kaufland/products/deactivate/<str:ean>/",
+        DeactivateProductByEANAPIView.as_view(),
+        name="kaufland-deactivate-product-by-ean-v1",
+    ),
+    path(
+        "api/v1/kaufland/products/activate/<str:ean>/",
+        ActivateProductByEANAPIView.as_view(),
+        name="kaufland-activate-product-by-ean-v1",
+    ),
+    path(
         "api/v1/kaufland/<str:ean>/<str:site>/",
         GetProductAPIView.as_view(),
         name="kaufland-get-product-by-ean-v1",
+    ),
+    path(
+        "api/v1/kaufland/image-proxy/",
+        KauflandImageProxyAPIView.as_view(),
+        name="kaufland-image-proxy-v1",
     ),
     path(
         "api/v1/marketplace/kaufland/health/",
@@ -251,8 +290,10 @@ api_v1_patterns = [
     ),
     path("api/v1/xl/products/by-ean/<str:ean>/", XLProductByEANAPIView.as_view(), name="xl-product-by-ean-v1"),
     path("api/v1/jv/products/by-ean/<str:ean>/", JVProductByEANAPIView.as_view(), name="jv-product-by-ean-v1"),
+    path("api/v1/jv/products/by-artikelnr/<str:ean>/", JVProductByArtikelnrAPIView.as_view(), name="jv-product-by-artikelnr-v1"),
     path("api/v1/xl/sites/by-ean/<str:ean>/", XLSitesByEANAPIView.as_view(), name="xl-sites-by-ean-v1"),
     path("api/v1/jv/sites/by-ean/<str:ean>/", JVSitesByEANAPIView.as_view(), name="jv-sites-by-ean-v1"),
+    path("api/v1/jv/sites/by-artikelnr/<str:ean>/", JVSitesByArtikelnrAPIView.as_view(), name="jv-sites-by-artikelnr-v1"),
     path("api/v1/xl/rubrics/tree/", XLRubricsTreeAPIView.as_view(), name="xl-rubrics-tree-v1"),
     path("api/v1/jv/rubrics/tree/", JVRubricsTreeAPIView.as_view(), name="jv-rubrics-tree-v1"),
     path("api/v1/xl/delivery-options/", XLDeliveryOptionsAPIView.as_view(), name="xl-delivery-options-v1"),
@@ -278,6 +319,11 @@ api_v1_patterns = [
         name="jv-product-local-by-ean-v1",
     ),
     path(
+        "api/v1/jv/products/local-by-artikelnr/<str:ean>/",
+        JVLocalProductByArtikelnrAPIView.as_view(),
+        name="jv-product-local-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/products/update-by-ean/<str:ean>/",
         XLProductUpdateByEANAPIView.as_view(),
         name="xl-product-update-by-ean-v1",
@@ -286,6 +332,11 @@ api_v1_patterns = [
         "api/v1/jv/products/update-by-ean/<str:ean>/",
         JVProductUpdateByEANAPIView.as_view(),
         name="jv-product-update-by-ean-v1",
+    ),
+    path(
+        "api/v1/jv/products/update-by-artikelnr/<str:ean>/",
+        JVProductUpdateByArtikelnrAPIView.as_view(),
+        name="jv-product-update-by-artikelnr-v1",
     ),
     path(
         "api/v1/xl/products/sync-by-ean/<str:ean>/",
@@ -298,6 +349,11 @@ api_v1_patterns = [
         name="jv-product-sync-by-ean-v1",
     ),
     path(
+        "api/v1/jv/products/sync-by-artikelnr/<str:ean>/",
+        JVProductSyncByArtikelnrAPIView.as_view(),
+        name="jv-product-sync-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/batch/update-by-ean/<str:ean>/apply/",
         XLBatchApplyByEANAPIView.as_view(),
         name="xl-batch-apply-by-ean-v1",
@@ -308,6 +364,11 @@ api_v1_patterns = [
         name="jv-batch-apply-by-ean-v1",
     ),
     path(
+        "api/v1/jv/batch/update-by-artikelnr/<str:ean>/apply/",
+        JVBatchApplyByArtikelnrAPIView.as_view(),
+        name="jv-batch-apply-by-artikelnr-v1",
+    ),
+    path(
         "api/v1/xl/batch/update-by-ean/<str:ean>/plan/",
         XLBatchPlanByEANAPIView.as_view(),
         name="xl-batch-plan-by-ean-v1",
@@ -316,6 +377,11 @@ api_v1_patterns = [
         "api/v1/jv/batch/update-by-ean/<str:ean>/plan/",
         JVBatchPlanByEANAPIView.as_view(),
         name="jv-batch-plan-by-ean-v1",
+    ),
+    path(
+        "api/v1/jv/batch/update-by-artikelnr/<str:ean>/plan/",
+        JVBatchPlanByArtikelnrAPIView.as_view(),
+        name="jv-batch-plan-by-artikelnr-v1",
     ),
     path(
         "api/v1/jv/batch/jobs/<int:job_id>/",

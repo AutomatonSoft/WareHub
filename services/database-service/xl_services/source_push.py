@@ -43,6 +43,7 @@ def push_product_to_source(
         password=config["password"],
         database=config["database"],
         port=config["port"],
+        use_pure=True,
     )
     cur = conn.cursor()
     try:
@@ -228,6 +229,7 @@ def create_product_in_source(config: dict, product: ImportedProduct) -> int:
         password=config["password"],
         database=config["database"],
         port=config["port"],
+        use_pure=True,
     )
     cur = conn.cursor()
     try:

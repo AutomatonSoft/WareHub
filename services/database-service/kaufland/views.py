@@ -1,14 +1,62 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .external_requests import change_product_by_ean, create_product_by_ean, delete_product_by_ean, product_inside
+from django.http import HttpResponse
+from django.utils.http import url_has_allowed_host_and_scheme
+from urllib.parse import urlparse
+from database.permissions import SessionRolePermission
+from .external_requests import (
+    change_product_by_ean,
+    create_product_by_ean,
+    delete_product_by_ean,
+    product_inside,
+    set_product_active_state,
+)
 from .serializers import (
+    KAUFLAND_PRODUCT_WRITE_FIELDS,
     KauflandChangeByEANSerializer,
+    KauflandControllerSerializer,
     KauflandCreateByEANSerializer,
     KauflandDeleteByEANSerializer,
 )
 import requests
 import re
 import json
+from html import unescape
+
+
+KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS = {"automatonsoft.de", "www.automatonsoft.de"}
+KAUFLAND_IMAGE_PROXY_MAX_BYTES = 15 * 1024 * 1024
+
+
+class KauflandImageProxyAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        source_url = str(request.query_params.get("url") or "").strip()
+        parsed_url = urlparse(source_url)
+        host = (parsed_url.hostname or "").lower()
+        if (
+            not url_has_allowed_host_and_scheme(source_url, allowed_hosts=KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS)
+            or parsed_url.scheme != "https"
+            or host not in KAUFLAND_IMAGE_PROXY_ALLOWED_HOSTS
+        ):
+            return Response({"detail": "Unsupported Kaufland image URL."}, status=400)
+
+        try:
+            upstream = requests.get(source_url, timeout=(5, 20), allow_redirects=False)
+            upstream.raise_for_status()
+        except requests.RequestException:
+            return Response({"detail": "Kaufland image is unavailable."}, status=502)
+
+        content_type = str(upstream.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if not content_type.startswith("image/"):
+            return Response({"detail": "Kaufland image response has an invalid content type."}, status=502)
+        if len(upstream.content) > KAUFLAND_IMAGE_PROXY_MAX_BYTES:
+            return Response({"detail": "Kaufland image is too large."}, status=413)
+
+        response = HttpResponse(upstream.content, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=300"
+        return response
 
 
 def _compact_external_error(detail: object) -> object:
@@ -44,6 +92,14 @@ def _json_safe_error(detail: object) -> object:
         return str(compact)
 
 
+def _is_missing_product_lookup_error(*, status_code: int, detail: object) -> bool:
+    """Recognize the known upstream missing-product response incorrectly sent as HTTP 500."""
+    if status_code != 500:
+        return False
+    message = unescape(str(detail)).lower()
+    return "'nonetype' object has no attribute 'get'" in message
+
+
 class GetProductAPIView(APIView):
     def get(self, request, ean=None, site=None):
         ean = ean or request.query_params.get("ean")
@@ -55,27 +111,52 @@ class GetProductAPIView(APIView):
         try:
             data = product_inside(ean, site)
             return Response(data, status=200)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+        except requests.Timeout:
+            return Response(
+                {
+                    "error": "kaufland_lookup_timeout",
+                    "detail": "Kaufland product lookup timed out.",
+                },
+                status=504,
+            )
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            details = None
+            try:
+                details = exc.response.json() if exc.response is not None else None
+            except Exception:
+                details = exc.response.text if exc.response is not None else str(exc)
+            details = _json_safe_error(details)
+            if _is_missing_product_lookup_error(status_code=status_code, detail=details):
+                return Response(
+                    {
+                        "error": "kaufland_product_not_found",
+                        "detail": "Kaufland product was not found for this controller.",
+                    },
+                    status=404,
+                )
+            return Response(
+                {"error": "kaufland_lookup_failed", "detail": details},
+                status=status_code,
+            )
+        except requests.RequestException as exc:
+            return Response(
+                {
+                    "error": "kaufland_lookup_transport_error",
+                    "detail": str(exc),
+                },
+                status=502,
+            )
 
 
 class ChangeProductByEANAPIView(APIView):
     def post(self, request):
-        serializer = KauflandChangeByEANSerializer(data=request.data or {}, partial=True)
+        serializer = KauflandChangeByEANSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
         # Forward only fields explicitly provided by client.
-        allowed_fields = {
-            "ean",
-            "title",
-            "description",
-            "picture_urls",
-            "unit_id",
-            "storefront",
-            "price",
-            "controller",
-        }
+        allowed_fields = set(KAUFLAND_PRODUCT_WRITE_FIELDS)
         request_keys = set(request.data.keys()) if hasattr(request.data, "keys") else set()
 
         raw_changed = request.data.get("changed_fields") if hasattr(request.data, "get") else None
@@ -147,33 +228,55 @@ class DeleteProductByEANAPIView(APIView):
             return Response({"error": str(exc)}, status=500)
 
 
+class KauflandProductActiveStateAPIView(APIView):
+    active = True
+
+    def post(self, request, ean):
+        serializer = KauflandControllerSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            data = set_product_active_state(
+                ean=ean,
+                controller=serializer.validated_data["controller"],
+                active=self.active,
+            )
+            return Response(data, status=200)
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            try:
+                details = exc.response.json() if exc.response is not None else None
+            except Exception:
+                details = exc.response.text if exc.response is not None else str(exc)
+            return Response(
+                {
+                    "error": "kaufland_activate_failed" if self.active else "kaufland_deactivate_failed",
+                    "detail": _json_safe_error(details),
+                },
+                status=status_code,
+            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=500)
+
+
+class ActivateProductByEANAPIView(KauflandProductActiveStateAPIView):
+    active = True
+
+
+class DeactivateProductByEANAPIView(KauflandProductActiveStateAPIView):
+    active = False
+
+
 class CreateProductByEANAPIView(APIView):
     def post(self, request):
         serializer = KauflandCreateByEANSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
-        # Enforce primitive numeric types before forwarding to external API.
-        for int_field in ("price", "delivery", "height", "length", "width"):
-            if int_field in payload:
-                payload[int_field] = int(payload[int_field])
-        # Compatibility for upstream validators:
-        # - "picture" should be a list
-        # - "pictures" should be a string
-        if "picture" in payload:
-            picture_value = payload.get("picture")
-            if isinstance(picture_value, list):
-                pictures_str = ",".join(str(item) for item in picture_value if str(item).strip())
-                payload["picture"] = [str(item) for item in picture_value if str(item).strip()]
-            else:
-                pictures_str = str(picture_value or "")
-                payload["picture"] = [pictures_str] if pictures_str else []
-            payload["pictures"] = pictures_str
-        # Lightweight debug log for outgoing create payload shape.
-        print("KAUFLAND_CREATE_OUTGOING:", payload)
-
+        for image_field in ("picture", "picture_urls"):
+            if not payload.get(image_field):
+                payload.pop(image_field, None)
         try:
             data = create_product_by_ean(payload)
-            print("KAUFLAND_CREATE_RESPONSE:", data)
             return Response(data, status=200)
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502

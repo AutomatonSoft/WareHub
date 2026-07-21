@@ -47,14 +47,6 @@ class _PartsQuantityPageState extends State<PartsQuantityPage> {
               decoration: BoxDecoration(
                 color: uiCard,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: uiBorder),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: Color(0x55000000),
-                    blurRadius: 22,
-                    offset: Offset(0, 12),
-                  ),
-                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -70,7 +62,6 @@ class _PartsQuantityPageState extends State<PartsQuantityPage> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: strings.text('parts_label'),
-                      border: const OutlineInputBorder(),
                       errorText: _error,
                     ),
                     onSubmitted: (_) => _submit(),
@@ -134,14 +125,6 @@ class _QrScannerPageState extends State<QrScannerPage> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: uiBorder),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x55000000),
-                blurRadius: 26,
-                offset: Offset(0, 14),
-              ),
-            ],
           ),
           clipBehavior: Clip.antiAlias,
           child: Stack(
@@ -179,7 +162,6 @@ class _QrScannerPageState extends State<QrScannerPage> {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.45),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: uiBorder),
                   ),
                   child: Text(
                     strings.text('align_qr'),

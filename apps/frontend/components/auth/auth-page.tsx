@@ -36,19 +36,14 @@ type RegisterFieldKey = "email" | "firstName" | "lastName" | "phoneNumber" | "lo
 type LoginFieldKey = "login" | "password";
 type ResetFieldKey = "email" | "code" | "password" | "confirmPassword";
 
-const GENERIC_AUTH_ERROR_MESSAGE = "Something went wrong. Please try again.";
-const RESET_REQUEST_SUCCESS_MESSAGE = "Reset code sent. Check your email.";
-const PASSWORD_RESET_SUCCESS_MESSAGE = "Password updated. You can sign in now.";
-const RESET_REQUEST_HINT = "Enter your email to receive a reset code.";
-
-function getAuthActionErrorMessage(payload: unknown, fallback: string, status: number): string {
+function getAuthActionErrorMessage(payload: unknown, fallback: string, status: number, genericMessage: string): string {
   if (status >= 500) {
-    return GENERIC_AUTH_ERROR_MESSAGE;
+    return genericMessage;
   }
 
   const message = parseError(payload, fallback);
   if (/http 5\d\d/i.test(message) || /internal server error/i.test(message)) {
-    return GENERIC_AUTH_ERROR_MESSAGE;
+    return genericMessage;
   }
 
   return message;
@@ -151,7 +146,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        const message = getAuthActionErrorMessage(payload, GENERIC_AUTH_ERROR_MESSAGE, response.status);
+        const message = getAuthActionErrorMessage(payload, t.genericAuthErrorMessage, response.status, t.genericAuthErrorMessage);
         showToast(message, "error");
         return;
       }
@@ -176,7 +171,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
       await syncDatabaseServiceSession(payload.token).catch(() => false);
       router.replace("/profile");
     } catch {
-      showToast(GENERIC_AUTH_ERROR_MESSAGE, "error");
+      showToast(t.genericAuthErrorMessage, "error");
     } finally {
       setLoading(false);
     }
@@ -244,7 +239,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        const message = getAuthActionErrorMessage(payload, GENERIC_AUTH_ERROR_MESSAGE, response.status);
+        const message = getAuthActionErrorMessage(payload, t.genericAuthErrorMessage, response.status, t.genericAuthErrorMessage);
         showToast(message, "error");
         return;
       }
@@ -252,7 +247,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
       showToast(t.registrationSubmittedWaitApprovalLogin, "success");
       router.replace("/login");
     } catch {
-      showToast(GENERIC_AUTH_ERROR_MESSAGE, "error");
+      showToast(t.genericAuthErrorMessage, "error");
     } finally {
       setLoading(false);
     }
@@ -274,9 +269,9 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
       await requestPasswordReset(apiBase, normalizedEmail);
       setResetEmail(normalizedEmail);
       setResetStep("confirm");
-      showToast(RESET_REQUEST_SUCCESS_MESSAGE, "success");
+      showToast(t.codeSent, "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : GENERIC_AUTH_ERROR_MESSAGE;
+      const message = error instanceof Error ? error.message : t.genericAuthErrorMessage;
       showToast(message, "error");
     } finally {
       setResetLoading(false);
@@ -295,7 +290,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     }
 
     if (!resetCode.trim()) {
-      nextErrors.code = `${t.resetCode} is required.`;
+      nextErrors.code = t.fieldRequired.replace("{field}", t.resetCode);
     }
 
     const passwordError = validatePassword(resetPasswordValue);
@@ -304,7 +299,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     }
 
     if (!resetConfirmPassword) {
-      nextErrors.confirmPassword = `${t.confirmPassword} is required.`;
+      nextErrors.confirmPassword = t.fieldRequired.replace("{field}", t.confirmPassword);
     } else if (resetPasswordValue !== resetConfirmPassword) {
       nextErrors.confirmPassword = t.passwordsMismatch;
     }
@@ -321,10 +316,10 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
         code: resetCode.trim(),
         password: resetPasswordValue
       });
-      showToast(PASSWORD_RESET_SUCCESS_MESSAGE, "success");
+      showToast(t.passwordResetSuccess, "success");
       router.replace("/login");
     } catch (error) {
-      const message = error instanceof Error ? error.message : GENERIC_AUTH_ERROR_MESSAGE;
+      const message = error instanceof Error ? error.message : t.genericAuthErrorMessage;
       showToast(message, "error");
     } finally {
       setResetLoading(false);
@@ -352,9 +347,9 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     mode === "login"
       ? t.signInManageProfileWorkspace
       : mode === "register"
-        ? "Enter your details below to create your account"
+        ? t.registerNewAccountToAccessWarehub
         : resetStep === "request"
-          ? RESET_REQUEST_HINT
+          ? t.resetRequestHint
           : t.enterCode;
 
   return (
@@ -365,7 +360,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
             <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <GalleryVerticalEnd className="size-4" />
             </div>
-            Automatons Soft.
+            {t.authBrandName}
           </div>
 
           <Card className="wh-auth-card">
@@ -412,7 +407,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                           type="button"
                           onClick={() => setShowLoginPassword((current) => !current)}
                           className="text-muted-foreground transition-colors hover:text-foreground"
-                          aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                          aria-label={showLoginPassword ? t.hidePassword : t.showPassword}
                         >
                           {showLoginPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                         </button>
@@ -430,9 +425,9 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                   </Button>
 
                   <CardDescription className="text-center">
-                    Don&apos;t have an account?{" "}
+                    {t.dontHaveAccountQuestion}{" "}
                     <Link href="/register" className="underline underline-offset-4">
-                      Sign up
+                      {t.signUp}
                     </Link>
                   </CardDescription>
                 </form>
@@ -440,7 +435,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
               {mode === "register" ? (
                 <form onSubmit={onRegisterSubmit} className="flex flex-col gap-4" autoComplete="off">
-                  <AuthField label="Full Name" error={registerFieldErrors.firstName || registerFieldErrors.lastName}>
+                  <AuthField label={t.fullName} error={registerFieldErrors.firstName || registerFieldErrors.lastName}>
                     <div className="grid grid-cols-2 gap-4">
                       <AuthInput
                         icon={<User />}
@@ -475,7 +470,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                       aria-label={t.email}
                       type="email"
                       autoComplete="off"
-                      placeholder="m@example.com"
+                      placeholder={t.emailExamplePlaceholder}
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
@@ -505,7 +500,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                       icon={<User />}
                       aria-label={t.login}
                       autoComplete="off"
-                      placeholder="johndoe"
+                      placeholder={t.loginExamplePlaceholder}
                       value={loginValue}
                       onChange={(e) => {
                         setLoginValue(e.target.value);
@@ -518,7 +513,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                   <AuthField
                     label={t.password}
                     error={registerFieldErrors.password || registerFieldErrors.confirmPassword}
-                    description="Must be at least 8 characters long."
+                    description={t.passwordMinLengthHint}
                   >
                     <div className="grid grid-cols-2 gap-4">
                       <AuthInput
@@ -549,13 +544,13 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                   </AuthField>
 
                   <Button type="submit" disabled={isRegisterSubmitDisabled}>
-                    {loading ? t.pleaseWait : "Create Account"}
+                    {loading ? t.pleaseWait : t.createAccount}
                   </Button>
 
                   <CardDescription className="text-center">
-                    Already have an account?{" "}
+                    {t.alreadyHaveAccountQuestion}{" "}
                     <Link href="/login" className="underline underline-offset-4">
-                      Sign in
+                      {t.signIn}
                     </Link>
                   </CardDescription>
                 </form>
@@ -571,7 +566,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                           aria-label={t.email}
                           type="email"
                           autoComplete="off"
-                          placeholder="m@example.com"
+                          placeholder={t.emailExamplePlaceholder}
                           value={resetEmail}
                           onChange={(e) => {
                             setResetEmail(e.target.value);
@@ -608,7 +603,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
                       <AuthField
                         label={t.newPassword}
                         error={resetFieldErrors.password || resetFieldErrors.confirmPassword}
-                        description="Must be at least 8 characters long."
+                        description={t.passwordMinLengthHint}
                       >
                         <div className="grid grid-cols-2 gap-4">
                           <AuthInput

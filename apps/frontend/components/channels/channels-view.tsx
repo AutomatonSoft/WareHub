@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLabels } from "../../app/use-labels";
 import { Card, CardContent } from "../ui/card";
 import { SegmentedTabs } from "../ui/segmented-tabs";
 import { SectionHeader } from "../ui/section-header";
@@ -26,17 +27,6 @@ const ChannelPlaceholderPanel = dynamic(
 export type ChannelsTab = "hood" | "xl" | "jv" | "kaufland" | "otto" | "ebay";
 
 const TAB_STORAGE_KEY = "channels_active_tab";
-const CHANNEL_TABS: Array<{
-  value: ChannelsTab;
-  label: string;
-}> = [
-  { value: "hood", label: "Hood" },
-  { value: "xl", label: "XL" },
-  { value: "jv", label: "JV" },
-  { value: "kaufland", label: "Kaufland" },
-  { value: "otto", label: "Otto" },
-  { value: "ebay", label: "Ebay" }
-];
 
 export function normalizeChannelsTab(value: string | null): ChannelsTab | null {
   if (
@@ -54,9 +44,18 @@ export function normalizeChannelsTab(value: string | null): ChannelsTab | null {
 }
 
 export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab } = {}) {
+  const t = useLabels();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const channelTabs: Array<{ value: ChannelsTab; label: string }> = [
+    { value: "hood", label: t.channelHood },
+    { value: "xl", label: t.channelXl },
+    { value: "jv", label: t.channelJv },
+    { value: "kaufland", label: t.channelKaufland },
+    { value: "otto", label: t.channelOtto },
+    { value: "ebay", label: t.channelEbay }
+  ];
 
   const paramTab = useMemo(() => normalizeChannelsTab(searchParams.get("tab")), [searchParams]);
   const [activeTab, setActiveTab] = useState<ChannelsTab>(initialTab);
@@ -88,13 +87,13 @@ export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab
   return (
     <>
       <SectionHeader
-        title="Channel workspace"
-        description="Switch live channel panels without changing backend workflows."
+        title={t.channelWorkspace}
+        description={t.switchLiveChannelPanelsWithoutChangingBackendWorkflows}
         actions={
           <SegmentedTabs
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as ChannelsTab)}
-            items={CHANNEL_TABS.map((tab) => ({ id: tab.value, label: tab.label }))}
+            items={channelTabs.map((tab) => ({ id: tab.value, label: tab.label }))}
             className="w-full md:w-auto"
           />
         }
@@ -108,29 +107,29 @@ export function ChannelsView({ initialTab = "hood" }: { initialTab?: ChannelsTab
           {activeTab === "kaufland" ? <KauflandSearchPanel /> : null}
           {activeTab === "otto" ? (
             <ChannelPlaceholderPanel
-              channelName="Otto"
-              hint="Endpoint integration is prepared. Product search block will be connected in the next step."
+              channelName={t.channelOtto}
+              hint={t.endpointIntegrationPreparedNextStep}
             />
           ) : null}
           {activeTab === "ebay" ? (
             <ChannelPlaceholderPanel
-              channelName="Ebay"
-              hint="Endpoint integration is prepared. Product search block will be connected in the next step."
+              channelName={t.channelEbay}
+              hint={t.endpointIntegrationPreparedNextStep}
             />
           ) : null}
           <div className="wh-channels-helper-panel mt-5 bg-muted/20 px-1 py-3">
-            <p className="text-sm font-semibold text-foreground">Result panel</p>
+            <p className="text-sm font-semibold text-foreground">{t.resultPanel}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Use tabs to switch live channel panels. Search/patch behavior and backend workflows are unchanged.
+              {t.useTabsToSwitchLiveChannelPanelsSearchPatchBehaviorUnchanged}
             </p>
             <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
               <div>
-                <p className="font-medium text-foreground">Active channel</p>
-                <p className="mt-0.5 text-muted-foreground">{CHANNEL_TABS.find((tab) => tab.value === activeTab)?.label ?? "Hood"}</p>
+                <p className="font-medium text-foreground">{t.activeChannel}</p>
+                <p className="mt-0.5 text-muted-foreground">{channelTabs.find((tab) => tab.value === activeTab)?.label ?? t.channelHood}</p>
               </div>
               <div>
-                <p className="font-medium text-foreground">Current state</p>
-                <p className="mt-0.5 text-muted-foreground">Command panel is ready. Backend flow unchanged.</p>
+                <p className="font-medium text-foreground">{t.currentState}</p>
+                <p className="mt-0.5 text-muted-foreground">{t.commandPanelReadyBackendFlowUnchanged}</p>
               </div>
             </div>
           </div>

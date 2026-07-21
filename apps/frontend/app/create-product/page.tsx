@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,13 +14,38 @@ import {
 import { Input } from "../../components/ui/input";
 import { apiFetch } from "../../lib/api/client";
 import { useToast } from "../../components/shared/toast-provider";
+import { toXljvImageUrl } from "../../components/xljv/xljv-image-utils";
+import { sanitizeDescriptionPreviewHtml } from "../../components/product-editor/product-editor-model";
+import { makeHoodDescriptionPreviewEditableDocument, readHoodDescriptionPreviewDocumentHtml } from "../../components/product-editor/product-editor-hood-description-preview";
+import { decodeHtmlEntities } from "../../components/hood/hood-search-utils";
 import { useLabels } from "../use-labels";
-import { CreateProductFormPanel } from "./create-product-form-panel";
-import { CreateProductJobPanel } from "./create-product-job-panel";
-import { MarketplaceSiteSelectorPanel } from "./marketplace-site-selector-panel";
+import { CreateProductEanPoolPanel } from "./create-product-ean-pool-panel";
+import { CreateProductImageGallery, type CreateProductGalleryItem } from "./create-product-image-gallery";
+import { CREATE_PRODUCT_XL_DEFAULT_SITE_KEY } from "./create-product-source-api";
 import { useCreateProductController } from "./use-create-product-controller";
 
-const PAGE_TABS = ["main", "jv", "xl", "hood", "kaufland", "otto", "ebay"] as const;
+const PAGE_TABS = [
+  "jv",
+  "xl",
+  "hood_jv",
+  "hood_xl",
+  "kaufland_jv",
+  "kaufland_xl",
+  "otto_jv",
+  "otto_xl",
+  "ebay_jv",
+  "ebay_xl",
+] as const;
+type CreateProductTab = "main" | (typeof PAGE_TABS)[number];
+type MarketplaceAccount = "JV" | "XL";
+type CreateProductTabMeta = {
+  label: string;
+  sourceSite: "JV" | "XL" | "HOOD" | "KAUFLAND";
+  sourceSiteKey?: string;
+  targetSiteIds: string[];
+  marketplace?: "HOOD" | "KAUFLAND" | "OTTO" | "EBAY";
+  account?: MarketplaceAccount;
+};
 const JV_RUBRIC_SITE_TABS = [
   { key: "JV_DE", label: "JV DE" },
   { key: "JV_AT", label: "JV AT" },
@@ -36,10 +60,12 @@ const JV_PUBLIC_BASE_BY_SITE_KEY: Record<string, string> = {
 };
 const ALL_MARKETPLACE_SITE_IDS = allMarketplaceSites.map((site) => site.id);
 const XL_MARKETPLACE_SITE_IDS = allMarketplaceSites.filter((site) => site.family === "XL").map((site) => site.id);
-const HOOD_MARKETPLACE_SITE_IDS = allMarketplaceSites.filter((site) => site.family === "HOOD").map((site) => site.id);
-const KAUFLAND_MARKETPLACE_SITE_IDS = allMarketplaceSites.filter((site) => site.family === "KAUFLAND").map((site) => site.id);
-const OTTO_MARKETPLACE_SITE_IDS = allMarketplaceSites.filter((site) => site.family === "OTTO").map((site) => site.id);
-const EBAY_MARKETPLACE_SITE_IDS = allMarketplaceSites.filter((site) => site.family === "EBAY").map((site) => site.id);
+
+function getSiteIdsByFamilyAndKind(family: "HOOD" | "KAUFLAND" | "OTTO" | "EBAY", kind: MarketplaceAccount): string[] {
+  return allMarketplaceSites
+    .filter((site) => site.family === family && site.kind === kind)
+    .map((site) => site.id);
+}
 
 type JvContentRow = {
   language_code?: string;
@@ -53,13 +79,67 @@ type JvContentRow = {
   kurzbeschreibung?: string;
 };
 
-type GalleryItem = {
-  id: string;
-  src: string;
-  sourcePath?: string;
-  file?: File;
-  isLocal: boolean;
+type GalleryItem = CreateProductGalleryItem;
+
+type XlDescriptionFields = {
+  name: string;
+  seo_url: string;
+  ean: string;
+  price: string;
+  uvp: string;
+  description: string;
+  tag: string;
+  meta_title: string;
+  meta_description: string;
+  meta_keyword: string;
 };
+
+type XlDescriptionState = {
+  sourceKey: string;
+  fields: XlDescriptionFields;
+};
+
+type KauflandDescriptionFields = {
+  shortDescription: string;
+  description: string;
+};
+
+type KauflandDescriptionState = {
+  sourceKey: string;
+  fields: KauflandDescriptionFields;
+};
+
+type HoodProductProperty = {
+  name: string;
+  value: string;
+};
+
+type KauflandDisplayField = {
+  label: string;
+  value: string;
+};
+
+const HIDDEN_KAUFLAND_FIELD_LABELS = new Set([
+  "Manufacturer",
+  "Mpn",
+  "Parts Of Animal Origin",
+  "Abnehmbarer Bezug",
+  "Material Composition",
+  "Price",
+  "Location",
+  "Condition",
+  "Amount",
+  "Id Product",
+  "Id Unit",
+  "Note",
+  "Shipping Rate",
+  "Shipping Group",
+  "Warehouse",
+  "Date Inserted",
+  "Reference Price",
+  "Date Lastchange",
+  "Seller · Pseudonym",
+]);
 
 type RubricTreeNode = {
   id: number;
@@ -117,6 +197,138 @@ type MainRubricIdBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["k
 type DeliveryOptionsCache = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], DeliveryOption[]>>;
 type SelectedDeliveryIdsBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], Set<number>>>;
 
+function getCreateProductTabLabel(
+  tab: CreateProductTab,
+  t: ReturnType<typeof useLabels>
+): string {
+  switch (tab) {
+    case "main":
+      return t.createProductTabMain;
+    case "jv":
+      return t.channelJv;
+    case "xl":
+      return t.channelXl;
+    case "hood_jv":
+      return `${t.channelHood} JV`;
+    case "hood_xl":
+      return `${t.channelHood} XL`;
+    case "kaufland_jv":
+      return `${t.channelKaufland} JV`;
+    case "kaufland_xl":
+      return `${t.channelKaufland} XL`;
+    case "otto_jv":
+      return `${t.channelOtto} JV`;
+    case "otto_xl":
+      return `${t.channelOtto} XL`;
+    case "ebay_jv":
+      return `${t.channelEbay} JV`;
+    case "ebay_xl":
+      return `${t.channelEbay} XL`;
+    default:
+      return tab;
+  }
+}
+
+function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof useLabels>): CreateProductTabMeta {
+  switch (tab) {
+    case "main":
+      return {
+        label: t.createProductTabMain,
+        sourceSite: "JV",
+        targetSiteIds: ALL_MARKETPLACE_SITE_IDS,
+      };
+    case "jv":
+      return {
+        label: t.channelJv,
+        sourceSite: "JV",
+        targetSiteIds: allMarketplaceSites.filter((site) => site.family === "JVMOEBEL").map((site) => site.id),
+      };
+    case "xl":
+      return {
+        label: t.channelXl,
+        sourceSite: "XL",
+        sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+        targetSiteIds: XL_MARKETPLACE_SITE_IDS,
+      };
+    case "hood_jv":
+      return {
+        label: `${t.channelHood} JV`,
+        sourceSite: "HOOD",
+        sourceSiteKey: "HOOD_JV",
+        targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "JV"),
+        marketplace: "HOOD",
+        account: "JV",
+      };
+    case "hood_xl":
+      return {
+        label: `${t.channelHood} XL`,
+        sourceSite: "HOOD",
+        sourceSiteKey: "HOOD_XL",
+        targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "XL"),
+        marketplace: "HOOD",
+        account: "XL",
+      };
+    case "kaufland_jv":
+      return {
+        label: `${t.channelKaufland} JV`,
+        sourceSite: "KAUFLAND",
+        sourceSiteKey: "KAUFLAND_JV",
+        targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "JV"),
+        marketplace: "KAUFLAND",
+        account: "JV",
+      };
+    case "kaufland_xl":
+      return {
+        label: `${t.channelKaufland} XL`,
+        sourceSite: "KAUFLAND",
+        sourceSiteKey: "KAUFLAND_XL",
+        targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "XL"),
+        marketplace: "KAUFLAND",
+        account: "XL",
+      };
+    case "otto_jv":
+      return {
+        label: `${t.channelOtto} JV`,
+        sourceSite: "JV",
+        targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "JV"),
+        marketplace: "OTTO",
+        account: "JV",
+      };
+    case "otto_xl":
+      return {
+        label: `${t.channelOtto} XL`,
+        sourceSite: "XL",
+        sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+        targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "XL"),
+        marketplace: "OTTO",
+        account: "XL",
+      };
+    case "ebay_jv":
+      return {
+        label: `${t.channelEbay} JV`,
+        sourceSite: "JV",
+        targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "JV"),
+        marketplace: "EBAY",
+        account: "JV",
+      };
+    case "ebay_xl":
+      return {
+        label: `${t.channelEbay} XL`,
+        sourceSite: "XL",
+        sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+        targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "XL"),
+        marketplace: "EBAY",
+        account: "XL",
+      };
+    default:
+      return {
+        label: String(tab),
+        sourceSite: "JV",
+        targetSiteIds: [],
+      };
+  }
+}
+
 function pickPrimaryJvContentRow(rows: unknown[]): JvContentRow | null {
   const normalizedRows = rows.map((row) => ((row ?? {}) as JvContentRow));
   const germanRow = normalizedRows.find((row) => String(row.language_code || "").trim().toLowerCase() === "de");
@@ -157,6 +369,230 @@ function computeEvpFromPrice(priceRaw: string): string {
     return "";
   }
   return String(calculateUvpRoundedTo9(parsed));
+}
+
+function parseHoodProductProperties(value: string): HoodProductProperty[] {
+  try {
+    const parsed: unknown = JSON.parse(value || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((property): property is Record<string, unknown> => Boolean(property) && typeof property === "object" && !Array.isArray(property))
+      .map((property) => ({
+        name: String(property.name ?? ""),
+        value: String(property.value ?? ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function formatKauflandFieldLabel(path: string[]): string {
+  const displayPath = path[0]?.toLowerCase() === "units" && /^\d+$/.test(path[1] || "")
+    ? path.slice(2)
+    : path;
+  return displayPath
+    .map((segment) => segment.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()))
+    .join(" · ");
+}
+
+function flattenKauflandFields(value: unknown, path: string[] = []): KauflandDisplayField[] {
+  if (value === null || value === undefined) {
+    return [{ label: formatKauflandFieldLabel(path), value: "" }];
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return [{ label: formatKauflandFieldLabel(path), value: String(value) }];
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [{ label: formatKauflandFieldLabel(path), value: "" }];
+    if (value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) {
+      return [{ label: formatKauflandFieldLabel(path), value: value.map((item) => String(item ?? "")).join("\n") }];
+    }
+    return value.flatMap((item, index) => flattenKauflandFields(item, [...path, String(index + 1)]));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return [{ label: formatKauflandFieldLabel(path), value: "" }];
+    return entries.flatMap(([key, item]) => flattenKauflandFields(item, [...path, key]));
+  }
+  return [{ label: formatKauflandFieldLabel(path), value: String(value) }];
+}
+
+function firstKauflandText(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0] ?? "");
+  return value == null ? "" : String(value);
+}
+
+function buildKauflandDescriptionFields(product: Record<string, unknown>): KauflandDescriptionFields {
+  return {
+    shortDescription: firstKauflandText(product.short_description),
+    description: firstKauflandText(product.description),
+  };
+}
+
+function KauflandProductFields({ product }: { product: Record<string, unknown> }) {
+  const fields = flattenKauflandFields(
+    Object.fromEntries(
+      Object.entries(product).filter(
+        ([key]) => !["title", "ean", "price", "picture", "category", "category_detail", "storefront", "product_safety_contact", "short_description", "description"].includes(key),
+      ),
+    ),
+  )
+    .filter((field) => !HIDDEN_KAUFLAND_FIELD_LABELS.has(field.label))
+    .sort((left, right) => {
+      const deliveryTimeOrder: Record<string, number> = {
+        "Delivery Time Min": 0,
+        "Delivery Time Max": 1,
+      };
+      if (!(left.label in deliveryTimeOrder) || !(right.label in deliveryTimeOrder)) {
+        return 0;
+      }
+      return deliveryTimeOrder[left.label] - deliveryTimeOrder[right.label];
+    });
+  if (fields.length === 0) {
+    return <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm text-muted-foreground">No Kaufland fields returned.</div>;
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {fields.map((field, index) => {
+        const isLongValue = field.value.length > 180 || field.value.includes("\n");
+        return (
+          <div key={`${field.label}-${index}`} className={isLongValue ? "space-y-1.5 md:col-span-2" : "space-y-1.5"}>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{field.label}</label>
+            {isLongValue ? (
+              <textarea value={field.value} readOnly className="min-h-[110px] w-full resize-y rounded-[var(--radius-control)] border border-border/70 bg-muted/20 px-3 py-2.5 text-sm text-foreground outline-none" />
+            ) : (
+              <Input value={field.value} readOnly />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function injectHoodPreviewBaseHref(html: string, baseHref: string): string {
+  if (/<base\b/i.test(html)) {
+    return html.replace(/<base\b[^>]*>/i, `<base href="${baseHref}" target="_blank" />`);
+  }
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head\b[^>]*>/i, (match) => `${match}<base href="${baseHref}" target="_blank" />`);
+  }
+  return html;
+}
+
+function buildHoodDescriptionPreviewDocument(description: string, account: MarketplaceAccount | undefined): string {
+  const baseHref = account === "XL" ? "https://www.xlmoebel.de/" : "https://www.jvmoebel.de/";
+  const decoded = decodeHtmlEntities(description || "").trim();
+  if (!decoded) return "";
+
+  const withBaseHref = injectHoodPreviewBaseHref(decoded, baseHref);
+  if (/<html[\s>]/i.test(withBaseHref)) return withBaseHref;
+
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><base href="${baseHref}" target="_blank" /><style>html,body{margin:0;padding:0}img{max-width:100%;height:auto}</style></head><body>${withBaseHref}</body></html>`;
+}
+
+function buildKauflandDescriptionPreviewDocument(description: string): string {
+  const source = String(description || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .trim();
+  if (!source) return "";
+
+  const headMatch = source.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+  const headContent = headMatch?.[1] ?? "";
+  const bodyContent = source.replace(/<head\b[^>]*>[\s\S]*?<\/head>/i, "");
+
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><base href="https://www.jvmoebel.de/" target="_blank" />${headContent}<style>html,body{margin:0;padding:0}img{max-width:100%;height:auto}</style></head><body>${bodyContent}</body></html>`;
+}
+
+function EditableDescriptionPreview({
+  title,
+  srcDoc,
+  onSave,
+  autoHeight = false,
+}: {
+  title: string;
+  srcDoc: string;
+  onSave: (description: string) => void;
+  autoHeight?: boolean;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const editingRef = useRef(false);
+  const lastSavedHtmlRef = useRef("");
+  const [frameSrcDoc, setFrameSrcDoc] = useState(srcDoc);
+
+  useEffect(() => {
+    if (editingRef.current) return;
+    setFrameSrcDoc(srcDoc);
+    lastSavedHtmlRef.current = srcDoc;
+  }, [srcDoc]);
+
+  const saveFrameEdits = () => {
+    const nextDescription = readHoodDescriptionPreviewDocumentHtml(iframeRef.current?.contentDocument?.documentElement ?? null);
+    if (!nextDescription || nextDescription === lastSavedHtmlRef.current) return;
+    lastSavedHtmlRef.current = nextDescription;
+    onSave(nextDescription);
+  };
+
+  const syncFrameHeight = () => {
+    if (!autoHeight || !iframeRef.current) return;
+    const documentElement = iframeRef.current.contentDocument?.documentElement;
+    const body = iframeRef.current.contentDocument?.body;
+    iframeRef.current.style.height = "auto";
+    const height = Math.max(documentElement?.scrollHeight ?? 0, body?.scrollHeight ?? 0, 512);
+    iframeRef.current.style.height = `${height}px`;
+  };
+
+  useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      title={title}
+      srcDoc={frameSrcDoc}
+      sandbox="allow-same-origin allow-popups allow-forms"
+      scrolling={autoHeight ? "no" : undefined}
+      className={autoHeight
+        ? "min-h-[32rem] w-full rounded-[var(--radius-control)] border border-border/70 bg-white"
+        : "min-h-[32rem] w-full flex-1 rounded-[var(--radius-control)] border border-border/70 bg-white"}
+      onLoad={() => {
+        const frameWindow = iframeRef.current?.contentWindow;
+        const frameBody = iframeRef.current?.contentDocument?.body;
+        const documentElement = iframeRef.current?.contentDocument?.documentElement;
+        if (!frameWindow || !frameBody) return;
+
+        syncFrameHeight();
+        frameWindow.setTimeout(syncFrameHeight, 0);
+        frameBody.querySelectorAll("img").forEach((image) => {
+          image.addEventListener("load", syncFrameHeight, { once: true });
+        });
+        resizeObserverRef.current?.disconnect();
+        if (autoHeight && documentElement) {
+          resizeObserverRef.current = new ResizeObserver(syncFrameHeight);
+          resizeObserverRef.current.observe(documentElement);
+          resizeObserverRef.current.observe(frameBody);
+        }
+
+        frameBody.contentEditable = "true";
+        frameBody.dataset.hoodPreviewEditable = "true";
+        const markEditing = () => {
+          editingRef.current = true;
+        };
+        const stopEditing = () => {
+          saveFrameEdits();
+          editingRef.current = false;
+        };
+        frameBody.oninput = () => {
+          markEditing();
+          syncFrameHeight();
+        };
+        frameBody.onkeyup = markEditing;
+        frameBody.onblur = stopEditing;
+        frameWindow.onblur = stopEditing;
+      }}
+    />
+  );
 }
 
 function splitMetaKeywords(value: string): string[] {
@@ -203,12 +639,143 @@ function normalizeJvPreviewHtml(html: string, siteKey: string): string {
   );
 }
 
+function normalizeXlPreviewHtml(html: string, siteKey: string): string {
+  const value = sanitizeDescriptionPreviewHtml(String(html || ""));
+  if (!value) {
+    return "";
+  }
+
+  return value.replace(
+    /\s(src|href)=["']([^"']+)["']/gi,
+    (_match, attr: string, rawUrl: string) => {
+      const normalized = String(rawUrl || "").trim();
+      if (!normalized) {
+        return ` ${attr}=""`;
+      }
+      if (
+        normalized.startsWith("http://") ||
+        normalized.startsWith("https://") ||
+        normalized.startsWith("data:") ||
+        normalized.startsWith("blob:") ||
+        normalized.startsWith("mailto:") ||
+        normalized.startsWith("tel:")
+      ) {
+        return ` ${attr}="${normalized}"`;
+      }
+
+      if (attr.toLowerCase() === "src") {
+        return ` ${attr}="${toXljvImageUrl("XL", siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, normalized)}"`;
+      }
+
+      return ` ${attr}="${normalized}"`;
+    }
+  );
+}
+
 function collectExpandableRubricIds(nodes: RubricTreeNode[]): number[] {
   return nodes.flatMap((node) => {
     const children = Array.isArray(node.children) ? node.children : [];
     const ownId = children.length > 0 ? [node.id] : [];
     return [...ownId, ...collectExpandableRubricIds(children)];
   });
+}
+
+function collectRubricTreeIds(nodes: RubricTreeNode[]): Set<number> {
+  const ids = new Set<number>();
+
+  function visit(items: RubricTreeNode[]) {
+    for (const item of items) {
+      ids.add(item.id);
+      const children = Array.isArray(item.children) ? item.children : [];
+      if (children.length > 0) {
+        visit(children);
+      }
+    }
+  }
+
+  visit(nodes);
+  return ids;
+}
+
+function normalizeRubricTreeNodes(value: unknown): RubricTreeNode[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((row): RubricTreeNode | null => {
+      const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      const id = asIntegerOrUndefined(record.id ?? record.category_id);
+      if (!id) {
+        return null;
+      }
+      return {
+        ...record,
+        id,
+        category_id: asIntegerOrUndefined(record.category_id) ?? id,
+        parent_id: asIntegerOrUndefined(record.parent_id) ?? 0,
+        name: asTrimmedString(record.name) || `Category ${id}`,
+        children: normalizeRubricTreeNodes(record.children),
+      };
+    })
+    .filter((node): node is RubricTreeNode => Boolean(node));
+}
+
+function buildRubricTreeFromFlatNodes(nodes: RubricTreeNode[]): RubricTreeNode[] {
+  if (nodes.length === 0) {
+    return [];
+  }
+
+  const byId = new Map<number, RubricTreeNode>();
+  const childIds = new Set<number>();
+
+  for (const node of nodes) {
+    byId.set(node.id, {
+      ...node,
+      children: [],
+    });
+  }
+
+  for (const node of byId.values()) {
+    if (!node.parent_id || !byId.has(node.parent_id)) {
+      continue;
+    }
+    byId.get(node.parent_id)?.children?.push(node);
+    childIds.add(node.id);
+  }
+
+  const roots = Array.from(byId.values()).filter((node) => !childIds.has(node.id));
+  return roots.length > 0 ? roots : Array.from(byId.values());
+}
+
+function normalizeRubricTreePayload(payload: unknown): RubricTreeNode[] {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const flatTree = buildRubricTreeFromFlatNodes(normalizeRubricTreeNodes(record.items));
+  if (flatTree.length > 0) {
+    // `tree` contains only branches reachable from a root category. XL can return
+    // an active category whose parent is unavailable, while keeping that category
+    // in `items`. Building from the complete list preserves its real name.
+    return flatTree;
+  }
+
+  return normalizeRubricTreeNodes(Array.isArray(payload) ? payload : record.tree);
+}
+
+function extractSourceCategories(payload: Record<string, unknown>): Array<{ category_id: number; main_category: boolean }> {
+  const rows = Array.isArray(payload.categories) ? payload.categories : [];
+  return rows
+    .map((row) => {
+      const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      const categoryId = asIntegerOrUndefined(record.category_id);
+      if (!categoryId) {
+        return null;
+      }
+      return {
+        category_id: categoryId,
+        main_category: Boolean(Number(record.main_category)),
+      };
+    })
+    .filter((row): row is { category_id: number; main_category: boolean } => Boolean(row));
 }
 
 function normalizeDecimalPrice(value: string): string {
@@ -421,14 +988,98 @@ function buildSourceGalleryItems(
   return items;
 }
 
-async function galleryItemToFile(item: GalleryItem, index: number): Promise<File> {
+function buildXlSourceGalleryItems(payload: Record<string, unknown>, sourceSiteKey: string): GalleryItem[] {
+  const rows = Array.isArray(payload.images) ? payload.images : [];
+  const items: Array<GalleryItem & { sortOrder: number }> = [];
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const sourcePath = normalizeSourceImagePath(record.image);
+    if (!sourcePath) {
+      return;
+    }
+    const dedupeKey = sourcePath.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    const sortOrderRaw = Number(record.sort_order);
+    const sortOrder = Number.isFinite(sortOrderRaw) ? sortOrderRaw : index + 1;
+    items.push({
+      id: `xl-gallery-${items.length}-${sortOrder}-${sourcePath}`,
+      src: toXljvImageUrl("XL", sourceSiteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, sourcePath),
+      sourcePath,
+      isLocal: false,
+      sortOrder,
+    });
+  });
+
+  return items
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map(({ sortOrder: _sortOrder, ...item }) => item);
+}
+
+function buildKauflandSourceGalleryItems(imageUrls: string[]): GalleryItem[] {
+  const seen = new Set<string>();
+  return imageUrls.flatMap((url, index) => {
+    const sourceUrl = asTrimmedString(url);
+    if (!sourceUrl || seen.has(sourceUrl)) return [];
+    seen.add(sourceUrl);
+    return [{
+      id: `kaufland-gallery-${index}`,
+      src: sourceUrl,
+      sourcePath: sourceUrl,
+      isLocal: false,
+    }];
+  });
+}
+
+function pickPrimaryDescriptionRecord(payload: Record<string, unknown>): Record<string, unknown> {
+  const descriptions = Array.isArray(payload.descriptions) ? payload.descriptions : [];
+  const records = descriptions.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === "object"));
+  return (
+    records.find((row) => asTrimmedString(row.language_code).toLowerCase() === "de") ??
+    records.find((row) => Number(row.language_id) === 1) ??
+    records[0] ??
+    {}
+  );
+}
+
+function buildXlDescriptionFields(payload: Record<string, unknown>): XlDescriptionFields {
+  const primaryDescription = pickPrimaryDescriptionRecord(payload);
+  const specials = Array.isArray(payload.specials) ? payload.specials : [];
+  const primarySpecial = specials.find((row): row is Record<string, unknown> => Boolean(row && typeof row === "object"));
+  const price = asTrimmedString(primarySpecial?.price);
+  const name = asTrimmedString(primaryDescription.name);
+  return {
+    name,
+    seo_url:
+      asTrimmedString(primaryDescription.seo_url) ||
+      asTrimmedString(payload.seo_url) ||
+      buildUrlKeyFromName(name),
+    ean: asTrimmedString(payload.ean),
+    price,
+    uvp: asTrimmedString(payload.price) || computeEvpFromPrice(price),
+    description: asTrimmedString(primaryDescription.description),
+    tag: asTrimmedString(primaryDescription.tag),
+    meta_title: asTrimmedString(primaryDescription.meta_title),
+    meta_description: asTrimmedString(primaryDescription.meta_description),
+    meta_keyword: asTrimmedString(primaryDescription.meta_keyword),
+  };
+}
+
+async function galleryItemToFile(item: GalleryItem, index: number, t: Record<string, string>): Promise<File> {
   if (item.file instanceof File) {
     return item.file;
   }
 
   const response = await fetch(item.src);
   if (!response.ok) {
-    throw new Error(`Failed to download gallery image ${index + 1}: HTTP ${response.status}`);
+    throw new Error(
+      t.createProductFailedDownloadGalleryImage
+        .replace("{index}", String(index + 1))
+        .replace("{status}", String(response.status))
+    );
   }
 
   const blob = await response.blob();
@@ -439,13 +1090,20 @@ async function galleryItemToFile(item: GalleryItem, index: number): Promise<File
 export default function CreateProductPage() {
   const t = useLabels();
   const { showToast } = useToast();
-  const controller = useCreateProductController({ t, showToast });
-  const [activeTab, setActiveTab] = useState<(typeof PAGE_TABS)[number]>("main");
+  const [activeTab, setActiveTab] = useState<CreateProductTab>("jv");
+  const activeTabMeta = getCreateProductTabMeta(activeTab, t);
+  const controller = useCreateProductController({
+    t,
+    showToast,
+    sourceSite: activeTabMeta.sourceSite,
+    preferredSourceSiteKey: activeTabMeta.sourceSiteKey,
+  });
   const [jvName, setJvName] = useState("");
   const [jvArtikelnr, setJvArtikelnr] = useState("");
   const [jvPrice, setJvPrice] = useState("");
   const [jvDescription, setJvDescription] = useState("");
   const [jvDescriptionMode, setJvDescriptionMode] = useState<"code" | "preview">("preview");
+  const [hoodDescriptionMode, setHoodDescriptionMode] = useState<"code" | "preview">("preview");
   const [jvBezeichnung, setJvBezeichnung] = useState("");
   const [jvMetaTitle, setJvMetaTitle] = useState("");
   const [jvMetaDescription, setJvMetaDescription] = useState("");
@@ -454,6 +1112,12 @@ export default function CreateProductPage() {
   const [jvKurzbeschreibung, setJvKurzbeschreibung] = useState("");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
+  const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
+  const [activeTabGalleryImageIdByTab, setActiveTabGalleryImageIdByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const [xlDescriptionStateByTab, setXlDescriptionStateByTab] = useState<Partial<Record<CreateProductTab, XlDescriptionState>>>({});
+  const [xlDescriptionMode, setXlDescriptionMode] = useState<"code" | "preview">("preview");
+  const [kauflandDescriptionStateByTab, setKauflandDescriptionStateByTab] = useState<Partial<Record<CreateProductTab, KauflandDescriptionState>>>({});
+  const [kauflandDescriptionMode, setKauflandDescriptionMode] = useState<"code" | "preview">("preview");
   const [rubricTreesBySite, setRubricTreesBySite] = useState<RubricTreeCache>({});
   const [rubricTreeLoading, setRubricTreeLoading] = useState(false);
   const [rubricTreeError, setRubricTreeError] = useState("");
@@ -463,6 +1127,16 @@ export default function CreateProductPage() {
   const [expandedRubricIdsBySite, setExpandedRubricIdsBySite] = useState<ExpandedRubricIdsBySite>({});
   const [selectedRubricIdsBySite, setSelectedRubricIdsBySite] = useState<SelectedRubricIdsBySite>({});
   const [mainRubricIdBySite, setMainRubricIdBySite] = useState<MainRubricIdBySite>({});
+  const [xlRubricTree, setXlRubricTree] = useState<RubricTreeNode[]>([]);
+  const [xlRubricTreeSourceKey, setXlRubricTreeSourceKey] = useState("");
+  const [xlRubricTreeLoading, setXlRubricTreeLoading] = useState(false);
+  const [xlRubricTreeError, setXlRubricTreeError] = useState("");
+  const [xlRubricSearch, setXlRubricSearch] = useState("");
+  const [showOnlySelectedXlRubrics, setShowOnlySelectedXlRubrics] = useState(false);
+  const [expandedXlRubricIds, setExpandedXlRubricIds] = useState<Set<number>>(new Set());
+  const [selectedXlRubricIds, setSelectedXlRubricIds] = useState<Set<number>>(new Set());
+  const [mainXlRubricId, setMainXlRubricId] = useState<number | null>(null);
+  const [xlRubricSelectionSourceKey, setXlRubricSelectionSourceKey] = useState("");
   const [deliveryOptionsBySite, setDeliveryOptionsBySite] = useState<DeliveryOptionsCache>({});
   const [deliveryOptionsLoading, setDeliveryOptionsLoading] = useState(false);
   const [deliveryOptionsError, setDeliveryOptionsError] = useState("");
@@ -471,9 +1145,8 @@ export default function CreateProductPage() {
   const [showOnlySelectedDelivery, setShowOnlySelectedDelivery] = useState(false);
   const [selectedDeliveryIdsBySite, setSelectedDeliveryIdsBySite] = useState<SelectedDeliveryIdsBySite>({});
   const [sendAllSitesLoading, setSendAllSitesLoading] = useState(false);
-  const [sendAllSitesStatus, setSendAllSitesStatus] = useState("");
-  const [sendAllSitesLog, setSendAllSitesLog] = useState("");
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [, setSendAllSitesStatus] = useState("");
+  const [, setSendAllSitesLog] = useState("");
   const localObjectUrlsRef = useRef<string[]>([]);
   // Tracks mount state so the background JV send can safely skip component state
   // updates after the user navigates away (the completion toast still fires via
@@ -503,7 +1176,7 @@ export default function CreateProductPage() {
       const jobId = Number(parsed?.jobId);
       if (Number.isFinite(jobId)) {
         setSendAllSitesLoading(true);
-        setSendAllSitesStatus(`Resuming JV create job #${jobId}…`);
+        setSendAllSitesStatus(t.createProductResumeJvJob.replace("{jobId}", String(jobId)));
         void pollCreateJob(jobId);
       }
     } catch {
@@ -517,6 +1190,21 @@ export default function CreateProductPage() {
   const galleryImages = useMemo(() => controller.sourceSnapshot?.imageUrls ?? [], [controller.sourceSnapshot?.imageUrls]);
   const jvUrlKey = useMemo(() => buildUrlKeyFromName(jvName), [jvName]);
   const jvEvp = useMemo(() => computeEvpFromPrice(jvPrice), [jvPrice]);
+  const hoodEvp = useMemo(() => computeEvpFromPrice(controller.price), [controller.price]);
+  const hoodProductProperties = useMemo(
+    () => parseHoodProductProperties(controller.hoodFields.productPropertiesText),
+    [controller.hoodFields.productPropertiesText],
+  );
+  const hoodDescriptionPreviewSrcDoc = useMemo(
+    () => makeHoodDescriptionPreviewEditableDocument(buildHoodDescriptionPreviewDocument(controller.hoodFields.description, activeTabMeta.account)),
+    [activeTabMeta.account, controller.hoodFields.description],
+  );
+  const setHoodProductProperties = (properties: HoodProductProperty[]) => {
+    controller.setHoodFields({
+      ...controller.hoodFields,
+      productPropertiesText: JSON.stringify(properties),
+    });
+  };
   const jvMetaKeywordItems = useMemo(() => splitMetaKeywords(jvMetaKeyword), [jvMetaKeyword]);
   const rubricTree = useMemo(() => rubricTreesBySite[rubricSiteKey] ?? [], [rubricSiteKey, rubricTreesBySite]);
   const expandedRubricIds = useMemo(
@@ -555,6 +1243,13 @@ export default function CreateProductPage() {
       : {}) as Record<string, unknown>,
     [sourcePayload]
   );
+  const kauflandProduct = useMemo(
+    () => (sourcePayload.response_data && typeof sourcePayload.response_data === "object" && !Array.isArray(sourcePayload.response_data)
+      ? sourcePayload.response_data
+      : {}) as Record<string, unknown>,
+    [sourcePayload],
+  );
+  const sourceXlCategories = useMemo(() => extractSourceCategories(sourcePayload), [sourcePayload]);
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -562,6 +1257,22 @@ export default function CreateProductPage() {
   const sourceGalleryItems = useMemo(
     () => buildSourceGalleryItems(sourcePayload, galleryImages, controller.sourceSnapshot?.siteKey || ""),
     [galleryImages, sourcePayload, controller.sourceSnapshot?.siteKey]
+  );
+  const xlSourceGalleryItems = useMemo(
+    () => buildXlSourceGalleryItems(sourcePayload, controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY),
+    [sourcePayload, controller.sourceSnapshot?.siteKey]
+  );
+  const kauflandSourceGalleryItems = useMemo(
+    () => buildKauflandSourceGalleryItems(galleryImages),
+    [galleryImages],
+  );
+  const activeTabSourceGalleryItems = useMemo(
+    () => {
+      if (activeTabMeta.sourceSite === "XL") return xlSourceGalleryItems;
+      if (activeTabMeta.sourceSite === "KAUFLAND") return kauflandSourceGalleryItems;
+      return sourceGalleryItems;
+    },
+    [activeTabMeta.sourceSite, kauflandSourceGalleryItems, sourceGalleryItems, xlSourceGalleryItems]
   );
   const primaryContentRow = useMemo(() => pickPrimaryJvContentRow(sourceContentRows), [sourceContentRows]);
   const normalizedDescriptionPreviewHtml = useMemo(
@@ -597,6 +1308,52 @@ export default function CreateProductPage() {
 
     return filterNodes(rubricTree);
   }, [rubricSearch, rubricTree, selectedRubricIds, showOnlySelectedRubrics]);
+  const filteredXlRubricTree = useMemo(() => {
+    const query = xlRubricSearch.trim().toLowerCase();
+    if (!query && !showOnlySelectedXlRubrics) {
+      return xlRubricTree;
+    }
+
+    function filterNodes(nodes: RubricTreeNode[]): RubricTreeNode[] {
+      const next: RubricTreeNode[] = [];
+      for (const node of nodes) {
+        const label = String(node.name || "").toLowerCase();
+        const code = String(node.id || "");
+        const children = Array.isArray(node.children) ? filterNodes(node.children) : [];
+        const matchesQuery = !query || label.includes(query) || code.includes(query);
+        const matchesSelection = !showOnlySelectedXlRubrics || selectedXlRubricIds.has(node.id);
+
+        if ((!matchesQuery || !matchesSelection) && children.length === 0) {
+          continue;
+        }
+
+        next.push({
+          ...node,
+          children,
+        });
+      }
+      return next;
+    }
+
+    const filtered = filterNodes(xlRubricTree);
+    if (!showOnlySelectedXlRubrics || selectedXlRubricIds.size === 0) {
+      return filtered;
+    }
+
+    const allTreeIds = collectRubricTreeIds(xlRubricTree);
+    const filteredIds = collectRubricTreeIds(filtered);
+    const fallbackNodes = Array.from(selectedXlRubricIds)
+      .filter((id) => !allTreeIds.has(id) && !filteredIds.has(id))
+      .filter((id) => !query || String(id).includes(query))
+      .map((id) => ({
+        id,
+        category_id: id,
+        name: "Sonstige",
+        children: [],
+      }));
+
+    return [...filtered, ...fallbackNodes];
+  }, [showOnlySelectedXlRubrics, selectedXlRubricIds, xlRubricSearch, xlRubricTree, t.createProductRubricLabel]);
   const filteredDeliveryOptions = useMemo(() => {
     const query = deliverySearch.trim().toLowerCase();
 
@@ -613,31 +1370,47 @@ export default function CreateProductPage() {
     () => expandableRubricIds.length > 0 && expandableRubricIds.every((id) => expandedRubricIds.has(id)),
     [expandableRubricIds, expandedRubricIds]
   );
-  const activeMarketplaceSiteIds = useMemo(() => {
-    switch (activeTab) {
-      case "main":
-        return ALL_MARKETPLACE_SITE_IDS;
-      case "xl":
-        return XL_MARKETPLACE_SITE_IDS;
-      case "hood":
-        return HOOD_MARKETPLACE_SITE_IDS;
-      case "kaufland":
-        return KAUFLAND_MARKETPLACE_SITE_IDS;
-      case "otto":
-        return OTTO_MARKETPLACE_SITE_IDS;
-      case "ebay":
-        return EBAY_MARKETPLACE_SITE_IDS;
-      default:
-        return [];
-    }
-  }, [activeTab]);
-  const activeMarketplaceSites = useMemo(
-    () => allMarketplaceSites.filter((site) => activeMarketplaceSiteIds.includes(site.id)),
-    [activeMarketplaceSiteIds]
+  const expandableXlRubricIds = useMemo(() => collectExpandableRubricIds(filteredXlRubricTree), [filteredXlRubricTree]);
+  const areAllXlRubricsExpanded = useMemo(
+    () => expandableXlRubricIds.length > 0 && expandableXlRubricIds.every((id) => expandedXlRubricIds.has(id)),
+    [expandableXlRubricIds, expandedXlRubricIds]
   );
-  const canCreateProduct = activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0;
+  const activeMarketplaceSiteIds = activeTabMeta.targetSiteIds;
+  const isComingSoonMarketplace = activeTabMeta.marketplace === "OTTO" || activeTabMeta.marketplace === "EBAY";
+  const canCreateProduct = !isComingSoonMarketplace && (activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0);
   const primaryActionLoading = activeTab === "jv" ? sendAllSitesLoading : controller.submitting;
-  const primaryActionLabel = primaryActionLoading ? "Creating product..." : "Create product";
+  const primaryActionLabel = primaryActionLoading ? t.createProductCreatingAction : t.createProductCreateAction;
+  const tabGalleryItems = tabGalleryItemsByTab[activeTab] ?? [];
+  const activeTabGalleryImageId = activeTabGalleryImageIdByTab[activeTab] ?? "";
+  const activeXlDescriptionFields = xlDescriptionStateByTab[activeTab]?.fields ?? buildXlDescriptionFields({});
+  const activeXlSeoUrl = buildUrlKeyFromName(activeXlDescriptionFields.name) || activeXlDescriptionFields.seo_url;
+  const activeXlSourceKey = [
+    controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+    controller.sourceSnapshot?.ean || "",
+    controller.sourceSnapshot?.sourceProductId || "",
+  ].join(":");
+  const activeKauflandSourceKey = [
+    controller.sourceSnapshot?.siteKey || "",
+    controller.sourceSnapshot?.ean || "",
+    controller.sourceSnapshot?.sourceProductId || "",
+  ].join(":");
+  const activeKauflandDescriptionFields = kauflandDescriptionStateByTab[activeTab]?.fields ?? buildKauflandDescriptionFields(kauflandProduct);
+  const kauflandShortDescriptionItems = useMemo(
+    () => splitMetaKeywords(activeKauflandDescriptionFields.shortDescription),
+    [activeKauflandDescriptionFields.shortDescription],
+  );
+  const kauflandDescriptionPreviewSrcDoc = useMemo(
+    () => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(activeKauflandDescriptionFields.description)),
+    [activeKauflandDescriptionFields.description],
+  );
+  const normalizedXlDescriptionPreviewHtml = useMemo(
+    () =>
+      normalizeXlPreviewHtml(
+        activeXlDescriptionFields.description,
+        controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY
+      ),
+    [activeXlDescriptionFields.description, controller.sourceSnapshot?.siteKey]
+  );
 
   useEffect(() => {
     const jvFields = controller.sourceSnapshot?.rawPayload?.jv_fields;
@@ -660,11 +1433,14 @@ export default function CreateProductPage() {
 
   useEffect(() => {
     setGalleryItems((current) => {
+      if (activeTab !== "jv") {
+        return current;
+      }
       const localItems = current.filter((item) => item.isLocal);
       const remoteItems = sourceGalleryItems;
       return [...remoteItems, ...localItems];
     });
-  }, [sourceGalleryItems]);
+  }, [activeTab, sourceGalleryItems]);
 
   useEffect(() => {
     const firstImageId = galleryItems[0]?.id ?? "";
@@ -677,6 +1453,135 @@ export default function CreateProductPage() {
   }, [galleryItems]);
 
   useEffect(() => {
+    const firstImageId = tabGalleryItems[0]?.id ?? "";
+    setActiveTabGalleryImageIdByTab((current) => {
+      const currentImageId = current[activeTab] ?? "";
+      const nextImageId =
+        currentImageId && tabGalleryItems.some((item) => item.id === currentImageId)
+          ? currentImageId
+          : firstImageId;
+      if ((current[activeTab] ?? "") === nextImageId) {
+        return current;
+      }
+      return {
+        ...current,
+        [activeTab]: nextImageId,
+      };
+    });
+  }, [activeTab, tabGalleryItems]);
+
+  useEffect(() => {
+    if (activeTab === "jv") {
+      return;
+    }
+    setTabGalleryItemsByTab((current) => {
+      const currentItems = current[activeTab] ?? [];
+      const localItems = currentItems.filter((item) => item.isLocal);
+      return {
+        ...current,
+        [activeTab]: [...activeTabSourceGalleryItems, ...localItems],
+      };
+    });
+  }, [activeTab, activeTabSourceGalleryItems]);
+
+  useEffect(() => {
+    if (activeTabMeta.sourceSite !== "XL") {
+      return;
+    }
+    setXlDescriptionStateByTab((current) => {
+      if (current[activeTab]?.sourceKey === activeXlSourceKey) {
+        return current;
+      }
+      return {
+        ...current,
+        [activeTab]: {
+          sourceKey: activeXlSourceKey,
+          fields: buildXlDescriptionFields(sourcePayload),
+        },
+      };
+    });
+  }, [activeTab, activeTabMeta.sourceSite, activeXlSourceKey, sourcePayload]);
+
+  useEffect(() => {
+    if (activeTabMeta.sourceSite !== "KAUFLAND") {
+      return;
+    }
+    setKauflandDescriptionStateByTab((current) => {
+      if (current[activeTab]?.sourceKey === activeKauflandSourceKey) {
+        return current;
+      }
+      return {
+        ...current,
+        [activeTab]: {
+          sourceKey: activeKauflandSourceKey,
+          fields: buildKauflandDescriptionFields(kauflandProduct),
+        },
+      };
+    });
+  }, [activeKauflandSourceKey, activeTab, activeTabMeta.sourceSite, kauflandProduct]);
+
+  useEffect(() => {
+    const sourceSiteKey = String(controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY).trim();
+    const normalizedSourceSiteKey = (sourceSiteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY).toLowerCase();
+    if (activeTabMeta.sourceSite !== "XL" || xlRubricTreeSourceKey === normalizedSourceSiteKey) {
+      return;
+    }
+
+    let active = true;
+    setXlRubricTreeLoading(true);
+    setXlRubricTreeError("");
+
+    const rubricTreeUrl =
+      `/api/v1/xl/rubrics/tree/?site=XL&site_key=${encodeURIComponent(normalizedSourceSiteKey)}&language=de`;
+
+    void apiFetch(rubricTreeUrl)
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(`Failed to load XL rubric tree: HTTP ${response.status}`);
+        }
+        const tree = normalizeRubricTreePayload(payload);
+        if (!active) {
+          return;
+        }
+        setXlRubricTree(tree);
+        setXlRubricTreeSourceKey(normalizedSourceSiteKey);
+        setExpandedXlRubricIds(new Set(collectExpandableRubricIds(tree)));
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        setXlRubricTreeError(error instanceof Error ? error.message : "Failed to load XL rubric tree.");
+      })
+      .finally(() => {
+        if (active) {
+          setXlRubricTreeLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeTabMeta.sourceSite, controller.sourceSnapshot?.siteKey, xlRubricTreeSourceKey]);
+
+  useEffect(() => {
+    if (activeTabMeta.sourceSite !== "XL" || xlRubricSelectionSourceKey === activeXlSourceKey) {
+      return;
+    }
+
+    const selectedCategoryIds = sourceXlCategories.map((category) => category.category_id);
+    const mainCategoryId =
+      sourceXlCategories.find((category) => category.main_category)?.category_id ??
+      selectedCategoryIds[0] ??
+      null;
+
+    setSelectedXlRubricIds(new Set(selectedCategoryIds));
+    setMainXlRubricId(mainCategoryId);
+    setXlRubricSelectionSourceKey(activeXlSourceKey);
+  }, [activeTabMeta.sourceSite, activeXlSourceKey, sourceXlCategories, xlRubricSelectionSourceKey]);
+
+  useEffect(() => {
     return () => {
       localObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       localObjectUrlsRef.current = [];
@@ -684,10 +1589,19 @@ export default function CreateProductPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "jv") {
+    if (activeTab !== "main") {
       return;
     }
-    if (JV_RUBRIC_SITE_TABS.every((site) => Array.isArray(rubricTreesBySite[site.key]))) {
+    setRubricSiteKey("JV_DE");
+    setDeliverySiteKey("JV_DE");
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "jv" && activeTab !== "main") {
+      return;
+    }
+    const rubricSites = activeTab === "main" ? [JV_RUBRIC_SITE_TABS[0]] : JV_RUBRIC_SITE_TABS;
+    if (rubricSites.every((site) => Array.isArray(rubricTreesBySite[site.key]))) {
       return;
     }
 
@@ -696,12 +1610,16 @@ export default function CreateProductPage() {
     setRubricTreeError("");
 
     void Promise.all(
-      JV_RUBRIC_SITE_TABS.map(async (site) => {
+      rubricSites.map(async (site) => {
         const response = await apiFetch(
           `/api/v1/jv/rubrics/tree/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
         if (!response.ok) {
-          throw new Error(`Failed to load rubric tree ${site.label}: HTTP ${response.status}`);
+          throw new Error(
+            t.createProductFailedLoadRubricTree
+              .replace("{site}", site.label)
+              .replace("{status}", String(response.status))
+          );
         }
         const payload = (await response.json()) as { tree?: RubricTreeNode[] };
         return {
@@ -721,14 +1639,14 @@ export default function CreateProductPage() {
           nextCache[result.key] = result.tree;
           nextExpandedBySite[result.key] = new Set(collectExpandableRubricIds(result.tree));
         }
-        setRubricTreesBySite(nextCache);
-        setExpandedRubricIdsBySite(nextExpandedBySite);
+        setRubricTreesBySite((current) => ({ ...current, ...nextCache }));
+        setExpandedRubricIdsBySite((current) => ({ ...current, ...nextExpandedBySite }));
       })
       .catch((error) => {
         if (!active) {
           return;
         }
-        setRubricTreeError(error instanceof Error ? error.message : "Failed to load rubric tree.");
+        setRubricTreeError(error instanceof Error ? error.message : t.createProductFailedLoadRubricTreeGeneric);
       })
       .finally(() => {
         if (active) {
@@ -739,13 +1657,14 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeTab, rubricSiteKey, rubricTreesBySite]);
+  }, [activeTab, rubricSiteKey, rubricTreesBySite, t.createProductFailedLoadRubricTree, t.createProductFailedLoadRubricTreeGeneric]);
 
   useEffect(() => {
-    if (activeTab !== "jv") {
+    if (activeTab !== "jv" && activeTab !== "main") {
       return;
     }
-    if (JV_RUBRIC_SITE_TABS.every((site) => Array.isArray(deliveryOptionsBySite[site.key]))) {
+    const deliverySites = activeTab === "main" ? [JV_RUBRIC_SITE_TABS[0]] : JV_RUBRIC_SITE_TABS;
+    if (deliverySites.every((site) => Array.isArray(deliveryOptionsBySite[site.key]))) {
       return;
     }
 
@@ -754,12 +1673,16 @@ export default function CreateProductPage() {
     setDeliveryOptionsError("");
 
     void Promise.all(
-      JV_RUBRIC_SITE_TABS.map(async (site) => {
+      deliverySites.map(async (site) => {
         const response = await apiFetch(
           `/api/v1/jv/delivery-options/?site=JV&site_key=${encodeURIComponent(site.key)}&language=de`
         );
         if (!response.ok) {
-          throw new Error(`Failed to load delivery options ${site.label}: HTTP ${response.status}`);
+          throw new Error(
+            t.createProductFailedLoadDeliveryOptions
+              .replace("{site}", site.label)
+              .replace("{status}", String(response.status))
+          );
         }
         const payload = (await response.json()) as { items?: DeliveryOption[] };
         return {
@@ -777,13 +1700,13 @@ export default function CreateProductPage() {
         for (const result of results) {
           nextCache[result.key] = result.items;
         }
-        setDeliveryOptionsBySite(nextCache);
+        setDeliveryOptionsBySite((current) => ({ ...current, ...nextCache }));
       })
       .catch((error) => {
         if (!active) {
           return;
         }
-        setDeliveryOptionsError(error instanceof Error ? error.message : "Failed to load delivery options.");
+        setDeliveryOptionsError(error instanceof Error ? error.message : t.createProductFailedLoadDeliveryOptionsGeneric);
       })
       .finally(() => {
         if (active) {
@@ -794,7 +1717,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeTab, deliveryOptionsBySite]);
+  }, [activeTab, deliveryOptionsBySite, t.createProductFailedLoadDeliveryOptions, t.createProductFailedLoadDeliveryOptionsGeneric]);
 
   useEffect(() => {
     const sourceDeliveryId = asIntegerOrUndefined(sourceJvFields.lieferzeitid);
@@ -828,8 +1751,6 @@ export default function CreateProductPage() {
       return changed ? next : current;
     });
   }, [deliveryOptionsBySite, sourceJvFields]);
-
-  const activeGalleryItem = galleryItems.find((item) => item.id === activeGalleryImageId) ?? null;
 
   function handleGalleryUpload(files: FileList | null) {
     if (!files || files.length === 0) {
@@ -878,6 +1799,109 @@ export default function CreateProductPage() {
     });
   }
 
+  function handleTabGalleryUpload(files: FileList | null) {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const nextItems = Array.from(files).map((file, index) => ({
+      id: `${activeTab}-local-${Date.now()}-${index}-${file.name}`,
+      src: URL.createObjectURL(file),
+      file,
+      isLocal: true,
+    }));
+    nextItems.forEach((item) => localObjectUrlsRef.current.push(item.src));
+
+    setTabGalleryItemsByTab((current) => ({
+      ...current,
+      [activeTab]: [...(current[activeTab] ?? []), ...nextItems],
+    }));
+    setActiveTabGalleryImageIdByTab((current) => ({
+      ...current,
+      [activeTab]: current[activeTab] || nextItems[0]?.id || "",
+    }));
+  }
+
+  function handleDeleteTabGalleryItem(itemId: string) {
+    setTabGalleryItemsByTab((current) => {
+      const currentItems = current[activeTab] ?? [];
+      const target = currentItems.find((item) => item.id === itemId);
+      if (target?.isLocal) {
+        URL.revokeObjectURL(target.src);
+        localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
+      }
+      return {
+        ...current,
+        [activeTab]: currentItems.filter((item) => item.id !== itemId),
+      };
+    });
+  }
+
+  function handleMoveTabGalleryItem(sourceItemId: string, targetItemId: string) {
+    if (!sourceItemId || !targetItemId || sourceItemId === targetItemId) {
+      return;
+    }
+
+    setTabGalleryItemsByTab((current) => {
+      const currentItems = current[activeTab] ?? [];
+      const sourceIndex = currentItems.findIndex((item) => item.id === sourceItemId);
+      const targetIndex = currentItems.findIndex((item) => item.id === targetItemId);
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return current;
+      }
+
+      const next = [...currentItems];
+      const [movedItem] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, movedItem);
+      return {
+        ...current,
+        [activeTab]: next,
+      };
+    });
+  }
+
+  function updateActiveXlDescriptionField(field: keyof XlDescriptionFields, value: string) {
+    setXlDescriptionStateByTab((current) => {
+      const currentState = current[activeTab] ?? {
+        sourceKey: [
+          controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+          controller.sourceSnapshot?.ean || "",
+          controller.sourceSnapshot?.sourceProductId || "",
+        ].join(":"),
+        fields: buildXlDescriptionFields(sourcePayload),
+      };
+      return {
+        ...current,
+        [activeTab]: {
+          ...currentState,
+          fields: {
+            ...currentState.fields,
+            [field]: value,
+          },
+        },
+      };
+    });
+  }
+
+  function updateActiveKauflandDescriptionField(field: keyof KauflandDescriptionFields, value: string) {
+    setKauflandDescriptionStateByTab((current) => {
+      const currentState = current[activeTab] ?? {
+        sourceKey: activeKauflandSourceKey,
+        fields: buildKauflandDescriptionFields(kauflandProduct),
+      };
+      return {
+        ...current,
+        [activeTab]: {
+          ...currentState,
+          fields: {
+            ...currentState.fields,
+            [field]: value,
+          },
+        },
+      };
+    });
+  }
+
   function toggleSelectedRubric(rubricId: number) {
     setSelectedRubricIdsBySite((current) => {
       const currentSet = current[rubricSiteKey] ?? new Set<number>();
@@ -912,6 +1936,28 @@ export default function CreateProductPage() {
     }));
   }
 
+  function toggleSelectedXlRubric(rubricId: number) {
+    setSelectedXlRubricIds((current) => {
+      const next = new Set(current);
+      if (next.has(rubricId)) {
+        next.delete(rubricId);
+      } else {
+        next.add(rubricId);
+      }
+      return next;
+    });
+    setMainXlRubricId((current) => {
+      if (current !== rubricId) {
+        return current;
+      }
+      return selectedXlRubricIds.has(rubricId) ? null : current;
+    });
+  }
+
+  function toggleMainXlRubric(rubricId: number) {
+    setMainXlRubricId((current) => (current === rubricId ? null : rubricId));
+  }
+
   function toggleSelectedDelivery(deliveryId: number) {
     setSelectedDeliveryIdsBySite((current) => {
       const currentSet = current[deliverySiteKey] ?? new Set<number>();
@@ -944,7 +1990,11 @@ export default function CreateProductPage() {
       if (!item.isLocal) {
         const sourceUrl = resolveGallerySourceUrl(item, controller.sourceSnapshot?.siteKey || "");
         if (!sourceUrl) {
-          throw new Error(`Missing source image URL for ${siteKey} image ${index + 1}`);
+          throw new Error(
+            t.createProductMissingSourceImageUrl
+              .replace("{site}", siteKey)
+              .replace("{index}", String(index + 1))
+          );
         }
         const { response, payload } = await xljvUploadImages({
           site: "JV",
@@ -964,13 +2014,16 @@ export default function CreateProductPage() {
         if (!response.ok || !uploadedPath) {
           throw new Error(
             asTrimmedString(payload.detail) ||
-              `Image relay upload failed for ${siteKey} image ${index + 1}: HTTP ${response.status}`
+              t.createProductImageRelayUploadFailed
+                .replace("{site}", siteKey)
+                .replace("{index}", String(index + 1))
+                .replace("{status}", String(response.status))
           );
         }
         return uploadedPath;
       }
 
-      const file = await galleryItemToFile(item, index);
+      const file = await galleryItemToFile(item, index, t);
       const { response, payload } = await xljvUploadImages({
         site: "JV",
         siteKey,
@@ -989,7 +2042,10 @@ export default function CreateProductPage() {
       if (!response.ok || !uploadedPath) {
         throw new Error(
           asTrimmedString(payload.detail) ||
-            `Image upload failed for ${siteKey} image ${index + 1}: HTTP ${response.status}`
+            t.createProductImageUploadFailed
+              .replace("{site}", siteKey)
+              .replace("{index}", String(index + 1))
+              .replace("{status}", String(response.status))
         );
       }
 
@@ -1099,15 +2155,15 @@ export default function CreateProductPage() {
   async function handleSendToAllJvSites() {
     const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
     if (!/^\d{13}$/.test(ean)) {
-      showToast("EAN must contain exactly 13 digits.", "error");
+      showToast(t.validationEanExact13Digits, "error");
       return;
     }
     if (!jvName.trim()) {
-      showToast("Name is required before sending.", "error");
+      showToast(t.createProductNameRequiredBeforeSend, "error");
       return;
     }
     if (!jvArtikelnr.trim()) {
-      showToast("Artikelnr is required before sending.", "error");
+      showToast(t.createProductArtikelnrRequiredBeforeSend, "error");
       return;
     }
 
@@ -1118,13 +2174,13 @@ export default function CreateProductPage() {
       const selectedDelivery = selectedDeliveryIdsBySite[site.key] ?? new Set<number>();
 
       if (selectedRubrics.size === 0) {
-        validationErrors.push(`${site.label}: select at least one rubric.`);
+        validationErrors.push(t.createProductSelectAtLeastOneRubric.replace("{site}", site.label));
       }
       if (!mainRubric || !selectedRubrics.has(mainRubric)) {
-        validationErrors.push(`${site.label}: select one main rubric.`);
+        validationErrors.push(t.createProductSelectMainRubric.replace("{site}", site.label));
       }
       if (selectedDelivery.size !== 1) {
-        validationErrors.push(`${site.label}: select exactly one delivery option.`);
+        validationErrors.push(t.createProductSelectExactlyOneDelivery.replace("{site}", site.label));
       }
     }
 
@@ -1135,15 +2191,15 @@ export default function CreateProductPage() {
       return;
     }
 
-    if (!window.confirm(`Create JV product ${ean} on JV DE, JV AT, JV CH and JV UK?`)) {
+    if (!window.confirm(t.createProductConfirmJvCreate.replace("{ean}", ean))) {
       return;
     }
 
     setSendAllSitesLoading(true);
-    setSendAllSitesStatus("Uploading images and queueing the JV create job…");
+    setSendAllSitesStatus(t.createProductQueueingJvJob);
     setSendAllSitesLog("");
     showToast(
-      "JV creation is being queued — you can keep working, you'll get a toast when it's done.",
+      t.createProductJvQueuedToast,
       "info"
     );
 
@@ -1153,7 +2209,7 @@ export default function CreateProductPage() {
     void (async () => {
       try {
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`Uploading images for ${JV_RUBRIC_SITE_TABS.length} sites…`);
+          setSendAllSitesStatus(t.createProductUploadingImagesForSites.replace("{count}", String(JV_RUBRIC_SITE_TABS.length)));
         }
         // Upload every site's gallery concurrently — one "worker" per site. Each JV site
         // is a separate FTP host, so parallel uploads hit different servers and don't
@@ -1186,7 +2242,7 @@ export default function CreateProductPage() {
         if (!response.ok) {
           const message =
             asTrimmedString((responsePayload as Record<string, unknown>).detail) ||
-            `Failed to queue JV create job (HTTP ${response.status}).`;
+            t.createProductFailedQueueJob.replace("{status}", String(response.status));
           if (isMountedRef.current) {
             setSendAllSitesStatus(message);
             setSendAllSitesLoading(false);
@@ -1198,7 +2254,7 @@ export default function CreateProductPage() {
         const job = (responsePayload.job ?? {}) as JvBatchJobStatus;
         const jobId = Number(job.id);
         if (!Number.isFinite(jobId)) {
-          const message = "JV create job was accepted but no job id was returned.";
+          const message = t.createProductQueueAcceptedNoJobId;
           if (isMountedRef.current) {
             setSendAllSitesStatus(message);
             setSendAllSitesLoading(false);
@@ -1209,11 +2265,15 @@ export default function CreateProductPage() {
 
         persistActiveCreateJob(jobId, ean);
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`JV create job #${jobId} queued — creating on 4 sites in the background…`);
+          setSendAllSitesStatus(
+            t.createProductJvJobQueuedBackground
+              .replace("{jobId}", String(jobId))
+              .replace("{count}", String(JV_RUBRIC_SITE_TABS.length))
+          );
         }
         await pollCreateJob(jobId);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "JV creation failed in the background.";
+        const message = error instanceof Error ? error.message : t.createProductJvBackgroundFailed;
         if (isMountedRef.current) {
           setSendAllSitesStatus(message);
           setSendAllSitesLoading(false);
@@ -1260,7 +2320,7 @@ export default function CreateProductPage() {
         if (httpStatus === 404) {
           clearActiveCreateJob();
           if (isMountedRef.current) setSendAllSitesLoading(false);
-          showToast(`JV create job #${jobId} was not found.`, "error");
+          showToast(t.createProductJvJobNotFound.replace("{jobId}", String(jobId)), "error");
           return;
         }
 
@@ -1272,7 +2332,9 @@ export default function CreateProductPage() {
 
         if (statusValue === "applied" || statusValue === "failed") {
           clearActiveCreateJob();
-          const summary = `JV create finished: ${appliedCount}/${total} sites successful.`;
+          const summary = t.createProductJvCreateFinished
+            .replace("{applied}", String(appliedCount))
+            .replace("{total}", String(total));
           if (isMountedRef.current) {
             setSendAllSitesStatus(summary);
             setSendAllSitesLoading(false);
@@ -1283,12 +2345,17 @@ export default function CreateProductPage() {
         }
 
         if (isMountedRef.current) {
-          setSendAllSitesStatus(`Creating on JV sites… ${appliedCount}/${total} done (job #${jobId}).`);
+          setSendAllSitesStatus(
+            t.createProductJvCreateProgress
+              .replace("{applied}", String(appliedCount))
+              .replace("{total}", String(total))
+              .replace("{jobId}", String(jobId))
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 2500));
       }
       if (isMountedRef.current) {
-        setSendAllSitesStatus(`JV create job #${jobId} is still running — check back later.`);
+        setSendAllSitesStatus(t.createProductJvJobStillRunning.replace("{jobId}", String(jobId)));
         setSendAllSitesLoading(false);
       }
     } finally {
@@ -1298,7 +2365,9 @@ export default function CreateProductPage() {
 
   function renderRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {
     return nodes.flatMap((node) => {
-      const label = String(node.name || `Rubric ${node.id || ""}`).trim();
+      const label = String(
+        node.name || t.createProductRubricLabel.replace("{id}", String(node.id || ""))
+      ).trim();
       const children = Array.isArray(node.children) ? node.children : [];
       const isExpanded = expandedRubricIds.has(node.id);
       const hasChildren = children.length > 0;
@@ -1323,7 +2392,7 @@ export default function CreateProductPage() {
               onChange={() => toggleMainRubric(node.id)}
               disabled={!isSelected}
               className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff] disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={`Main rubric ${label}`}
+              aria-label={t.createProductMainRubricAria.replace("{label}", label)}
             />
           </div>
           <div
@@ -1349,7 +2418,11 @@ export default function CreateProductPage() {
                   })
                 }
                 className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-pill)] border border-border/70 bg-background text-xs text-muted-foreground transition hover:text-foreground"
-                aria-label={isExpanded ? `Collapse ${label}` : `Expand ${label}`}
+                aria-label={
+                  isExpanded
+                    ? t.createProductCollapseRubricAria.replace("{label}", label)
+                    : t.createProductExpandRubricAria.replace("{label}", label)
+                }
               >
                 {isExpanded ? "-" : "+"}
               </button>
@@ -1364,24 +2437,149 @@ export default function CreateProductPage() {
     });
   }
 
+  function renderXlRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {
+    return nodes.flatMap((node) => {
+      const label = String(
+        node.name || t.createProductRubricLabel.replace("{id}", String(node.id || ""))
+      ).trim();
+      const children = Array.isArray(node.children) ? node.children : [];
+      const isExpanded = expandedXlRubricIds.has(node.id);
+      const hasChildren = children.length > 0;
+      const isSelected = selectedXlRubricIds.has(node.id);
+      const isMain = mainXlRubricId === node.id;
+
+      return [
+        <div
+          key={`xl-${level}-${node.id}`}
+          className="flex items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-sm text-foreground"
+        >
+          <div className="flex w-10 shrink-0 items-center gap-1">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => toggleSelectedXlRubric(node.id)}
+              className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff]"
+            />
+            <input
+              type="checkbox"
+              checked={isMain}
+              onChange={() => toggleMainXlRubric(node.id)}
+              disabled={!isSelected}
+              className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={t.createProductMainRubricAria.replace("{label}", label)}
+            />
+          </div>
+          <div
+            className="flex min-w-0 items-center gap-2"
+            style={{ paddingLeft: `${level * 18 + 8}px` }}
+          >
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedXlRubricIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(node.id)) {
+                      next.delete(node.id);
+                    } else {
+                      next.add(node.id);
+                    }
+                    return next;
+                  })
+                }
+                className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-pill)] border border-border/70 bg-background text-xs text-muted-foreground transition hover:text-foreground"
+                aria-label={
+                  isExpanded
+                    ? t.createProductCollapseRubricAria.replace("{label}", label)
+                    : t.createProductExpandRubricAria.replace("{label}", label)
+                }
+              >
+                {isExpanded ? "-" : "+"}
+              </button>
+            ) : (
+              <span className="inline-block size-5 shrink-0" />
+            )}
+            <span className="min-w-0">{label}</span>
+          </div>
+        </div>,
+        ...(hasChildren && isExpanded ? renderXlRubricTree(children, level + 1) : []),
+      ];
+    });
+  }
+
   function handlePrimaryCreateAction() {
     if (activeTab === "jv") {
       return void handleSendToAllJvSites();
     }
 
+    if (activeTab === "xl") {
+      return void controller.handleCreateProductForXlDefaultSite();
+    }
+
     if (activeTab === "main") {
-      return void controller.handleCreateProduct();
+      return void handleMainCreate();
+    }
+
+    if (activeTabMeta.marketplace === "HOOD") {
+      return void controller.handleCreateProductForHoodSiteIds(activeMarketplaceSiteIds);
+    }
+
+    if (activeTabMeta.marketplace === "KAUFLAND") {
+      return;
     }
 
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
   }
 
+  function handleMainCreate() {
+    const siteKey = "JV_DE";
+    const selectedCategoryIds = [...(selectedRubricIdsBySite[siteKey] ?? new Set<number>())];
+    const mainCategoryId = mainRubricIdBySite[siteKey] ?? null;
+    const selectedDeliveryId = [...(selectedDeliveryIdsBySite[siteKey] ?? new Set<number>())][0];
+
+    if (selectedCategoryIds.length === 0) {
+      showToast("Select at least one JV DE category before creating the job.", "error");
+      return;
+    }
+    if (!mainCategoryId || !selectedCategoryIds.includes(mainCategoryId)) {
+      showToast("Select one main JV DE category before creating the job.", "error");
+      return;
+    }
+    if (selectedDeliveryId === undefined) {
+      showToast("Select one JV DE delivery option before creating the job.", "error");
+      return;
+    }
+
+    const orderedCategoryIds = selectedCategoryIds.sort((left, right) => {
+      if (left === mainCategoryId) return -1;
+      if (right === mainCategoryId) return 1;
+      return left - right;
+    });
+
+    return void controller.handleCreateProduct({
+      categories: orderedCategoryIds.map((categoryId) => ({
+        category_id: categoryId,
+        main_category: categoryId === mainCategoryId,
+      })),
+      jv_fields: {
+        lieferzeitid: selectedDeliveryId,
+        lieferzeit: selectedDeliveryId,
+        lieferzeit_id: selectedDeliveryId,
+      },
+    });
+  }
+
   return (
     <AppShell
-      title={t.createProduct || "Create Product"}
-      subtitle="Create product"
+      title={t.createProduct}
+      subtitle={t.createProduct}
     >
-      <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
+      <div
+        className={[
+          "rounded-[var(--radius-card)] border border-border/70 bg-card p-4",
+          isComingSoonMarketplace ? "flex h-[calc(100vh-24px)] flex-col" : "",
+        ].join(" ")}
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             {PAGE_TABS.map((tab) => {
@@ -1399,13 +2597,14 @@ export default function CreateProductPage() {
                       : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                   ].join(" ")}
                 >
-                  {tab}
+                  {getCreateProductTabLabel(tab, t)}
                 </button>
               );
             })}
           </div>
 
           <div className="flex min-h-10 items-center justify-end gap-3">
+            <CreateProductEanPoolPanel />
             <button
               type="button"
               onClick={handlePrimaryCreateAction}
@@ -1413,10 +2612,8 @@ export default function CreateProductPage() {
               className="flex min-h-10 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               title={
                 activeTab === "jv"
-                  ? "Create product on JV sites"
-                  : activeTab === "main"
-                    ? "Create product on all selected sites"
-                    : `Create product on ${activeTab.toUpperCase()} sites`
+                  ? t.createProductOnJvSites
+                  : t.createProductOnAllSelectedSites
               }
             >
               {primaryActionLabel}
@@ -1424,7 +2621,7 @@ export default function CreateProductPage() {
             {isLoading ? (
               <div
                 className="size-5 animate-spin rounded-full border-2 border-primary/25 border-t-primary"
-                aria-label="Loading source data"
+                aria-label={t.createProductLoadingSourceData}
               />
             ) : null}
           </div>
@@ -1436,7 +2633,7 @@ export default function CreateProductPage() {
               <div className="min-w-0 flex-1 space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    NAME
+                    {t.name}
                   </label>
                   <Input
                     value={jvName}
@@ -1446,7 +2643,7 @@ export default function CreateProductPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    URLKEY
+                    {t.xljvUrlKey}
                   </label>
                   <Input
                     value={jvUrlKey}
@@ -1457,7 +2654,7 @@ export default function CreateProductPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      ARTIKELNR
+                      {t.createProductArtikelnr}
                     </label>
                     <Input
                       value={jvArtikelnr}
@@ -1467,7 +2664,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      PRICE
+                      {t.price}
                     </label>
                     <Input
                       value={jvPrice}
@@ -1489,7 +2686,7 @@ export default function CreateProductPage() {
                 <div className="grid gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      BEZEICHNUNG
+                      {t.bezeichnungLabel}
                     </label>
                     <textarea
                       value={jvBezeichnung}
@@ -1500,7 +2697,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      KURZBESCHREIBUNG
+                      {t.kurzbeschreibungLabel}
                     </label>
                     <textarea
                       value={jvKurzbeschreibung}
@@ -1511,7 +2708,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      SHORT DESCRIPTION REAL
+                      {t.createProductShortDescriptionReal}
                     </label>
                     <textarea
                       value={jvShortDescriptionReal}
@@ -1522,7 +2719,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META TITLE
+                      {t.metaTitle}
                     </label>
                     <Input
                       value={jvMetaTitle}
@@ -1532,7 +2729,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META DESCRIPTION
+                      {t.metaDescription}
                     </label>
                     <textarea
                       value={jvMetaDescription}
@@ -1543,7 +2740,7 @@ export default function CreateProductPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      META KEYWORD
+                      {t.metaKeyword}
                     </label>
                     <div className="rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-3">
                       {jvMetaKeywordItems.length > 0 ? (
@@ -1561,7 +2758,7 @@ export default function CreateProductPage() {
                       <textarea
                         value={jvMetaKeyword}
                         onChange={(event) => setJvMetaKeyword(event.target.value)}
-                        placeholder="keyword 1, keyword 2, keyword 3"
+                        placeholder={t.createProductKeywordPlaceholder}
                         className="min-h-[110px] w-full border-0 bg-transparent p-0 text-sm text-foreground outline-none"
                       />
                     </div>
@@ -1570,7 +2767,7 @@ export default function CreateProductPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3">
                       <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        DESCRIPTION
+                        {t.description}
                       </label>
                       <div className="flex gap-1 rounded-[var(--radius-pill)] border border-border/70 bg-background p-1">
                         <button
@@ -1583,7 +2780,7 @@ export default function CreateProductPage() {
                               : "text-muted-foreground hover:text-foreground",
                           ].join(" ")}
                         >
-                          Code
+                          {t.codeLabel}
                         </button>
                         <button
                           type="button"
@@ -1595,7 +2792,7 @@ export default function CreateProductPage() {
                               : "text-muted-foreground hover:text-foreground",
                           ].join(" ")}
                         >
-                          Preview
+                          {t.previewLabel}
                         </button>
                       </div>
                     </div>
@@ -1619,101 +2816,25 @@ export default function CreateProductPage() {
                 </div>
               </div>
 
-              <div className="w-full space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-card p-3 xl:ml-auto xl:w-[520px] xl:flex-none">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    handleGalleryUpload(event.target.files);
-                    event.target.value = "";
-                  }}
+              <div className="w-full space-y-3 xl:ml-auto xl:w-[520px] xl:flex-none">
+                <CreateProductImageGallery
+                  items={galleryItems}
+                  activeItemId={activeGalleryImageId}
+                  previewAlt={t.createProductJvGalleryPreview}
+                  emptyPreviewLabel={t.noImagesInGallery}
+                  emptyGalleryLabel={t.createProductNoGalleryImages}
+                  uploadLabel={t.productEditorUploadImagesAction}
+                  thumbnailAlt={(index) => t.createProductJvGalleryThumbnail.replace("{index}", String(index + 1))}
+                  deleteAlt={(index) => t.createProductDeleteImage.replace("{index}", String(index + 1))}
+                  onActiveItemChange={setActiveGalleryImageId}
+                  onFilesSelected={handleGalleryUpload}
+                  onDeleteItem={handleDeleteGalleryItem}
+                  onMoveItem={handleMoveGalleryItem}
                 />
-                <div className="relative aspect-[4/3] overflow-hidden rounded-[var(--radius-control)] border border-border/70 bg-muted/20">
-                  {activeGalleryItem ? (
-                    <Image
-                      src={activeGalleryItem.src}
-                      alt="JV gallery preview"
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 1280px) 100vw, 360px"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      No image
-                    </div>
-                  )}
-                </div>
-
-                {galleryItems.length > 0 ? (
-                  <div className="grid grid-cols-4 gap-2">
-                    {galleryItems.map((item, index) => {
-                      const isActive = item.id === activeGalleryImageId;
-
-                      return (
-                        <div key={item.id} className="space-y-1">
-                          <div className="relative">
-                            <div
-                              onClick={() => setActiveGalleryImageId(item.id)}
-                              draggable
-                              onDragStart={(event) => {
-                                event.dataTransfer.effectAllowed = "move";
-                                event.dataTransfer.setData("text/gallery-item-id", item.id);
-                              }}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                handleMoveGalleryItem(event.dataTransfer.getData("text/gallery-item-id"), item.id);
-                              }}
-                              className={[
-                                "relative aspect-square w-full cursor-grab overflow-hidden rounded-[var(--radius-control)] border transition active:cursor-grabbing",
-                                isActive ? "border-primary ring-2 ring-primary/20" : "border-border/70 hover:border-primary/50",
-                              ].join(" ")}
-                            >
-                              <Image
-                                src={item.src}
-                                alt={`JV gallery thumbnail ${index + 1}`}
-                                fill
-                                className="pointer-events-none object-cover"
-                                sizes="88px"
-                                draggable={false}
-                                unoptimized
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteGalleryItem(item.id)}
-                              className="absolute right-1 top-1 z-10 text-sm font-semibold leading-none text-red-500 transition hover:text-red-600"
-                              aria-label={`Delete image ${index + 1}`}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
-                    No gallery images
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex min-h-14 w-full items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 py-3 text-sm font-medium uppercase tracking-[0.08em] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
-                >
-                  Upload images
-                </button>
-
                 <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Rubrik Tree
+                      {t.createProductRubricTree}
                     </div>
                     <button
                       type="button"
@@ -1726,14 +2847,14 @@ export default function CreateProductPage() {
                       disabled={expandableRubricIds.length === 0}
                       className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {areAllRubricsExpanded ? "Collapse all" : "Expand all"}
+                      {areAllRubricsExpanded ? t.createProductCollapseAll : t.createProductExpandAll}
                     </button>
                   </div>
 
                   <Input
                     value={rubricSearch}
                     onChange={(event) => setRubricSearch(event.target.value)}
-                    placeholder="Search rubrik"
+                    placeholder={t.createProductSearchRubric}
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1779,12 +2900,12 @@ export default function CreateProductPage() {
                           : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                       ].join(" ")}
                     >
-                      Only selected
+                      {t.xljvSelectedOnly}
                     </button>
                   </div>
 
                   {rubricTreeLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading rubric tree...</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductLoadingRubricTree}</div>
                   ) : null}
 
                   {rubricTreeError ? (
@@ -1792,11 +2913,11 @@ export default function CreateProductPage() {
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && rubricTree.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No rubric tree data.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoRubricTreeData}</div>
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && rubricTree.length > 0 && filteredRubricTree.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No rubriks found.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoRubricsFound}</div>
                   ) : null}
 
                   {!rubricTreeLoading && !rubricTreeError && filteredRubricTree.length > 0 ? (
@@ -1808,13 +2929,13 @@ export default function CreateProductPage() {
 
                 <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Delivery
+                    {t.xljvAvailabilityDeliveryTime}
                   </div>
 
                   <Input
                     value={deliverySearch}
                     onChange={(event) => setDeliverySearch(event.target.value)}
-                    placeholder="Search delivery"
+                    placeholder={t.createProductSearchDelivery}
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1849,12 +2970,12 @@ export default function CreateProductPage() {
                           : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
                       ].join(" ")}
                     >
-                      Only selected
+                      {t.xljvSelectedOnly}
                     </button>
                   </div>
 
                   {deliveryOptionsLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading delivery options...</div>
+                    <div className="text-sm text-muted-foreground">{t.xljvLoadingDeliveryOptions}</div>
                   ) : null}
 
                   {deliveryOptionsError ? (
@@ -1862,11 +2983,11 @@ export default function CreateProductPage() {
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No delivery options.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptions}</div>
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && deliveryOptions.length > 0 && filteredDeliveryOptions.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No delivery options found.</div>
+                    <div className="text-sm text-muted-foreground">{t.createProductNoDeliveryOptionsFound}</div>
                   ) : null}
 
                   {!deliveryOptionsLoading && !deliveryOptionsError && filteredDeliveryOptions.length > 0 ? (
@@ -1874,7 +2995,7 @@ export default function CreateProductPage() {
                       {filteredDeliveryOptions.map((option) => {
                         const optionId = option.id;
                         const isSelected = selectedDeliveryIds.has(optionId);
-                        const label = String(option.label || `Delivery ${optionId}`).trim();
+                        const label = String(option.label || t.createProductDeliveryOption.replace("{id}", String(optionId))).trim();
 
                         return (
                           <label
@@ -1896,18 +3017,453 @@ export default function CreateProductPage() {
                     </div>
                   ) : null}
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
-                {sendAllSitesStatus || sendAllSitesLog ? (
-                  <div className="space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
-                    {sendAllSitesStatus ? (
-                      <div className="text-sm text-foreground">{sendAllSitesStatus}</div>
-                    ) : null}
-                    {sendAllSitesLog ? (
-                      <textarea
-                        readOnly
-                        value={sendAllSitesLog}
-                        className="min-h-[180px] w-full rounded-[var(--radius-control)] border border-border/70 bg-card px-3 py-2.5 font-mono text-xs text-foreground outline-none"
+        {activeTab !== "jv" && !isComingSoonMarketplace ? (
+          <div className="mt-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
+            <div className={[
+              "flex flex-col gap-4 xl:flex-row",
+              activeTabMeta.sourceSite === "HOOD" ? "xl:items-stretch" : "xl:items-start",
+            ].join(" ")}>
+              <div className={[
+                "min-w-0 flex-1",
+                activeTabMeta.sourceSite === "HOOD" ? "xl:flex xl:flex-col" : "",
+              ].join(" ")}>
+                {activeTabMeta.sourceSite === "HOOD" ? (
+                  <div className="flex h-full flex-1 flex-col space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Title 1</label>
+                      <Input value={controller.productName} onChange={(event) => controller.setProductName(event.target.value)} />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">EAN</label>
+                        <Input value={controller.ean} onChange={(event) => controller.setEan(event.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</label>
+                        <Input value={controller.price} onChange={(event) => controller.setPrice(event.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">UVP</label>
+                        <Input value={hoodEvp} readOnly />
+                      </div>
+                    </div>
+                    <div className="flex min-h-[32rem] flex-1 flex-col space-y-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Description</label>
+                        <div className="flex gap-1 rounded-[var(--radius-pill)] border border-border/70 bg-background p-1">
+                          <button
+                            type="button"
+                            onClick={() => setHoodDescriptionMode("code")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              hoodDescriptionMode === "code"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.codeLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHoodDescriptionMode("preview")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              hoodDescriptionMode === "preview"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.previewLabel}
+                          </button>
+                        </div>
+                      </div>
+                      {hoodDescriptionMode === "code" ? (
+                        <textarea
+                          value={controller.hoodFields.description}
+                          onChange={(event) => controller.setHoodFields({ ...controller.hoodFields, description: event.target.value })}
+                          className="min-h-[30rem] flex-1 w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 font-mono text-sm text-foreground outline-none transition focus:border-primary"
+                        />
+                      ) : (
+                        <EditableDescriptionPreview
+                          title="Hood description preview"
+                          srcDoc={hoodDescriptionPreviewSrcDoc}
+                          onSave={(description) => controller.setHoodFields({ ...controller.hoodFields, description })}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                {activeTabMeta.sourceSite === "KAUFLAND" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Title</label>
+                      <Input value={firstKauflandText(kauflandProduct.title)} readOnly />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">EAN</label>
+                        <Input value={firstKauflandText(kauflandProduct.ean)} readOnly />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</label>
+                        <Input value={firstKauflandText(kauflandProduct.price)} readOnly />
+                      </div>
+                    </div>
+                    <KauflandProductFields product={kauflandProduct} />
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Description</label>
+                        <div className="flex gap-1 rounded-[var(--radius-pill)] border border-border/70 bg-background p-1">
+                          <button
+                            type="button"
+                            onClick={() => setKauflandDescriptionMode("code")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              kauflandDescriptionMode === "code"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.codeLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setKauflandDescriptionMode("preview")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              kauflandDescriptionMode === "preview"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.previewLabel}
+                          </button>
+                        </div>
+                      </div>
+
+                      {kauflandDescriptionMode === "code" ? (
+                        <textarea
+                          value={activeKauflandDescriptionFields.description}
+                          onChange={(event) => updateActiveKauflandDescriptionField("description", event.target.value)}
+                          className="min-h-[180px] w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 font-mono text-sm text-foreground outline-none transition focus:border-primary"
+                        />
+                      ) : (
+                        <EditableDescriptionPreview
+                          title="Kaufland description preview"
+                          srcDoc={kauflandDescriptionPreviewSrcDoc}
+                          onSave={(description) => updateActiveKauflandDescriptionField("description", description)}
+                          autoHeight
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                {activeTabMeta.sourceSite === "XL" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Name
+                      </label>
+                      <Input
+                        value={activeXlDescriptionFields.name}
+                        onChange={(event) => updateActiveXlDescriptionField("name", event.target.value)}
                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        SEO URL
+                      </label>
+                      <Input value={activeXlSeoUrl} readOnly />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          EAN
+                        </label>
+                        <Input
+                          value={activeXlDescriptionFields.ean}
+                          onChange={(event) => updateActiveXlDescriptionField("ean", event.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Price
+                        </label>
+                        <Input
+                          value={activeXlDescriptionFields.price}
+                          onChange={(event) => updateActiveXlDescriptionField("price", event.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          UVP
+                        </label>
+                        <Input
+                          value={computeEvpFromPrice(activeXlDescriptionFields.price) || activeXlDescriptionFields.uvp}
+                          readOnly
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Tag
+                      </label>
+                      <textarea
+                        value={activeXlDescriptionFields.tag}
+                        onChange={(event) => updateActiveXlDescriptionField("tag", event.target.value)}
+                        className="min-h-[90px] w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Meta title
+                      </label>
+                      <Input
+                        value={activeXlDescriptionFields.meta_title}
+                        onChange={(event) => updateActiveXlDescriptionField("meta_title", event.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Meta description
+                      </label>
+                      <textarea
+                        value={activeXlDescriptionFields.meta_description}
+                        onChange={(event) => updateActiveXlDescriptionField("meta_description", event.target.value)}
+                        className="min-h-[110px] w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Meta keyword
+                      </label>
+                      <textarea
+                        value={activeXlDescriptionFields.meta_keyword}
+                        onChange={(event) => updateActiveXlDescriptionField("meta_keyword", event.target.value)}
+                        className="min-h-[110px] w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Description
+                        </label>
+                        <div className="flex gap-1 rounded-[var(--radius-pill)] border border-border/70 bg-background p-1">
+                          <button
+                            type="button"
+                            onClick={() => setXlDescriptionMode("code")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              xlDescriptionMode === "code"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.codeLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setXlDescriptionMode("preview")}
+                            className={[
+                              "rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase transition",
+                              xlDescriptionMode === "preview"
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            ].join(" ")}
+                          >
+                            {t.previewLabel}
+                          </button>
+                        </div>
+                      </div>
+
+                      {xlDescriptionMode === "code" ? (
+                        <textarea
+                          value={activeXlDescriptionFields.description}
+                          onChange={(event) => updateActiveXlDescriptionField("description", event.target.value)}
+                          className="min-h-[180px] w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 font-mono text-sm text-foreground outline-none transition focus:border-primary"
+                        />
+                      ) : (
+                        <div
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(event) => updateActiveXlDescriptionField("description", event.currentTarget.innerHTML)}
+                          dangerouslySetInnerHTML={{ __html: normalizedXlDescriptionPreviewHtml }}
+                          className="min-h-[180px] whitespace-pre-wrap rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm leading-6 text-foreground outline-none transition focus:border-primary [&_b]:font-bold [&_em]:italic [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_li]:ml-5 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:my-2 [&_strong]:font-bold [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:p-1.5 [&_th]:border [&_th]:border-border [&_th]:p-1.5 [&_u]:underline"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="w-full space-y-3 xl:ml-auto xl:w-[520px] xl:flex-none">
+                <CreateProductImageGallery
+                  items={tabGalleryItems}
+                  activeItemId={activeTabGalleryImageId}
+                  previewAlt={t.createProductJvGalleryPreview}
+                  emptyPreviewLabel={t.noImagesInGallery}
+                  emptyGalleryLabel={t.createProductNoGalleryImages}
+                  uploadLabel={t.productEditorUploadImagesAction}
+                  thumbnailAlt={(index) => t.createProductJvGalleryThumbnail.replace("{index}", String(index + 1))}
+                  deleteAlt={(index) => t.createProductDeleteImage.replace("{index}", String(index + 1))}
+                  onActiveItemChange={(itemId) =>
+                    setActiveTabGalleryImageIdByTab((current) => ({
+                      ...current,
+                      [activeTab]: itemId,
+                    }))
+                  }
+                  onFilesSelected={handleTabGalleryUpload}
+                  onDeleteItem={handleDeleteTabGalleryItem}
+                  onMoveItem={handleMoveTabGalleryItem}
+                />
+                {activeTabMeta.sourceSite === "KAUFLAND" ? (
+                  <div className="space-y-1.5 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
+                    <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Short Description</label>
+                    {kauflandShortDescriptionItems.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {kauflandShortDescriptionItems.map((item, index) => (
+                          <span
+                            key={`${item}-${index}`}
+                            className="rounded-[var(--radius-pill)] border border-border/70 bg-muted/30 px-3 py-1 text-xs text-foreground"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <textarea
+                      value={activeKauflandDescriptionFields.shortDescription}
+                      onChange={(event) => updateActiveKauflandDescriptionField("shortDescription", event.target.value)}
+                      placeholder="Separate values with commas"
+                      className="min-h-[110px] w-full border-0 bg-transparent p-0 text-sm text-foreground outline-none"
+                    />
+                  </div>
+                ) : null}
+                {activeTabMeta.sourceSite === "HOOD" ? (
+                  <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Product properties</label>
+                      <button
+                        type="button"
+                        onClick={() => setHoodProductProperties([...hoodProductProperties, { name: "", value: "" }])}
+                        className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40"
+                      >
+                        Add property
+                      </button>
+                    </div>
+                    {hoodProductProperties.length === 0 ? (
+                      <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm text-muted-foreground">
+                        No product properties returned by HOOD.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        {hoodProductProperties.map((property, index) => (
+                          <div key={`${property.name}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-control)] border border-border/70 bg-muted/20 p-2.5">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div>
+                                <Input
+                                  aria-label="Property name"
+                                  value={property.name}
+                                  onChange={(event) => setHoodProductProperties(hoodProductProperties.map((current, currentIndex) => currentIndex === index ? { ...current, name: event.target.value } : current))}
+                                />
+                              </div>
+                              <div>
+                                <Input
+                                  aria-label="Property value"
+                                  value={property.value}
+                                  onChange={(event) => setHoodProductProperties(hoodProductProperties.map((current, currentIndex) => currentIndex === index ? { ...current, value: event.target.value } : current))}
+                                />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setHoodProductProperties(hoodProductProperties.filter((_, currentIndex) => currentIndex !== index))}
+                              aria-label="Remove property"
+                              title="Remove property"
+                              className="flex size-8 items-center justify-center rounded-[var(--radius-control)] border border-destructive/30 text-lg font-medium leading-none text-destructive transition hover:bg-destructive/10"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                {activeTabMeta.sourceSite === "XL" ? (
+                  <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        {t.createProductRubricTree}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedXlRubricIds(areAllXlRubricsExpanded ? new Set<number>() : new Set(expandableXlRubricIds))}
+                        disabled={expandableXlRubricIds.length === 0}
+                        className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {areAllXlRubricsExpanded ? t.createProductCollapseAll : t.createProductExpandAll}
+                      </button>
+                    </div>
+
+                    <Input
+                      value={xlRubricSearch}
+                      onChange={(event) => setXlRubricSearch(event.target.value)}
+                      placeholder={t.createProductSearchRubric}
+                    />
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="rounded-[var(--radius-pill)] border border-border/70 bg-muted/30 px-3 py-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                        XL {selectedXlRubricIds.size}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowOnlySelectedXlRubrics((current) => !current)}
+                        className={[
+                          "rounded-[var(--radius-pill)] px-3 py-1.5 text-xs font-semibold uppercase transition",
+                          showOnlySelectedXlRubrics
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
+                        ].join(" ")}
+                      >
+                        {t.xljvSelectedOnly}
+                      </button>
+                    </div>
+
+                    {xlRubricTreeLoading ? (
+                      <div className="text-sm text-muted-foreground">{t.createProductLoadingRubricTree}</div>
+                    ) : null}
+
+                    {xlRubricTreeError ? (
+                      <div className="text-sm text-destructive">{xlRubricTreeError}</div>
+                    ) : null}
+
+                    {!xlRubricTreeLoading && !xlRubricTreeError && xlRubricTree.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">{t.createProductNoRubricTreeData}</div>
+                    ) : null}
+
+                    {!xlRubricTreeLoading && !xlRubricTreeError && xlRubricTree.length > 0 && filteredXlRubricTree.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">{t.createProductNoRubricsFound}</div>
+                    ) : null}
+
+                    {!xlRubricTreeLoading && !xlRubricTreeError && filteredXlRubricTree.length > 0 ? (
+                      <div className="max-h-[320px] overflow-auto rounded-[var(--radius-control)] border border-border/70 bg-card py-2">
+                        {renderXlRubricTree(filteredXlRubricTree)}
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
@@ -1916,140 +3472,15 @@ export default function CreateProductPage() {
           </div>
         ) : null}
 
-        {activeTab !== "jv" ? (
-          <div className="mt-4 space-y-4">
-            {(controller.kidContextError || controller.sourceSitesError || controller.sourceSnapshotError) ? (
-              <div className="rounded-[var(--radius-control)] border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {[controller.kidContextError, controller.sourceSitesError, controller.sourceSnapshotError].filter(Boolean).join(" ")}
-              </div>
-            ) : null}
-
-            {activeTab === "main" ? (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px]">
-                <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
-                  <CreateProductFormPanel
-                    t={t}
-                    ean={controller.ean}
-                    price={controller.price}
-                    productName={controller.productName}
-                    imagesText={controller.imagesText}
-                    fieldErrors={controller.fieldErrors}
-                    submitting={controller.submitting}
-                    onEanChange={controller.setEan}
-                    onPriceChange={controller.setPrice}
-                    onProductNameChange={controller.setProductName}
-                    onImagesTextChange={controller.setImagesText}
-                    onSubmit={controller.handleCreateProduct}
-                    onReset={controller.resetFields}
-                  />
-                  <CreateProductJobPanel
-                    t={t}
-                    latestJobId={controller.latestJobId}
-                    reconciliationSummary={controller.reconciliationSummary}
-                    jobStatusDetails={controller.jobStatusDetails}
-                    jobStatusJson={controller.jobStatusJson}
-                    jobAttemptsJson={controller.jobAttemptsJson}
-                    jobEventsJson={controller.jobEventsJson}
-                    reconciliationReportId={controller.reconciliationReportId}
-                    reconciliationReportsJson={controller.reconciliationReportsJson}
-                    reconciliationReportJson={controller.reconciliationReportJson}
-                    onLatestJobIdChange={controller.setLatestJobId}
-                    onReconciliationReportIdChange={controller.setReconciliationReportId}
-                    onLoadJobStatus={controller.loadJobStatus}
-                    onLoadReconciliationReports={controller.loadReconciliationReports}
-                    onLoadReconciliationReportById={controller.loadReconciliationReportById}
-                  />
-                </div>
-
-                <MarketplaceSiteSelectorPanel
-                  t={t}
-                  selectedSitesCount={controller.selectedSites.length}
-                  sitesQuery={controller.sitesQuery}
-                  showSelectedOnly={controller.showSelectedOnly}
-                  visibleSites={controller.visibleSites}
-                  selectedSiteIds={controller.selectedSites}
-                  onSitesQueryChange={controller.setSitesQuery}
-                  onSelectAllSites={controller.selectAllSites}
-                  onClearAllSites={controller.clearAllSites}
-                  onToggleShowSelectedOnly={() => controller.setShowSelectedOnly((prev) => !prev)}
-                  onToggleSite={controller.toggleSite}
-                />
-              </div>
-            ) : (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_360px]">
-                <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
-                  <div className="mb-4 rounded-[var(--radius-control)] border border-border/70 bg-muted/20 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Target Scope
-                    </div>
-                    <div className="mt-2 text-sm text-foreground">
-                      {activeTab.toUpperCase()} create product will run only for the sites on this tab.
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {activeMarketplaceSites.map((site) => (
-                        <span
-                          key={site.id}
-                          className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground"
-                        >
-                          {site.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <CreateProductFormPanel
-                    t={t}
-                    ean={controller.ean}
-                    price={controller.price}
-                    productName={controller.productName}
-                    imagesText={controller.imagesText}
-                    fieldErrors={controller.fieldErrors}
-                    submitting={controller.submitting}
-                    onEanChange={controller.setEan}
-                    onPriceChange={controller.setPrice}
-                    onProductNameChange={controller.setProductName}
-                    onImagesTextChange={controller.setImagesText}
-                    onSubmit={() => void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds)}
-                    onReset={controller.resetFields}
-                  />
-                  <CreateProductJobPanel
-                    t={t}
-                    latestJobId={controller.latestJobId}
-                    reconciliationSummary={controller.reconciliationSummary}
-                    jobStatusDetails={controller.jobStatusDetails}
-                    jobStatusJson={controller.jobStatusJson}
-                    jobAttemptsJson={controller.jobAttemptsJson}
-                    jobEventsJson={controller.jobEventsJson}
-                    reconciliationReportId={controller.reconciliationReportId}
-                    reconciliationReportsJson={controller.reconciliationReportsJson}
-                    reconciliationReportJson={controller.reconciliationReportJson}
-                    onLatestJobIdChange={controller.setLatestJobId}
-                    onReconciliationReportIdChange={controller.setReconciliationReportId}
-                    onLoadJobStatus={controller.loadJobStatus}
-                    onLoadReconciliationReports={controller.loadReconciliationReports}
-                    onLoadReconciliationReportById={controller.loadReconciliationReportById}
-                  />
-                </div>
-
-                <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Sites On This Page
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {activeMarketplaceSites.map((site) => (
-                      <div
-                        key={site.id}
-                        className="rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2 text-sm text-foreground"
-                      >
-                        {site.name}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+        {isComingSoonMarketplace ? (
+          <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-6 text-center">
+            <div className="text-lg font-semibold text-foreground">Coming soon</div>
+            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+              {activeTabMeta.label} product creation is being prepared.
+            </p>
           </div>
         ) : null}
+
       </div>
     </AppShell>
   );

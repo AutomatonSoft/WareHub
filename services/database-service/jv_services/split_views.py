@@ -33,8 +33,18 @@ class _ForcedSiteMixin:
 class JVProductByEANAPIView(_ForcedSiteMixin, _BaseJVProductByEANAPIView):
     forced_site = ImportedProduct.Site.JV
 
+
+class JVProductByArtikelnrAPIView(JVProductByEANAPIView):
+    pass
+
+
 class JVSitesByEANAPIView(_ForcedSiteMixin, _BaseJVSitesByEANAPIView):
     forced_site = ImportedProduct.Site.JV
+
+
+class JVSitesByArtikelnrAPIView(JVSitesByEANAPIView):
+    pass
+
 
 class JVRubricsTreeAPIView(_ForcedSiteMixin, _BaseJVRubricsTreeAPIView):
     forced_site = ImportedProduct.Site.JV
@@ -48,17 +58,42 @@ class JVProductCreateAndPushAPIView(_ForcedSiteMixin, _BaseJVProductCreateAndPus
 class JVLocalProductByEANAPIView(_ForcedSiteMixin, _BaseJVLocalProductByEANAPIView):
     forced_site = ImportedProduct.Site.JV
 
+
+class JVLocalProductByArtikelnrAPIView(JVLocalProductByEANAPIView):
+    pass
+
+
 class JVProductUpdateByEANAPIView(_ForcedSiteMixin, _BaseJVProductUpdateByEANAPIView):
     forced_site = ImportedProduct.Site.JV
+
+
+class JVProductUpdateByArtikelnrAPIView(JVProductUpdateByEANAPIView):
+    pass
+
 
 class JVProductSyncByEANAPIView(_ForcedSiteMixin, _BaseJVProductCreateByEANAPIView):
     forced_site = ImportedProduct.Site.JV
 
+
+class JVProductSyncByArtikelnrAPIView(JVProductSyncByEANAPIView):
+    pass
+
+
 class JVBatchApplyByEANAPIView(_ForcedSiteMixin, _BaseJVBatchApplyByEANAPIView):
     forced_site = ImportedProduct.Site.JV
 
+
+class JVBatchApplyByArtikelnrAPIView(JVBatchApplyByEANAPIView):
+    pass
+
+
 class JVBatchPlanByEANAPIView(_ForcedSiteMixin, _BaseJVBatchPlanByEANAPIView):
     forced_site = ImportedProduct.Site.JV
+
+
+class JVBatchPlanByArtikelnrAPIView(JVBatchPlanByEANAPIView):
+    pass
+
 
 class JVBatchJobStatusAPIView(_ForcedSiteMixin, _BaseJVBatchJobStatusAPIView):
     forced_site = ImportedProduct.Site.JV

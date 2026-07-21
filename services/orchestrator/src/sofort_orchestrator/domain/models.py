@@ -34,6 +34,11 @@ class CanonicalPayload(BaseModel):
     price: str | None = None
     quantity: int | None = None
     images: list[str] | None = None
+    categoryID: str | None = None
+    condition: str | None = None
+    itemMode: str | None = None
+    itemNumber: str | None = None
+    productProperties: list[dict] | None = None
     picture_urls: list[str] | None = None
     storefront: str | None = None
     unit_id: int | None = None
@@ -76,6 +81,7 @@ class ChannelTarget(BaseModel):
     site_key: str | None = None
     changed_fields: list[str] = Field(default_factory=list)
     overrides: dict = Field(default_factory=dict)
+    ean_source: Literal["main", "pool"] = "main"
 
 
 class OrchestrateRequest(BaseModel):

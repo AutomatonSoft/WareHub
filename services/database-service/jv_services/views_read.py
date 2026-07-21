@@ -194,14 +194,14 @@ class JVLocalProductByEANAPIView(APIView):
             )
 
         normalized_ean = ean.strip()
+        normalized_site_key = site_key or ""
         local_product = ImportedProduct.objects.filter(
             site=site,
-            site_key=site_key or "",
-            ean=normalized_ean,
+            site_key=normalized_site_key,
+            source_model=normalized_ean,
         ).first()
         product = local_product
         conflict_product = None
-        normalized_site_key = site_key or ""
         snapshot = None
 
         db_config = source_db_config_for_site(site, site_key=site_key)
@@ -231,13 +231,14 @@ class JVLocalProductByEANAPIView(APIView):
                     site_key=normalized_site_key,
                     source_product_id=source_product_id,
                     effective_ean=effective_ean,
+                    source_model=(snapshot["product"].get("model") or "").strip(),
                 )
 
         if product is None and conflict_product is None:
             product = ImportedProduct.objects.filter(
                 site=site,
                 site_key=normalized_site_key,
-                ean=normalized_ean,
+                source_model=normalized_ean,
             ).first()
 
         if conflict_product is not None:
@@ -252,7 +253,7 @@ class JVLocalProductByEANAPIView(APIView):
             )
 
         if product is None:
-            return Response({"detail": "Товар с таким ean не найден."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Товар с таким artikelnr не найден."}, status=status.HTTP_404_NOT_FOUND)
 
         result = ImportedProductDetailSerializer(product).data
         if site == ImportedProduct.Site.JV:
@@ -415,6 +416,7 @@ class JVRubricsTreeAPIView(APIView):
                 password=db_config["password"],
                 database=db_config["database"],
                 port=db_config["port"],
+                use_pure=True,
             )
             cur = conn.cursor(dictionary=True)
             cur.execute("SHOW TABLES LIKE 'shoprubriken'")

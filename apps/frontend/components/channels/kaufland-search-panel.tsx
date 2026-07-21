@@ -9,7 +9,7 @@ import {
   createKauflandByEan,
   deleteKauflandByEan,
   fetchKauflandByEan,
-  KauflandCreateBody,
+  KauflandWriteBody,
   KauflandResponse,
   KauflandSite
 } from "./kaufland-api";
@@ -17,7 +17,7 @@ import {
   buildKauflandRequiredEanMessage,
   buildKauflandWriteConfirmMessage
 } from "./kaufland-write-guardrails-model";
-import { KauflandChangePayload, KauflandCreatePayload } from "./kaufland-panel/kaufland-panel-types";
+import { createEmptyKauflandProductPayload, KauflandChangePayload, KauflandCreatePayload } from "./kaufland-panel/kaufland-panel-types";
 import { KauflandSearchCard } from "./kaufland-panel/kaufland-search-card";
 import { KauflandCreateCard } from "./kaufland-panel/kaufland-create-card";
 import { KauflandUpdateCard } from "./kaufland-panel/kaufland-update-card";
@@ -35,16 +35,42 @@ function pretty(value: unknown): string {
   }
 }
 
-function parseStringArrayJson(raw: string): { ok: true; value: string[] } | { ok: false; message: string } {
+function parseJsonArray(raw: string, label: string): unknown[] {
   try {
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) {
-      return { ok: false, message: "Picture must be a JSON array of strings." };
+      throw new Error(label);
     }
-    return { ok: true, value: parsed.map((item) => String(item ?? "")).filter(Boolean) };
+    return parsed;
   } catch {
-    return { ok: false, message: "Invalid picture JSON." };
+    throw new Error(label);
   }
+}
+
+function firstOrEmpty(value: unknown): string {
+  return Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
+}
+
+function jsonArrayValue(value: unknown): string {
+  return JSON.stringify(Array.isArray(value) ? value : [], null, 2);
+}
+
+function buildKauflandWritePayload(form: KauflandCreatePayload): KauflandWriteBody {
+  const list = (field: string) => parseJsonArray(form[field as keyof KauflandCreatePayload] as string, `${field} must be a JSON array.`);
+  const payload: KauflandWriteBody = {
+    ean: form.ean.trim(), controller: form.controller, category: list("category").map(String), title: form.title,
+    mpn: form.mpn, short_description: list("short_description").map(String), description: form.description,
+    picture: list("picture").map(String), manufacturer: form.manufacturer, product_dimensions: form.product_dimensions,
+    colour: form.colour, length: form.length, width: form.width, height: form.height, material: form.material,
+    storefront: form.storefront, product_safety_contact: list("product_safety_contact") as Record<string, unknown>[],
+    category_detail: list("category_detail") as Record<string, unknown>[], material_composition: form.material_composition,
+    abnehmbarer_bezug: form.abnehmbarer_bezug, parts_of_animal_origin: form.parts_of_animal_origin,
+    picture_urls: list("picture_urls").map(String), size: form.size, color: form.color,
+  };
+  if (form.price.trim()) payload.price = Number(form.price);
+  if (form.unit_id.trim()) payload.unit_id = Number(form.unit_id);
+  if (form.delivery.trim()) payload.delivery = Number(form.delivery);
+  return payload;
 }
 
 export function KauflandSearchPanel() {
@@ -60,21 +86,7 @@ export function KauflandSearchPanel() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createStatus, setCreateStatus] = useState<string | null>(null);
   const [createResult, setCreateResult] = useState<KauflandResponse | null>(null);
-  const [createForm, setCreateForm] = useState<KauflandCreatePayload>({
-    ean: "",
-    controller: "xl",
-    title: "",
-    description: "",
-    picture: "[]",
-    price: "",
-    size: "",
-    color: "",
-    material: "",
-    delivery: "",
-    height: "",
-    length: "",
-    width: "",
-  });
+  const [createForm, setCreateForm] = useState<KauflandCreatePayload>(() => createEmptyKauflandProductPayload());
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
   const [deleteResult, setDeleteResult] = useState<KauflandResponse | null>(null);
@@ -82,26 +94,8 @@ export function KauflandSearchPanel() {
     ean: "",
     controller: "xl"
   });
-  const [changeForm, setChangeForm] = useState<KauflandChangePayload>({
-    ean: "",
-    title: "",
-    description: "",
-    picture_urls: "[]",
-    unit_id: "1",
-    storefront: "de",
-    price: "",
-    controller: "xl"
-  });
-  const [changeFormInitial, setChangeFormInitial] = useState<KauflandChangePayload>({
-    ean: "",
-    title: "",
-    description: "",
-    picture_urls: "[]",
-    unit_id: "1",
-    storefront: "de",
-    price: "",
-    controller: "xl"
-  });
+  const [changeForm, setChangeForm] = useState<KauflandChangePayload>(() => createEmptyKauflandProductPayload());
+  const [changeFormInitial, setChangeFormInitial] = useState<KauflandChangePayload>(() => createEmptyKauflandProductPayload());
 
   const siteOptions = useMemo(
     () => [
@@ -119,11 +113,14 @@ export function KauflandSearchPanel() {
     mutationFn: (payload: Record<string, unknown>) => changeKauflandByEan(payload)
   });
   const createMutation = useMutation({
-    mutationFn: (payload: KauflandCreateBody) => createKauflandByEan(payload)
+    mutationFn: (payload: KauflandWriteBody) => createKauflandByEan(payload)
   });
   const deleteMutation = useMutation({
     mutationFn: (payload: { ean: string; controller: "jv" | "xl" }) => deleteKauflandByEan(payload)
   });
+
+  const buildRequestFailedStatusMessage = (status: number) =>
+    t.requestFailedHttpStatus.replace("{status}", String(status));
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -142,41 +139,45 @@ export function KauflandSearchPanel() {
     try {
       const { response, payload } = await searchMutation.mutateAsync({ ean: normalizedEan, site });
       if (!response.ok) {
-        throw new Error(payload.detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(payload.detail || buildRequestFailedStatusMessage(response.status));
       }
 
       setResult(payload);
       const responseData = (payload.response_data ?? payload) as Record<string, unknown>;
-      const firstOrEmpty = (value: unknown) =>
-        Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
-      const normalizedPicture = responseData.picture;
-      const pictureUrls = Array.isArray(normalizedPicture)
-        ? normalizedPicture.map((item) => String(item ?? "")).filter(Boolean)
-        : [];
-      setChangeForm({
+      const nextForm: KauflandChangePayload = {
         ean: normalizedEan,
+        controller: site,
+        category: jsonArrayValue(responseData.category),
         title: firstOrEmpty(responseData.title),
+        mpn: firstOrEmpty(responseData.mpn),
+        short_description: jsonArrayValue(responseData.short_description),
         description: firstOrEmpty(responseData.description),
-        picture_urls: JSON.stringify(pictureUrls, null, 2),
-        unit_id: firstOrEmpty(responseData.unit_id) || "1",
+        picture: jsonArrayValue(responseData.picture),
+        manufacturer: firstOrEmpty(responseData.manufacturer),
+        product_dimensions: firstOrEmpty(responseData.product_dimensions),
+        colour: firstOrEmpty(responseData.colour),
+        length: firstOrEmpty(responseData.length), width: firstOrEmpty(responseData.width), height: firstOrEmpty(responseData.height),
+        material: firstOrEmpty(responseData.material),
         storefront: firstOrEmpty(responseData.storefront) || "de",
+        product_safety_contact: jsonArrayValue(responseData.product_safety_contact),
+        category_detail: jsonArrayValue(responseData.category_detail),
+        material_composition: firstOrEmpty(responseData.material_composition),
+        abnehmbarer_bezug: firstOrEmpty(responseData.abnehmbarer_bezug),
+        parts_of_animal_origin: firstOrEmpty(responseData.parts_of_animal_origin),
         price: firstOrEmpty(responseData.price),
-        controller: site
-      });
+        unit_id: firstOrEmpty(responseData.unit_id),
+        picture_urls: jsonArrayValue(responseData.picture_urls),
+        size: firstOrEmpty(responseData.size),
+        color: firstOrEmpty(responseData.color),
+        delivery: firstOrEmpty(responseData.delivery),
+      };
+      setChangeForm(nextForm);
+      setCreateForm(nextForm);
       setDeleteForm({
         ean: normalizedEan,
         controller: site
       });
-      setChangeFormInitial({
-        ean: normalizedEan,
-        title: firstOrEmpty(responseData.title),
-        description: firstOrEmpty(responseData.description),
-        picture_urls: JSON.stringify(pictureUrls, null, 2),
-        unit_id: firstOrEmpty(responseData.unit_id) || "1",
-        storefront: firstOrEmpty(responseData.storefront) || "de",
-        price: firstOrEmpty(responseData.price),
-        controller: site
-      });
+      setChangeFormInitial(nextForm);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t.failedLoadKauflandProduct);
     } finally {
@@ -192,7 +193,7 @@ export function KauflandSearchPanel() {
 
     const normalizedEan = deleteForm.ean.trim();
     if (!normalizedEan) {
-      setError(buildKauflandRequiredEanMessage("delete"));
+      setError(buildKauflandRequiredEanMessage("delete", t));
       return;
     }
     const deleteConfirmed = window.confirm(
@@ -219,11 +220,11 @@ export function KauflandSearchPanel() {
           parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
             ? String((parsed as Record<string, unknown>).detail ?? "")
             : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(detail || buildRequestFailedStatusMessage(response.status));
       }
-      setDeleteStatus("Kaufland product deleted successfully.");
+      setDeleteStatus(t.kauflandDeleteSuccess);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to delete Kaufland product.");
+      setError(requestError instanceof Error ? requestError.message : t.failedDeleteKauflandProduct);
     } finally {
       setDeleteLoading(false);
     }
@@ -237,7 +238,7 @@ export function KauflandSearchPanel() {
 
     const normalizedEan = createForm.ean.trim();
     if (!normalizedEan) {
-      setError(buildKauflandRequiredEanMessage("create"));
+      setError(buildKauflandRequiredEanMessage("create", t));
       return;
     }
     const createConfirmed = window.confirm(
@@ -246,26 +247,9 @@ export function KauflandSearchPanel() {
     if (!createConfirmed) {
       return;
     }
-    const parsedPicture = parseStringArrayJson(createForm.picture);
-    const picturePayload: unknown = parsedPicture.ok ? parsedPicture.value : createForm.picture;
-
     setCreateLoading(true);
     try {
-      const payload: KauflandCreateBody = {
-        ean: normalizedEan,
-        controller: createForm.controller,
-        title: createForm.title,
-        description: createForm.description,
-        picture: picturePayload,
-        price: Number(createForm.price),
-        size: createForm.size,
-        color: createForm.color,
-        material: createForm.material,
-        delivery: createForm.delivery,
-        height: createForm.height,
-        length: createForm.length,
-        width: createForm.width,
-      };
+      const payload = buildKauflandWritePayload({ ...createForm, ean: normalizedEan });
       const { response, parsed } = await createMutation.mutateAsync(payload);
       const debugPayload = {
         ok: response.ok,
@@ -280,11 +264,11 @@ export function KauflandSearchPanel() {
           parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
             ? String((parsed as Record<string, unknown>).detail ?? "")
             : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
+        throw new Error(detail || buildRequestFailedStatusMessage(response.status));
       }
-      setCreateStatus("Kaufland product created successfully.");
+      setCreateStatus(t.kauflandCreateSuccess);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to create Kaufland product.");
+      setError(requestError instanceof Error ? requestError.message : t.failedCreateKauflandProduct);
     } finally {
       setCreateLoading(false);
     }
@@ -308,73 +292,25 @@ export function KauflandSearchPanel() {
       return;
     }
 
-    let pictureUrls: string[] = [];
     try {
-      const parsed = JSON.parse(changeForm.picture_urls || "[]");
-      if (!Array.isArray(parsed)) {
-        throw new Error(t.pictureUrlsMustBeArray);
-      }
-      pictureUrls = parsed.map((item) => String(item ?? "")).filter(Boolean);
-    } catch (parseError) {
-      setError(parseError instanceof Error ? parseError.message : t.invalidPictureUrlsJson);
-      return;
-    }
-
-    setChangeLoading(true);
-    try {
-      const payload: Record<string, unknown> = {
-        ean: normalizedEan,
-        controller: changeForm.controller,
-        storefront: changeForm.storefront,
-        unit_id: Number(changeForm.unit_id || "0"),
-      };
-      const changedFields: string[] = [];
-
-      if (changeForm.title !== changeFormInitial.title) {
-        payload.title = changeForm.title;
-        changedFields.push("title");
-      }
-      if (changeForm.description !== changeFormInitial.description) {
-        payload.description = changeForm.description;
-        changedFields.push("description");
-      }
-      if (changeForm.price !== changeFormInitial.price) {
-        payload.price = changeForm.price;
-        changedFields.push("price");
-      }
-      if (changeForm.storefront !== changeFormInitial.storefront) {
-        payload.storefront = changeForm.storefront;
-        changedFields.push("storefront");
-      }
-      if (changeForm.unit_id !== changeFormInitial.unit_id) {
-        payload.unit_id = Number(changeForm.unit_id || "0");
-        changedFields.push("unit_id");
-      }
-      if (changeForm.picture_urls !== changeFormInitial.picture_urls) {
-        payload.picture_urls = pictureUrls;
-        changedFields.push("picture_urls");
-      }
-
+      const fullPayload = buildKauflandWritePayload({ ...changeForm, ean: normalizedEan });
+      const payload: Record<string, unknown> = { ean: normalizedEan, controller: changeForm.controller };
+      const changedFields = (Object.keys(changeForm) as Array<keyof KauflandChangePayload>)
+        .filter((field) => !["ean", "controller"].includes(field) && changeForm[field] !== changeFormInitial[field]);
+      for (const field of changedFields) payload[field] = fullPayload[field as keyof KauflandWriteBody];
       payload.changed_fields = changedFields;
+      if (changedFields.length === 0) throw new Error("No Kaufland fields were changed.");
+
+      setChangeLoading(true);
       const { response, parsed } = await changeMutation.mutateAsync(payload);
       const debugPayload = {
-        ok: response.ok,
-        status: response.status,
-        endpoint: "/api/v1/services/kaufland/products/ean/change/",
-        request_payload: payload,
-        response: parsed,
+        ok: response.ok, status: response.status, endpoint: "/api/v1/services/kaufland/products/ean/change/", request_payload: payload, response: parsed,
       } as KauflandResponse;
       setChangeResult(debugPayload);
-      if (!response.ok) {
-        const detail =
-          parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
-            ? String((parsed as Record<string, unknown>).detail ?? "")
-            : "";
-        throw new Error(detail || `Request failed: HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(buildRequestFailedStatusMessage(response.status));
       setChangeStatus(t.updateSuccessKaufland);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : t.failedUpdateKauflandProduct);
+    } catch (parseError) {
+      setError(parseError instanceof Error ? parseError.message : t.failedUpdateKauflandProduct);
     } finally {
       setChangeLoading(false);
     }
@@ -384,8 +320,8 @@ export function KauflandSearchPanel() {
     <div className="space-y-4">
       <KauflandSearchCard ean={ean} site={site} loading={loading} onSetEan={setEan} onSetSite={setSite} onSubmit={handleSearch} />
       {loading ? <KauflandLoadingState /> : null}
-      {error ? <KauflandErrorState title="Kaufland request failed" description={error} /> : null}
-      {!loading && !error && !result ? <KauflandEmptyState title="No response yet" description="Search by EAN to load Kaufland state." /> : null}
+      {error ? <KauflandErrorState title={t.kauflandRequestFailed} description={error} /> : null}
+      {!loading && !error && !result ? <KauflandEmptyState title={t.kauflandNoResponseYet} description={t.kauflandSearchByEanHint} /> : null}
       {result ? <KauflandResponseCard title={t.kauflandResponse} payload={result} /> : null}
       <KauflandCreateCard form={createForm} loading={createLoading} onSetForm={setCreateForm} onSubmit={handleCreateProduct} />
       <KauflandUpdateCard form={changeForm} loading={changeLoading} onSetForm={setChangeForm} onSubmit={handleChangeProduct} />
@@ -393,9 +329,9 @@ export function KauflandSearchPanel() {
       {changeStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{changeStatus}</CardContent></Card> : null}
       {createStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{createStatus}</CardContent></Card> : null}
       {deleteStatus ? <Card className="border-emerald-500/20 bg-emerald-500/5"><CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-300">{deleteStatus}</CardContent></Card> : null}
-      {createResult ? <KauflandResponseCard title="Create response" payload={createResult} /> : null}
+      {createResult ? <KauflandResponseCard title={t.kauflandCreateResponse} payload={createResult} /> : null}
       {changeResult ? <KauflandResponseCard title={t.changeResponse} payload={changeResult} /> : null}
-      {deleteResult ? <KauflandResponseCard title="Delete response" payload={deleteResult} /> : null}
+      {deleteResult ? <KauflandResponseCard title={t.kauflandDeleteResponse} payload={deleteResult} /> : null}
     </div>
   );
 }

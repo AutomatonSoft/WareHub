@@ -2,7 +2,7 @@ import requests
 import json
 from decimal import Decimal
 
-BASE_URL = "https://kaufland.automatonsoft.de"
+BASE_URL = "https://kl.automatonsoft.de"
 
 
 def _json_safe(value):
@@ -81,6 +81,18 @@ def delete_product_by_ean(*, ean: str, controller: str) -> dict:
     try:
         return response.json()
     except Exception:
+        return {"status": "ok", "detail": response.text}
+
+
+def set_product_active_state(*, ean: str, controller: str, active: bool) -> dict:
+    action = "activate" if active else "deactivate"
+    url = f"{BASE_URL}/api/products/{action}/{ean}"
+    request = requests.post if active else requests.delete
+    response = request(url, json={"controller": controller}, timeout=45)
+    response.raise_for_status()
+    try:
+        return response.json()
+    except ValueError:
         return {"status": "ok", "detail": response.text}
     
 def create_product_by_ean(payload: dict) -> dict:

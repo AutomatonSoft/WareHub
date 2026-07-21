@@ -4,7 +4,7 @@ import { PageShell } from "@/components/ui/page-shell";
 export default function Loading() {
   return (
     <PageShell>
-      <LoadingState title="Loading product editor..." />
+      <LoadingState titleKey="loadingProductEditor" />
     </PageShell>
   );
 }

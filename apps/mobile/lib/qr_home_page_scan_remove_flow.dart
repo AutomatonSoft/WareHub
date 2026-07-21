@@ -4,11 +4,11 @@ part of 'qr_home_page.dart';
 
 extension _QrHomePageScanRemoveFlow on _QrHomePageState {
   List<IntakeData> _findActiveTargetsByWarehouseLocation(String location) {
-    final String normalized = location.trim().toUpperCase();
+    final String normalized = normalizeWarehouseLocation(location);
     final List<IntakeData> targets = _items
         .where((IntakeData item) =>
             !item.isRemoved &&
-            item.warehouseLocation.trim().toUpperCase() == normalized)
+            normalizeWarehouseLocation(item.warehouseLocation) == normalized)
         .toList(growable: false);
     targets.sort((IntakeData a, IntakeData b) {
       final int byUnit = a.unitIndex.compareTo(b.unitIndex);
@@ -52,7 +52,7 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
               Text('${strings.text('kid')}: ${representative.kidNumber}'),
               Text('${strings.text('product_key')}: $productLabel'),
               Text(
-                  '${strings.text('section_slot')}: ${representative.section}/${representative.slotNumber}'),
+                  '${strings.text('section_slot')}: ${warehouseSectionLabel(representative.section)}/${representative.slotNumber}'),
               Text('${strings.text('count')}: $unitCount'),
               Text('${strings.text('boxes')}: $boxesToRemove'),
               Text(strings.format(
@@ -83,14 +83,18 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
     required int slotNumber,
   }) async {
     final Uri url = Uri.parse(
-      '${_effectiveApiBase()}/intakes/by-location?section=$section&slot_number=$slotNumber',
+      '${_effectiveApiBase()}/intakes/by-location?section=${normalizeWarehouseSection(section)}&slot_number=$slotNumber',
     );
-    final http.Response response = await http.delete(
+    final http.Response response = await _authorizedRequest(
+      'DELETE',
       url,
-      headers: _authHeaders(),
     );
     if (response.statusCode == 401) {
-      await _handleUnauthorized();
+      final MobileAuthRefreshStatus status =
+          await _handleUnauthorizedAfterRefresh();
+      if (status == MobileAuthRefreshStatus.temporarilyUnavailable) {
+        throw const MobileAuthRefreshUnavailableException();
+      }
       throw Exception(_strings.text('delete_intake_failed_unauthorized'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -189,7 +193,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         }),
       );
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -245,7 +252,7 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         return;
       }
 
-      final String targetLocation = '$section$slotCode';
+      final String targetLocation = buildWarehouseLocation(section, slotCode);
       final List<IntakeData> targets =
           _findActiveTargetsByWarehouseLocation(targetLocation);
 
@@ -286,7 +293,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         }),
       );
     } catch (error) {
-      _showMessage('$error', error: true);
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
     } finally {
       if (mounted) {
         setState(() {

@@ -10,7 +10,9 @@ import { extractErrorTextFromBody, formatCreateProductApiError } from "./create-
 
 export type OrchestratorFinalStatus = "success" | "partial_success" | "failed";
 export type OrchestratorOperation = components["schemas"]["Operation"];
-export type OrchestratorChannel = components["schemas"]["ChannelTarget"];
+export type OrchestratorChannel = Omit<components["schemas"]["ChannelTarget"], "ean_source"> & {
+  ean_source?: "main" | "pool";
+};
 
 export type OrchestratorResult = {
   marketplace: string;
@@ -43,7 +45,22 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
   const account = site.kind.toLowerCase();
 
   if (site.family === "HOOD") {
-    return { marketplace: Marketplace.hood, account, changed_fields: ["title", "price", "description", "images"] };
+    return {
+      marketplace: Marketplace.hood,
+      account,
+      changed_fields: [
+        "title",
+        "price",
+        "quantity",
+        "description",
+        "images",
+        "categoryID",
+        "condition",
+        "itemMode",
+        "itemNumber",
+        "productProperties"
+      ]
+    };
   }
 
   if (site.family === "KAUFLAND") {
@@ -121,7 +138,9 @@ export async function pushProductToOrchestrator(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
+  operation?: OrchestratorOperation;
 }): Promise<OrchestratorResponse> {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildDirectUpdatePayload(input as BuildOrchestratorPayloadInput);
@@ -129,7 +148,7 @@ export async function pushProductToOrchestrator(input: {
   const response = await apiFetch(`/api/v1/orchestrator/products/${encodeURIComponent(input.ean)}/update`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ operation: Operation.update satisfies OrchestratorOperation, payload, channels })
+    body: JSON.stringify({ operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels })
   });
 
   const body = await response.json();
@@ -150,7 +169,9 @@ export async function createOrchestratorJob(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
+  operation?: OrchestratorOperation;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const channels = ensureSupportedChannels(input.selectedSiteIds);
   const payload = buildJobUpdatePayload(input as BuildOrchestratorPayloadInput);
@@ -160,7 +181,7 @@ export async function createOrchestratorJob(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: Operation.update satisfies OrchestratorOperation, payload, channels }
+      command: { operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels }
     })
   });
   const raw = (await response.json()) as Record<string, unknown>;
@@ -168,6 +189,102 @@ export async function createOrchestratorJob(input: {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Orchestrator job create failed."),
       response.status
+    );
+  }
+  const jobIdRaw = raw.job_id ?? raw.id ?? raw.jobId;
+  const jobId = typeof jobIdRaw === "string" ? jobIdRaw : "";
+  if (!jobId) {
+    throw new ApiError("Orchestrator did not return job_id", 502);
+  }
+  return { jobId, raw };
+}
+
+export async function createMainMarketplaceProductJob(input: {
+  ean: string;
+  productName: string;
+  description: string;
+  price: string;
+  imageUrls: string[];
+  xljvPayload: Record<string, unknown>;
+  hoodPayload: Record<string, unknown>;
+  kauflandPayload: Record<string, unknown>;
+}): Promise<{ jobId: string; raw: Record<string, unknown> }> {
+  const xljvChangedFields = [
+    "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
+  ];
+  const hoodChangedFields = [
+    "title", "description", "price", "quantity", "categoryID", "condition", "itemMode", "itemNumber", "images", "productProperties",
+  ];
+  const kauflandChangedFields = [
+    "title", "description", "picture", "price", "size", "color", "material", "delivery", "height", "length", "width", "amount", "id_offer", "storefronts",
+  ];
+  const primaryImage = input.imageUrls[0] || "";
+  const payload = {
+    title: input.productName,
+    description: input.description,
+    price: input.price,
+    quantity: 1,
+    images: input.imageUrls,
+    source_model: input.ean,
+    source_ean_field: input.ean,
+    status: true,
+    image: primaryImage,
+    ...input.xljvPayload,
+  };
+  const channels: OrchestratorChannel[] = [
+    {
+      marketplace: Marketplace.xljv,
+      site: "JV",
+      site_key: "JV_DE",
+      changed_fields: xljvChangedFields,
+    },
+    {
+      marketplace: Marketplace.xljv,
+      site: "XL",
+      site_key: "XLMOEBEL_DE",
+      changed_fields: xljvChangedFields,
+    },
+    {
+      marketplace: Marketplace.hood,
+      account: "jv",
+      changed_fields: hoodChangedFields,
+      overrides: input.hoodPayload,
+    },
+    {
+      marketplace: Marketplace.hood,
+      account: "xl",
+      changed_fields: hoodChangedFields,
+      overrides: input.hoodPayload,
+      ean_source: "pool",
+    },
+    {
+      marketplace: Marketplace.kaufland,
+      account: "jv",
+      changed_fields: kauflandChangedFields,
+      overrides: input.kauflandPayload,
+    },
+    {
+      marketplace: Marketplace.kaufland,
+      account: "xl",
+      changed_fields: kauflandChangedFields,
+      overrides: input.kauflandPayload,
+      ean_source: "pool",
+    },
+  ];
+
+  const response = await apiFetch("/api/v1/orchestrator/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ean: input.ean,
+      command: { operation: Operation.publish, payload, channels },
+    }),
+  });
+  const raw = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new ApiError(
+      formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Main marketplace create job failed."),
+      response.status,
     );
   }
   const jobIdRaw = raw.job_id ?? raw.id ?? raw.jobId;

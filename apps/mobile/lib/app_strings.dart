@@ -20,10 +20,6 @@ class AppStrings {
   String get loginSubtitle => _t('login_subtitle');
   String get username => _t('username');
   String get password => _t('password');
-  String get fingerprintLogin => _t('fingerprint_login');
-  String get fingerprintNext => _t('fingerprint_next');
-  String get fingerprintUnavailable => _t('fingerprint_unavailable');
-  String get fingerprintReason => _t('fingerprint_reason');
   String get language => _t('language');
 
   String text(String key) => _t(key);

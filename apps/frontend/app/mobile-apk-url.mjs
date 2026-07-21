@@ -8,26 +8,37 @@ function isProdEnv(env) {
   return normalized === "prod" || normalized === "production";
 }
 
+export const MOBILE_APK_DOWNLOAD_PATH = "/mobile/download";
+
+function isConfiguredApkUrl(value) {
+  const normalized = value.trim();
+  if (normalized.length === 0 || normalized.includes("TODO_") || normalized.includes("__SET_")) {
+    return false;
+  }
+
+  return normalized.startsWith("/") || normalized.startsWith("https://") || normalized.startsWith("http://");
+}
+
 export function resolveMobileApkUrl(appEnv, stageUrl, prodUrl, fallbackUrl) {
-  if (isStageEnv(appEnv) && stageUrl.trim().length > 0) {
+  if (isStageEnv(appEnv) && isConfiguredApkUrl(stageUrl)) {
     return stageUrl;
   }
 
-  if (isProdEnv(appEnv) && prodUrl.trim().length > 0) {
+  if (isProdEnv(appEnv) && isConfiguredApkUrl(prodUrl)) {
     return prodUrl;
   }
 
-  if (fallbackUrl.trim().length > 0) {
+  if (isConfiguredApkUrl(fallbackUrl)) {
     return fallbackUrl;
   }
 
   if (isStageEnv(appEnv)) {
-    return "/mobile/sofortbot-stage.apk";
+    return "/warehubstage.apk";
   }
 
   if (isProdEnv(appEnv)) {
-    return "/mobile/sofortbot.apk";
+    return "/warehub.apk";
   }
 
-  return "/mobile/sofortbot.apk";
+  return "/warehub.apk";
 }

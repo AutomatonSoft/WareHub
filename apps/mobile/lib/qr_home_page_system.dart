@@ -324,7 +324,7 @@ extension _QrHomePageSystem on _QrHomePageState {
   }
 
   String _buildLabelQrPayload(String warehouseLocation) {
-    return warehouseLocation.trim().toUpperCase().replaceAll(' ', '');
+    return normalizeWarehouseLocation(warehouseLocation).replaceAll(' ', '');
   }
 
   Future<ui.Image> _buildLabelImage(

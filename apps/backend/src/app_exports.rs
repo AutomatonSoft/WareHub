@@ -26,6 +26,14 @@ pub(crate) use crate::auth::{
     request_password_reset,
 };
 pub(crate) use crate::bootstrap::ensure_admin_account;
+pub(crate) use crate::database_inventory::{
+    create_database_inventory_kid, list_database_inventory_filter_options,
+    list_database_inventory_rows,
+    update_database_inventory_kid_photo,
+};
+pub(crate) use crate::database_kid_sync::{
+    build_database_kid_sync_config, spawn_database_kid_sync,
+};
 pub(crate) use crate::intake_ws::intakes_ws_handler;
 pub(crate) use crate::intakes_create::create_intake;
 pub(crate) use crate::intakes_create_service::create_intake_service;

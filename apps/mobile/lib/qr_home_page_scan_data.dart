@@ -2,9 +2,62 @@
 
 part of 'qr_home_page.dart';
 
+class _PhotoUploadFailure implements Exception {
+  const _PhotoUploadFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 extension _QrHomePageScanData on _QrHomePageState {
   static const PhotoUploadRetryPolicy _photoUploadRetryPolicy =
       PhotoUploadRetryPolicy();
+
+  String _photoUploadErrorMessage(Object error) {
+    if (error is _PhotoUploadFailure) {
+      return error.message;
+    }
+    return '$error';
+  }
+
+  String _extractUploadErrorBody(String body) {
+    final String trimmed = body.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    try {
+      final dynamic decoded = jsonDecode(trimmed);
+      if (decoded is Map<String, dynamic>) {
+        final Object? detail = decoded['detail'] ??
+            decoded['error'] ??
+            decoded['message'] ??
+            decoded['details'];
+        final String message = '$detail'.trim();
+        if (detail != null && message.isNotEmpty && message != 'null') {
+          return message;
+        }
+      }
+    } catch (_) {
+      // Fall back to the raw response body below.
+    }
+    return trimmed.length > 240 ? '${trimmed.substring(0, 240)}...' : trimmed;
+  }
+
+  bool _shouldOfferManualPhotoRetry(String? failureDetail) {
+    final String detail = (failureDetail ?? '').trim().toLowerCase();
+    if (detail.isEmpty) {
+      return true;
+    }
+    return !(detail.contains('http 500') ||
+        detail.contains('http 502') ||
+        detail.contains('http 503') ||
+        detail.contains('database-service') ||
+        detail.contains('ftp upload error') ||
+        detail.contains('ftp config error') ||
+        detail.contains('nodename nor servname'));
+  }
 
   String _formatPhotoFolderContext(String? folder) {
     final String normalizedFolder = (folder ?? '').trim();
@@ -56,7 +109,7 @@ extension _QrHomePageScanData on _QrHomePageState {
         'Photo upload retry failed. '
         'name=${filename ?? ''} path=${file.path} $context error=$error',
       );
-      return null;
+      throw _PhotoUploadFailure(_photoUploadErrorMessage(error));
     }
   }
 
@@ -76,24 +129,39 @@ extension _QrHomePageScanData on _QrHomePageState {
     }
     final Uri url = Uri.parse('${_effectiveApiBase()}/uploads')
         .replace(queryParameters: params);
-    final http.MultipartRequest request = http.MultipartRequest('POST', url);
-    final String token = _authToken();
-    if (token.isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $token';
+    Future<http.StreamedResponse> sendUploadOnce() async {
+      final http.MultipartRequest request = http.MultipartRequest('POST', url);
+      final String token = _authToken();
+      if (token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+      return request.send();
     }
-    request.files.add(await http.MultipartFile.fromPath('file', file.path));
-    final http.StreamedResponse streamed = await request.send();
+
+    http.StreamedResponse streamed = await sendUploadOnce();
+    if (streamed.statusCode == 401 && await _refreshAuthSession()) {
+      await streamed.stream.drain<void>();
+      streamed = await sendUploadOnce();
+    }
     final String body = await streamed.stream.bytesToString();
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      return null;
+      final String details = _extractUploadErrorBody(body);
+      final String suffix = details.isEmpty ? '' : ': $details';
+      throw _PhotoUploadFailure('HTTP ${streamed.statusCode}$suffix');
     }
-    final dynamic decoded = jsonDecode(body);
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {
+      throw const _PhotoUploadFailure('Invalid upload response JSON');
+    }
     if (decoded is! Map<String, dynamic>) {
-      return null;
+      throw const _PhotoUploadFailure('Invalid upload response shape');
     }
     final String rawUrl = (decoded['url'] as String? ?? '').trim();
     if (rawUrl.isEmpty) {
-      return null;
+      throw const _PhotoUploadFailure('Upload response returned empty URL');
     }
     if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
       return rawUrl;
@@ -117,6 +185,7 @@ extension _QrHomePageScanData on _QrHomePageState {
     int failed = 0;
     int failedInitial = 0;
     int recovered = 0;
+    String? failureDetail;
     int photoIndex = 0;
     for (final XFile photo in photos.take(10)) {
       photoIndex += 1;
@@ -132,6 +201,7 @@ extension _QrHomePageScanData on _QrHomePageState {
         if (url == null || url.isEmpty) {
           failed += 1;
           failedInitial += 1;
+          failureDetail ??= 'Upload returned empty URL';
           failedPhotos.add((file: photo, filename: candidateFilename));
           debugPrint(
             'Photo upload failed after retry. '
@@ -143,6 +213,7 @@ extension _QrHomePageScanData on _QrHomePageState {
       } catch (error) {
         failed += 1;
         failedInitial += 1;
+        failureDetail ??= _photoUploadErrorMessage(error);
         failedPhotos.add((file: photo, filename: candidateFilename));
         debugPrint(
           'Unexpected photo upload error. '
@@ -152,7 +223,8 @@ extension _QrHomePageScanData on _QrHomePageState {
       }
     }
 
-    if (shouldAskManualRetry(failedCount: failedPhotos.length)) {
+    if (shouldAskManualRetry(failedCount: failedPhotos.length) &&
+        _shouldOfferManualPhotoRetry(failureDetail)) {
       final bool shouldRetryFailedPhotos = await _askYesNo(
         title: _strings.text('photo_upload_retry_title'),
         message: _strings.format(
@@ -170,7 +242,10 @@ extension _QrHomePageScanData on _QrHomePageState {
             failedPhoto.file,
             filename: failedPhoto.filename,
             folder: folder,
-          );
+          ).catchError((Object error) {
+            failureDetail ??= _photoUploadErrorMessage(error);
+            return null;
+          });
           if ((retryUrl ?? '').trim().isNotEmpty) {
             uploaded.add(retryUrl!.trim());
             recovered += 1;
@@ -199,15 +274,25 @@ extension _QrHomePageScanData on _QrHomePageState {
       '${_formatPhotoFolderContext(folder)}',
     );
 
+    String? failureMessage;
     if (failed > 0) {
+      final String details = (failureDetail ?? '').trim();
+      final String baseMessage = _strings.format(
+        'photos_upload_failed',
+        <String, String>{'count': '$failed'},
+      );
+      failureMessage = details.isEmpty ? baseMessage : '$baseMessage $details';
+    }
+    if (failureMessage != null && uploaded.isNotEmpty) {
       _showMessage(
-        _strings.format('photos_upload_failed', <String, String>{
-          'count': '$failed',
-        }),
+        failureMessage,
         error: true,
       );
     }
     if (uploaded.isEmpty) {
+      if (failureMessage != null) {
+        throw UserFacingError(failureMessage);
+      }
       return null;
     }
     return uploaded.join(',');
@@ -253,9 +338,9 @@ extension _QrHomePageScanData on _QrHomePageState {
     final Uri url = Uri.parse(
       '${_effectiveApiBase()}/afterbuy/orders/${Uri.encodeComponent(orderId)}',
     );
-    final http.Response response = await http.get(
+    final http.Response response = await _authorizedRequest(
+      'GET',
       url,
-      headers: _authHeaders(),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return null;

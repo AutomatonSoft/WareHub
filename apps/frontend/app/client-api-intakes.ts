@@ -1,6 +1,7 @@
 import type { CreateIntakePayload, IntakeDto, IntakesQueryParams } from "./client-api-types";
 import { API_V1_ROUTES, buildApiV1Url } from "./api-v1-routes";
 import { authorizedFetch, parseError } from "./client-api-shared";
+import { readStoredLabel } from "./i18n";
 
 export async function fetchIntakes(
   apiBase: string,
@@ -24,7 +25,7 @@ export async function fetchIntakes(
   }
   const response = await authorizedFetch(`${buildApiV1Url(apiBase, API_V1_ROUTES.intakes.list)}?${query.toString()}`, {}, { apiBase, token });
   if (!response.ok) {
-    throw new Error(`Intakes request failed: HTTP ${response.status}`);
+    throw new Error(`${readStoredLabel("failedLoadIntakes", "Failed to load intakes.")}: HTTP ${response.status}`);
   }
   return (await response.json()) as IntakeDto[];
 }
@@ -43,7 +44,7 @@ export async function uploadImage(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Upload failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("imageUploadFailed", "Image upload failed")}: HTTP ${response.status}`));
   }
   const payload = (await response.json()) as { url: string };
   return payload.url;
@@ -63,7 +64,7 @@ export async function createIntake(
   }, { apiBase, token });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(parseError(body, `Create intake failed: HTTP ${response.status}`));
+    throw new Error(parseError(body, `${readStoredLabel("createIntakeFailed", "Failed to create intake.")}: HTTP ${response.status}`));
   }
   return (await response.json()) as IntakeDto;
 }

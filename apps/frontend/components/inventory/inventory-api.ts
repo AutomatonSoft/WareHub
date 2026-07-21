@@ -1,6 +1,7 @@
 import { KidDto } from "./inventory-table-utils";
 import { normalizeKidEanSummaryPayload, type KidEanSummaryModel } from "./kid-ean-summary-model";
 import type { paths } from "../../lib/api/generated/openapi-types";
+import { readStoredLabel } from "../../app/i18n";
 import { apiFetch } from "../../lib/api/client";
 import { resolveServicesApiBase } from "../../lib/api/services-base";
 import { readAuth } from "../../app/client-api-shared";
@@ -9,6 +10,8 @@ import { syncDatabaseServiceSession } from "../../app/services-session";
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
 export type InventoryFilterOptions = {
   places: string[];
+  available_places?: string[];
+  sections: string[];
   locations: Array<"warehouse" | "store">;
   quantities: string[];
   rooms: string[];
@@ -43,11 +46,11 @@ export type CreateKidFieldErrors = Partial<
     | "b_ware"
     | "commentary"
     | "in_transit"
-    | "listing_status"
     | "store"
     | "photo"
     | "photo_files"
     | "place"
+    | "section"
     | "room"
     | "type"
     | "quantity"
@@ -61,16 +64,108 @@ export type CreateKidFieldErrors = Partial<
   >
 >;
 
+export type PlaceSuggestionHints = {
+  requestedPlace: string | null;
+  currentPlace: string | null;
+  sameBaseSubplace: string | null;
+  nextFreeBasePlace: string | null;
+};
+
 export class CreateKidRequestError extends Error {
   fieldErrors: CreateKidFieldErrors;
   status: number;
+  placeSuggestions: PlaceSuggestionHints;
 
-  constructor(message: string, status: number, fieldErrors: CreateKidFieldErrors = {}) {
+  constructor(
+    message: string,
+    status: number,
+    fieldErrors: CreateKidFieldErrors = {},
+    placeSuggestions: PlaceSuggestionHints = {
+      requestedPlace: null,
+      currentPlace: null,
+      sameBaseSubplace: null,
+      nextFreeBasePlace: null,
+    }
+  ) {
     super(message);
     this.name = "CreateKidRequestError";
     this.status = status;
     this.fieldErrors = fieldErrors;
+    this.placeSuggestions = placeSuggestions;
   }
+}
+
+function parseKidRequestErrorPayload(payload: unknown): {
+  fieldErrors: CreateKidFieldErrors;
+  generalMessage: string | null;
+  placeSuggestions: PlaceSuggestionHints;
+} {
+  const fieldErrors: CreateKidFieldErrors = {};
+  const generalMessages: string[] = [];
+  const placeSuggestions: PlaceSuggestionHints = {
+    requestedPlace: null,
+    currentPlace: null,
+    sameBaseSubplace: null,
+    nextFreeBasePlace: null,
+  };
+
+  if (payload && typeof payload === "object") {
+    const payloadRecord = payload as Record<string, unknown>;
+    const details = payloadRecord.details;
+    if (details && typeof details === "object") {
+      const detailsRecord = details as Record<string, unknown>;
+      placeSuggestions.requestedPlace =
+        typeof detailsRecord.requested_place === "string" ? detailsRecord.requested_place.trim() || null : null;
+      placeSuggestions.currentPlace =
+        typeof detailsRecord.current_place === "string" ? detailsRecord.current_place.trim() || null : null;
+      placeSuggestions.sameBaseSubplace =
+        typeof detailsRecord.same_base_subplace === "string" ? detailsRecord.same_base_subplace.trim() || null : null;
+      placeSuggestions.nextFreeBasePlace =
+        typeof detailsRecord.next_free_base_place === "string" ? detailsRecord.next_free_base_place.trim() || null : null;
+    }
+
+    for (const [rawKey, rawValue] of Object.entries(payloadRecord)) {
+      const message = Array.isArray(rawValue)
+        ? rawValue.map(String).join(" ")
+        : typeof rawValue === "string"
+          ? rawValue
+          : rawValue && typeof rawValue === "object" && "detail" in rawValue
+            ? String((rawValue as { detail?: unknown }).detail ?? "")
+            : "";
+
+      if (!message) continue;
+
+      if (
+        rawKey === "kid_number" ||
+        rawKey === "account" ||
+        rawKey === "b_ware" ||
+        rawKey === "commentary" ||
+        rawKey === "in_transit" ||
+        rawKey === "store" ||
+        rawKey === "photo" ||
+        rawKey === "photo_files" ||
+        rawKey === "place" ||
+        rawKey === "section" ||
+        rawKey === "room" ||
+        rawKey === "type" ||
+        rawKey === "quantity" ||
+        rawKey === "company" ||
+        rawKey === "color" ||
+        rawKey === "size" ||
+        rawKey === "material" ||
+        rawKey === "price"
+      ) {
+        fieldErrors[rawKey] = message;
+        continue;
+      }
+
+      generalMessages.push(message);
+    }
+  }
+
+  const fieldMessage = Object.values(fieldErrors).find((value) => typeof value === "string" && value.trim().length > 0) ?? null;
+  const generalMessage = generalMessages.find((value) => value.trim().length > 0) ?? null;
+  return { fieldErrors, generalMessage: generalMessage || fieldMessage, placeSuggestions };
 }
 
 export type CreateKidItemResult = {
@@ -177,6 +272,10 @@ function readNestedErrorText(payload: Record<string, unknown> | null, key: strin
   return typeof raw === "string" ? raw.trim() : "";
 }
 
+function inventoryLabel(key: string, fallback: string): string {
+  return readStoredLabel(key, fallback);
+}
+
 function formatInventoryRowsRequestError(
   response: Response,
   payload: { code?: string; message?: string; detail?: string; request_id?: string; details?: Record<string, unknown> } | null,
@@ -190,7 +289,7 @@ function formatInventoryRowsRequestError(
   const primaryMessage = backendMessage || backendDetail || nestedError;
 
   if (response.status === 403) {
-    return new Error("Database service session required. Login again and retry.");
+    return new Error(inventoryLabel("databaseServiceSessionRequired", "Database service session required. Login again and retry."));
   }
 
   if (primaryMessage) {
@@ -200,10 +299,10 @@ function formatInventoryRowsRequestError(
   }
 
   if (response.status === 502 || response.status === 503) {
-    return new Error("Inventory service is unavailable. Check database-service local dev process and retry.");
+    return new Error(inventoryLabel("inventoryServiceUnavailable", "Inventory service is unavailable. Check database-service local dev process and retry."));
   }
 
-  return new Error(`Services inventory request failed: HTTP ${response.status}`);
+  return new Error(`${inventoryLabel("failedLoadInventory", "Failed to load inventory.")}: HTTP ${response.status}`);
 }
 
 function buildServicesUrl(path: string, params: URLSearchParams): string {
@@ -234,6 +333,7 @@ export async function fetchInventoryRows(params: {
   pageSize: number;
   q?: string;
   place?: string;
+  section?: string;
   location?: "warehouse" | "store";
   quantity?: string;
   placeSort?: "asc" | "desc";
@@ -242,7 +342,8 @@ export async function fetchInventoryRows(params: {
   company?: string;
   color?: string;
   material?: string;
-  listing?: "listed" | "unlisted";
+  bWare?: boolean;
+  inTransit?: boolean;
   sort?: "place" | "quantity";
   dir?: "asc" | "desc";
 }): Promise<InventoryRowsApiResponse> {
@@ -254,6 +355,9 @@ export async function fetchInventoryRows(params: {
   }
   if (params.place?.trim()) {
     searchParams.set("place", params.place.trim());
+  }
+  if (params.section?.trim()) {
+    searchParams.set("section", params.section.trim());
   }
   if (params.location === "warehouse" || params.location === "store") {
     searchParams.set("location", params.location);
@@ -279,8 +383,11 @@ export async function fetchInventoryRows(params: {
   if (params.material?.trim()) {
     searchParams.set("material", params.material.trim());
   }
-  if (params.listing === "listed" || params.listing === "unlisted") {
-    searchParams.set("listing", params.listing);
+  if (params.bWare) {
+    searchParams.set("b_ware", "true");
+  }
+  if (params.inTransit) {
+    searchParams.set("in_transit", "true");
   }
   if (params.sort === "place" || params.sort === "quantity") {
     searchParams.set("sort", params.sort);
@@ -347,9 +454,9 @@ export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Pr
   }
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error("Database service session required. Login again and retry.");
+      throw new Error(inventoryLabel("databaseServiceSessionRequired", "Database service session required. Login again and retry."));
     }
-    throw new Error(`Inventory details request failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("failedLoadInventoryDetails", "Failed to load inventory details.")}: HTTP ${response.status}`);
   }
   return (await response.json()) as InventoryRowsApiResponse & InventoryRowsFallbackResponse;
 }
@@ -359,7 +466,7 @@ export async function deleteOrder(orderDbId: number): Promise<void> {
     method: "DELETE"
   });
   if (response.status !== 204) {
-    throw new Error(`Delete failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("deleteFailed", "Delete failed")}: HTTP ${response.status}`);
   }
 }
 
@@ -377,8 +484,43 @@ export async function patchOrderAdditionalItems(params: {
     } satisfies PatchOrderBody)
   });
   if (!response.ok) {
-    throw new Error(`Child delete failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("failedUpdateChildItems", "Failed to update child items.")}: HTTP ${response.status}`);
   }
+}
+
+export type OrderMemoSyncResult = {
+  syncStatus: "synced" | "pending" | "failed";
+  syncError: string | null;
+  syncErrorType: string | null;
+};
+
+export async function patchOrderMemo(params: {
+  orderDbId: number;
+  memo: string;
+}): Promise<OrderMemoSyncResult> {
+  const response = await apiFetch(`${getServicesApiBase()}/orders/${params.orderDbId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      memo: params.memo.trim() || null,
+    } satisfies PatchOrderBody),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${inventoryLabel("failedUpdateOrder", "Failed to update order.")}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const syncStatus = payload.memo_sync_status;
+  return {
+    syncStatus: syncStatus === "pending" || syncStatus === "failed" ? syncStatus : "synced",
+    syncError: typeof payload.memo_sync_error === "string" && payload.memo_sync_error.trim()
+      ? payload.memo_sync_error
+      : null,
+    syncErrorType: typeof payload.memo_sync_error_type === "string" && payload.memo_sync_error_type.trim()
+      ? payload.memo_sync_error_type
+      : null,
+  };
 }
 
 export async function deleteInventoryEntity(params: {
@@ -392,9 +534,9 @@ export async function deleteInventoryEntity(params: {
 
   if (response.status === 204) return;
   if (response.status === 403) {
-    throw new Error("Delete is allowed only for admin role.");
+    throw new Error(inventoryLabel("deleteAllowedOnlyAdmin", "Delete is allowed only for admin role."));
   }
-  throw new Error(`Delete failed: HTTP ${response.status}`);
+  throw new Error(`${inventoryLabel("deleteFailed", "Delete failed")}: HTTP ${response.status}`);
 }
 
 export type DeactivateJvSofortByKidResponse = {
@@ -448,11 +590,11 @@ export async function createMarketplaceToggleJob(kidNumber: string, inactive = t
         : payload && typeof payload["detail"] === "string"
           ? payload["detail"]
           : "";
-    throw new Error(backendMessage || `Marketplace toggle job create failed: HTTP ${response.status}`);
+    throw new Error(backendMessage || `${inventoryLabel("marketplaceToggleJobCreateFailed", "Marketplace toggle job create failed.")}: HTTP ${response.status}`);
   }
   const jobId = String(payload?.["job_id"] || "").trim();
   if (!jobId) {
-    throw new Error("Marketplace toggle job create failed: missing job_id");
+    throw new Error(inventoryLabel("marketplaceToggleJobMissingId", "Marketplace toggle job was accepted but no job id was returned."));
   }
   return { jobId };
 }
@@ -469,7 +611,7 @@ export async function getMarketplaceToggleJob(jobId: string): Promise<Deactivate
         : payload && typeof payload["detail"] === "string"
           ? payload["detail"]
           : "";
-    throw new Error(backendMessage || `Marketplace toggle job fetch failed: HTTP ${response.status}`);
+    throw new Error(backendMessage || `${inventoryLabel("marketplaceToggleJobFetchFailed", "Failed to load marketplace toggle job.")}: HTTP ${response.status}`);
   }
   return (payload as DeactivateJvSofortByKidResponse | null) ?? { status: "failed", job_status: "failed" };
 }
@@ -501,7 +643,7 @@ export async function deactivateJvSofortByKid(kidNumber: string, inactive = true
         : payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
           ? payload.message
           : "";
-    throw new Error(backendMessage || `JV sofort deactivate failed: HTTP ${response.status}`);
+    throw new Error(backendMessage || `${inventoryLabel("jvSofortDeactivateFailed", "JV sofort deactivate failed.")}: HTTP ${response.status}`);
   }
 
   return payload ?? { status: "ok" };
@@ -512,14 +654,111 @@ export type KidDetailsModel = {
   kidNumber: string;
   account: "JV" | "XL" | "CH" | "" | null;
   place: string;
+  section: string;
   photoUrls: string[];
   room: string;
   furnitureType: string;
-  listingStatus: "listed" | "unlisted";
   bWare: boolean;
   store: boolean;
   commentary: string;
   inTransit: boolean;
+};
+
+export type KidDetailViewModel = {
+  kid: {
+    id: number;
+    kidNumber: string;
+    account: "JV" | "XL" | "CH" | "" | null;
+    place: string;
+    section: string;
+    photoUrls: string[];
+    room: string;
+    furnitureType: string;
+    bWare: boolean;
+    store: boolean;
+    commentary: string;
+    inTransit: boolean;
+  };
+  ean: Record<string, string> | null;
+  eanStatus: Record<string, boolean> | null;
+  productAttributes: {
+    quantity: number | null;
+    company: string | null;
+    color: string | null;
+    size: string | null;
+    material: string | null;
+    price: string | null;
+    currency: string | null;
+  } | null;
+  client: {
+    billingFirstName: string;
+    billingLastName: string;
+    billingCompany: string;
+    billingStreet: string;
+    billingStreet2: string;
+    billingPostalCode: string;
+    billingCity: string;
+    billingStateOrProvince: string;
+    billingCountry: string;
+    billingCountryIso: string;
+    billingPhone: string;
+    billingFax: string;
+    billingEmail: string;
+    shippingFirstName: string;
+    shippingLastName: string;
+    shippingCompany: string;
+    shippingStreet: string;
+    shippingStreet2: string;
+    shippingPostalCode: string;
+    shippingCity: string;
+    shippingStateOrProvince: string;
+    shippingCountry: string;
+    shippingCountryIso: string;
+  } | null;
+  orders: Array<{
+    id: number;
+    orderId: string;
+    platform: string | null;
+    buyer: string | null;
+    sku: string | null;
+    title: string;
+    memo: string | null;
+    memoSyncStatus: "synced" | "pending" | "failed";
+    memoSyncError: string | null;
+    memoSyncErrorType: string | null;
+    status: string;
+    orderDate: string | null;
+    invoiceNumber: string | null;
+    invoiceAmount: string | null;
+    paymentDate: string | null;
+    paymentMethod: string | null;
+    shippingMethod: string | null;
+    fullAmount: string | null;
+    alreadyPaid: string | null;
+    outstandingAmount: string | null;
+    isFullyPaid: boolean;
+    additionalItems: unknown[];
+    items: Array<{
+      id: number;
+      afterbuyItemId: string;
+      title: string;
+      quantity: number | null;
+      itemPrice: string | null;
+      itemEndDate: string | null;
+      currency: string;
+      isMainItem: boolean;
+    }>;
+  }>;
+  inventoryChangeLog: Array<{
+    id: number;
+    occurredAt: string;
+    actor: { login: string; name: string };
+    action: string;
+    kidNumber: string;
+    place: string;
+    changes: Array<{ field?: string; before?: unknown; after?: unknown }>;
+    metadata: Record<string, unknown>;
+  }>;
 };
 
 export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
@@ -534,7 +773,7 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
   }
 
   if (!response.ok) {
-    throw new Error(`Kid details request failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("failedLoadKidDetails", "Failed to load kid details.")}: HTTP ${response.status}`);
   }
 
   const payload = (await response.json()) as Record<string, unknown>;
@@ -542,7 +781,6 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
   const photoUrls = Array.isArray(photoRaw)
     ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
-  const listingStatus = String(payload.listing_status || "").trim().toLowerCase() === "listed" ? "listed" : "unlisted";
   const account = typeof payload.account === "string" && payload.account.trim() ? (payload.account.trim().toUpperCase() as "JV" | "XL" | "CH") : null;
 
   return {
@@ -550,14 +788,187 @@ export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
     kidNumber: String(payload.kid_number || "").trim(),
     account: account ?? "",
     place: String(payload.place || "").trim(),
+    section: String(payload.section || "").trim(),
     photoUrls,
     room: String(payload.room || "").trim(),
     furnitureType: String(payload.furniture_type || "").trim(),
-    listingStatus,
     bWare: payload.b_ware === true,
     store: payload.store === true,
     commentary: String(payload.commentary || "").trim(),
     inTransit: payload.in_transit === true,
+  };
+}
+
+export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/detail-view/`);
+  let response = await requestFactory();
+
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`${inventoryLabel("failedLoadKidDetails", "Failed to load kid details.")}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const kidPayload = (payload.kid as Record<string, unknown> | null) ?? {};
+  const photoRaw = kidPayload.photo;
+  const photoUrls = Array.isArray(photoRaw)
+    ? photoRaw.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const account = typeof kidPayload.account === "string" && kidPayload.account.trim()
+    ? (kidPayload.account.trim().toUpperCase() as "JV" | "XL" | "CH")
+    : null;
+
+  const productAttributesPayload = payload.product_attributes && typeof payload.product_attributes === "object"
+    ? (payload.product_attributes as Record<string, unknown>)
+    : null;
+  const eanPayload = payload.ean && typeof payload.ean === "object"
+    ? (payload.ean as Record<string, unknown>)
+    : null;
+  const eanStatusPayload = payload.ean_status && typeof payload.ean_status === "object"
+    ? (payload.ean_status as Record<string, unknown>)
+    : null;
+  const clientPayload = payload.client && typeof payload.client === "object"
+    ? (payload.client as Record<string, unknown>)
+    : null;
+
+  return {
+    kid: {
+      id: typeof kidPayload.id === "number" ? kidPayload.id : kidId,
+      kidNumber: String(kidPayload.kid_number || "").trim(),
+      account: account ?? "",
+      place: String(kidPayload.place || "").trim(),
+      section: String(kidPayload.section || "").trim(),
+      photoUrls,
+      room: String(kidPayload.room || "").trim(),
+      furnitureType: String(kidPayload.furniture_type || "").trim(),
+      bWare: kidPayload.b_ware === true,
+      store: kidPayload.store === true,
+      commentary: String(kidPayload.commentary || "").trim(),
+      inTransit: kidPayload.in_transit === true,
+    },
+    ean: eanPayload
+      ? Object.fromEntries(
+        Object.entries(eanPayload).map(([key, value]) => [key, String(value ?? "").trim()])
+      )
+      : null,
+    eanStatus: eanStatusPayload
+      ? Object.fromEntries(
+        Object.entries(eanStatusPayload).map(([key, value]) => [key, value === true])
+      )
+      : null,
+    productAttributes: productAttributesPayload
+      ? {
+        quantity: typeof productAttributesPayload.quantity === "number" ? productAttributesPayload.quantity : null,
+        company: typeof productAttributesPayload.company === "string" ? productAttributesPayload.company : null,
+        color: typeof productAttributesPayload.color === "string" ? productAttributesPayload.color : null,
+        size: typeof productAttributesPayload.size === "string" ? productAttributesPayload.size : null,
+        material: typeof productAttributesPayload.material === "string" ? productAttributesPayload.material : null,
+        price: productAttributesPayload.price == null ? null : String(productAttributesPayload.price),
+        currency: typeof productAttributesPayload.currency === "string" ? productAttributesPayload.currency : null,
+      }
+      : null,
+    client: clientPayload
+      ? {
+        billingFirstName: String(clientPayload.billing_first_name || "").trim(),
+        billingLastName: String(clientPayload.billing_last_name || "").trim(),
+        billingCompany: String(clientPayload.billing_company || "").trim(),
+        billingStreet: String(clientPayload.billing_street || "").trim(),
+        billingStreet2: String(clientPayload.billing_street_2 || "").trim(),
+        billingPostalCode: String(clientPayload.billing_postal_code || "").trim(),
+        billingCity: String(clientPayload.billing_city || "").trim(),
+        billingStateOrProvince: String(clientPayload.billing_state_or_province || "").trim(),
+        billingCountry: String(clientPayload.billing_country || "").trim(),
+        billingCountryIso: String(clientPayload.billing_country_iso || "").trim(),
+        billingPhone: String(clientPayload.billing_phone || "").trim(),
+        billingFax: String(clientPayload.billing_fax || "").trim(),
+        billingEmail: String(clientPayload.billing_email || "").trim(),
+        shippingFirstName: String(clientPayload.shipping_first_name || "").trim(),
+        shippingLastName: String(clientPayload.shipping_last_name || "").trim(),
+        shippingCompany: String(clientPayload.shipping_company || "").trim(),
+        shippingStreet: String(clientPayload.shipping_street || "").trim(),
+        shippingStreet2: String(clientPayload.shipping_street_2 || "").trim(),
+        shippingPostalCode: String(clientPayload.shipping_postal_code || "").trim(),
+        shippingCity: String(clientPayload.shipping_city || "").trim(),
+        shippingStateOrProvince: String(clientPayload.shipping_state_or_province || "").trim(),
+        shippingCountry: String(clientPayload.shipping_country || "").trim(),
+        shippingCountryIso: String(clientPayload.shipping_country_iso || "").trim(),
+      }
+      : null,
+    orders: Array.isArray(payload.orders)
+      ? payload.orders.map((raw) => {
+        const item = (raw as Record<string, unknown> | null) ?? {};
+        return {
+          id: typeof item.id === "number" ? item.id : 0,
+          orderId: String(item.order_id || "").trim(),
+          platform: typeof item.platform === "string" ? item.platform : null,
+          buyer: typeof item.buyer === "string" ? item.buyer : null,
+          sku: typeof item.sku === "string" ? item.sku : null,
+          title: String(item.title || "").trim(),
+          memo: typeof item.memo === "string" ? item.memo : null,
+          memoSyncStatus: item.memo_sync_status === "pending" || item.memo_sync_status === "failed"
+            ? item.memo_sync_status
+            : "synced",
+          memoSyncError: typeof item.memo_sync_error === "string" && item.memo_sync_error.trim()
+            ? item.memo_sync_error
+            : null,
+          memoSyncErrorType: typeof item.memo_sync_error_type === "string" && item.memo_sync_error_type.trim()
+            ? item.memo_sync_error_type
+            : null,
+          status: String(item.status || "").trim(),
+          orderDate: typeof item.order_date === "string" ? item.order_date : null,
+          invoiceNumber: typeof item.invoice_number === "string" ? item.invoice_number : null,
+          invoiceAmount: item.invoice_amount == null ? null : String(item.invoice_amount),
+          paymentDate: typeof item.payment_date === "string" ? item.payment_date : null,
+          paymentMethod: typeof item.payment_method === "string" ? item.payment_method : null,
+          shippingMethod: typeof item.shipping_method === "string" ? item.shipping_method : null,
+          fullAmount: typeof item.full_amount === "string" ? item.full_amount : null,
+          alreadyPaid: item.already_paid == null ? null : String(item.already_paid),
+          outstandingAmount: item.outstanding_amount == null ? null : String(item.outstanding_amount),
+          isFullyPaid: item.is_fully_paid === true,
+          additionalItems: Array.isArray(item.additional_items) ? item.additional_items : [],
+          items: Array.isArray(item.items)
+            ? item.items.map((rawItem) => {
+              const orderItem = (rawItem as Record<string, unknown> | null) ?? {};
+              return {
+                id: typeof orderItem.id === "number" ? orderItem.id : 0,
+                afterbuyItemId: String(orderItem.afterbuy_item_id || "").trim(),
+                title: String(orderItem.title || "").trim(),
+                quantity: typeof orderItem.quantity === "number" ? orderItem.quantity : null,
+                itemPrice: orderItem.item_price == null ? null : String(orderItem.item_price),
+                itemEndDate: typeof orderItem.item_end_date === "string" ? orderItem.item_end_date : null,
+                currency: String(orderItem.currency || "").trim(),
+                isMainItem: orderItem.is_main_item === true,
+              };
+            })
+            : [],
+        };
+      })
+      : [],
+    inventoryChangeLog: Array.isArray(payload.inventory_change_log)
+      ? payload.inventory_change_log.map((raw) => {
+        const item = (raw as Record<string, unknown> | null) ?? {};
+        const actorRaw = item.actor && typeof item.actor === "object" ? (item.actor as Record<string, unknown>) : {};
+        return {
+          id: typeof item.id === "number" ? item.id : 0,
+          occurredAt: String(item.occurred_at || "").trim(),
+          actor: {
+            login: String(actorRaw.login || "").trim(),
+            name: String(actorRaw.name || "").trim(),
+          },
+          action: String(item.action || "").trim(),
+          kidNumber: String(item.kid_number || "").trim(),
+          place: String(item.place || "").trim(),
+          changes: Array.isArray(item.changes) ? item.changes as Array<{ field?: string; before?: unknown; after?: unknown }> : [],
+          metadata: item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {},
+        };
+      })
+      : [],
   };
 }
 
@@ -566,10 +977,10 @@ export async function patchKidDetails(params: {
   kidNumber: string;
   account: "JV" | "XL" | "CH" | "" | null;
   place: string;
+  section: string;
   photoUrls: string[];
   room: string;
   furnitureType: string;
-  listingStatus: "listed" | "unlisted";
   bWare: boolean;
   store: boolean;
   commentary: string;
@@ -579,10 +990,10 @@ export async function patchKidDetails(params: {
     kid_number: params.kidNumber.trim(),
     account: params.account ? params.account : null,
     place: params.place.trim() || null,
+    section: params.section.trim() || null,
     photo: params.photoUrls,
     room: params.room.trim() || null,
     furniture_type: params.furnitureType.trim() || null,
-    listing_status: params.listingStatus,
     b_ware: params.bWare,
     store: params.store,
     commentary: params.commentary.trim() || null,
@@ -605,7 +1016,9 @@ export async function patchKidDetails(params: {
   }
 
   if (!response.ok) {
-    throw new Error(`Kid update failed: HTTP ${response.status}`);
+    const payload = await response.json().catch(() => null);
+    const { fieldErrors, generalMessage, placeSuggestions } = parseKidRequestErrorPayload(payload);
+    throw new CreateKidRequestError(generalMessage || `${inventoryLabel("failedSaveChanges", "Failed to save changes.")}: HTTP ${response.status}`, response.status, fieldErrors, placeSuggestions);
   }
 }
 
@@ -617,10 +1030,10 @@ export async function createKidItem(params: {
   color?: string | null;
   commentary?: string | null;
   inTransit?: boolean;
-  listingStatus?: "listed" | "unlisted" | string | null;
   store?: boolean;
   material?: string | null;
   place?: string | null;
+  section?: string | null;
   price?: string | null;
   quantity?: string | null;
   room?: string | null;
@@ -636,9 +1049,9 @@ export async function createKidItem(params: {
     ...(params.company?.trim() ? { company: params.company.trim() } : {}),
     ...(params.color?.trim() ? { color: params.color.trim() } : {}),
     ...(params.commentary?.trim() ? { commentary: params.commentary.trim() } : {}),
-    ...(params.listingStatus?.trim() ? { listing_status: params.listingStatus.trim() } : {}),
     ...(params.material?.trim() ? { material: params.material.trim() } : {}),
     ...(params.place?.trim() ? { place: params.place.trim() } : {}),
+    ...(params.section?.trim() ? { section: params.section.trim() } : {}),
     ...(params.price?.trim() ? { price: params.price.trim() } : {}),
     ...(params.quantity?.trim() ? { quantity: params.quantity.trim() } : {}),
     ...(params.room?.trim() ? { room: params.room.trim() } : {}),
@@ -663,53 +1076,12 @@ export async function createKidItem(params: {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    const fieldErrors: CreateKidFieldErrors = {};
-    const generalMessages: string[] = [];
+    const { fieldErrors, generalMessage, placeSuggestions } = parseKidRequestErrorPayload(payload);
 
-    if (payload && typeof payload === "object") {
-      for (const [rawKey, rawValue] of Object.entries(payload as Record<string, unknown>)) {
-        const message = Array.isArray(rawValue)
-          ? rawValue.map(String).join(" ")
-          : typeof rawValue === "string"
-            ? rawValue
-            : rawValue && typeof rawValue === "object" && "detail" in rawValue
-              ? String((rawValue as { detail?: unknown }).detail ?? "")
-              : "";
-
-        if (!message) continue;
-
-        if (
-          rawKey === "kid_number" ||
-          rawKey === "account" ||
-          rawKey === "b_ware" ||
-          rawKey === "commentary" ||
-          rawKey === "in_transit" ||
-          rawKey === "listing_status" ||
-          rawKey === "store" ||
-          rawKey === "photo" ||
-          rawKey === "photo_files" ||
-          rawKey === "place" ||
-          rawKey === "room" ||
-          rawKey === "type" ||
-          rawKey === "quantity" ||
-          rawKey === "company" ||
-          rawKey === "color" ||
-          rawKey === "size" ||
-          rawKey === "material" ||
-          rawKey === "price"
-        ) {
-          fieldErrors[rawKey] = message;
-          continue;
-        }
-
-        generalMessages.push(message);
-      }
-    }
-
-    const fallbackMessage = response.status === 403 ? "Create kid is allowed only for admin role." : `Create kid failed: HTTP ${response.status}`;
-    const fieldMessage = Object.values(fieldErrors).find((value) => typeof value === "string" && value.trim().length > 0);
-    const generalMessage = generalMessages.find((value) => value.trim().length > 0);
-    throw new CreateKidRequestError(generalMessage || fieldMessage || fallbackMessage, response.status, fieldErrors);
+    const fallbackMessage = response.status === 403
+      ? inventoryLabel("createKidAdminOnly", "Create kid is allowed only for admin role.")
+      : `${inventoryLabel("createKidFailedPrefix", "Create KID failed:").replace(/:\s*$/, "")}: HTTP ${response.status}`;
+    throw new CreateKidRequestError(generalMessage || fallbackMessage, response.status, fieldErrors, placeSuggestions);
   }
 
   const payload = (await response.json().catch(() => null)) as { id?: unknown } | null;
@@ -750,7 +1122,6 @@ export async function bulkUpdateKids(params: {
     material?: string;
     price?: string;
     currency?: string;
-    listingStatus?: "listed" | "unlisted";
   }>;
 }): Promise<number> {
   const payload = {
@@ -764,8 +1135,7 @@ export async function bulkUpdateKids(params: {
       size: item.size,
       material: item.material,
       price: item.price,
-      currency: item.currency,
-      listing_status: item.listingStatus
+      currency: item.currency
     }))
   };
   const response = await apiFetch(`${getServicesApiBase()}/kids/bulk-update/`, {
@@ -774,7 +1144,7 @@ export async function bulkUpdateKids(params: {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    throw new Error(`Bulk update failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("bulkUpdateFailed", "Bulk update failed.")}: HTTP ${response.status}`);
   }
   const data = (await response.json()) as { updated?: number };
   return Number.isFinite(data.updated) ? Number(data.updated) : 0;
@@ -792,7 +1162,7 @@ export async function uploadKidImages(files: File[]): Promise<string[]> {
   });
 
   if (!response.ok) {
-    throw new Error(`Image upload failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("imageUploadFailed", "Image upload failed")}: HTTP ${response.status}`);
   }
 
   const payload = (await response.json()) as { uploaded_image_urls?: unknown };
@@ -801,7 +1171,7 @@ export async function uploadKidImages(files: File[]): Promise<string[]> {
     : [];
 
   if (urls.length === 0) {
-    throw new Error("Upload completed but no image URLs returned.");
+    throw new Error(inventoryLabel("uploadCompletedNoImageUrlsReturned", "Upload completed but no image URLs returned."));
   }
 
   return urls;
@@ -856,11 +1226,11 @@ function uploadKidGreenFileWithXhr(
       onUploadProgress(percent);
     };
 
-    xhr.onerror = () => reject(new Error("Kid green import failed: network error."));
-    xhr.onabort = () => reject(new Error("Kid green import aborted."));
+    xhr.onerror = () => reject(new Error(inventoryLabel("kidGreenImportNetworkError", "Kid green import failed: network error.")));
+    xhr.onabort = () => reject(new Error(inventoryLabel("kidGreenImportAborted", "Kid green import aborted.")));
     xhr.onload = () => {
       if (xhr.status === 403) {
-        reject(new Error("Database service session required. Login again and retry."));
+        reject(new Error(inventoryLabel("databaseServiceSessionRequired", "Database service session required. Login again and retry.")));
         return;
       }
       const payload = (JSON.parse(xhr.responseText || "null") as Record<string, unknown> | null) ?? null;
@@ -869,7 +1239,7 @@ function uploadKidGreenFileWithXhr(
           status: "accepted",
           job_id: payload.job_id,
           progress_percent: typeof payload.progress_percent === "number" ? payload.progress_percent : 15,
-          message: typeof payload.message === "string" ? payload.message : "Upload accepted.",
+          message: typeof payload.message === "string" ? payload.message : inventoryLabel("uploadAccepted", "Upload accepted."),
         });
         return;
       }
@@ -878,7 +1248,7 @@ function uploadKidGreenFileWithXhr(
           ? payload.message
           : payload?.details && typeof payload.details === "object" && typeof (payload.details as Record<string, unknown>).error === "string" && String((payload.details as Record<string, unknown>).error).trim().length > 0
             ? String((payload.details as Record<string, unknown>).error)
-            : `Kid green import failed: HTTP ${xhr.status}`;
+            : `${inventoryLabel("kidGreenImportFailed", "Kid green import failed.")}: HTTP ${xhr.status}`;
       reject(new Error(message));
     };
 
@@ -893,7 +1263,7 @@ async function fetchKidGreenImportJob(jobId: string): Promise<KidGreenImportJobS
   const response = await apiFetch(`${getServicesApiBase()}/kids/import-kid-green/jobs/${jobId}/`);
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
-    const message = typeof payload?.message === "string" ? payload.message : `Kid green import status failed: HTTP ${response.status}`;
+    const message = typeof payload?.message === "string" ? payload.message : `${inventoryLabel("kidGreenImportStatusFailed", "Failed to load Kid green import status.")}: HTTP ${response.status}`;
     throw new Error(message);
   }
   return {
@@ -913,7 +1283,7 @@ async function fetchKidGreenImportJob(jobId: string): Promise<KidGreenImportJobS
     error: payload?.error && typeof payload.error === "object"
       ? {
           code: typeof (payload.error as Record<string, unknown>).code === "string" ? String((payload.error as Record<string, unknown>).code) : undefined,
-          message: String((payload.error as Record<string, unknown>).message ?? "Kid green import failed."),
+          message: String((payload.error as Record<string, unknown>).message ?? inventoryLabel("kidGreenImportFailed", "Kid green import failed.")),
           details: ((payload.error as Record<string, unknown>).details as { error?: string | null } | null) ?? null,
         }
       : null,
@@ -977,13 +1347,13 @@ export async function importKidGreenFile(file: File, options: KidGreenImportRequ
         const message =
           snapshot.error?.message ||
           snapshot.message ||
-          "Kid green import failed.";
+          inventoryLabel("kidGreenImportFailed", "Kid green import failed.");
         throw new Error(message);
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("Database service session required")) {
+    if (message.includes(inventoryLabel("databaseServiceSessionRequired", "Database service session required. Login again and retry."))) {
       const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
       if (retriedResponse) {
         return retriedResponse;
@@ -1001,7 +1371,7 @@ export async function patchKidPhotoUrls(kidId: number, photoUrls: string[]): Pro
   });
 
   if (!response.ok) {
-    throw new Error(`Kid photo update failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("kidPhotoUpdateFailed", "Failed to update kid photos.")}: HTTP ${response.status}`);
   }
 }
 
@@ -1039,7 +1409,7 @@ export async function patchKidMarketplaceEans(params: {
   });
 
   if (!response.ok) {
-    throw new Error(`Marketplace EAN update failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("marketplaceEanUpdateFailed", "Failed to update marketplace EANs.")}: HTTP ${response.status}`);
   }
 }
 
@@ -1089,7 +1459,7 @@ export async function fetchEanUsageByEan(ean: string): Promise<EanUsagePayload> 
   }
   const response = await apiFetch(`/api/v1/services/ean-pool/${encodeURIComponent(normalized)}/usage/`);
   if (!response.ok) {
-    throw new Error(`EAN usage request failed: HTTP ${response.status}`);
+    throw new Error(`${inventoryLabel("failedLoadEanUsage", "Failed to load EAN usage.")}: HTTP ${response.status}`);
   }
   const payload = (await response.json().catch(() => ({}))) as EanUsagePayload;
   return {
@@ -1115,5 +1485,5 @@ export async function fetchKidEanSummary(kidId: number): Promise<KidEanSummaryMo
     return normalizeKidEanSummaryPayload(payload, kidId);
   }
 
-  throw new Error(`Kid EAN summary request failed: HTTP ${lastStatus || 0}`);
+  throw new Error(`${inventoryLabel("failedLoadKidEanSummary", "Failed to load kid EAN summary.")}: HTTP ${lastStatus || 0}`);
 }

@@ -3664,10 +3664,6 @@
             "nullable": true,
             "maxLength": 128
           },
-          "listing_status": {
-            "type": "string",
-            "maxLength": 16
-          },
           "b_ware": {
             "type": "boolean"
           },
@@ -3722,12 +3718,67 @@
             ],
             "type": "string"
           },
-          "date": {
+          "order_date": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "payment_status": {
+          "full_amount": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "invoice_number": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "already_paid": {
+            "type": "string",
+            "format": "decimal",
+            "nullable": true
+          },
+          "shipping_tax_rate": {
+            "type": "string",
+            "format": "decimal",
+            "nullable": true
+          },
+          "delivery_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "invoice_amount": {
+            "type": "string",
+            "format": "decimal",
+            "nullable": true
+          },
+          "paid_amount": {
+            "type": "string",
+            "format": "decimal",
+            "nullable": true
+          },
+          "payment_date": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "payment_method": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "payment_id": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "payment_function": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "shipping_method": {
             "type": "string",
             "nullable": true,
             "maxLength": 255

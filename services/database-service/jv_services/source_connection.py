@@ -22,6 +22,7 @@ def mysql_connect(config: dict):
                 password=config["password"],
                 database=config["database"],
                 port=config["port"],
+                use_pure=True,
                 connection_timeout=connect_timeout,
                 read_timeout=read_timeout,
                 write_timeout=write_timeout,

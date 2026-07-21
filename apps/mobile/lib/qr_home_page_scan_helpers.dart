@@ -143,24 +143,42 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
               );
         return AlertDialog(
           title: Text(strings.text(titleKey)),
-          content: Text(body),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.cancel),
-              child: Text(strings.text('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.createNew),
-              child: Text(strings.text('existing_product_create_new')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_ExistingProductDecision.addToExisting),
-              child: Text(strings.text('existing_product_add_quantity')),
-            ),
-          ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(body),
+              const SizedBox(height: 24),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _PrinterPrimaryButton(
+                      label: strings.text('existing_product_create_new'),
+                      onPressed: () => Navigator.of(dialogContext)
+                          .pop(_ExistingProductDecision.createNew),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _PrinterPrimaryButton(
+                      label: strings.text('existing_product_add_quantity'),
+                      onPressed: () => Navigator.of(dialogContext)
+                          .pop(_ExistingProductDecision.addToExisting),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _PrinterSecondaryButton(
+                label: strings.text('cancel'),
+                onPressed: () => Navigator.of(dialogContext)
+                    .pop(_ExistingProductDecision.cancel),
+              ),
+            ],
+          ),
+          shape: _printerDialogShape(),
+          backgroundColor: uiCard,
+          surfaceTintColor: Colors.transparent,
         );
       },
     );
@@ -189,7 +207,6 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
   }
 
   Future<_PlacementInput?> _askPlacementInput({
-    required String section,
     required int step,
     required int total,
   }) async {
@@ -233,16 +250,16 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
       }
       return _PlacementInput(
         placementStrategy: 'manual',
-        warehouseLocation: buildWarehouseLocation(section, nextSlotCode),
+        warehouseLocation: normalizeWarehousePlace(nextSlotCode),
       );
     }
 
-    if (isWarehouseSlotOccupied(_items, slotCode)) {
-      final String targetLocation = buildWarehouseLocation(section, slotCode);
+    final String targetLocation = normalizeWarehousePlace(slotCode);
+    if (isWarehousePlaceOccupied(_items, targetLocation)) {
       final List<IntakeData> existingAtLocation = _items
           .where((IntakeData item) =>
               item.isActiveEffective &&
-              item.warehouseLocation.trim().toUpperCase() == targetLocation)
+              normalizeWarehousePlace(item.warehouseLocation) == targetLocation)
           .toList(growable: false);
       final _ExistingProductDecision decision =
           await _askExistingProductDecision(
@@ -254,7 +271,7 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
         return null;
       }
       if (decision == _ExistingProductDecision.createNew) {
-        return _askPlacementInput(section: section, step: step, total: total);
+        return _askPlacementInput(step: step, total: total);
       }
       final IntakeData? representative = existingAtLocation.isNotEmpty
           ? (existingAtLocation
@@ -272,7 +289,7 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
 
     return _PlacementInput(
       placementStrategy: 'manual',
-      warehouseLocation: buildWarehouseLocation(section, slotCode),
+      warehouseLocation: targetLocation,
     );
   }
 }

@@ -93,6 +93,28 @@ class FakeMarketplaceGateway:
             },
         )()
 
+    def toggle_xl_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
+        return type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "body": {
+                    "status": "ok",
+                    "inactive": inactive,
+                    "results": [
+                        {
+                            "ok": True,
+                            "site_key": "XLMOEBEL_DE",
+                            "channel": "XL",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
+                        }
+                    ],
+                },
+            },
+        )()
+
     def toggle_local_statuses_by_kid(self, *, kid_number: str, inactive: bool, request_id: str):
         return type(
             "R",
@@ -124,13 +146,6 @@ class FakeMarketplaceGateway:
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive},
                         },
-                        {
-                            "ok": True,
-                            "site_key": "KAUFLAND_JV",
-                            "channel": "KAUFLAND",
-                            "status_code": 200,
-                            "details": {"kid_number": kid_number, "inactive": inactive},
-                        },
                     ],
                 },
             },
@@ -150,6 +165,28 @@ class FakeMarketplaceGateway:
                             "ok": True,
                             "site_key": "HOOD_JV",
                             "channel": "HOOD",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
+                        }
+                    ],
+                },
+            },
+        )()
+
+    def toggle_kaufland_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
+        return type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "body": {
+                    "status": "ok",
+                    "inactive": inactive,
+                    "results": [
+                        {
+                            "ok": True,
+                            "site_key": "KAUFLAND_JV",
+                            "channel": "KAUFLAND",
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
                         }
@@ -199,12 +236,13 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)
     assert result.status == "ok"
-    assert result.summary.total == 6
-    assert result.summary.success == 6
+    assert result.summary.total == 7
+    assert result.summary.success == 7
     assert result.summary.failed == 0
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
     assert site_keys["JV_AT"].ok is True
+    assert site_keys["XLMOEBEL_DE"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
     assert site_keys["EBAY_JV"].ok is True
@@ -218,6 +256,7 @@ def test_marketplace_job_service_activate_combines_jv_and_local_channels():
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
     assert site_keys["JV_AT"].ok is True
+    assert site_keys["XLMOEBEL_DE"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
     assert site_keys["EBAY_JV"].ok is True

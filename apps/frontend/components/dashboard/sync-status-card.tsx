@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { RadioTower } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLabels } from "../../app/use-labels";
 import {
   allMarketplaceSites,
   STATUS_CACHE_KEY,
@@ -38,16 +39,10 @@ function readStatusCache(): Record<string, CachedSiteStatus> {
   }
 }
 
-function statusLabel(status: SiteConnectionStatus): string {
-  if (status === "CONNECTED") return "Connected";
-  if (status === "NOT_FOUND") return "Not configured";
-  return "Connection failed";
-}
-
-function statusHint(status: SiteConnectionStatus): string {
-  if (status === "CONNECTED") return "Credentials valid and sync available.";
-  if (status === "NOT_FOUND") return "Missing credentials or marketplace mapping.";
-  return "Connection check failed or service unavailable.";
+function statusHint(status: SiteConnectionStatus, t: Record<string, string>): string {
+  if (status === "CONNECTED") return t.syncStatusConnectedHint;
+  if (status === "NOT_FOUND") return t.syncStatusNotConfiguredHint;
+  return t.syncStatusConnectionFailedHint;
 }
 
 function toneClass(status: SiteConnectionStatus): string {
@@ -63,6 +58,7 @@ function badgeVariant(status: SiteConnectionStatus): "success" | "warning" | "se
 }
 
 export function SyncStatusCard() {
+  const t = useLabels();
   const [cacheVersion, setCacheVersion] = useState(0);
   const [hydrated, setHydrated] = useState(false);
 
@@ -114,9 +110,9 @@ export function SyncStatusCard() {
           <div className="min-w-0">
             <CardTitle className="title-with-icon wh-section-card__title">
               <span className="title-icon-chip"><RadioTower aria-hidden="true" size={14} /></span>
-              Marketplace Sync Status
+              {t.syncStatusCardTitle}
             </CardTitle>
-            <CardDescription className="wh-section-card__subtitle">Latest connectivity snapshot across marketplace endpoints.</CardDescription>
+            <CardDescription className="wh-section-card__subtitle">{t.syncStatusCardDescription}</CardDescription>
           </div>
         </CardHeader>
         <CardContent className="wh-section-card__body wh-section-card__body--scroll">
@@ -139,41 +135,47 @@ export function SyncStatusCard() {
   }
 
   return (
-      <Card className="wh-section-card wh-dashboard__sync-card min-w-0">
+    <Card className="wh-section-card wh-dashboard__sync-card min-w-0">
       <CardHeader className="wh-section-card__header">
         <div className="min-w-0">
           <CardTitle className="title-with-icon wh-section-card__title">
             <span className="title-icon-chip"><RadioTower aria-hidden="true" size={14} /></span>
-            Marketplace Sync Status
+            {t.syncStatusCardTitle}
           </CardTitle>
-          <CardDescription className="wh-section-card__subtitle">Latest connectivity snapshot across marketplace endpoints.</CardDescription>
+          <CardDescription className="wh-section-card__subtitle">{t.syncStatusCardDescription}</CardDescription>
         </div>
         <CardAction>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant="success">Connected: {rows.connectedCount}</Badge>
-            <Badge variant="warning">Not connected: {rows.notConnectedCount}</Badge>
+            <Badge variant="success">{t.syncStatusConnectedCount.replace("{count}", String(rows.connectedCount))}</Badge>
+            <Badge variant="warning">{t.syncStatusNotConnectedCount.replace("{count}", String(rows.notConnectedCount))}</Badge>
           </div>
         </CardAction>
       </CardHeader>
-        <CardContent className="wh-section-card__body">
-          <div className="wh-sync-list wh-sync-list--with-footer scrollbar-thin">
-            {rows.rows.map((sync) => (
-              <div key={sync.id} className="wh-sync-row wh-list-row">
-                <div className="flex min-h-[24px] items-center justify-between gap-3">
-                  <p className="wh-sync-row__title wh-list-row__title">{sync.name}</p>
-                  <Badge variant={badgeVariant(sync.status)} className={toneClass(sync.status)}>
-                    {statusLabel(sync.status)}
+      <CardContent className="wh-section-card__body">
+        <div className="wh-sync-list wh-sync-list--with-footer scrollbar-thin">
+          {rows.rows.map((sync) => (
+            <div key={sync.id} className="wh-sync-row wh-list-row">
+              <div className="flex min-h-[24px] items-center justify-between gap-3">
+                <p className="wh-sync-row__title wh-list-row__title">{sync.name}</p>
+                <Badge variant={badgeVariant(sync.status)} className={toneClass(sync.status)}>
+                  {sync.status === "CONNECTED"
+                    ? t.syncStatusConnectedLabel
+                    : sync.status === "NOT_FOUND"
+                      ? t.syncStatusNotConfiguredLabel
+                      : t.syncStatusConnectionFailedLabel}
                 </Badge>
               </div>
               <p className="wh-sync-row__meta wh-list-row__meta">
-                {sync.lastSync ? `Last check: ${sync.lastSync}` : statusHint(sync.status)}
+                {sync.lastSync ? t.syncStatusLastCheck.replace("{time}", sync.lastSync) : statusHint(sync.status, t)}
               </p>
             </div>
           ))}
         </div>
         <div className="wh-card-footer">
           <p className="wh-card-footer__text">
-            {rows.connectedCount} connected, {rows.notConnectedCount} not connected
+            {t.syncStatusFooterSummary
+              .replace("{connected}", String(rows.connectedCount))
+              .replace("{notConnected}", String(rows.notConnectedCount))}
           </p>
         </div>
       </CardContent>

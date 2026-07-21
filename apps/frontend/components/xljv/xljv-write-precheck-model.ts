@@ -9,8 +9,8 @@ export function getSendToSelectedSitesPrecheckError(input: {
 }): string | null {
   const eanError = getRequiredEanError(input.ean, input.labels);
   if (eanError) return eanError;
-  if (!input.hasOrderDraft) return input.labels.createOrderDraftFirst || "Create order draft first.";
-  if (input.selectedSiteKeys.length === 0) return input.labels.chooseOneTargetSite || "Choose at least one target site.";
-  if (!input.templateSiteKey.trim()) return input.labels.chooseTemplateSite || "Choose template site.";
+  if (!input.hasOrderDraft) return input.labels.createOrderDraftFirst || "";
+  if (input.selectedSiteKeys.length === 0) return input.labels.chooseOneTargetSite || "";
+  if (!input.templateSiteKey.trim()) return input.labels.chooseTemplateSite || "";
   return null;
 }

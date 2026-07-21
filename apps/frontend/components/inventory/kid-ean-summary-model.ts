@@ -18,7 +18,6 @@ export type KidEanSummaryModel = {
     place: string;
     room: string;
     furnitureType: string;
-    listingStatus: string;
     mainPhoto: string;
     photoCount: number;
     lastUpdate: string;
@@ -111,7 +110,6 @@ export function normalizeKidEanSummaryPayload(payload: unknown, fallbackKidId: n
       place: asString(kidSnapshot?.place),
       room: asString(kidSnapshot?.room),
       furnitureType: asString(kidSnapshot?.furniture_type),
-      listingStatus: asString(kidSnapshot?.listing_status, "unlisted"),
       mainPhoto: asString(kidSnapshot?.main_photo),
       photoCount: Number.isFinite(Number(kidSnapshot?.photo_count)) ? Number(kidSnapshot?.photo_count) : 0,
       lastUpdate: asString(kidSnapshot?.last_update),

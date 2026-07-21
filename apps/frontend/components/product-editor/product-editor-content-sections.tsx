@@ -12,6 +12,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/cn";
+import { useLabels } from "../../app/use-labels";
 import { containsTechnicalDescriptionHtml, formatFileSize, getGalleryMainImage, sanitizeDescriptionPreviewHtml } from "./product-editor-model";
 import type { ProductEditorPendingUpload } from "./product-editor-types";
 import { ProductEditorPreviewImage } from "./product-editor-preview-image";
@@ -28,6 +29,7 @@ export function ProductEditorDescriptionEditor({
   title?: string;
   subtitle?: string;
 }) {
+  const t = useLabels();
   const [mode, setMode] = useState<"clean" | "html" | "full">("clean");
   const hasTechnicalHtml = containsTechnicalDescriptionHtml(value);
   const previewHtml = useMemo(() => sanitizeDescriptionPreviewHtml(value), [value]);
@@ -37,14 +39,14 @@ export function ProductEditorDescriptionEditor({
     <ProductEditorSection title={title} subtitle={subtitle}>
       {hasTechnicalHtml ? (
         <p className="rounded-xl border border-amber-200 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-900 dark:text-amber-200">
-          Description contains technical HTML/template content. Source remains unchanged.
+          {t.productEditorDescriptionTechnicalHtml}
         </p>
       ) : null}
       <Tabs value={mode} onValueChange={(value) => setMode(value as "clean" | "html" | "full")}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="clean">Clean Preview</TabsTrigger>
-          <TabsTrigger value="html">Source HTML</TabsTrigger>
-          <TabsTrigger value="full">Full Template Preview</TabsTrigger>
+          <TabsTrigger value="clean">{t.productEditorDescriptionCleanPreview}</TabsTrigger>
+          <TabsTrigger value="html">{t.productEditorDescriptionSourceHtml}</TabsTrigger>
+          <TabsTrigger value="full">{t.productEditorDescriptionFullPreview}</TabsTrigger>
         </TabsList>
         <TabsContent value="clean" className="mt-3">
           <ScrollArea className="h-[360px] rounded-xl border border-border bg-background">
@@ -52,18 +54,18 @@ export function ProductEditorDescriptionEditor({
               {previewHtml ? (
                 <div className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:p-1.5 [&_th]:border [&_th]:border-border [&_th]:p-1.5" dangerouslySetInnerHTML={{ __html: previewHtml }} />
               ) : (
-                <p className="text-xs text-muted-foreground">No description content.</p>
+                <p className="text-xs text-muted-foreground">{t.productEditorNoDescriptionContent}</p>
               )}
             </div>
           </ScrollArea>
         </TabsContent>
         <TabsContent value="html" className="mt-3">
-          <FormField label="HTML source">
+          <FormField label={t.productEditorHtmlSourceLabel}>
             <Textarea
               rows={11}
               value={value}
               onChange={(event) => onChange(event.target.value)}
-              placeholder="<p>Product description...</p>"
+              placeholder={t.productEditorDescriptionPlaceholder}
               className="font-mono text-xs"
             />
           </FormField>
@@ -107,6 +109,7 @@ export function ProductEditorGalleryPanel({
   uploadLoading?: boolean;
   hideHeader?: boolean;
 }) {
+  const t = useLabels();
   const mainImage = getGalleryMainImage(images, selectedImage);
   const thumbnails = dedupeGalleryImages(images).slice(0, 10);
 
@@ -114,7 +117,7 @@ export function ProductEditorGalleryPanel({
     <Card className="rounded-xl border-border bg-card shadow-sm">
       {!hideHeader ? (
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Gallery</CardTitle>
+          <CardTitle className="text-sm">{t.productEditorGallerySectionTitle}</CardTitle>
           <CardDescription>{`Images: ${images.length}${removedImagesCount > 0 ? ` | Removed: ${removedImagesCount}` : ""}`}</CardDescription>
         </CardHeader>
       ) : null}
@@ -129,7 +132,7 @@ export function ProductEditorGalleryPanel({
           </div>
         ) : (
           <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 px-3 text-center text-xs text-muted-foreground">
-            No product images loaded.
+            {t.productEditorNoProductImagesLoaded}
           </div>
         )}
 
@@ -157,7 +160,7 @@ export function ProductEditorGalleryPanel({
                     }}
                     className="absolute bottom-1 left-1 h-6 px-1.5 text-[10px]"
                   >
-                    Main
+                    {t.main}
                   </Button>
                 ) : null}
                 {onRemoveImage ? (
@@ -170,7 +173,7 @@ export function ProductEditorGalleryPanel({
                       onRemoveImage(imageUrl);
                     }}
                     className="absolute right-1 top-1"
-                    aria-label="Remove image"
+                    aria-label={t.productEditorRemoveImageTitle}
                   >
                     <X size={10} />
                   </Button>
@@ -180,13 +183,13 @@ export function ProductEditorGalleryPanel({
           </div>
         ) : null}
 
-        <p className="text-[11px] text-muted-foreground">Removed images stay on FTP.</p>
+        <p className="text-[11px] text-muted-foreground">{t.productEditorRemovedImagesStayOnFtp}</p>
 
         {onUploadMainFiles || onUploadAdditionalFiles ? (
           <div className="grid gap-2 sm:grid-cols-2">
             {onUploadMainFiles ? (
               <label className="flex cursor-pointer flex-col gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground">
-                <span>{uploadLoading ? "Uploading main image..." : "Upload main image"}</span>
+                <span>{uploadLoading ? t.productEditorUploadingMainImage : t.productEditorUploadMainImage}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -201,7 +204,7 @@ export function ProductEditorGalleryPanel({
             ) : null}
             {onUploadAdditionalFiles ? (
               <label className="flex cursor-pointer flex-col gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground">
-                <span>{uploadLoading ? "Uploading additional images..." : "Add additional images"}</span>
+                <span>{uploadLoading ? t.productEditorUploadingAdditionalImages : t.productEditorAddAdditionalImages}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -220,9 +223,9 @@ export function ProductEditorGalleryPanel({
 
         {onAddPendingFiles ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/40 p-2">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pending uploads</div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productEditorPendingUploadsTitle}</div>
             <label className="flex cursor-pointer flex-col gap-1.5 rounded-xl border border-border bg-background px-2 py-2 text-xs text-foreground">
-              <span>Select files (local draft only)</span>
+              <span>{t.productEditorSelectFilesLocalOnly}</span>
               <input
                 type="file"
                 multiple
@@ -273,25 +276,32 @@ export function ProductEditorAttributesEditor({
   subtitle,
   attributes,
   onChange,
-  emptyText = "No Artikelmerkmale loaded."
+  emptyText = "No Artikelmerkmale loaded.",
+  readOnly = false
 }: {
   title?: string;
   subtitle?: string;
   attributes: Array<{ key: string; label: string; value: string }>;
   onChange: (attributes: Array<{ key: string; label: string; value: string }>) => void;
   emptyText?: string;
+  readOnly?: boolean;
 }) {
+  const t = useLabels();
   return (
     <ProductEditorSection title={title} subtitle={subtitle}>
       {attributes.length === 0 ? (
-        <p className="rounded-xl border border-border bg-muted px-2.5 py-2 text-xs text-muted-foreground">{emptyText}</p>
+        <p className="rounded-xl border border-border bg-muted px-2.5 py-2 text-xs text-muted-foreground">{emptyText === "No Artikelmerkmale loaded." ? t.productEditorNoArtikelmerkmaleLoaded : emptyText}</p>
       ) : (
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
           {attributes.map((row, index) => (
             <FormField key={`${row.key}-${index}`} label={row.label}>
               <Input
                 value={row.value}
+                readOnly={readOnly}
                 onChange={(event) => {
+                  if (readOnly) {
+                    return;
+                  }
                   const next = attributes.map((current, currentIndex) =>
                     currentIndex === index ? { ...current, value: event.target.value } : current
                   );
@@ -316,6 +326,7 @@ function PendingUploadRow({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const t = useLabels();
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-2 py-1.5">
       <div className="min-w-0">
@@ -327,10 +338,9 @@ function PendingUploadRow({
       </div>
       {canRemove ? (
         <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={onRemove}>
-          Remove
+          {t.productEditorRemoveAction}
         </Button>
       ) : null}
     </div>
   );
 }
-

@@ -24,12 +24,12 @@ export function KauflandSearchCard(props: Props) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle>Kaufland Search</CardTitle>
-        <CardDescription>Query live Kaufland product state and use the same workspace for create, update, and delete actions.</CardDescription>
+        <CardTitle>{t.kauflandSearchTitle}</CardTitle>
+        <CardDescription>{t.kauflandSearchDescription}</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="grid gap-3 md:grid-cols-[1fr_180px_auto]" onSubmit={(event) => void onSubmit(event)}>
-          <Input placeholder="For example: 4070863579360" value={ean} onChange={(event) => onSetEan(event.target.value)} />
+          <Input placeholder={t.kauflandEanExamplePlaceholder} value={ean} onChange={(event) => onSetEan(event.target.value)} />
           <Select value={site} onValueChange={(value) => value && onSetSite(value as KauflandSite)}>
             <SelectTrigger className="h-9 w-full">
               <SelectValue placeholder={t.site} />

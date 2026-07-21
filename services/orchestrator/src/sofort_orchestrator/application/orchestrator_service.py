@@ -5,6 +5,7 @@ from ..domain.models import (
     ChannelResult,
     ErrorContract,
     FinalStatus,
+    Marketplace,
     Operation,
     OrchestrateRequest,
     OrchestrateResponse,
@@ -13,6 +14,7 @@ from ..domain.models import (
 from ..infra.channel_limiter import InMemoryChannelLimiter
 from ..infra.http_client import RetryExhaustedError
 from ..infra.circuit_breaker import InMemoryCircuitBreaker
+from ..infra.ean_pool_gateway import EanPoolGateway
 from ..infra.marketplace_adapters import MarketplaceAdapters
 
 
@@ -22,19 +24,43 @@ class OrchestratorService:
         adapters: MarketplaceAdapters,
         circuit_breaker: InMemoryCircuitBreaker | None = None,
         channel_limiter: InMemoryChannelLimiter | None = None,
+        ean_pool_gateway: EanPoolGateway | None = None,
     ) -> None:
         self.adapters = adapters
         self.circuit_breaker = circuit_breaker
         self.channel_limiter = channel_limiter
+        self.ean_pool_gateway = ean_pool_gateway
 
-    def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:
-        if command.operation is not Operation.UPDATE:
+    def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest, job_id: str | None = None) -> OrchestrateResponse:
+        if command.operation not in {Operation.UPDATE, Operation.PUBLISH}:
             return self._unsupported_operation_response(request_id=request_id, command=command)
 
         results: list[ChannelResult] = []
+        pool_ean = self._claim_pool_ean_if_needed(command=command, job_id=job_id, request_id=request_id)
+        pool_ean_published = False
 
         for channel in command.channels:
             target_label = _target_label(channel)
+            if command.operation is Operation.PUBLISH and channel.marketplace not in {
+                Marketplace.HOOD,
+                Marketplace.KAUFLAND,
+                Marketplace.XLJV,
+            }:
+                results.append(
+                    ChannelResult(
+                        marketplace=channel.marketplace,
+                        target=target_label,
+                        status="failed",
+                        status_code=501,
+                        error=ErrorContract(
+                            code="orchestrator_operation_not_supported",
+                            message="Publish is not supported for this marketplace.",
+                            request_id=request_id,
+                            details={"operation": command.operation.value, "marketplace": channel.marketplace.value},
+                        ),
+                    )
+                )
+                continue
             product_editor_mode = str(channel.overrides.get("__product_editor_mode") or "").strip().lower()
             unknown = validate_changed_fields(channel.marketplace, channel.changed_fields)
             if unknown:
@@ -60,7 +86,7 @@ class OrchestratorService:
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
             scoped_payload.update(channel.overrides)
 
-            missing = [] if product_editor_mode == "jv_batch_apply" else missing_required_fields(channel.marketplace, scoped_payload)
+            missing = [] if product_editor_mode in {"jv_batch_apply", "xl_batch_apply"} else missing_required_fields(channel.marketplace, scoped_payload)
             if missing:
                 results.append(
                     ChannelResult(
@@ -114,11 +140,17 @@ class OrchestratorService:
                 continue
 
             try:
+                channel_ean = ean
+                if channel.ean_source == "pool":
+                    if not pool_ean:
+                        raise RuntimeError("Pool EAN was not allocated.")
+                    channel_ean = pool_ean
                 adapter_result = self.adapters.dispatch(
-                    ean=ean,
+                    ean=channel_ean,
                     request_id=request_id,
                     channel=channel,
                     payload=scoped_payload,
+                    operation=command.operation,
                 )
             except RetryExhaustedError as exc:
                 code = "orchestrator_channel_retry_exhausted"
@@ -167,6 +199,8 @@ class OrchestratorService:
 
             ok = 200 <= adapter_result.status_code < 300
             if ok:
+                if channel.ean_source == "pool":
+                    pool_ean_published = True
                 if self.circuit_breaker is not None:
                     self.circuit_breaker.record_success(breaker_key)
                 results.append(
@@ -209,7 +243,24 @@ class OrchestratorService:
                 )
             )
 
+        if pool_ean_published:
+            self._mark_pool_ean_used(job_id=job_id, request_id=request_id)
+
         return OrchestrateResponse(request_id=request_id, status=_final_status(results), results=results)
+
+    def _claim_pool_ean_if_needed(self, *, command: OrchestrateRequest, job_id: str | None, request_id: str) -> str | None:
+        if not any(channel.ean_source == "pool" for channel in command.channels):
+            return None
+        if not job_id:
+            raise ValueError("Pool EAN allocation requires a queued orchestrator job.")
+        if self.ean_pool_gateway is None:
+            raise RuntimeError("EAN pool gateway is not configured.")
+        return self.ean_pool_gateway.claim_for_job(job_id=job_id, request_id=request_id)
+
+    def _mark_pool_ean_used(self, *, job_id: str | None, request_id: str) -> None:
+        if not job_id or self.ean_pool_gateway is None:
+            raise RuntimeError("EAN pool gateway is not configured.")
+        self.ean_pool_gateway.mark_used_for_job(job_id=job_id, request_id=request_id)
 
     def _unsupported_operation_response(self, *, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:
         results: list[ChannelResult] = []

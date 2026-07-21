@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLabels } from "../../app/use-labels";
 import { ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { buildJvChangedFields } from "./product-editor-model";
 import {
   getJvDeliveryOptions,
   getJvRubricTree,
+  getXlRubricTree,
   type ProductEditorJvDeliveryOption,
   type ProductEditorJvRubricNode
 } from "./product-editor-api";
@@ -31,12 +33,17 @@ const JV_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }
   { key: "JV_CH", label: "JV CH" },
   { key: "JV_CO_UK", label: "JV UK" }
 ] as const;
+const XL_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [
+  { key: "XLMOEBEL_DE", label: "XL DE" }
+] as const;
+const ALL_STRUCTURED_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [...JV_SITE_TABS, ...XL_SITE_TABS];
 let cachedDeliveryOptionsBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>> = {};
 let deliveryOptionsPromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvDeliveryOption[]>>> = {};
 let cachedRubricTreeBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>> = {};
 let rubricTreePromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvRubricNode[]>>> = {};
 
 type ProductEditorJvPanelProps = {
+  groupId: "JV" | "XL";
   draft: ProductEditorJvDraft;
   initialDraft: ProductEditorJvDraft;
   loading: boolean;
@@ -54,6 +61,9 @@ type ProductEditorJvPanelProps = {
 };
 
 export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
+  const t = useLabels();
+  const isXlMode = props.groupId === "XL";
+  const siteTabs = isXlMode ? XL_SITE_TABS : JV_SITE_TABS;
   const baselineSiteKey = resolveJvBaselineSiteKey(props.draft);
   const changedFields = buildJvChangedFields(props.initialDraft, props.draft);
   const galleryState = buildJvGalleryState(props.draft);
@@ -107,9 +117,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       const entries = await Promise.all(
-        JV_SITE_TABS.map(async ({ key }) => {
+        siteTabs.map(async ({ key }) => {
           try {
-            return [key, await loadCachedJvDeliveryOptions(key)] as const;
+            return [key, isXlMode ? [] : await loadCachedJvDeliveryOptions(key)] as const;
           } catch {
             return [key, []] as const;
           }
@@ -124,7 +134,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isXlMode, siteTabs]);
 
   useEffect(() => {
     return () => {
@@ -139,9 +149,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     let mounted = true;
     void (async () => {
       const entries = await Promise.all(
-        JV_SITE_TABS.map(async ({ key }) => {
+        siteTabs.map(async ({ key }) => {
           try {
-            const tree = await loadCachedJvRubricTree(key);
+            const tree = isXlMode ? await loadCachedXlRubricTree(key) : await loadCachedJvRubricTree(key);
             return [key, tree, collectAllCategoryIds(tree)] as const;
           } catch {
             return [key, [], new Set<number>()] as const;
@@ -165,7 +175,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isXlMode, siteTabs]);
 
   const categoriesBySiteKey = getDraftCategoriesBySiteKey(props.draft, baselineSiteKey);
   const currentCategories = categoriesBySiteKey[activeSiteKey] ?? [];
@@ -440,7 +450,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
             <Input
               value={props.eanValue}
               onChange={(event) => props.onChangeEan(event.target.value)}
-              placeholder="Enter EAN, SKU or product ID"
+              placeholder={t.enterEanSkuOrProductId}
               maxLength={100}
               className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
               onKeyDown={(event) => {
@@ -457,21 +467,21 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               disabled={!props.isEanValid || props.searching}
               onClick={props.onSearch}
             >
-              {props.searching ? "Searching..." : "Discover"}
+              {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
             </Button>
           </div>
-          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}</p> : null}
+          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}{isXlMode ? " · source: xl.de" : ""}</p> : null}
         </div>
       }
       headerActions={
         <div className="flex flex-wrap items-center justify-end gap-2">
           {pendingUploadCount > 0 ? (
-            <StatusBadge tone="planned">Images pending {pendingUploadCount}</StatusBadge>
+            <StatusBadge tone="planned">{t.productEditorImagesPending.replace("{count}", String(pendingUploadCount))}</StatusBadge>
           ) : null}
           {isInlineProgressVisible ? (
             <>
               <StatusBadge tone={jobStatus === "failed" ? "missing" : jobStatus === "completed" ? "found" : "planned"}>
-                {progressMessage || progressPhase || jobStatus || "running"}
+                {progressMessage || progressPhase || jobStatus || t.productEditorRunning}
               </StatusBadge>
               <StatusBadge tone={jobStatus === "failed" ? "missing" : "planned"}>
                 {progressCompleted}/{progressTotal || progressCompleted || 0}
@@ -485,88 +495,97 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
             onClick={props.onApplyEditedProducts}
             disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
           >
-            {props.batchApplyLoading ? "Updating..." : "Update Edited Products"}
+            {props.batchApplyLoading ? t.updating : t.updateEditedProducts}
           </Button>
         </div>
       }
       topLeft={
         <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Product name</p>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
           <Input value={productName} onChange={(event) => patchPrimaryName(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
-          <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">urlkey</p>
+          <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.xljvUrlKey}</p>
           <Input value={String(urlKeyValue)} readOnly disabled className="h-11 rounded-xl border-border bg-muted/40 text-sm text-muted-foreground" />
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.priceLabel}</p>
               <Input value={String(priceValue)} onChange={(event) => patchPrice(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
             </div>
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">UVP</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.xljvUvpPrice}</p>
               <Input value={String(uvpValue)} readOnly disabled className="h-11 rounded-xl border-border bg-muted/40 text-sm text-muted-foreground" />
             </div>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
               <div>
-                <p className="text-sm font-semibold text-foreground">Sofort</p>
+                <p className="text-sm font-semibold text-foreground">{t.sofortLabel}</p>
               </div>
-              <Switch checked={isSofortEnabled} onChange={(event) => patchIsSofortEnabled(event.target.checked)} aria-label="Toggle is_sofort enabled state" />
+              <Switch checked={isSofortEnabled} onChange={(event) => patchIsSofortEnabled(event.target.checked)} aria-label={t.sofortLabel} />
             </label>
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
               <div>
-                <p className="text-sm font-semibold text-foreground">Active</p>
+                <p className="text-sm font-semibold text-foreground">{t.activeLabel}</p>
               </div>
-              <Switch checked={isInactiveEnabled} onChange={(event) => patchInaktivEnabled(event.target.checked)} aria-label="Toggle inaktiv enabled state" />
+              <Switch checked={isInactiveEnabled} onChange={(event) => patchInaktivEnabled(event.target.checked)} aria-label={t.activeLabel} />
             </label>
           </div>
           <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3">
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">delivery</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.deliveryLabel}</p>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{activeSiteKey}</span>
               </div>
-              <SiteTabBar
-                activeSiteKey={activeSiteKey}
-                onChange={setActiveSiteKey}
-                renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
-              />
-              <select
-                value={deliveryIdValue}
-                onChange={(event) => patchDeliveryId(event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-              >
-                {deliveryOptions.length === 0 ? (
-                  <option value={deliveryIdValue || ""}>{deliveryIdValue || "No delivery options"}</option>
-                ) : (
-                  deliveryOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))
-                )}
-              </select>
+              {isXlMode ? (
+                <div className="mt-2 rounded-xl border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                  XL DE does not expose JV-style delivery options here.
+                </div>
+              ) : (
+                <>
+                  <SiteTabBar
+                    siteTabs={siteTabs}
+                    activeSiteKey={activeSiteKey}
+                    onChange={setActiveSiteKey}
+                    renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
+                  />
+                  <select
+                    value={deliveryIdValue}
+                    onChange={(event) => patchDeliveryId(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-xl border border-border bg-white px-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {deliveryOptions.length === 0 ? (
+                      <option value={deliveryIdValue || ""}>{deliveryIdValue || "No delivery options"}</option>
+                    ) : (
+                      deliveryOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </>
+              )}
             </div>
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">meta_title</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.metaTitleLabel}</p>
               <Textarea value={metaTitleValue} onChange={(event) => patchPrimaryMetaTitle(event.target.value)} className="min-h-16 rounded-xl border-border bg-white font-sans text-sm" />
             </div>
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">meta_description</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.metaDescriptionLabel}</p>
               <Input value={metaDescriptionValue} onChange={(event) => patchPrimaryMetaDescription(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
             </div>
             <div className="flex min-h-0 flex-col">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">meta_keyword</p>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Lines: {metaKeywordLineCount}</span>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.metaKeywordLabel}</p>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.linesLabel.replace("{count}", String(metaKeywordLineCount))}</span>
               </div>
               <Textarea value={metaKeywordValue} onChange={(event) => patchPrimaryMetaKeyword(event.target.value)} className="min-h-40 rounded-xl border-border bg-white font-sans text-sm" />
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">bezeichnung</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.bezeichnungLabel}</p>
               <Textarea value={bezeichnungValue} onChange={(event) => patchBezeichnung(event.target.value)} className="min-h-44 flex-1 rounded-xl border-border bg-white font-sans text-sm" />
             </div>
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">kurzbeschreibung</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.kurzbeschreibungLabel}</p>
               <Textarea value={kurzbeschreibungValue} onChange={(event) => patchKurzbeschreibung(event.target.value)} className="min-h-16 rounded-xl border-border bg-white font-sans text-sm" />
             </div>
           </div>
@@ -578,9 +597,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
             items={galleryItems}
             selectedItemId={selectedGalleryItemId}
             uploadLoading={false}
-            uploadButtonLabel="Upload images"
-            emptyPreviewLabel="No image"
-            emptyGalleryLabel="No gallery images"
+            uploadButtonLabel={t.productEditorUploadImagesAction}
+            emptyPreviewLabel={t.productEditorNoImage}
+            emptyGalleryLabel={t.productEditorNoGalleryImages}
             onSelectItem={(itemId) => {
               const item = galleryItems.find((entry) => entry.id === itemId);
               if (item) {
@@ -605,12 +624,13 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.categoryLabel}</p>
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {activeSiteKey}: {currentCategories.length}
               </span>
             </div>
             <SiteTabBar
+              siteTabs={siteTabs}
               activeSiteKey={activeSiteKey}
               onChange={setActiveSiteKey}
               renderMeta={(siteKey) => String((categoriesBySiteKey[siteKey] ?? []).length)}
@@ -619,7 +639,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               <Input
                 value={categoryQuery}
                 onChange={(event) => setCategoryQuery(event.target.value)}
-                placeholder="Search category by name or ID"
+                placeholder={t.searchCategoryByNameOrId}
                 className="h-10 rounded-xl border-border bg-white text-sm"
               />
               <Button
@@ -628,12 +648,12 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                 className="h-10 shrink-0 rounded-xl px-3 text-xs font-semibold"
                 onClick={() => setOnlyCheckedCategories((prev) => !prev)}
               >
-                Only checked
+                {t.onlyChecked}
               </Button>
             </div>
             <div className="mt-2 max-h-72 overflow-auto rounded-xl border border-border bg-white">
               {filteredCategoryTree.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-muted-foreground">No categories found</p>
+                <p className="px-3 py-2 text-xs text-muted-foreground">{t.noCategoriesFound}</p>
               ) : (
                 filteredCategoryTree.map((node) => (
                   <CategoryTreeRow
@@ -657,7 +677,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       description={
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">description</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.descriptionLabel}</p>
             <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
               <button
                 type="button"
@@ -667,7 +687,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                   descriptionMode === "code" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Code
+                {t.codeLabel}
               </button>
               <button
                 type="button"
@@ -677,7 +697,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                   descriptionMode === "preview" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Preview
+                {t.previewLabel}
               </button>
             </div>
           </div>
@@ -705,7 +725,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                   suppressContentEditableWarning
                   onBlur={(event) => patchPrimaryDescription(event.currentTarget.innerHTML)}
                 >
-                  No description
+                  {t.noDescription}
                 </div>
               )}
             </div>
@@ -751,6 +771,23 @@ async function loadCachedJvRubricTree(siteKey: ProductEditorJvSiteKey): Promise<
   return rubricTreePromiseBySite[siteKey] ?? [];
 }
 
+async function loadCachedXlRubricTree(siteKey: ProductEditorJvSiteKey): Promise<ProductEditorJvRubricNode[]> {
+  if (cachedRubricTreeBySite[siteKey]) {
+    return cachedRubricTreeBySite[siteKey] ?? [];
+  }
+  if (!rubricTreePromiseBySite[siteKey]) {
+    rubricTreePromiseBySite[siteKey] = getXlRubricTree(siteKey)
+      .then((tree) => {
+        cachedRubricTreeBySite = { ...cachedRubricTreeBySite, [siteKey]: tree };
+        return tree;
+      })
+      .finally(() => {
+        rubricTreePromiseBySite = { ...rubricTreePromiseBySite, [siteKey]: undefined };
+      });
+  }
+  return rubricTreePromiseBySite[siteKey] ?? [];
+}
+
 type CategoryTreeRowProps = {
   node: ProductEditorJvRubricNode;
   level: number;
@@ -764,6 +801,7 @@ type CategoryTreeRowProps = {
 };
 
 function CategoryTreeRow(props: CategoryTreeRowProps) {
+  const t = useLabels();
   const hasChildren = props.node.children.length > 0;
   const expanded = props.expandedCategoryIds.has(props.node.id);
   const selected = props.selectedCategoryIds.has(props.node.id);
@@ -797,7 +835,7 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
         <span className="flex-1 truncate">{props.node.name}</span>
         {selected && props.mainCategoryId === props.node.id ? (
           <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-700">
-            Main category
+            {t.productEditorMainCategory}
           </span>
         ) : null}
         {selected ? (
@@ -807,8 +845,8 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
             className="h-4 w-4 shrink-0 accent-emerald-600"
             checked={props.mainCategoryId === props.node.id}
             onChange={() => props.onSetMainCategory(props.node.id)}
-            title="Main category"
-            aria-label={`Set ${props.node.name} as main category`}
+            title={t.productEditorMainCategory}
+            aria-label={t.productEditorSetMainCategoryAria.replace("{name}", props.node.name)}
           />
         ) : null}
       </div>
@@ -833,6 +871,7 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
 }
 
 type SiteTabBarProps = {
+  siteTabs: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }>;
   activeSiteKey: ProductEditorJvSiteKey;
   onChange: (siteKey: ProductEditorJvSiteKey) => void;
   renderMeta: (siteKey: ProductEditorJvSiteKey) => string;
@@ -841,7 +880,7 @@ type SiteTabBarProps = {
 function SiteTabBar(props: SiteTabBarProps) {
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      {JV_SITE_TABS.map((site) => {
+      {props.siteTabs.map((site) => {
         const active = site.key === props.activeSiteKey;
         return (
           <button
@@ -881,7 +920,7 @@ function toNumber(value: unknown): number {
 
 function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {
   const candidate = String(draft.target_id || draft.jv_fields?.site_key || "").trim().toUpperCase();
-  return JV_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
+  return ALL_STRUCTURED_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
 }
 
 function normalizeCategorySelection(categories: ProductEditorJvCategory[]): ProductEditorJvCategory[] {
@@ -902,7 +941,7 @@ function getDraftCategoriesBySiteKey(
   baselineSiteKey: ProductEditorJvSiteKey
 ): Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> {
   const next: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>> = {};
-  for (const site of JV_SITE_TABS) {
+  for (const site of ALL_STRUCTURED_SITE_TABS) {
     const categories = draft.categories_by_site_key[site.key] ?? (site.key === baselineSiteKey ? draft.categories : []);
     next[site.key] = normalizeCategorySelection(categories);
   }
@@ -914,7 +953,7 @@ function getDraftDeliveryValuesBySiteKey(
   baselineSiteKey: ProductEditorJvSiteKey
 ): Partial<Record<ProductEditorJvSiteKey, string>> {
   const next: Partial<Record<ProductEditorJvSiteKey, string>> = {};
-  for (const site of JV_SITE_TABS) {
+  for (const site of ALL_STRUCTURED_SITE_TABS) {
     const siteFields = draft.jv_fields_by_site_key[site.key] ?? {};
     const baselineValue = site.key === baselineSiteKey ? draft.jv_fields?.lieferzeitid : "";
     next[site.key] = String(siteFields.lieferzeitid ?? baselineValue ?? "").trim();

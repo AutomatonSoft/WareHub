@@ -1,7 +1,6 @@
 import React from "react";
 import { Lock, Mail } from "lucide-react";
 import type { LoginLabels, ResetStep } from "./login-types";
-import { PASSWORD_REQUIREMENTS } from "./login-validators";
 
 type ResetPasswordModalProps = {
   t: LoginLabels;
@@ -90,7 +89,7 @@ export function ResetPasswordModal(props: ResetPasswordModalProps) {
                   value={resetCode}
                   onChange={(e) => setResetCode(e.target.value)}
                   placeholder=" "
-                  aria-label="Code"
+                  aria-label={t.code}
                   inputMode="numeric"
                   required
                 />
@@ -119,7 +118,7 @@ export function ResetPasswordModal(props: ResetPasswordModalProps) {
                   required
                 />
               </div>
-              <p className="field-hint">{PASSWORD_REQUIREMENTS}</p>
+              <p className="field-hint">{t.passwordRequirements}</p>
             </div>
             <div className="field has-icon has-action">
               <span className="field-label">{t.confirmPassword}</span>
@@ -146,7 +145,7 @@ export function ResetPasswordModal(props: ResetPasswordModalProps) {
         {resetMessage ? <div className="form-message">{resetMessage}</div> : null}
         <div className="modal-actions">
           <button type="button" className="ghost-action-button" onClick={onClose}>
-            Close
+            {t.close}
           </button>
         </div>
       </section>

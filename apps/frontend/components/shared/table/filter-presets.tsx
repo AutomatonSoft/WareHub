@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useLabels } from "@/app/use-labels";
 import { Button } from "../button";
 import { Input } from "../input";
 
@@ -35,6 +36,7 @@ function savePresets<T>(scope: string, presets: PresetRecord<T>[]) {
 }
 
 export function FilterPresets<T>({ scope, current, onApply, className }: FilterPresetsProps<T>) {
+  const t = useLabels();
   const [name, setName] = useState("");
   const [presets, setPresets] = useState<PresetRecord<T>[]>(() => loadPresets<T>(scope));
   const [selectedId, setSelectedId] = useState("");
@@ -52,7 +54,7 @@ export function FilterPresets<T>({ scope, current, onApply, className }: FilterP
     setPresets(next);
     savePresets(scope, next);
     setName("");
-    setSrStatus(`Preset ${normalizedName} saved.`);
+    setSrStatus(t.presetSaved.replace("{name}", normalizedName));
   }
 
   function handleDelete() {
@@ -61,7 +63,7 @@ export function FilterPresets<T>({ scope, current, onApply, className }: FilterP
     setPresets(next);
     savePresets(scope, next);
     setSelectedId("");
-    setSrStatus(`Preset deleted.`);
+    setSrStatus(t.presetDeleted);
   }
 
   function handleRename() {
@@ -72,35 +74,35 @@ export function FilterPresets<T>({ scope, current, onApply, className }: FilterP
     setPresets(next);
     savePresets(scope, next);
     setName("");
-    setSrStatus(`Preset renamed to ${normalizedName}.`);
+    setSrStatus(t.presetRenamed.replace("{name}", normalizedName));
   }
 
   function handleClearAll() {
     setPresets([]);
     savePresets(scope, []);
     setSelectedId("");
-    setSrStatus("All presets cleared.");
+    setSrStatus(t.allPresetsCleared);
   }
 
   return (
-    <div className={className ?? "ui-enter-stagger flex w-full flex-wrap items-center gap-2"} role="group" aria-label="Saved filter presets">
+    <div className={className ?? "ui-enter-stagger flex w-full flex-wrap items-center gap-2"} role="group" aria-label={t.savedFilterPresets}>
       <Input
-        aria-label="Preset name"
+        aria-label={t.presetName}
         value={name}
         onChange={(event) => setName(event.target.value)}
-        placeholder="Preset name"
+        placeholder={t.presetName}
         className="h-9 w-full min-w-0 rounded-xl sm:w-[180px]"
       />
       <Button type="button" variant="secondary" className="ui-soft-pop h-9 rounded-xl px-3 text-xs" onClick={handleSave}>
-        Save preset
+        {t.savePreset}
       </Button>
       <select
-        aria-label="Choose preset"
+        aria-label={t.choosePreset}
         className="ui-select focus-ring h-9 w-full min-w-0 rounded-xl px-3 text-sm sm:w-[190px]"
         value={selectedId}
         onChange={(event) => setSelectedId(event.target.value)}
       >
-        <option value="">Presets</option>
+        <option value="">{t.presets}</option>
         {presets.map((item) => (
           <option key={item.id} value={item.id}>
             {item.name}
@@ -115,19 +117,19 @@ export function FilterPresets<T>({ scope, current, onApply, className }: FilterP
         onClick={() => {
           if (!selected) return;
           onApply(selected.data);
-          setSrStatus(`Preset ${selected.name} applied.`);
+          setSrStatus(t.presetApplied.replace("{name}", selected.name));
         }}
       >
-        Apply
+        {t.apply}
       </Button>
       <Button type="button" variant="secondary" className="ui-soft-pop h-9 rounded-xl px-3 text-xs" disabled={!selected || !name.trim()} onClick={handleRename}>
-        Rename
+        {t.rename}
       </Button>
       <Button type="button" variant="secondary" className="ui-soft-pop h-9 rounded-xl px-3 text-xs" disabled={!selected} onClick={handleDelete}>
-        Delete
+        {t.delete}
       </Button>
       <Button type="button" variant="ghost" className="ui-soft-pop h-9 rounded-xl px-2 text-xs" disabled={presets.length === 0} onClick={handleClearAll}>
-        Clear all
+        {t.clearAll}
       </Button>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {srStatus}

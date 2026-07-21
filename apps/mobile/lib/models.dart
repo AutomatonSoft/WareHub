@@ -1,3 +1,5 @@
+import 'warehouse_constants.dart';
+
 class ParsedQrData {
   const ParsedQrData({
     required this.raw,
@@ -14,9 +16,60 @@ class ParsedQrData {
 
 enum ScanFlowAction { receive, unload }
 
+class InventoryFilterOptions {
+  const InventoryFilterOptions({
+    this.places = const <String>[],
+    this.sections = const <String>[],
+    this.locations = const <String>[],
+    this.quantities = const <String>[],
+    this.rooms = const <String>[],
+    this.types = const <String>[],
+    this.companies = const <String>[],
+    this.colors = const <String>[],
+    this.materials = const <String>[],
+  });
+
+  final List<String> places;
+  final List<String> sections;
+  final List<String> locations;
+  final List<String> quantities;
+  final List<String> rooms;
+  final List<String> types;
+  final List<String> companies;
+  final List<String> colors;
+  final List<String> materials;
+
+  factory InventoryFilterOptions.fromJson(Map<String, dynamic> json) {
+    List<String> values(String key) =>
+        (json[key] as List<dynamic>? ?? const <dynamic>[])
+            .map((dynamic value) => '$value'.trim())
+            .where((String value) => value.isNotEmpty)
+            .toList(growable: false);
+
+    final List<String> sections = values('sections')
+        .map(normalizeWarehouseSection)
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+
+    return InventoryFilterOptions(
+      places: values('places'),
+      sections: sections,
+      locations: values('locations'),
+      quantities: values('quantities'),
+      rooms: values('rooms'),
+      types: values('types'),
+      companies: values('companies'),
+      colors: values('colors'),
+      materials: values('materials'),
+    );
+  }
+}
+
 class IntakeData {
   const IntakeData({
     required this.id,
+    required this.databaseKidId,
     required this.qrCode,
     required this.warehouseLocation,
     required this.kidNumber,
@@ -28,6 +81,8 @@ class IntakeData {
     required this.boxTotal,
     required this.unitIndex,
     required this.isBWare,
+    required this.store,
+    required this.inTransit,
     this.bWareComment,
     required this.createdAt,
     required this.isRemoved,
@@ -36,6 +91,7 @@ class IntakeData {
   });
 
   final String id;
+  final int databaseKidId;
   final String qrCode;
   final String warehouseLocation;
   final String kidNumber;
@@ -47,6 +103,8 @@ class IntakeData {
   final int boxTotal;
   final int unitIndex;
   final bool isBWare;
+  final bool store;
+  final bool inTransit;
   final String? bWareComment;
   final String createdAt;
   final bool isRemoved;
@@ -57,6 +115,7 @@ class IntakeData {
 
   IntakeData copyWith({
     String? id,
+    int? databaseKidId,
     String? qrCode,
     String? warehouseLocation,
     String? kidNumber,
@@ -68,6 +127,8 @@ class IntakeData {
     int? boxTotal,
     int? unitIndex,
     bool? isBWare,
+    bool? store,
+    bool? inTransit,
     String? bWareComment,
     String? createdAt,
     bool? isRemoved,
@@ -76,17 +137,23 @@ class IntakeData {
   }) {
     return IntakeData(
       id: id ?? this.id,
+      databaseKidId: databaseKidId ?? this.databaseKidId,
       qrCode: qrCode ?? this.qrCode,
-      warehouseLocation: warehouseLocation ?? this.warehouseLocation,
+      warehouseLocation: warehouseLocation == null
+          ? this.warehouseLocation
+          : normalizeWarehouseLocation(warehouseLocation),
       kidNumber: kidNumber ?? this.kidNumber,
       photoUrl: photoUrl ?? this.photoUrl,
       productKey: productKey ?? this.productKey,
-      section: section ?? this.section,
+      section:
+          section == null ? this.section : normalizeWarehouseSection(section),
       slotNumber: slotNumber ?? this.slotNumber,
       boxIndex: boxIndex ?? this.boxIndex,
       boxTotal: boxTotal ?? this.boxTotal,
       unitIndex: unitIndex ?? this.unitIndex,
       isBWare: isBWare ?? this.isBWare,
+      store: store ?? this.store,
+      inTransit: inTransit ?? this.inTransit,
       bWareComment: bWareComment ?? this.bWareComment,
       createdAt: createdAt ?? this.createdAt,
       isRemoved: isRemoved ?? this.isRemoved,
@@ -98,17 +165,21 @@ class IntakeData {
   factory IntakeData.fromJson(Map<String, dynamic> json) {
     return IntakeData(
       id: '${json['id'] ?? ''}',
+      databaseKidId: json['database_kid_id'] as int? ?? 0,
       qrCode: '${json['qr_code'] ?? ''}',
-      warehouseLocation: '${json['warehouse_location'] ?? ''}',
+      warehouseLocation:
+          normalizeWarehouseLocation('${json['warehouse_location'] ?? ''}'),
       kidNumber: '${json['kid_number'] ?? ''}',
       photoUrl: '${json['photo_url'] ?? ''}',
       productKey: '${json['product_key'] ?? ''}',
-      section: '${json['section'] ?? ''}',
+      section: normalizeWarehouseSection('${json['section'] ?? ''}'),
       slotNumber: json['slot_number'] as int? ?? 0,
       boxIndex: json['box_index'] as int? ?? 1,
       boxTotal: json['box_total'] as int? ?? 1,
       unitIndex: json['unit_index'] as int? ?? 1,
       isBWare: json['is_b_ware'] as bool? ?? false,
+      store: json['store'] as bool? ?? false,
+      inTransit: json['in_transit'] as bool? ?? false,
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty
@@ -150,9 +221,10 @@ class PlacementLocation {
 
   factory PlacementLocation.fromJson(Map<String, dynamic> json) {
     return PlacementLocation(
-      section: '${json['section'] ?? ''}',
+      section: normalizeWarehouseSection('${json['section'] ?? ''}'),
       slotNumber: json['slot_number'] as int? ?? 0,
-      warehouseLocation: '${json['warehouse_location'] ?? ''}',
+      warehouseLocation:
+          normalizeWarehouseLocation('${json['warehouse_location'] ?? ''}'),
     );
   }
 }
@@ -169,9 +241,10 @@ class ExistingPlacement extends PlacementLocation {
 
   factory ExistingPlacement.fromJson(Map<String, dynamic> json) {
     return ExistingPlacement(
-      section: '${json['section'] ?? ''}',
+      section: normalizeWarehouseSection('${json['section'] ?? ''}'),
       slotNumber: json['slot_number'] as int? ?? 0,
-      warehouseLocation: '${json['warehouse_location'] ?? ''}',
+      warehouseLocation:
+          normalizeWarehouseLocation('${json['warehouse_location'] ?? ''}'),
       units: json['units'] as int? ?? 0,
     );
   }

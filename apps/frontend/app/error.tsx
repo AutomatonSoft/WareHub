@@ -13,5 +13,5 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
     console.error("App route error", error);
   }, [error]);
 
-  return <RouteErrorState title="Page error" reset={reset} />;
+  return <RouteErrorState titleKey="pageErrorTitle" descriptionKey="routeErrorDescription" reset={reset} />;
 }

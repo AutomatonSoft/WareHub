@@ -16,7 +16,8 @@ import {
 } from "../../../client-api";
 import { ArrowLeft } from "lucide-react";
 import { inactiveDaysLeft, intakeIsActive } from "../../intake-status";
-import { LANG_KEY, labels, Lang } from "../../../i18n";
+import { dateLocale } from "../../../i18n";
+import { useLabels, useLanguage } from "../../../use-labels";
 
 function normalizeMemo(value: string | null): string {
   if (!value) {
@@ -47,15 +48,9 @@ export default function ItemDetailsPage() {
   const [token, setToken] = useState("");
   const [item, setItem] = useState<IntakeDto | null>(null);
   const [status, setStatus] = useState("Loading...");
-  const [lang, setLang] = useState<Lang>("en");
-  const t = labels[lang];
-
-  useEffect(() => {
-    const savedLang = localStorage.getItem(LANG_KEY) as Lang | null;
-    if (savedLang && labels[savedLang]) {
-      setLang(savedLang);
-    }
-  }, []);
+  const lang = useLanguage();
+  const t = useLabels();
+  const locale = useMemo(() => dateLocale[lang] ?? "en-US", [lang]);
 
   useEffect(() => {
     const auth = readAuth();
@@ -229,12 +224,12 @@ export default function ItemDetailsPage() {
           ) : null}
           <div className="details-box">
             <span>{t.createdAt}</span>
-            <b>{new Date(item.created_at).toLocaleString()}</b>
+            <b>{new Date(item.created_at).toLocaleString(locale)}</b>
           </div>
           {!isActive && item.removed_at ? (
             <div className="details-box">
               <span>{t.markedInactive}</span>
-              <b>{new Date(item.removed_at).toLocaleString()}</b>
+              <b>{new Date(item.removed_at).toLocaleString(locale)}</b>
             </div>
           ) : null}
         </div>

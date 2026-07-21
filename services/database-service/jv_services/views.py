@@ -13,6 +13,15 @@ from .views_read import (
     JVSitesByEANAPIView,
     JVRubricsTreeAPIView,
 )
+from .split_views import (
+    JVBatchApplyByArtikelnrAPIView,
+    JVBatchPlanByArtikelnrAPIView,
+    JVLocalProductByArtikelnrAPIView,
+    JVProductByArtikelnrAPIView,
+    JVProductSyncByArtikelnrAPIView,
+    JVProductUpdateByArtikelnrAPIView,
+    JVSitesByArtikelnrAPIView,
+)
 from .views_write import (
     JVProductCreateAndPushAPIView,
     JVProductCreateAPIView,
@@ -27,15 +36,22 @@ from .views_batch import (
 
 __all__ = [
     "JVBatchApplyByEANAPIView",
+    "JVBatchApplyByArtikelnrAPIView",
     "JVBatchJobStatusAPIView",
     "JVBatchPlanByEANAPIView",
+    "JVBatchPlanByArtikelnrAPIView",
     "JVDeliveryOptionsAPIView",
     "JVLocalProductByEANAPIView",
+    "JVLocalProductByArtikelnrAPIView",
     "JVProductByEANAPIView",
+    "JVProductByArtikelnrAPIView",
     "JVProductCreateAndPushAPIView",
     "JVProductCreateAPIView",
     "JVProductCreateByEANAPIView",
     "JVProductUpdateByEANAPIView",
+    "JVProductSyncByArtikelnrAPIView",
+    "JVProductUpdateByArtikelnrAPIView",
     "JVSitesByEANAPIView",
+    "JVSitesByArtikelnrAPIView",
     "JVRubricsTreeAPIView",
 ]

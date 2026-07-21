@@ -70,7 +70,7 @@ export const SUBCATEGORIES_BY_MAIN: Record<MainCategory, readonly string[]> = {
     "Buffetschränke",
     "Vitrinen"
   ],
-  "Küche": [
+  Küche: [
     "Einbauküchen",
     "Küchenzeilen",
     "Küchenschränke",
@@ -141,6 +141,6 @@ export const SUBCATEGORIES_BY_MAIN: Record<MainCategory, readonly string[]> = {
     "Wanduhren",
     "Kerzen & Kerzenhalter",
     "Spiegel",
-    "Dekoschalen & Tablett"
+    "Dekoschalen & Tabletts"
   ]
 };

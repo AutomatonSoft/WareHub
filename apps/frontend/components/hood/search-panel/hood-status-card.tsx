@@ -25,7 +25,7 @@ export function HoodStatusCard({ statusMeta }: { statusMeta: HoodStatusMeta }) {
         <div>{t.externalPush}: <Badge variant={variant(statusMeta.external_push_status)}>{statusMeta.external_push_status || "-"}</Badge></div>
         <div>{t.responseId}: {statusMeta.response_id ?? "-"}</div>
         <div>{t.updated}: {statusMeta.updated_at || "-"}</div>
-        {statusMeta.external_push_error ? <ErrorState title="Push error" description={statusMeta.external_push_error} className="md:col-span-2" /> : null}
+        {statusMeta.external_push_error ? <ErrorState title={t.hoodPushError} description={statusMeta.external_push_error} className="md:col-span-2" /> : null}
       </CardContent>
     </Card>
   );

@@ -494,16 +494,33 @@ export function XLJVEditPanel(props: XLJVEditPanelProps = {}) {
         .sort((a, b) => (a.siteKey || a.domain).localeCompare(b.siteKey || b.domain));
       setBatchLanguageMaps(languageMapRows.length > 0 ? languageMapRows : fallbackRows);
       if (response.status === 202) {
-        setSuccess("Update request accepted (queued). Changes may appear on target sites after processing.");
+        setSuccess(t.xljvUpdateAcceptedQueued);
       } else {
         setSuccess(t.sentToSelectedSites);
       }
       if ((s.failed ?? 0) > 0) {
-        showToast(`Update completed with errors. Applied: ${s.applied ?? 0}, Failed: ${s.failed ?? 0}, Skipped: ${s.skipped ?? 0}`, "error");
+        showToast(
+          t.xljvUpdateCompletedWithErrors
+            .replace("{applied}", String(s.applied ?? 0))
+            .replace("{failed}", String(s.failed ?? 0))
+            .replace("{skipped}", String(s.skipped ?? 0)),
+          "error"
+        );
       } else if ((s.applied ?? 0) > 0) {
-        showToast(`Changes applied. Applied: ${s.applied ?? 0}, Skipped: ${s.skipped ?? 0}`, "success");
+        showToast(
+          t.xljvChangesAppliedSummary
+            .replace("{applied}", String(s.applied ?? 0))
+            .replace("{skipped}", String(s.skipped ?? 0)),
+          "success"
+        );
       } else {
-        showToast(`No sites were updated. Applied: ${s.applied ?? 0}, Failed: ${s.failed ?? 0}, Skipped: ${s.skipped ?? 0}`, "info");
+        showToast(
+          t.xljvNoSitesUpdatedSummary
+            .replace("{applied}", String(s.applied ?? 0))
+            .replace("{failed}", String(s.failed ?? 0))
+            .replace("{skipped}", String(s.skipped ?? 0)),
+          "info"
+        );
       }
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "";
@@ -559,7 +576,7 @@ export function XLJVEditPanel(props: XLJVEditPanelProps = {}) {
     if (!files || files.length === 0 || !form) return;
     const effectiveSiteKey = (activeSiteKey || siteKey || "").trim();
     if (!effectiveSiteKey) {
-      setError("Site key is required for image upload.");
+      setError(t.xljvSiteKeyRequiredForImageUpload);
       return;
     }
     setImageUploadLoading(true);
@@ -589,7 +606,7 @@ export function XLJVEditPanel(props: XLJVEditPanelProps = {}) {
           ? payload.uploaded_image_urls.map((v: unknown) => String(v || "").trim()).filter(Boolean)
           : [];
         if (targetUrls.length === 0) {
-          uploadErrors.push(`${targetSiteKey}: No uploaded image URLs returned.`);
+          uploadErrors.push(`${targetSiteKey}: ${t.uploadNoImageUrls}`);
           continue;
         }
         const targetPublicUrls = Array.isArray(payload.uploaded_image_public_urls)
@@ -601,7 +618,7 @@ export function XLJVEditPanel(props: XLJVEditPanelProps = {}) {
       const urls = uploadedBySiteKey[effectiveSiteKey] || Object.values(uploadedBySiteKey)[0] || [];
       const publicUrls = uploadedPublicBySiteKey[effectiveSiteKey] || Object.values(uploadedPublicBySiteKey)[0] || [];
       if (urls.length === 0) {
-        throw new Error(uploadErrors[0] || "No uploaded image URLs returned.");
+        throw new Error(uploadErrors[0] || t.uploadNoImageUrls);
       }
       setForm((current) => {
         if (!current) return current;
@@ -641,12 +658,17 @@ export function XLJVEditPanel(props: XLJVEditPanelProps = {}) {
       }
       setSuccess(
         imageRole === "additional"
-          ? `Uploaded ${urls.length} additional image(s) to FTP.`
-          : `Uploaded main image to ${Object.keys(uploadedBySiteKey).length} site(s).${uploadErrors.length > 0 ? ` Partial errors: ${uploadErrors.join(" | ")}` : ""}`
+          ? t.xljvUploadedAdditionalImagesToFtp.replace("{count}", String(urls.length))
+          : t.xljvUploadedMainImageToSites
+              .replace("{count}", String(Object.keys(uploadedBySiteKey).length))
+              .replace(
+                "{errors}",
+                uploadErrors.length > 0 ? ` ${t.xljvUploadPartialErrors.replace("{errors}", uploadErrors.join(" | "))}` : ""
+              )
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
-      setError(message || "Failed to upload images.");
+      setError(message || t.failedUploadImageFiles);
     } finally {
       setImageUploadLoading(false);
     }

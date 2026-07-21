@@ -50,11 +50,8 @@ export function SofortListPagination(props: {
   const visiblePages = buildVisiblePages(props.page, props.totalPages);
 
   return (
-    <div className="wh-sofort-pagination flex flex-col gap-3 border-t border-border/60 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="wh-sofort-pagination flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-        <span className="whitespace-nowrap">
-          {props.labels.total}: {props.totalCount}
-        </span>
         <div className="flex items-center gap-2">
           <span className="whitespace-nowrap">{props.labels.rowsOnPage}</span>
           <Select

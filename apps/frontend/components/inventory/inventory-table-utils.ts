@@ -15,13 +15,12 @@ export type KidDto = {
   quantity?: number | null;
   room?: string | null;
   type?: string | null;
-  listing_status?: "listed" | "unlisted" | string;
   sku?: string | null;
   title: string;
   memo?: string | null;
   status: "paid" | "no_paid" | string;
-  date?: string | null;
-  payment_status?: string | null;
+  order_date?: string | null;
+  full_amount?: string | null;
   global_price?: string | null;
   photo?: unknown;
   photo_count?: number | null;
@@ -41,9 +40,9 @@ export type InventoryRow = {
   title: string;
   memo: string;
   sku: string;
-  paymentStatus: string;
+  fullAmount: string;
   status: string;
-  date: string;
+  orderDate: string;
   photo: string;
   photos: string[];
   photoCount: string;

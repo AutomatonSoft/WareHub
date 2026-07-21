@@ -79,7 +79,8 @@ def add_jv_public_image_urls(payload: dict, *, site_key: str) -> dict:
 
 
 def effective_ean_from_source(product_row: dict, fallback: str) -> str:
-    source_ean = str(product_row.get("ean") or "").strip()
+    source_ean = str(product_row.get("artikelnr") or "").strip()
+    print(source_ean)
     source_model = str(product_row.get("model") or "").strip()
 
     if source_ean and source_ean not in {"0", "1"}:
@@ -89,7 +90,14 @@ def effective_ean_from_source(product_row: dict, fallback: str) -> str:
     return fallback
 
 
-def resolve_local_product_for_source(*, site: str, site_key: str, source_product_id: int, effective_ean: str):
+def resolve_local_product_for_source(
+    *,
+    site: str,
+    site_key: str,
+    source_product_id: int,
+    effective_ean: str,
+    source_model: str | None = None,
+):
     by_source = ImportedProduct.objects.filter(
         site=site,
         site_key=site_key,
@@ -98,13 +106,19 @@ def resolve_local_product_for_source(*, site: str, site_key: str, source_product
     if by_source is not None:
         return by_source, None
 
-    by_ean = ImportedProduct.objects.filter(site=site, site_key=site_key, ean=effective_ean).first()
-    if by_ean is None:
-        return None, None
+    normalized_source_model = str(source_model or "").strip()
+    if normalized_source_model:
+        by_model = ImportedProduct.objects.filter(
+            site=site,
+            site_key=site_key,
+            source_model=normalized_source_model,
+        ).first()
+        if by_model is not None:
+            if int(by_model.source_product_id) != int(source_product_id):
+                return None, by_model
+            return by_model, None
 
-    if int(by_ean.source_product_id) != int(source_product_id):
-        return None, by_ean
-    return by_ean, None
+    return None, None
 
 
 def build_source_payload(snapshot: dict, site: str, site_key: str, query_ean: str) -> dict:
@@ -115,6 +129,7 @@ def build_source_payload(snapshot: dict, site: str, site_key: str, query_ean: st
         site_key=site_key,
         source_product_id=product_row["product_id"],
         effective_ean=effective_ean,
+        source_model=(product_row.get("model") or "").strip(),
     )
     jv_fields = snapshot.get("jv_fields") if str(site or "").upper() == ImportedProduct.Site.JV else None
     payload = {
@@ -188,6 +203,10 @@ def to_date_or_none(value):
         return None
 
 
+def _bounded_text(value, *, max_length: int) -> str:
+    return str(value or "").strip()[:max_length]
+
+
 def sync_children_from_snapshot(product: ImportedProduct, snapshot: dict):
     product.descriptions.all().delete()
     product.categories.all().delete()
@@ -217,11 +236,11 @@ def sync_children_from_snapshot(product: ImportedProduct, snapshot: dict):
             ImportedProductDescription(
                 product=product,
                 language_id=language_id,
-                name=item.get("name") or "",
+                name=_bounded_text(item.get("name"), max_length=255),
                 description=item.get("description") or "",
                 tag=item.get("tag") or "",
-                meta_title=item.get("meta_title") or "",
-                meta_description=item.get("meta_description") or "",
+                meta_title=_bounded_text(item.get("meta_title"), max_length=255),
+                meta_description=_bounded_text(item.get("meta_description"), max_length=255),
                 meta_keyword=item.get("meta_keyword") or "",
                 is_modified_locally=False,
             )

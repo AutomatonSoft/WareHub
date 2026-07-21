@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, ImageIcon, ImagePlus, Loader2, Package2, Palette, Plus, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, ImageIcon, Loader2, Plus, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,23 +9,32 @@ import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { SearchablePicker } from "@/components/ui/searchable-picker";
 import { Textarea } from "@/components/ui/textarea";
+import { useLabels } from "@/app/use-labels";
 import { cn } from "@/lib/utils";
-import { bulkUpdateKids, createMarketplaceToggleJob, fetchKidDetails, getMarketplaceToggleJob, patchKidDetails, patchKidMarketplaceEans, uploadKidImages } from "../inventory-api";
+import {
+  bulkUpdateKids,
+  createMarketplaceToggleJob,
+  deleteInventoryEntity,
+  fetchKidDetails,
+  getMarketplaceToggleJob,
+  patchKidDetails,
+  patchKidMarketplaceEans,
+  uploadKidImages,
+  CreateKidRequestError,
+  type PlaceSuggestionHints,
+} from "../inventory-api";
 import { useToast } from "../../shared/toast-provider";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
 
-const ACCOUNT_EMPTY_VALUE = "__empty_account__";
-const LISTING_STATUS_EMPTY_VALUE = "__empty_listing_status__";
-
 type EditDraftState = {
   kidNumber: string;
   account: "" | "JV" | "XL" | "CH";
   place: string;
-  listingStatus: "" | "listed" | "unlisted";
+  section: string;
   bWare: boolean;
   store: boolean;
   inTransit: boolean;
@@ -75,13 +84,328 @@ type MarketplaceConfirmDialogState = {
   placeError: string | null;
 };
 
+type FullscreenGalleryState = {
+  photos: string[];
+  index: number;
+};
+
+const BLANK_PRODUCT_IMAGE_URL = "https://mediawarehub.veloxdesk.com/warehub/blank.png";
+const PALLET_PRODUCT_IMAGE_URL = "https://mediawarehub.veloxdesk.com/warehub/pallet.png";
+
+type ProductThumbnailProps = {
+  row: SofortListRow;
+  productPhotoAlt: string;
+  onOpenGallery: (photos: string[], startIndex?: number) => void;
+};
+
+function isPalletValue(value: string | null): boolean {
+  return /^(?:\u043f\u0430\u043b\u0435\u0442\u044b|pallets?|paletten)!*$/.test(
+    value?.trim().toLocaleLowerCase("ru-RU") ?? ""
+  );
+}
+
+function isPalletProduct(row: SofortListRow): boolean {
+  return isPalletValue(row.room) || isPalletValue(row.furnitureType);
+}
+
+function ProductThumbnail({ row, productPhotoAlt, onOpenGallery }: ProductThumbnailProps) {
+  if (isPalletProduct(row)) {
+    return (
+      <div className="wh-sofort-product-cell__image wh-sofort-product-cell__image--static">
+        <Image src={PALLET_PRODUCT_IMAGE_URL} alt={row.furnitureType ?? ""} width={240} height={240} unoptimized className="wh-sofort-photo" />
+      </div>
+    );
+  }
+
+  if (row.photo !== "-") {
+    return (
+      <button type="button" className="wh-sofort-product-cell__image" onClick={() => onOpenGallery(row.photoUrls, 0)}>
+        <Image src={row.photo} alt={productPhotoAlt} width={240} height={240} unoptimized className="wh-sofort-photo" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="wh-sofort-product-cell__image wh-sofort-product-cell__image--static">
+      <Image src={BLANK_PRODUCT_IMAGE_URL} alt="" width={240} height={240} unoptimized className="wh-sofort-photo" />
+    </div>
+  );
+}
+
 const MARKETPLACE_CONFIRM_TARGETS = [
   { key: "JV", state: "live" as const },
+  { key: "XL", state: "live" as const },
   { key: "HOOD", state: "live" as const },
   { key: "OTTO", state: "pending" as const },
   { key: "EBAY", state: "pending" as const },
   { key: "KAUFLAND", state: "pending" as const },
 ];
+
+const SECTION_OPTIONS = Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index));
+const ROOM_OPTIONS = [
+  "Wohnzimmer",
+  "Schlafzimmer",
+  "Kinderzimmer",
+  "Jugendzimmer",
+  "Arbeitszimmer",
+  "Homeoffice",
+  "Küche",
+  "Esszimmer",
+  "Flur",
+  "Diele",
+  "Korridor",
+  "Ankleidezimmer",
+  "Badezimmer",
+  "WC",
+  "Hauswirtschaftsraum",
+  "Abstellraum",
+  "Keller",
+  "Dachboden",
+  "Balkon",
+  "Loggia",
+  "Terrasse",
+  "Garten",
+  "Wintergarten",
+  "Gästezimmer",
+  "Spielzimmer",
+  "Bibliothek",
+  "Ruheraum",
+  "Barzimmer",
+  "Heimkino",
+  "Fitnessraum",
+  "Werkstatt",
+  "Büro",
+  "Konferenzraum",
+  "Empfangsbereich",
+  "Wartebereich",
+  "Lounge",
+  "Personalraum",
+];
+const TYPE_OPTIONS = [
+  "Sofa",
+  "Ecksofa",
+  "Schlafsofa",
+  "Modulsofa",
+  "Wohnlandschaft",
+  "Couch",
+  "Sessel",
+  "Relaxsessel",
+  "Fernsehsessel",
+  "Ohrensessel",
+  "Hocker",
+  "Pouf",
+  "Sitzsack",
+  "Bank",
+  "Sitzbank",
+  "Chaiselongue",
+  "Recamiere",
+  "Esstisch",
+  "Couchtisch",
+  "Beistelltisch",
+  "Konsolentisch",
+  "Schreibtisch",
+  "Computertisch",
+  "Gamingtisch",
+  "Schminktisch",
+  "Bartisch",
+  "Gartentisch",
+  "Klapptisch",
+  "Stehtisch",
+  "Servierwagen",
+  "Stuhl",
+  "Esszimmerstuhl",
+  "Freischwinger",
+  "Armlehnstuhl",
+  "Polsterstuhl",
+  "Barhocker",
+  "Bürostuhl",
+  "Drehstuhl",
+  "Gamingstuhl",
+  "Gartenstuhl",
+  "Klappstuhl",
+  "Bett",
+  "Doppelbett",
+  "Einzelbett",
+  "Boxspringbett",
+  "Polsterbett",
+  "Massivholzbett",
+  "Futonbett",
+  "Kinderbett",
+  "Babybett",
+  "Hochbett",
+  "Etagenbett",
+  "Gästebett",
+  "Klappbett",
+  "Wasserbett",
+  "Matratze",
+  "Lattenrost",
+  "Topper",
+  "Bettkasten",
+  "Kopfteil",
+  "Kleiderschrank",
+  "Schwebetürenschrank",
+  "Drehtürenschrank",
+  "Eckschrank",
+  "Garderobenschrank",
+  "Schuhschrank",
+  "Badezimmerschrank",
+  "Hängeschrank",
+  "Hochschrank",
+  "Unterschrank",
+  "Aktenschrank",
+  "Küchenschrank",
+  "Apothekerschrank",
+  "Kommode",
+  "Sideboard",
+  "Highboard",
+  "Lowboard",
+  "TV-Lowboard",
+  "Vitrine",
+  "Regal",
+  "Wandregal",
+  "Bücherregal",
+  "CD-Regal",
+  "Weinregal",
+  "Truhe",
+  "Aufbewahrungsbox",
+  "Garderobe",
+  "Kleiderständer",
+  "Wandgarderobe",
+  "Garderobenpaneel",
+  "Schuhbank",
+  "Spiegel",
+  "Schirmständer",
+  "Küchenblock",
+  "Kücheninsel",
+  "Küchentisch",
+  "Küchenstuhl",
+  "Küchenregal",
+  "Küchenwagen",
+  "Waschbeckenunterschrank",
+  "Spiegelschrank",
+  "Badezimmerregal",
+  "Badspiegel",
+  "Badewanne",
+  "Dusche",
+  "Duschkabine",
+  "WC",
+  "Waschbecken",
+  "Deckenleuchte",
+  "Pendelleuchte",
+  "Hängeleuchte",
+  "Stehlampe",
+  "Tischlampe",
+  "Wandleuchte",
+  "Nachttischlampe",
+  "LED-Leuchte",
+  "Außenleuchte",
+  "Teppich",
+  "Hochflorteppich",
+  "Kurzflorteppich",
+  "Läufer",
+  "Outdoor-Teppich",
+  "Kinderteppich",
+  "Vorhang",
+  "Gardine",
+  "Rollo",
+  "Plissee",
+  "Bettwäsche",
+  "Kissen",
+  "Dekokissen",
+  "Kissenbezug",
+  "Decke",
+  "Tagesdecke",
+  "Plaid",
+  "Handtuch",
+  "Badteppich",
+  "Bild",
+  "Wandbild",
+  "Leinwandbild",
+  "Poster",
+  "Bilderrahmen",
+  "Wanduhr",
+  "Tischuhr",
+  "Vase",
+  "Blumenvase",
+  "Pflanzgefäß",
+  "Blumentopf",
+  "Kunstpflanze",
+  "Zimmerpflanze",
+  "Kerzenständer",
+  "Kerze",
+  "Laterne",
+  "Windlicht",
+  "Skulptur",
+  "Figur",
+  "Dekofigur",
+  "Büste",
+  "Schale",
+  "Dekoschale",
+  "Dekotablett",
+  "Ornament",
+  "Globus",
+  "Sanduhr",
+  "Wickelkommode",
+  "Hochstuhl",
+  "Kinderschrank",
+  "Kinderregal",
+  "Kindertisch",
+  "Kinderstuhl",
+  "Spielzeugkiste",
+  "Rollcontainer",
+  "Konferenztisch",
+  "Gartenmöbel",
+  "Gartensofa",
+  "Gartenbank",
+  "Gartenliege",
+  "Hängematte",
+  "Hollywoodschaukel",
+  "Pavillon",
+  "Sonnenschirm",
+  "Pflanzkübel",
+  "Elektrokamin",
+  "Ethanolkamin",
+  "Kaminumrandung",
+  "Katzenbaum",
+  "Hundebett",
+  "Tierregal",
+  "Futterstation",
+  "Schuhregal",
+  "Standuhr",
+  "Gemälde",
+  "Kunstdruck",
+  "Fotobild",
+  "Kerzenhalter",
+  "Tablett",
+  "Korb",
+  "Aufbewahrungskorb",
+  "Schmuckkasten",
+  "Schmuckständer",
+  "Zeitschriftenständer",
+  "Flaschenregal",
+  "Raumteiler",
+];
+
+function stripCyrillic(value: string): string {
+  return value.replace(/[А-Яа-яЁё]/g, "");
+}
+
+function normalizePlaceValue(value: string): string {
+  const sanitized = stripCyrillic(value).toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (!/^\d/.test(sanitized)) return "";
+  const match = sanitized.match(/^(\d{0,5})([A-Z]?)/);
+  if (!match) return "";
+  const [, digits = "", suffix = ""] = match;
+  return `${digits}${suffix}`;
+}
+
+function normalizeSectionValue(value: string): string {
+  return stripCyrillic(value).toUpperCase().replace(/[^A-Z]/g, "");
+}
+
+function normalizeLatinTextValue(value: string): string {
+  return stripCyrillic(value);
+}
 
 function displayNullable(value: string | null): string {
   if (value === null) return "-";
@@ -136,8 +460,8 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     kidNumber: row.kidNumber,
     account: "",
     place: row.place ?? "",
-    listingStatus: row.listingStatus,
-    bWare: false,
+    section: row.section ?? "",
+    bWare: row.bWare,
     store: row.store,
     inTransit: false,
     commentary: row.commentary ?? "",
@@ -161,9 +485,62 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     kauflandXl: row.siteEans.kauflandXl,
     hoodJv: row.siteEans.hoodJv,
     hoodXl: row.siteEans.hoodXl,
-    photoUrls: row.photo && row.photo !== "-" ? [row.photo] : [],
+    photoUrls: row.photoUrls,
     photoFiles: []
   };
+}
+
+function buildKidDetailsHref(row: SofortListRow): string {
+  const kidSlug = encodeURIComponent((row.kidNumber || String(row.kidId)).trim());
+  const params = new URLSearchParams();
+  params.set("kidId", String(row.kidId));
+  if (row.orderDbId !== null) {
+    params.set("orderDbId", String(row.orderDbId));
+  }
+  if (row.photoUrls[0]) {
+    params.set("photo", row.photoUrls[0]);
+  } else if (row.photo) {
+    params.set("photo", row.photo);
+  }
+  params.set("place", row.place);
+  if (row.section) {
+    params.set("section", row.section);
+  }
+  if (row.room) {
+    params.set("room", row.room);
+  }
+  if (row.furnitureType) {
+    params.set("type", row.furnitureType);
+  }
+  if (row.company) {
+    params.set("company", row.company);
+  }
+  if (row.color) {
+    params.set("color", row.color);
+  }
+  if (row.size) {
+    params.set("size", row.size);
+  }
+  if (row.material) {
+    params.set("material", row.material);
+  }
+  params.set("quantity", String(row.quantity));
+  if (row.price) {
+    params.set("price", row.price);
+  }
+  if (row.priceCurrency) {
+    params.set("currency", row.priceCurrency);
+  }
+  if (row.ean) {
+    params.set("ean", row.ean);
+  }
+  if (row.commentary) {
+    params.set("commentary", row.commentary);
+  }
+  if (row.bWare) {
+    params.set("bWare", "true");
+  }
+  return `/sofort-list/${kidSlug}?${params.toString()}`;
 }
 
 function FieldError({ message }: { message?: string | null }) {
@@ -172,29 +549,17 @@ function FieldError({ message }: { message?: string | null }) {
 }
 
 function SectionCard({
-  icon: Icon,
-  title,
-  description,
   children,
   className = ""
 }: {
-  icon: typeof Package2;
-  title: string;
-  description: string;
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`rounded-[var(--radius-card)] border border-border/70 bg-muted/20 p-4 ${className}`}>
-      <div className="mb-3.5 flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-border/80 bg-background text-primary">
-          <Icon size={16} />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
-        </div>
-      </div>
+    <section className={cn(
+      "rounded-[calc(var(--radius-card)+2px)] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_40px_-32px_rgba(15,23,42,0.24)]",
+      className,
+    )}>
       {children}
     </section>
   );
@@ -212,12 +577,31 @@ function CompactField({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="space-y-2">
+      <label htmlFor={htmlFor} className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
         {label}
       </label>
       {children}
       <FieldError message={error} />
+    </div>
+  );
+}
+
+function PlaceSuggestionNote({
+  suggestions,
+  labels,
+}: {
+  suggestions: PlaceSuggestionHints | null;
+  labels: { subplaceSuggestion: string; baseSuggestion: string };
+}) {
+  if (!suggestions || (!suggestions.sameBaseSubplace && !suggestions.nextFreeBasePlace)) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1 rounded-[var(--radius-control)] border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-900">
+      {suggestions.sameBaseSubplace ? <p>{labels.subplaceSuggestion}: {suggestions.sameBaseSubplace}</p> : null}
+      {suggestions.nextFreeBasePlace ? <p>{labels.baseSuggestion}: {suggestions.nextFreeBasePlace}</p> : null}
     </div>
   );
 }
@@ -242,6 +626,8 @@ function StatusFlagField({
 export function SofortListTableShell(props: {
   rows: SofortListRow[];
   query: string;
+  availablePlaces: string[];
+  occupiedPlaces: string[];
   selectedRowIds: Set<string>;
   allVisibleSelected: boolean;
   placeholderEan: string;
@@ -260,6 +646,7 @@ export function SofortListTableShell(props: {
     activate: string;
     delete: string;
     deleteFailed: string;
+    deleteBlockedByMarketplace: string;
     markedActive: string;
     markedInactive: string;
     deactivate: string;
@@ -283,32 +670,106 @@ export function SofortListTableShell(props: {
   };
 }) {
   const { labels } = props;
+  const t = useLabels();
   const { showToast } = useToast();
-  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
+  const [fullscreenGallery, setFullscreenGallery] = useState<FullscreenGalleryState | null>(null);
   const [editingRow, setEditingRow] = useState<SofortListRow | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraftState | null>(null);
   const [photoPreviews, setPhotoPreviews] = useState<PhotoPreview[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deactivatingRowId, setDeactivatingRowId] = useState<string | null>(null);
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editPlaceSuggestions, setEditPlaceSuggestions] = useState<PlaceSuggestionHints | null>(null);
   const [marketplaceResult, setMarketplaceResult] = useState<MarketplaceResultDialogState | null>(null);
   const [marketplaceConfirm, setMarketplaceConfirm] = useState<MarketplaceConfirmDialogState | null>(null);
+  const hasQuantityDeactivationWarning = Boolean(
+    marketplaceConfirm?.inactive && marketplaceConfirm.row.quantity > 1
+  );
+  const [customRoomOptions, setCustomRoomOptions] = useState<string[]>([]);
+  const [customTypeOptions, setCustomTypeOptions] = useState<string[]>([]);
+  const availablePlaceOptions = Array.from(new Set([
+    ...(editDraft?.place ? [editDraft.place] : []),
+    ...props.availablePlaces,
+  ].map((value) => String(value || "").trim()).filter(Boolean)));
+  const roomOptions = Array.from(new Set([...ROOM_OPTIONS, ...customRoomOptions].map((value) => String(value || "").trim()).filter(Boolean)));
+  const typeOptions = Array.from(new Set([...TYPE_OPTIONS, ...customTypeOptions].map((value) => String(value || "").trim()).filter(Boolean)));
+  const addCustomOptionTemplate = typeof t.addCustomOption === "string" && t.addCustomOption.trim()
+    ? t.addCustomOption
+    : "Добавить свой вариант: {value}";
+  const occupiedExactPlaces = new Set(
+    props.occupiedPlaces.map((value) => String(value || "").trim().toUpperCase()).filter(Boolean)
+  );
+  const normalizedPlaceQuery = String(editDraft?.place || "").trim().toUpperCase();
+  const filteredPlaceOptions = availablePlaceOptions.filter((place) =>
+    !normalizedPlaceQuery || place.toUpperCase().startsWith(normalizedPlaceQuery)
+  );
+  const isPlaceOccupied = normalizedPlaceQuery.length > 0 && occupiedExactPlaces.has(normalizedPlaceQuery);
+  const activeFullscreenPhoto = fullscreenGallery ? fullscreenGallery.photos[fullscreenGallery.index] ?? null : null;
+
+  function openFullscreenGallery(photos: string[], startIndex = 0) {
+    const normalizedPhotos = photos.map((photo) => photo.trim()).filter(Boolean);
+    if (normalizedPhotos.length === 0) return;
+    const safeIndex = Math.max(0, Math.min(startIndex, normalizedPhotos.length - 1));
+    setFullscreenGallery({ photos: normalizedPhotos, index: safeIndex });
+  }
+
+  function closeFullscreenPhoto() {
+    if (!fullscreenGallery) return;
+    setFullscreenGallery(null);
+    window.history.back();
+  }
+
+  function showPreviousFullscreenPhoto() {
+    setFullscreenGallery((current) => {
+      if (!current || current.photos.length <= 1) return current;
+      return {
+        ...current,
+        index: current.index === 0 ? current.photos.length - 1 : current.index - 1,
+      };
+    });
+  }
+
+  function showNextFullscreenPhoto() {
+    setFullscreenGallery((current) => {
+      if (!current || current.photos.length <= 1) return current;
+      return {
+        ...current,
+        index: current.index === current.photos.length - 1 ? 0 : current.index + 1,
+      };
+    });
+  }
 
   useEffect(() => {
-    if (!fullscreenPhoto) return;
+    if (!fullscreenGallery) return;
 
     window.history.pushState({ sofortPhotoViewer: true }, "");
 
     const handlePopState = () => {
-      setFullscreenPhoto(null);
+      setFullscreenGallery(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFullscreenGallery(null);
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        showPreviousFullscreenPhoto();
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        showNextFullscreenPhoto();
+      }
     };
 
     window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [fullscreenPhoto]);
+  }, [fullscreenGallery]);
 
   useEffect(() => {
     const nextPreviews = (editDraft?.photoFiles ?? []).map((file) => ({
@@ -330,6 +791,7 @@ export function SofortListTableShell(props: {
     let active = true;
     setLoadingDetails(true);
     setEditError(null);
+    setEditPlaceSuggestions(null);
 
     void fetchKidDetails(editingRow.kidId)
       .then((details) => {
@@ -341,7 +803,7 @@ export function SofortListTableShell(props: {
             kidNumber: details.kidNumber || base.kidNumber,
             account: details.account ?? "",
             place: details.place,
-            listingStatus: details.listingStatus,
+            section: details.section,
             bWare: details.bWare,
             store: details.store,
             inTransit: details.inTransit,
@@ -354,7 +816,7 @@ export function SofortListTableShell(props: {
       })
       .catch((error) => {
         if (!active) return;
-        setEditError(error instanceof Error ? error.message : "Failed to load product details.");
+        setEditError(error instanceof Error ? error.message : t.failedLoadProductDetails);
       })
       .finally(() => {
         if (active) {
@@ -365,17 +827,13 @@ export function SofortListTableShell(props: {
     return () => {
       active = false;
     };
-  }, [editingRow]);
-
-  function closeFullscreenPhoto() {
-    if (!fullscreenPhoto) return;
-    setFullscreenPhoto(null);
-  }
+  }, [editingRow, t.failedLoadProductDetails]);
 
   function openEditModal(row: SofortListRow) {
     setEditingRow(row);
     setEditDraft(createEditDraft(row));
     setEditError(null);
+    setEditPlaceSuggestions(null);
   }
 
   function closeEditModal() {
@@ -383,6 +841,9 @@ export function SofortListTableShell(props: {
     setEditingRow(null);
     setEditDraft(null);
     setEditError(null);
+    setEditPlaceSuggestions(null);
+    setCustomRoomOptions([]);
+    setCustomTypeOptions([]);
     setLoadingDetails(false);
   }
 
@@ -397,10 +858,6 @@ export function SofortListTableShell(props: {
       nextPhotoUrls[index] = value;
       return { ...current, photoUrls: nextPhotoUrls };
     });
-  }
-
-  function addPhotoUrlRow() {
-    setEditDraft((current) => (current ? { ...current, photoUrls: [...current.photoUrls, ""] } : current));
   }
 
   function removePhotoUrl(index: number) {
@@ -422,6 +879,7 @@ export function SofortListTableShell(props: {
 
     setSavingEdit(true);
     setEditError(null);
+    setEditPlaceSuggestions(null);
 
     try {
       const uploadedPhotoUrls =
@@ -431,17 +889,15 @@ export function SofortListTableShell(props: {
         ...uploadedPhotoUrls.map((value) => value.trim()).filter(Boolean)
       ];
 
-      const normalizedListingStatus = editDraft.listingStatus === "listed" ? "listed" : "unlisted";
-
       await patchKidDetails({
         kidId: editingRow.kidId,
         kidNumber: editDraft.kidNumber.trim(),
         account: editDraft.account || null,
         place: editDraft.place,
+        section: editDraft.section,
         photoUrls: normalizedPhotoUrls,
         room: editDraft.room,
         furnitureType: editDraft.furnitureType,
-        listingStatus: normalizedListingStatus,
         bWare: editDraft.bWare,
         store: editDraft.store,
         commentary: editDraft.commentary,
@@ -460,8 +916,7 @@ export function SofortListTableShell(props: {
             size: editDraft.size.trim() || undefined,
             material: editDraft.material.trim() || undefined,
             price: editDraft.price.trim() || undefined,
-            currency: editDraft.currency.trim() || undefined,
-            listingStatus: normalizedListingStatus
+            currency: editDraft.currency.trim() || undefined
           }
         ]
       });
@@ -502,8 +957,10 @@ export function SofortListTableShell(props: {
         ean: normalizedEan,
         siteEans: normalizedSiteEans,
         photo: normalizedPhotoUrls[0] ?? "-",
+        photoUrls: normalizedPhotoUrls,
         photoCount: normalizedPhotoUrls.length,
         place: editDraft.place.trim(),
+        section: editDraft.section.trim() || null,
         store: editDraft.store,
         quantity: Number.isFinite(nextQuantity) ? nextQuantity : 0,
         room: editDraft.room.trim() || null,
@@ -514,14 +971,14 @@ export function SofortListTableShell(props: {
         size: editDraft.size.trim() || null,
         material: editDraft.material.trim() || null,
         price: editDraft.price.trim() || null,
-        priceCurrency: editDraft.currency.trim() || null,
-        listingStatus: normalizedListingStatus
+        priceCurrency: editDraft.currency.trim() || null
       };
 
       props.onUpdateRow(nextRow);
       closeEditModal();
     } catch (requestError) {
-      setEditError(requestError instanceof Error ? requestError.message : "Failed to save changes.");
+      setEditError(requestError instanceof Error ? requestError.message : t.failedSaveChanges);
+      setEditPlaceSuggestions(requestError instanceof CreateKidRequestError ? requestError.placeSuggestions : null);
     } finally {
       setSavingEdit(false);
     }
@@ -535,7 +992,7 @@ export function SofortListTableShell(props: {
       }
       await waitMs(400);
     }
-    throw new Error(`Marketplace toggle job ${jobId} polling timed out.`);
+    throw new Error(t.marketplaceToggleTimedOut.replace("{jobId}", jobId));
   }
 
   async function runMarketplaceAction(row: SofortListRow, nextInactive: boolean, nextPlace: string) {
@@ -556,15 +1013,33 @@ export function SofortListTableShell(props: {
   }
 
   function requestMarketplaceAction(row: SofortListRow) {
-    if (deactivatingRowId) return;
+    if (deactivatingRowId || deletingRowId) return;
     const nextInactive = row.marketplaceActive !== false;
     setMarketplaceConfirm({ row, inactive: nextInactive, nextPlace: "", placeError: null });
+  }
+
+  async function runDeleteAction(row: SofortListRow) {
+    if (deletingRowId || deactivatingRowId || row.marketplaceActive === true) return;
+
+    setDeletingRowId(row.id);
+    try {
+      await deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId });
+      if (editingRow?.kidId === row.kidId) {
+        closeEditModal();
+      }
+      props.onRefresh();
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : props.labels.deleteFailed;
+      showToast(message, "error");
+    } finally {
+      setDeletingRowId(null);
+    }
   }
 
   return (
     <div className="wh-sofort-table-shell">
       <div className="wh-sofort-table-frame">
-        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table hidden max-w-full overflow-x-hidden overflow-y-visible px-0 pb-0 pt-0 md:block">
+        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table hidden max-w-full overflow-x-hidden overflow-y-visible px-0 pb-0 pt-0 xl:block">
           <table className="ui-listing-table wh-sofort-data-table wh-sofort-table-grid w-full border-separate border-spacing-y-0 text-left text-sm">
             <colgroup>
               <col className="wh-sofort-col wh-sofort-col--select" />
@@ -581,31 +1056,31 @@ export function SofortListTableShell(props: {
             <thead>
               <tr className="ui-table-head-row sticky top-0 z-10">
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--select wh-sofort-cell wh-sofort-cell--narrow py-3 text-center">
-                  <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label="Select visible rows" />
+                  <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label={t.selectVisibleRows} />
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--place wh-sofort-cell py-3 text-left">
                   <span className="ui-table-head-label">{labels.place.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--image wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">IMAGE</span>
+                  <span className="ui-table-head-label">{t.image.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--product wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">PRODUCT</span>
+                  <span className="ui-table-head-label">{t.product.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--attributes wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">ATTRIBUTES</span>
+                  <span className="ui-table-head-label">{t.attributes.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--commentary wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">COMMENTARY</span>
+                  <span className="ui-table-head-label">{t.commentary.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--price wh-sofort-cell py-3 text-left">
-                  <span className="ui-table-head-label">EAN</span>
+                  <span className="ui-table-head-label">{t.ean}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-head-cell wh-sofort-head-cell--marketplace wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">MARKETPLACE EAN</span>
+                  <span className="ui-table-head-label">{t.marketplaceEanTitle.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="ui-listing-head-cell wh-sofort-actions-head wh-sofort-head-cell wh-sofort-head-cell--actions wh-sofort-cell py-3 text-center">
-                  <span className="ui-table-head-label">ACTIONS</span>
+                  <span className="ui-table-head-label">{t.actions.toUpperCase()}</span>
                 </th>
                 <th scope="col" className="hidden wh-sofort-head-cell wh-sofort-head-cell--hidden">
                   <span className="inline-flex items-center gap-1">{labels.quantity.toUpperCase()}</span>
@@ -619,57 +1094,62 @@ export function SofortListTableShell(props: {
                     <Checkbox
                       checked={props.selectedRowIds.has(row.id)}
                       onCheckedChange={() => props.onToggleRowSelection(row.id)}
-                      aria-label={`Select row ${row.kidNumber}`}
+                      aria-label={t.selectRow.replace("{kid}", row.kidNumber)}
                     />
                   </td>
                   <td className="wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-place-cell">
-                      <span className="wh-sofort-place-cell__value" title={row.place}>
-                        {props.highlightText(row.place, props.query)}
+                      <span
+                        className="wh-sofort-place-cell__value"
+                        title={row.section ? `${row.section} ${row.place}` : row.place}
+                      >
+                        {props.highlightText(row.section ? `${row.section} ${row.place}` : row.place, props.query)}
                       </span>
-                      <span className="wh-sofort-place-cell__location" title={`Location ${row.store ? "Store" : "Warehouse"}`}>
-                        {props.highlightText(row.store ? "Store" : "Warehouse", props.query)}
+                      <span className="wh-sofort-place-cell__location" title={`${t.location} ${row.store ? t.store : t.warehouse}`}>
+                        {props.highlightText(row.store ? t.store : t.warehouse, props.query)}
                       </span>
                     </div>
                   </td>
                   <td className="wh-sofort-image-cell wh-sofort-cell py-3 text-center align-middle">
-                    {row.photo !== "-" ? (
-                      <button type="button" className="wh-sofort-product-cell__image" onClick={() => setFullscreenPhoto(row.photo)}>
-                        <Image src={row.photo} alt={`Kid ${row.kidNumber}`} width={240} height={240} unoptimized className="wh-sofort-photo" />
-                      </button>
-                    ) : (
-                      <div className="wh-sofort-product-cell__image">
-                        <div className="wh-sofort-photo-placeholder" />
-                      </div>
-                    )}
+                    <ProductThumbnail
+                      row={row}
+                      productPhotoAlt={t.productPhotoForKid.replace("{kid}", row.kidNumber)}
+                      onOpenGallery={openFullscreenGallery}
+                    />
                   </td>
                   <td className="wh-sofort-product-cell-wrap wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-product-cell">
                       <div className="wh-sofort-product-cell__content">
                         <p className="wh-sofort-product-cell__title wh-inventory-title-text">
-                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">KID: </span>
-                          <span className="wh-sofort-product-cell__title-value">{row.kidNumber && row.kidNumber !== "-" ? row.kidNumber : "—"}</span>
+                          <span className="wh-sofort-product-cell__title-label ui-table-data-meta">{t.kid}: </span>
+                          {row.kidNumber && row.kidNumber !== "-" ? (
+                            <Link href={buildKidDetailsHref(row)} className="wh-sofort-kid-value-link">
+                              {row.kidNumber}
+                            </Link>
+                          ) : (
+                            <span className="wh-sofort-product-cell__title-value">—</span>
+                          )}
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `Price ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `Price ${displayNullable(row.price)}`}>
-                          Price: {props.highlightText(
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={row.price !== null ? `${t.price} ${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}` : `${t.price} ${displayNullable(row.price)}`}>
+                          {t.price}: {props.highlightText(
                             row.price !== null
                               ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
                               : displayNullable(row.price),
                             props.query
                           )}
                         </p>
-                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`Quantity ${row.quantity}`}>Quantity: {props.highlightText(String(row.quantity), props.query)}</p>
+                        <p className="wh-sofort-product-cell__meta ui-table-data-secondary" title={`${t.quantity} ${row.quantity}`}>{t.quantity}: {props.highlightText(String(row.quantity), props.query)}</p>
                       </div>
                     </div>
                   </td>
                   <td className="wh-sofort-attributes-cell wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-warehouse-cell">
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Room ${displayNullable(row.room)}`}><span>Room:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Type ${displayNullable(row.furnitureType)}`}><span>Type:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Company ${displayNullable(row.company)}`}><span>Company:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Color ${displayNullable(row.color)}`}><span>Color:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Size ${displayNullable(row.size)}`}><span>Size:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
-                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`Material ${displayNullable(row.material)}`}><span>Material:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.room} ${displayNullable(row.room)}`}><span>{t.room}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.room), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.type} ${displayNullable(row.furnitureType)}`}><span>{t.type}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.furnitureType), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.company} ${displayNullable(row.company)}`}><span>{t.company}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.company), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.color} ${displayNullable(row.color)}`}><span>{t.color}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.color), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.size} ${displayNullable(row.size)}`}><span>{t.size}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.size), props.query)}</span></p>
+                      <p className="wh-sofort-warehouse-cell__line ui-table-data-secondary" title={`${t.material} ${displayNullable(row.material)}`}><span>{t.material}:</span><span className="wh-sofort-warehouse-cell__value">{props.highlightText(displayNullable(row.material), props.query)}</span></p>
                     </div>
                   </td>
                   <td className="wh-sofort-commentary-cell-wrap wh-sofort-cell py-3 align-middle">
@@ -690,9 +1170,18 @@ export function SofortListTableShell(props: {
                     <SofortListMarketplaceMatrix
                       siteEans={row.siteEans}
                       siteEanStatuses={row.siteEanStatuses}
+                      bWare={row.bWare}
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
+                      labels={{
+                        matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
+                        jv: "JV",
+                        xl: "XL",
+                        matched: t.matched,
+                        value: t.value,
+                        empty: t.noValue,
+                      }}
                     />
                   </td>
                   <td className="wh-sofort-actions-cell wh-sofort-cell py-3 align-middle">
@@ -700,18 +1189,30 @@ export function SofortListTableShell(props: {
                       <Link
                         href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
                         className={buttonVariants({ variant: "default", size: "sm", className: "min-w-[68px]" })}
+                        aria-disabled={deletingRowId === row.id}
+                        tabIndex={deletingRowId === row.id ? -1 : undefined}
                       >
-                        Create
+                        {t.create}
                       </Link>
-                      <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)}>Edit</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)} disabled={deletingRowId === row.id || deactivatingRowId === row.id}>{t.edit}</Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => requestMarketplaceAction(row)}
-                        disabled={deactivatingRowId === row.id}
+                        disabled={deactivatingRowId === row.id || deletingRowId === row.id}
                       >
-                        {deactivatingRowId === row.id ? "..." : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                        {deactivatingRowId === row.id ? t.working : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void runDeleteAction(row)}
+                        disabled={deletingRowId === row.id || deactivatingRowId === row.id || row.marketplaceActive === true}
+                        title={row.marketplaceActive === true ? props.labels.deleteBlockedByMarketplace : undefined}
+                      >
+                        {deletingRowId === row.id ? t.deleting : props.labels.delete}
                       </Button>
                     </div>
                   </td>
@@ -721,14 +1222,160 @@ export function SofortListTableShell(props: {
             </tbody>
           </table>
         </div>
+        <div className="wh-sofort-mobile-list xl:hidden">
+          <div className="wh-sofort-mobile-list__toolbar">
+            <label className="wh-sofort-mobile-list__select-all">
+              <Checkbox checked={props.allVisibleSelected} onCheckedChange={props.onToggleSelectVisible} aria-label={t.selectVisibleRows} />
+              <span>{t.selectVisibleRows}</span>
+            </label>
+          </div>
+          <div className="wh-sofort-mobile-list__items">
+            {props.rows.map((row) => (
+              <article key={`mobile-${row.id}`} className="wh-sofort-mobile-card">
+                <div className="wh-sofort-mobile-card__top">
+                  <label className="wh-sofort-mobile-card__checkbox">
+                    <Checkbox
+                      checked={props.selectedRowIds.has(row.id)}
+                      onCheckedChange={() => props.onToggleRowSelection(row.id)}
+                      aria-label={t.selectRow.replace("{kid}", row.kidNumber)}
+                    />
+                  </label>
+                  <div className="wh-sofort-mobile-card__place">
+                    <span className="wh-sofort-place-cell__value">
+                      {props.highlightText(row.section ? `${row.section} ${row.place}` : row.place, props.query)}
+                    </span>
+                    <span className="wh-sofort-place-cell__location">
+                      {props.highlightText(row.store ? t.store : t.warehouse, props.query)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="wh-sofort-mobile-card__main">
+                  <div className="wh-sofort-mobile-card__image-wrap">
+                    <ProductThumbnail
+                      row={row}
+                      productPhotoAlt={t.productPhotoForKid.replace("{kid}", row.kidNumber)}
+                      onOpenGallery={openFullscreenGallery}
+                    />
+                  </div>
+
+                  <div className="wh-sofort-mobile-card__content">
+                    <div className="wh-sofort-mobile-card__section wh-sofort-mobile-card__section--summary">
+                      <p className="wh-sofort-mobile-card__title">
+                        <span>{t.kid}:</span>
+                        {row.kidNumber && row.kidNumber !== "-" ? (
+                          <Link href={buildKidDetailsHref(row)} className="wh-sofort-kid-value-link">
+                            {row.kidNumber}
+                          </Link>
+                        ) : (
+                          <strong>—</strong>
+                        )}
+                      </p>
+                      <p className="wh-sofort-mobile-card__meta">{t.quantity}: {props.highlightText(String(row.quantity), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta">
+                        {t.price}: {props.highlightText(
+                          row.price !== null
+                            ? `${displayNullable(row.price)} ${displayNullable(row.priceCurrency)}`
+                            : displayNullable(row.price),
+                          props.query
+                        )}
+                      </p>
+                      <p className="wh-sofort-mobile-card__meta">{t.ean}: {props.highlightText(row.ean.trim() && row.ean !== props.placeholderEan ? row.ean : "—", props.query) || "—"}</p>
+                    </div>
+
+                    <div className="wh-sofort-mobile-card__section wh-sofort-mobile-card__section--attributes">
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.room}:</span> {props.highlightText(displayNullable(row.room), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.type}:</span> {props.highlightText(displayNullable(row.furnitureType), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.company}:</span> {props.highlightText(displayNullable(row.company), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.color}:</span> {props.highlightText(displayNullable(row.color), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.size}:</span> {props.highlightText(displayNullable(row.size), props.query)}</p>
+                      <p className="wh-sofort-mobile-card__meta"><span>{t.material}:</span> {props.highlightText(displayNullable(row.material), props.query)}</p>
+                    </div>
+
+                    {row.commentary ? (
+                      <div className="wh-sofort-mobile-card__section wh-sofort-mobile-card__section--commentary">
+                        <p className="wh-sofort-mobile-card__commentary">{props.highlightText(displayNullable(row.commentary), props.query)}</p>
+                      </div>
+                    ) : null}
+
+                    <div className="wh-sofort-mobile-card__section wh-sofort-mobile-card__section--marketplace">
+                      <SofortListMarketplaceMatrix
+                        siteEans={row.siteEans}
+                        siteEanStatuses={row.siteEanStatuses}
+                        bWare={row.bWare}
+                        query={props.query}
+                        placeholderEan={props.placeholderEan}
+                        highlightText={props.highlightText}
+                        labels={{
+                          matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
+                          jv: "JV",
+                          xl: "XL",
+                          matched: t.matched,
+                          value: t.value,
+                          empty: t.noValue,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="wh-sofort-mobile-card__actions">
+                  <Link
+                    href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
+                    className={buttonVariants({ variant: "default", size: "sm" })}
+                    aria-disabled={deletingRowId === row.id}
+                    tabIndex={deletingRowId === row.id ? -1 : undefined}
+                  >
+                    {t.create}
+                  </Link>
+                  <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)} disabled={deletingRowId === row.id || deactivatingRowId === row.id}>{t.edit}</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => requestMarketplaceAction(row)}
+                    disabled={deactivatingRowId === row.id || deletingRowId === row.id}
+                  >
+                    {deactivatingRowId === row.id ? t.working : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void runDeleteAction(row)}
+                    disabled={deletingRowId === row.id || deactivatingRowId === row.id || row.marketplaceActive === true}
+                    title={row.marketplaceActive === true ? props.labels.deleteBlockedByMarketplace : undefined}
+                  >
+                    {deletingRowId === row.id ? t.deleting : props.labels.delete}
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
       </div>
-      {fullscreenPhoto ? (
+      {activeFullscreenPhoto ? (
         <div className="wh-sofort-photo-viewer" role="dialog" aria-modal="true" onClick={closeFullscreenPhoto}>
-          <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label="Close image viewer">
-            Close
+          <button type="button" className="wh-sofort-photo-viewer__close" onClick={closeFullscreenPhoto} aria-label={t.closeImageViewer}>
+            {t.close}
           </button>
           <div className="wh-sofort-photo-viewer__content" onClick={(event) => event.stopPropagation()}>
-            <Image src={fullscreenPhoto} alt="Product image" width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
+            {fullscreenGallery && fullscreenGallery.photos.length > 1 ? (
+              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--prev" onClick={showPreviousFullscreenPhoto} aria-label="Previous photo">
+                <ChevronLeft size={24} />
+              </button>
+            ) : null}
+            <Image src={activeFullscreenPhoto} alt={t.productPhoto} width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
+            {fullscreenGallery && fullscreenGallery.photos.length > 1 ? (
+              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--next" onClick={showNextFullscreenPhoto} aria-label="Next photo">
+                <ChevronRight size={24} />
+              </button>
+            ) : null}
+            {fullscreenGallery && fullscreenGallery.photos.length > 1 ? (
+              <div className="wh-sofort-photo-viewer__counter">
+                {fullscreenGallery.index + 1} / {fullscreenGallery.photos.length}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -769,13 +1416,30 @@ export function SofortListTableShell(props: {
                 </div>
               </div>
 
+              {hasQuantityDeactivationWarning ? (
+                <div className="rounded-xl border border-amber-300/70 bg-amber-50 p-4 text-amber-950">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden="true" />
+                    <div>
+                      <p className="text-sm font-semibold">{t.confirmActionQuantityWarningTitle}</p>
+                      <p className="mt-1 text-sm leading-6">
+                        {t.confirmActionQuantityWarningMessage.replace(
+                          "{quantity}",
+                          String(marketplaceConfirm.row.quantity)
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {props.labels.confirmActionDetails}
                 </p>
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  <p>KID: {marketplaceConfirm.row.kidNumber}</p>
-                  <p>EAN: {marketplaceConfirm.row.ean || "—"}</p>
+                  <p>{t.kid}: {marketplaceConfirm.row.kidNumber}</p>
+                  <p>{t.ean}: {marketplaceConfirm.row.ean || "—"}</p>
                   <p>{props.labels.confirmActionCurrentPlace}: {marketplaceConfirm.row.place || "—"}</p>
                 </div>
               </div>
@@ -806,7 +1470,7 @@ export function SofortListTableShell(props: {
 
               <div className="rounded-xl border border-border/70 bg-background p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Marketplace
+                  {t.marketplace}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {MARKETPLACE_CONFIRM_TARGETS.map((target) => (
@@ -831,7 +1495,9 @@ export function SofortListTableShell(props: {
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setMarketplaceConfirm(null)}>
-              {props.labels.confirmActionCancel}
+              {hasQuantityDeactivationWarning
+                ? t.confirmActionQuantityWarningCancel
+                : props.labels.confirmActionCancel}
             </Button>
             <Button
               type="button"
@@ -847,7 +1513,11 @@ export function SofortListTableShell(props: {
                 void runMarketplaceAction(row, inactive, nextPlace);
               }}
             >
-              {marketplaceConfirm?.inactive ? props.labels.deactivate : props.labels.activate}
+              {hasQuantityDeactivationWarning
+                ? t.confirmActionQuantityWarningConfirm
+                : marketplaceConfirm?.inactive
+                  ? props.labels.deactivate
+                  : props.labels.activate}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -892,375 +1562,369 @@ export function SofortListTableShell(props: {
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setMarketplaceResult(null)}>Close</Button>
+            <Button type="button" variant="outline" onClick={() => setMarketplaceResult(null)}>{t.close}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(editingRow)} onOpenChange={(open) => { if (!open) closeEditModal(); }}>
-        <DialogContent className="!flex !w-[min(1120px,calc(100vw-32px))] !max-w-[1120px] !gap-0 !p-0 h-auto max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl">
+        <DialogContent className="!flex !w-[min(1180px,calc(100vw-32px))] !max-w-[1180px] !gap-0 !p-0 h-auto max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl">
           <DialogHeader className="sticky top-0 z-20 border-b border-[#e5e7eb] bg-background px-5 py-4 sm:px-6">
-            <DialogTitle>Edit product</DialogTitle>
+            <DialogTitle>{t.editProductTitle}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-            <div className="flex flex-col gap-4 pb-6">
-              <div className="rounded-lg border border-emerald-300/60 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                <strong>Editing mode</strong>
-                {editingRow ? ` · KID ${editingRow.kidNumber} · Place ${editingRow.place}` : ""}
-              </div>
-
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-2 pb-6">
               {editDraft ? (
                 <>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,0.92fr)] xl:items-start">
-                    <SectionCard
-                      icon={Package2}
-                      title="Identity & Status"
-                      description="Database kid fields, operational flags and listing state."
-                    >
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                        <div className="xl:col-span-4">
-                          <CompactField label="Kid Number" htmlFor="edit-kid-number">
-                            <Input
-                              id="edit-kid-number"
-                              className="h-10 rounded-[var(--radius-control)]"
-                              value={editDraft.kidNumber}
-                              onChange={(event) => updateDraft("kidNumber", event.target.value)}
+                  <div className="grid gap-2 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,400px)] xl:items-start">
+                    <div className="space-y-2">
+                      <SectionCard>
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
+                          <div className="min-w-0 xl:col-span-12">
+                            <CompactField label={t.kidNumber} htmlFor="edit-kid-number">
+                              <Input
+                                id="edit-kid-number"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.kidNumber}
+                                onChange={(event) => updateDraft("kidNumber", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-2">
+                            <CompactField label={t.place} htmlFor="edit-kid-place">
+                              <SearchablePicker
+                                id="edit-kid-place"
+                                value={editDraft.place}
+                                options={availablePlaceOptions}
+                                placeholder={t.notSelected}
+                                searchPlaceholder={t.place}
+                                emptyLabel={t.noAvailablePlaces}
+                                invalid={isPlaceOccupied}
+                                invalidLabel={t.placeOccupied}
+                                normalizeValue={normalizePlaceValue}
+                                onValueChange={(value) => updateDraft("place", value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-2">
+                            <CompactField label={t.section} htmlFor="edit-kid-section">
+                              <SearchablePicker
+                                id="edit-kid-section"
+                                value={editDraft.section}
+                                options={SECTION_OPTIONS}
+                                placeholder={t.notSelected}
+                                searchPlaceholder={t.section}
+                                emptyLabel={t.noAvailableSections}
+                                maxLength={1}
+                                normalizeValue={normalizeSectionValue}
+                                onValueChange={(value) => updateDraft("section", value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-4">
+                            <CompactField label={t.room} htmlFor="edit-kid-room">
+                              <SearchablePicker
+                                id="edit-kid-room"
+                                value={editDraft.room}
+                                options={roomOptions}
+                                placeholder={t.notSelected}
+                                searchPlaceholder={t.room}
+                                emptyLabel={t.noAvailableRooms}
+                                canCreate
+                                createLabel={addCustomOptionTemplate.replace("{value}", editDraft.room.trim() || "")}
+                                onCreateOption={(value) => {
+                                  setCustomRoomOptions((current) => Array.from(new Set([...current, value])));
+                                  updateDraft("room", value);
+                                }}
+                                normalizeValue={normalizeLatinTextValue}
+                                onValueChange={(value) => updateDraft("room", value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 md:col-span-2 xl:col-span-4">
+                            <CompactField label={t.type} htmlFor="edit-kid-type">
+                              <SearchablePicker
+                                id="edit-kid-type"
+                                value={editDraft.furnitureType}
+                                options={typeOptions}
+                                placeholder={t.notSelected}
+                                searchPlaceholder={t.type}
+                                emptyLabel={t.noAvailableTypes}
+                                canCreate
+                                createLabel={addCustomOptionTemplate.replace("{value}", editDraft.furnitureType.trim() || "")}
+                                onCreateOption={(value) => {
+                                  setCustomTypeOptions((current) => Array.from(new Set([...current, value])));
+                                  updateDraft("furnitureType", value);
+                                }}
+                                normalizeValue={normalizeLatinTextValue}
+                                onValueChange={(value) => updateDraft("furnitureType", value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="md:col-span-2 xl:col-span-12">
+                            <PlaceSuggestionNote
+                              suggestions={editPlaceSuggestions}
+                              labels={{ subplaceSuggestion: t.subplaceSuggestion, baseSuggestion: t.baseSuggestion }}
                             />
-                          </CompactField>
-                        </div>
+                          </div>
 
-                        <div className="xl:col-span-2">
-                          <CompactField label="Account" htmlFor="edit-kid-account">
-                            <Select
-                              value={editDraft.account || ACCOUNT_EMPTY_VALUE}
-                              onValueChange={(nextValue) => updateDraft("account", nextValue === ACCOUNT_EMPTY_VALUE ? "" : (nextValue as EditDraftState["account"]))}
-                            >
-                              <SelectTrigger id="edit-kid-account" className="h-10 w-full min-w-0 rounded-[var(--radius-control)]">
-                                <span className={`min-w-0 truncate text-left ${editDraft.account ? "text-foreground" : "text-muted-foreground"}`}>
-                                  {editDraft.account || "Not selected"}
-                                </span>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={ACCOUNT_EMPTY_VALUE}>Not selected</SelectItem>
-                                <SelectItem value="JV">JV</SelectItem>
-                                <SelectItem value="XL">XL</SelectItem>
-                                <SelectItem value="CH">CH</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </CompactField>
-                        </div>
-
-                        <CompactField label="Place" htmlFor="edit-kid-place">
-                          <Input
-                            id="edit-kid-place"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.place}
-                            onChange={(event) => updateDraft("place", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Room" htmlFor="edit-kid-room">
-                          <Input
-                            id="edit-kid-room"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.room}
-                            onChange={(event) => updateDraft("room", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Type" htmlFor="edit-kid-type">
-                          <Input
-                            id="edit-kid-type"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.furnitureType}
-                            onChange={(event) => updateDraft("furnitureType", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Listing Status" htmlFor="edit-kid-listing-status">
-                          <Select
-                            value={editDraft.listingStatus || LISTING_STATUS_EMPTY_VALUE}
-                            onValueChange={(nextValue) => updateDraft("listingStatus", nextValue === LISTING_STATUS_EMPTY_VALUE ? "" : (nextValue as EditDraftState["listingStatus"]))}
-                          >
-                            <SelectTrigger id="edit-kid-listing-status" className="h-10 w-full min-w-0 rounded-[var(--radius-control)]">
-                              <span className={`min-w-0 truncate text-left ${editDraft.listingStatus ? "text-foreground" : "text-muted-foreground"}`}>
-                                {editDraft.listingStatus || "Not selected"}
-                              </span>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={LISTING_STATUS_EMPTY_VALUE}>Not selected</SelectItem>
-                              <SelectItem value="listed">listed</SelectItem>
-                              <SelectItem value="unlisted">unlisted</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </CompactField>
-
-                        <div className="md:col-span-2 xl:col-span-6">
-                          <CompactField label="Commentary" htmlFor="edit-kid-commentary">
-                            <Textarea
-                              id="edit-kid-commentary"
-                              className="min-h-[112px] w-full resize-y rounded-[var(--radius-control)] px-3 py-2.5"
-                              value={editDraft.commentary}
-                              onChange={(event) => updateDraft("commentary", event.target.value)}
-                            />
-                          </CompactField>
-                        </div>
-
-                        <div className="md:col-span-2 xl:col-span-6">
-                          <div className="grid gap-3 sm:grid-cols-3">
-                            <StatusFlagField label="B-Ware" checked={editDraft.bWare} onCheckedChange={(checked) => updateDraft("bWare", checked)} />
-                            <StatusFlagField label="Store" checked={editDraft.store} onCheckedChange={(checked) => updateDraft("store", checked)} />
-                            <StatusFlagField label="In Transit" checked={editDraft.inTransit} onCheckedChange={(checked) => updateDraft("inTransit", checked)} />
+                          <div className="md:col-span-2 xl:col-span-12">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <StatusFlagField label={t.bWare} checked={editDraft.bWare} onCheckedChange={(checked) => updateDraft("bWare", checked)} />
+                              <StatusFlagField label={t.store} checked={editDraft.store} onCheckedChange={(checked) => updateDraft("store", checked)} />
+                              <StatusFlagField label={t.inTransit} checked={editDraft.inTransit} onCheckedChange={(checked) => updateDraft("inTransit", checked)} />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </SectionCard>
+                      </SectionCard>
 
-                    <SectionCard
-                      icon={Palette}
-                      title="Product Attributes"
-                      description="Product attributes stored alongside the kid record."
-                      className="h-full"
-                    >
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <CompactField label="Quantity" htmlFor="edit-kid-quantity">
-                          <Input
-                            id="edit-kid-quantity"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            inputMode="numeric"
-                            value={editDraft.quantity}
-                            onChange={(event) => updateDraft("quantity", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Price" htmlFor="edit-kid-price">
-                          <Input
-                            id="edit-kid-price"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            inputMode="decimal"
-                            value={editDraft.price}
-                            onChange={(event) => updateDraft("price", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Currency" htmlFor="edit-kid-currency">
-                          <Input
-                            id="edit-kid-currency"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.currency}
-                            onChange={(event) => updateDraft("currency", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Company" htmlFor="edit-kid-company">
-                          <Input
-                            id="edit-kid-company"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.company}
-                            onChange={(event) => updateDraft("company", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Color" htmlFor="edit-kid-color">
-                          <Input
-                            id="edit-kid-color"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.color}
-                            onChange={(event) => updateDraft("color", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Size" htmlFor="edit-kid-size">
-                          <Input
-                            id="edit-kid-size"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.size}
-                            onChange={(event) => updateDraft("size", event.target.value)}
-                          />
-                        </CompactField>
-
-                        <CompactField label="Material" htmlFor="edit-kid-material">
-                          <Input
-                            id="edit-kid-material"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.material}
-                            onChange={(event) => updateDraft("material", event.target.value)}
-                          />
-                        </CompactField>
-                      </div>
-                    </SectionCard>
-                  </div>
-
-                  <SectionCard
-                    icon={ImagePlus}
-                    title="Photos"
-                    description="Edit all linked product photos and append multiple new uploads."
-                  >
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_320px]">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-primary/15 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary">
-                            <ImageIcon size={14} />
-                            <span>{editDraft.photoUrls.length} linked photo{editDraft.photoUrls.length === 1 ? "" : "s"}</span>
+                      <SectionCard>
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
+                          <div className="min-w-0 xl:col-span-6">
+                            <CompactField label={t.quantity} htmlFor="edit-kid-quantity">
+                              <Input
+                                id="edit-kid-quantity"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                inputMode="numeric"
+                                value={editDraft.quantity}
+                                onChange={(event) => updateDraft("quantity", event.target.value)}
+                              />
+                            </CompactField>
                           </div>
-                          <Button type="button" variant="outline" size="sm" className="gap-2" onClick={addPhotoUrlRow}>
-                            <Plus size={14} />
-                            Add photo URL
-                          </Button>
-                        </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="min-w-0 xl:col-span-6">
+                            <CompactField label={t.price} htmlFor="edit-kid-price">
+                              <Input
+                                id="edit-kid-price"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                inputMode="decimal"
+                                value={editDraft.price}
+                                onChange={(event) => updateDraft("price", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-6">
+                            <CompactField label={t.company} htmlFor="edit-kid-company">
+                              <Input
+                                id="edit-kid-company"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.company}
+                                onChange={(event) => updateDraft("company", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-6">
+                            <CompactField label={t.color} htmlFor="edit-kid-color">
+                              <Input
+                                id="edit-kid-color"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.color}
+                                onChange={(event) => updateDraft("color", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 xl:col-span-6">
+                            <CompactField label={t.size} htmlFor="edit-kid-size">
+                              <Input
+                                id="edit-kid-size"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.size}
+                                onChange={(event) => updateDraft("size", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="min-w-0 md:col-span-2 xl:col-span-6">
+                            <CompactField label={t.material} htmlFor="edit-kid-material">
+                              <Input
+                                id="edit-kid-material"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.material}
+                                onChange={(event) => updateDraft("material", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="md:col-span-2 xl:col-span-12">
+                            <CompactField label={t.commentary} htmlFor="edit-kid-commentary">
+                              <Textarea
+                                id="edit-kid-commentary"
+                                className="min-h-[132px] w-full resize-y rounded-[var(--radius-control)] px-3 py-2.5"
+                                value={editDraft.commentary}
+                                onChange={(event) => updateDraft("commentary", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+                        </div>
+                      </SectionCard>
+
+                      <SectionCard>
+                        <div className="space-y-4">
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <CompactField label={t.mainEan} htmlFor="edit-main-ean">
+                              <Input
+                                id="edit-main-ean"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.ean}
+                                onChange={(event) => updateDraft("ean", event.target.value)}
+                              />
+                            </CompactField>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>{t.market}</span>
+                                <span>JV</span>
+                                <span>XL</span>
+                              </div>
+
+                              {[
+                                { label: t.sites, jvKey: "jv", xlKey: "xl" },
+                                { label: "OTTO", jvKey: "ottoJv", xlKey: "ottoXl" },
+                                { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl" },
+                                { label: "KAUFLAND", jvKey: "kauflandJv", xlKey: "kauflandXl" },
+                                { label: "HOOD", jvKey: "hoodJv", xlKey: "hoodXl" }
+                              ].map((market) => (
+                                <div key={market.label} className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
+                                  <span className="truncate text-xs font-semibold text-muted-foreground">{market.label}</span>
+                                  <Input
+                                    className="h-10 min-w-0 rounded-[var(--radius-control)]"
+                                    value={editDraft[market.jvKey as keyof EditDraftState] as string}
+                                    onChange={(event) => updateDraft(market.jvKey as keyof EditDraftState, event.target.value as never)}
+                                    placeholder={t.jvEanPlaceholder}
+                                  />
+                                  <Input
+                                    className="h-10 min-w-0 rounded-[var(--radius-control)]"
+                                    value={editDraft[market.xlKey as keyof EditDraftState] as string}
+                                    onChange={(event) => updateDraft(market.xlKey as keyof EditDraftState, event.target.value as never)}
+                                    placeholder={t.xlEanPlaceholder}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </SectionCard>
+                    </div>
+
+                    <SectionCard className="self-start xl:sticky xl:top-0">
+                      <div className="space-y-4">
+                        <div className="space-y-2.5">
                           {editDraft.photoUrls.length > 0 ? (
                             editDraft.photoUrls.map((photoUrl, index) => (
-                              <div key={`photo-url-${index}`} className="rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
-                                <div className="mb-3 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[calc(var(--radius-control)-4px)] border border-border/70 bg-muted/25">
-                                  {photoUrl.trim() ? (
-                                    <Image src={photoUrl.trim()} alt={`Photo ${index + 1}`} width={240} height={180} unoptimized className="h-full w-full object-cover" />
-                                  ) : (
-                                    <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                                      <ImageIcon size={18} />
-                                      <span className="text-[11px]">Awaiting URL</span>
+                              <div key={`photo-url-${index}`} className="rounded-[calc(var(--radius-control)+2px)] border border-slate-200/80 bg-white p-3 shadow-[0_10px_24px_-26px_rgba(15,23,42,0.4)]">
+                                <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
+                                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/70">
+                                    {photoUrl.trim() ? (
+                                      <button
+                                        type="button"
+                                        className="block h-full w-full"
+                                        onClick={() => openFullscreenGallery(editDraft.photoUrls, index)}
+                                      >
+                                        <Image src={photoUrl.trim()} alt={t.photoLabel.replace("{index}", String(index + 1))} fill unoptimized className="object-cover" />
+                                      </button>
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center text-slate-400">
+                                        <ImageIcon size={18} />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex-1 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                        {t.photoLabel.replace("{index}", String(index + 1))}
+                                      </p>
+                                      <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-slate-500 hover:text-destructive" onClick={() => removePhotoUrl(index)}>
+                                        <X size={14} />
+                                      </Button>
                                     </div>
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <CompactField label={`Photo URL ${index + 1}`} htmlFor={`edit-photo-url-${index}`}>
                                     <Input
                                       id={`edit-photo-url-${index}`}
                                       className="h-10 rounded-[var(--radius-control)]"
                                       value={photoUrl}
-                                      placeholder="https://..."
+                                      placeholder={t.photoUrlPlaceholder}
                                       onChange={(event) => updatePhotoUrl(index, event.target.value)}
                                     />
-                                  </CompactField>
-                                  <div className="flex justify-end">
-                                    <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => removePhotoUrl(index)}>
-                                      <X size={14} />
-                                      Remove
-                                    </Button>
+                                    {!photoUrl.trim() ? (
+                                      <p className="text-[11px] text-slate-400">{t.awaitingUrl}</p>
+                                    ) : null}
                                   </div>
                                 </div>
                               </div>
                             ))
                           ) : (
-                            <div className="sm:col-span-2 flex min-h-[180px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
-                              No linked photos yet. Add manual URLs or upload several new images below.
+                            <div className="flex min-h-[160px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
+                              {t.noLinkedPhotosHint}
                             </div>
                           )}
                         </div>
-                      </div>
 
-                      <div className="space-y-3 rounded-[var(--radius-control)] border border-dashed border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] p-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-semibold text-foreground">Upload new photos</p>
-                          <p className="text-xs leading-5 text-muted-foreground">Multiple JPG, PNG or WebP images will be appended to the existing photo set on save.</p>
-                        </div>
-                        <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[var(--radius-control)] border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40">
-                          <Upload size={14} className="text-primary" />
-                          <span>Choose files</span>
-                          <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            className="sr-only"
-                            onChange={(event) => {
-                              const nextFiles = Array.from(event.target.files ?? []);
-                              if (nextFiles.length === 0) return;
-                              setEditDraft((current) => (
-                                current
-                                  ? {
-                                      ...current,
-                                      photoFiles: [...current.photoFiles, ...nextFiles]
-                                    }
-                                  : current
-                              ));
-                              event.currentTarget.value = "";
-                            }}
-                          />
-                        </label>
-                        <div className="space-y-2">
-                          {photoPreviews.length > 0 ? (
-                            photoPreviews.map((preview, index) => (
-                              <div key={`${preview.file.name}-${preview.file.size}-${preview.file.lastModified}`} className="flex items-center gap-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-2.5">
-                                <div className="relative h-14 w-14 overflow-hidden rounded-lg border border-border/70 bg-muted/30">
-                                  <Image src={preview.url} alt={preview.file.name} fill unoptimized className="object-cover" />
+                        <div className="space-y-3">
+                          <label className="flex min-h-[112px] w-full cursor-pointer items-center justify-center rounded-[calc(var(--radius-control)+2px)] border border-dashed border-slate-300/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.99)_0%,rgba(248,250,252,0.94)_100%)] p-3 shadow-[0_10px_24px_-26px_rgba(15,23,42,0.4)] transition-colors hover:border-emerald-300/80 hover:bg-emerald-50/30">
+                            <span className="flex size-12 items-center justify-center rounded-full border border-emerald-200/80 bg-white text-emerald-600 shadow-sm">
+                              <Plus size={22} />
+                            </span>
+                            <span className="sr-only">{t.chooseFiles}</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(event) => {
+                                const nextFiles = Array.from(event.target.files ?? []);
+                                if (nextFiles.length === 0) return;
+                                setEditDraft((current) => (
+                                  current
+                                    ? {
+                                        ...current,
+                                        photoFiles: [...current.photoFiles, ...nextFiles]
+                                      }
+                                    : current
+                                ));
+                                event.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                          <div className="space-y-2">
+                            {photoPreviews.length > 0 ? (
+                              photoPreviews.map((preview, index) => (
+                                <div key={`${preview.file.name}-${preview.file.size}-${preview.file.lastModified}`} className="flex items-center gap-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-2.5">
+                                  <div className="relative h-14 w-14 overflow-hidden rounded-lg border border-border/70 bg-muted/30">
+                                    <Image src={preview.url} alt={preview.file.name} fill unoptimized className="object-cover" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium text-foreground" title={preview.file.name}>
+                                      {preview.file.name}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">{formatFileSize(preview.file.size)}</p>
+                                  </div>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => removePhotoFile(index)}>
+                                    {t.remove}
+                                  </Button>
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium text-foreground" title={preview.file.name}>
-                                    {preview.file.name}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">{formatFileSize(preview.file.size)}</p>
-                                </div>
-                                <Button type="button" variant="outline" size="sm" onClick={() => removePhotoFile(index)}>
-                                  Remove
-                                </Button>
+                              ))
+                            ) : (
+                              <div className="flex min-h-[92px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
+                                {t.photoPreviewUploadsHint}
                               </div>
-                            ))
-                          ) : (
-                            <div className="flex min-h-[92px] items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-4 text-center text-sm leading-6 text-muted-foreground">
-                              Selected uploads will appear here as image previews, not as a plain file list.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard
-                    icon={Package2}
-                    title="Marketplace EAN"
-                    description="Edit the main database EAN and all marketplace mappings without widening the table."
-                  >
-                    <div className="space-y-3">
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        <CompactField label="Main EAN" htmlFor="edit-main-ean">
-                          <Input
-                            id="edit-main-ean"
-                            className="h-10 rounded-[var(--radius-control)]"
-                            value={editDraft.ean}
-                            onChange={(event) => updateDraft("ean", event.target.value)}
-                          />
-                        </CompactField>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <div className="min-w-[720px] space-y-2">
-                          <div className="grid grid-cols-[120px_minmax(160px,1fr)_minmax(160px,1fr)] gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            <span>Market</span>
-                            <span>JV</span>
-                            <span>XL</span>
+                            )}
                           </div>
-
-                          {[
-                            { label: "Sites", jvKey: "jv", xlKey: "xl" },
-                            { label: "OTTO", jvKey: "ottoJv", xlKey: "ottoXl" },
-                            { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl" },
-                            { label: "KAUFLAND", jvKey: "kauflandJv", xlKey: "kauflandXl" },
-                            { label: "HOOD", jvKey: "hoodJv", xlKey: "hoodXl" }
-                          ].map((market) => (
-                            <div key={market.label} className="grid grid-cols-[120px_minmax(160px,1fr)_minmax(160px,1fr)] items-end gap-2">
-                              <span className="text-xs font-semibold text-muted-foreground">{market.label}</span>
-                              <Input
-                                className="h-10 rounded-[var(--radius-control)]"
-                                value={editDraft[market.jvKey as keyof EditDraftState] as string}
-                                onChange={(event) => updateDraft(market.jvKey as keyof EditDraftState, event.target.value as never)}
-                                placeholder="JV EAN"
-                              />
-                              <Input
-                                className="h-10 rounded-[var(--radius-control)]"
-                                value={editDraft[market.xlKey as keyof EditDraftState] as string}
-                                onChange={(event) => updateDraft(market.xlKey as keyof EditDraftState, event.target.value as never)}
-                                placeholder="XL EAN"
-                              />
-                            </div>
-                          ))}
                         </div>
                       </div>
-                    </div>
-                  </SectionCard>
+                    </SectionCard>
+                  </div>
                 </>
               ) : (
                 <div className="flex min-h-[240px] items-center justify-center rounded-[var(--radius-card)] border border-border/70 bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                  Preparing product editor...
+                  {t.preparingProductEditor}
                 </div>
               )}
             </div>
@@ -1270,15 +1934,15 @@ export function SofortListTableShell(props: {
               {loadingDetails ? (
                 <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 size={14} className="animate-spin" />
-                  Loading full product details...
+                  {t.loadingFullProductDetails}
                 </span>
               ) : editError ? (
                 <p className="text-sm text-destructive">{editError}</p>
               ) : null}
             </div>
-            <Button type="button" variant="ghost" onClick={closeEditModal} disabled={savingEdit}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={closeEditModal} disabled={savingEdit}>{t.cancel}</Button>
             <Button type="button" onClick={() => void saveEdit()} disabled={savingEdit || !editDraft}>
-              {savingEdit ? "Saving..." : "Save"}
+              {savingEdit ? t.saving : t.save}
             </Button>
           </DialogFooter>
         </DialogContent>

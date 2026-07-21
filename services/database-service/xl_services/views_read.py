@@ -120,7 +120,18 @@ class XLSitesByEANAPIView(APIView):
         site = ImportedProduct.Site.XL
         found = []
         missing = []
+        requested_site_key = normalize_site_key(request.query_params.get("site_key"))
         catalog = xl_site_catalog(lambda x: x)
+        if requested_site_key:
+            catalog = [site_info for site_info in catalog if str(site_info.get("site_key") or "").strip().upper() == requested_site_key]
+            if not catalog:
+                return Response(
+                    {
+                        "detail": "Requested XL site_key is not supported.",
+                        "site_key": requested_site_key,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [executor.submit(self._lookup_site, site_info, normalized_ean) for site_info in catalog]
@@ -171,6 +182,7 @@ class XLLocalProductByEANAPIView(APIView):
         product = None
         conflict_product = None
         normalized_site_key = site_key or ""
+        snapshot = None
 
         db_config = source_db_config_for_xl(site_key=site_key)
         if db_config:
@@ -225,4 +237,6 @@ class XLLocalProductByEANAPIView(APIView):
             )
 
         result = ImportedProductDetailSerializer(product).data
+        if isinstance(snapshot, dict):
+            result["xl_attribute_fields"] = snapshot.get("attributes") if isinstance(snapshot.get("attributes"), list) else []
         return Response(result, status=status.HTTP_200_OK)
