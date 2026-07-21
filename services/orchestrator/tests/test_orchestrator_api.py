@@ -66,6 +66,20 @@ class SuccessfulAdapters(FakeAdapters):
         return type("R", (), {"status_code": 200, "body": {"ok": True, "ean": ean, "payload": payload}})()
 
 
+class FakeEanPoolGateway:
+    def __init__(self, ean: str = "4098765432109") -> None:
+        self.ean = ean
+        self.claimed_job_ids: list[str] = []
+        self.used_job_ids: list[str] = []
+
+    def claim_for_job(self, *, job_id: str, request_id: str) -> str:
+        self.claimed_job_ids.append(job_id)
+        return self.ean
+
+    def mark_used_for_job(self, *, job_id: str, request_id: str) -> None:
+        self.used_job_ids.append(job_id)
+
+
 class BrokenIdempotencyStore:
     def ping(self) -> bool:
         raise RuntimeError("sqlite unavailable")
@@ -377,6 +391,45 @@ def test_orchestrator_publishes_to_all_main_create_marketplaces(tmp_path):
     assert payload["status"] == "partial_success"
     assert len(payload["results"]) == 6
     assert fake.calls == 6
+
+
+def test_publish_uses_one_pool_ean_for_hood_and_kaufland_xl_accounts():
+    adapters = SuccessfulAdapters()
+    pool_gateway = FakeEanPoolGateway()
+    service = OrchestratorService(adapters=adapters, ean_pool_gateway=pool_gateway)
+    command = OrchestrateRequest.model_validate(
+        {
+            "operation": "publish",
+            "payload": {
+                "title": "Desk",
+                "description": "Oak",
+                "price": "199.99",
+                "quantity": 1,
+                "source_model": "4012345678901",
+            },
+            "channels": [
+                {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
+                {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+                {"marketplace": "hood", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
+                {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+                {"marketplace": "kaufland", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
+            ],
+        }
+    )
+
+    result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+
+    assert result.status == "success"
+    assert pool_gateway.claimed_job_ids == ["job-1"]
+    assert pool_gateway.used_job_ids == ["job-1"]
+    by_target = {item.target: item.data["ean"] for item in result.results}
+    assert by_target["xljv,site=JV,site_key=JV_DE"] == "4012345678901"
+    assert by_target["xljv,site=XL,site_key=XLMOEBEL_DE"] == "4012345678901"
+    assert by_target["hood,account=jv"] == "4012345678901"
+    assert by_target["kaufland,account=jv"] == "4012345678901"
+    assert by_target["hood,account=xl"] == "4098765432109"
+    assert by_target["kaufland,account=xl"] == "4098765432109"
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):

@@ -24,6 +24,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from database.views import (
     EANPoolImportAPIView,
+    EANPoolClaimForJobAPIView,
+    EANPoolMarkJobUsedAPIView,
     EANPoolMarkUsedAPIView,
     EANPoolReserveAPIView,
     EANPoolStatsAPIView,
@@ -110,7 +112,8 @@ from kaufland.views import (
     CreateProductByEANAPIView,
     DeactivateProductByEANAPIView,
     DeleteProductByEANAPIView,
-    GetProductAPIView
+    GetProductAPIView,
+    KauflandImageProxyAPIView,
 )
 from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
@@ -169,6 +172,8 @@ api_v1_patterns = [
     path("api/v1/ean-pool/import/", EANPoolImportAPIView.as_view(), name="ean-pool-import-v1"),
     path("api/v1/ean-pool/stats/", EANPoolStatsAPIView.as_view(), name="ean-pool-stats-v1"),
     path("api/v1/ean-pool/take-next-free/", EANPoolTakeNextFreeAPIView.as_view(), name="ean-pool-take-next-free-v1"),
+    path("api/v1/ean-pool/claim-for-job/", EANPoolClaimForJobAPIView.as_view(), name="ean-pool-claim-for-job-v1"),
+    path("api/v1/ean-pool/mark-job-used/", EANPoolMarkJobUsedAPIView.as_view(), name="ean-pool-mark-job-used-v1"),
     path("api/v1/ean-pool/reserve/", EANPoolReserveAPIView.as_view(), name="ean-pool-reserve-v1"),
     path("api/v1/ean-pool/mark-used/", EANPoolMarkUsedAPIView.as_view(), name="ean-pool-mark-used-v1"),
     path("api/v1/ean-pool/<str:ean>/usage/", EANPoolUsageByEANAPIView.as_view(), name="ean-pool-usage-v1"),
@@ -232,6 +237,11 @@ api_v1_patterns = [
         "api/v1/kaufland/<str:ean>/<str:site>/",
         GetProductAPIView.as_view(),
         name="kaufland-get-product-by-ean-v1",
+    ),
+    path(
+        "api/v1/kaufland/image-proxy/",
+        KauflandImageProxyAPIView.as_view(),
+        name="kaufland-image-proxy-v1",
     ),
     path(
         "api/v1/marketplace/kaufland/health/",

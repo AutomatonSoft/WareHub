@@ -518,6 +518,12 @@ export interface components {
             account?: string | null;
             /** Changed Fields */
             changed_fields?: string[];
+            /**
+             * Ean Source
+             * @default main
+             * @enum {string}
+             */
+            ean_source: ChannelTargetEan_source;
             marketplace: components["schemas"]["Marketplace"];
             /** Overrides */
             overrides?: {
@@ -1645,6 +1651,10 @@ export interface operations {
             };
         };
     };
+}
+export enum ChannelTargetEan_source {
+    main = "main",
+    pool = "pool"
 }
 export enum JobPriority {
     urgent = "urgent",

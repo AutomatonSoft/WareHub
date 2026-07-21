@@ -1762,6 +1762,15 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Overrides"
+          },
+          "ean_source": {
+            "type": "string",
+            "enum": [
+              "main",
+              "pool"
+            ],
+            "title": "Ean Source",
+            "default": "main"
           }
         },
         "type": "object",

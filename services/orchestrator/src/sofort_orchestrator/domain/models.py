@@ -81,6 +81,7 @@ class ChannelTarget(BaseModel):
     site_key: str | None = None
     changed_fields: list[str] = Field(default_factory=list)
     overrides: dict = Field(default_factory=dict)
+    ean_source: Literal["main", "pool"] = "main"
 
 
 class OrchestrateRequest(BaseModel):

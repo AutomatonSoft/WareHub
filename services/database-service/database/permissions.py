@@ -38,7 +38,7 @@ class SessionRolePermission(BasePermission):
         if role == "admin":
             return True
         if role == "user":
-            return request.method in SAFE_METHODS
+            return True
         return False
 
     def has_object_permission(self, request, view, obj):

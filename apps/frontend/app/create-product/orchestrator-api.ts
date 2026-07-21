@@ -10,7 +10,9 @@ import { extractErrorTextFromBody, formatCreateProductApiError } from "./create-
 
 export type OrchestratorFinalStatus = "success" | "partial_success" | "failed";
 export type OrchestratorOperation = components["schemas"]["Operation"];
-export type OrchestratorChannel = components["schemas"]["ChannelTarget"];
+export type OrchestratorChannel = Omit<components["schemas"]["ChannelTarget"], "ean_source"> & {
+  ean_source?: "main" | "pool";
+};
 
 export type OrchestratorResult = {
   marketplace: string;
@@ -253,6 +255,7 @@ export async function createMainMarketplaceProductJob(input: {
       account: "xl",
       changed_fields: hoodChangedFields,
       overrides: input.hoodPayload,
+      ean_source: "pool",
     },
     {
       marketplace: Marketplace.kaufland,
@@ -265,6 +268,7 @@ export async function createMainMarketplaceProductJob(input: {
       account: "xl",
       changed_fields: kauflandChangedFields,
       overrides: input.kauflandPayload,
+      ean_source: "pool",
     },
   ];
 
