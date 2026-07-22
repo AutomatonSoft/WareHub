@@ -418,6 +418,10 @@ jobs:
 
           cd "$DEPLOY_PATH"
 
+          # The backend reads the production mobile-release manifest through this bind mount.
+          # Create it as the deployment user before Compose can create it as root.
+          install -d -m 755 mobile-release
+
           lock_path="/opt/warehub/.prod-deploy.lock"
           exec 9>"$lock_path"
           if ! flock -n 9; then

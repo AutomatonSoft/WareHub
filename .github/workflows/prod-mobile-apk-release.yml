@@ -1,0 +1,249 @@
+name: Prod Mobile APK Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_prod_apk_release:
+        description: "Type PUBLISH_PRODUCTION_APK to publish the APK declared in apps/mobile/pubspec.yaml"
+        required: true
+        type: string
+      release_notes:
+        description: "Optional release notes shown to the mobile client"
+        required: false
+        type: string
+      mandatory:
+        description: "Require clients to install this release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-mobile-apk-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build-and-publish-prod-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      PROD_SSH_HOST: ${{ vars.PROD_SSH_HOST }}
+      PROD_SSH_USER: ${{ vars.PROD_SSH_USER }}
+      PROD_SSH_PORT: ${{ vars.PROD_SSH_PORT }}
+      PROD_APK_DEPLOY_PATH: ${{ vars.PROD_APK_DEPLOY_PATH }}
+      PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+      PROD_SSH_KEY_SECRET: ${{ secrets.PROD_SSH_KEY }}
+      MOBILE_PROD_KEYSTORE_BASE64: ${{ secrets.MOBILE_PROD_KEYSTORE_BASE64 }}
+      MOBILE_PROD_KEY_PROPERTIES: ${{ secrets.MOBILE_PROD_KEY_PROPERTIES }}
+      PROD_PUBLIC_BASE_URL: https://warehub.automatonsoft.de
+      PROD_DEPLOY_PATH: /opt/warehub/prod
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Validate release input and environment
+        shell: bash
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.confirm_prod_apk_release }}
+        run: |
+          set -euo pipefail
+          [ "${GITHUB_REF:-}" = "refs/heads/main" ] || { echo "Production APK releases must run from main." >&2; exit 1; }
+          [ "${RELEASE_CONFIRMATION:-}" = "PUBLISH_PRODUCTION_APK" ] || { echo "confirm_prod_apk_release must equal PUBLISH_PRODUCTION_APK." >&2; exit 1; }
+
+          for key in PROD_SSH_HOST PROD_SSH_USER PROD_SSH_PORT PROD_APK_DEPLOY_PATH PROD_SSH_KNOWN_HOSTS PROD_SSH_KEY_SECRET MOBILE_PROD_KEYSTORE_BASE64 MOBILE_PROD_KEY_PROPERTIES; do
+            [ -n "${!key:-}" ] || { echo "Missing required production configuration: $key" >&2; exit 1; }
+          done
+          [[ "$PROD_APK_DEPLOY_PATH" = /* ]] || { echo "PROD_APK_DEPLOY_PATH must be absolute." >&2; exit 1; }
+
+      - name: Read and validate mobile version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          declared_version="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*/\1/p' apps/mobile/pubspec.yaml | head -n 1)"
+          [[ "$declared_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-stage\.[0-9]+)?\+([1-9][0-9]*)$ ]] || {
+            echo "apps/mobile/pubspec.yaml must use X.Y.Z+BUILD or X.Y.Z-stage.N+BUILD." >&2
+            exit 1
+          }
+          echo "version=v${BASH_REMATCH[1]}+${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
+          echo "display_version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "build_name=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.4"
+          channel: stable
+          cache: true
+
+      - name: Configure production signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$MOBILE_PROD_KEYSTORE_BASE64" | base64 --decode > apps/mobile/android/upload-keystore.jks
+          printf '%s\n' "$MOBILE_PROD_KEY_PROPERTIES" > apps/mobile/android/key.properties
+          test -s apps/mobile/android/upload-keystore.jks
+          grep -Eq '^storeFile=upload-keystore\.jks$' apps/mobile/android/key.properties || {
+            echo "MOBILE_PROD_KEY_PROPERTIES must contain storeFile=upload-keystore.jks." >&2
+            exit 1
+          }
+
+      - name: Validate and build signed production APK
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NAME: ${{ steps.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          cd apps/mobile
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+          flutter build apk --release --flavor prod \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define=APP_ENV=prod \
+            --dart-define=API_BASE_URL=https://warehub.automatonsoft.de/api/v1 \
+            --dart-define=APP_VERSION="$APP_VERSION"
+
+      - name: Prepare immutable release manifest
+        id: artifact
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          MANDATORY: ${{ inputs.mandatory }}
+        run: |
+          set -euo pipefail
+          apk_path="apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk"
+          test -s "$apk_path"
+          sha256="$(sha256sum "$apk_path" | awk '{print $1}')"
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export SHA256="$sha256"
+          export PUBLISHED_AT="$published_at"
+          python3 - <<'PY' > mobile-release.json
+          import json
+          import os
+          from urllib.parse import urlencode
+
+          version = os.environ["VERSION"]
+          payload = {
+              "channel": "prod",
+              "version": version,
+              "apk_url": f"https://warehub.automatonsoft.de/warehub.apk?{urlencode({'v': version})}",
+              "sha256": os.environ["SHA256"],
+              "published_at": os.environ["PUBLISHED_AT"],
+              "release_notes": os.environ.get("RELEASE_NOTES", "").strip() or None,
+              "mandatory": os.environ.get("MANDATORY", "false").lower() == "true",
+              "source_commit": os.environ["GITHUB_SHA"],
+          }
+          print(json.dumps({key: value for key, value in payload.items() if value is not None}, separators=(",", ":")))
+          PY
+          printf '%s\n' "$VERSION" > warehub.version
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
+
+      - name: Configure pinned SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$PROD_SSH_KEY_SECRET" > "$HOME/.ssh/prod_mobile_release_key"
+          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/prod_mobile_release_key"
+
+      - name: Verify matching production runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -p "$PROD_SSH_PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            "set -euo pipefail
+             state='$PROD_DEPLOY_PATH/.deploy-state.env'
+             [ -f \"\$state\" ] || { echo 'Production deploy state is missing.' >&2; exit 1; }
+             deployed_sha=\"\$(grep '^SOURCE_COMMIT_SHA=' \"\$state\" | cut -d= -f2-)\"
+             [ \"\$deployed_sha\" = '$GITHUB_SHA' ] || { echo \"Production runtime is at \$deployed_sha, expected $GITHUB_SHA. Run Prod Deploy first.\" >&2; exit 1; }
+             mkdir -p '$PROD_DEPLOY_PATH/mobile-release' '$PROD_DEPLOY_PATH/mobile-release-backups' '$PROD_APK_DEPLOY_PATH'
+             test -w '$PROD_DEPLOY_PATH/mobile-release'
+             test -w '$PROD_APK_DEPLOY_PATH'"
+
+      - name: Upload release candidate
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.artifact.outputs.apk_path }}
+        run: |
+          set -euo pipefail
+          release_id="${GITHUB_SHA:0:12}"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -P "$PROD_SSH_PORT" "$APK_PATH" "$PROD_SSH_USER@$PROD_SSH_HOST:$PROD_APK_DEPLOY_PATH/.warehub-$release_id.apk"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -P "$PROD_SSH_PORT" warehub.version "$PROD_SSH_USER@$PROD_SSH_HOST:$PROD_APK_DEPLOY_PATH/.warehub-$release_id.version"
+          scp -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -P "$PROD_SSH_PORT" mobile-release.json "$PROD_SSH_USER@$PROD_SSH_HOST:$PROD_DEPLOY_PATH/mobile-release/.current-$release_id.json"
+          echo "release_id=$release_id" >> "$GITHUB_ENV"
+
+      - name: Atomically publish APK and manifest
+        shell: bash
+        env:
+          EXPECTED_SHA256: ${{ steps.artifact.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -p "$PROD_SSH_PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            "set -euo pipefail
+             apk_tmp='$PROD_APK_DEPLOY_PATH/.warehub-$release_id.apk'
+             apk_live='$PROD_APK_DEPLOY_PATH/warehub.apk'
+             version_tmp='$PROD_APK_DEPLOY_PATH/.warehub-$release_id.version'
+             version_live='$PROD_APK_DEPLOY_PATH/warehub.version'
+             manifest_tmp='$PROD_DEPLOY_PATH/mobile-release/.current-$release_id.json'
+             manifest_live='$PROD_DEPLOY_PATH/mobile-release/current.json'
+             [ \"\$(sha256sum \"\$apk_tmp\" | awk '{print \$1}')\" = '$EXPECTED_SHA256' ]
+             python3 -m json.tool \"\$manifest_tmp\" >/dev/null
+             [ ! -f \"\$apk_live\" ] || cp -f \"\$apk_live\" '$PROD_DEPLOY_PATH/mobile-release-backups/previous.apk'
+             mv -f \"\$apk_tmp\" \"\$apk_live\"
+             mv -f \"\$version_tmp\" \"\$version_live\"
+             mv -f \"\$manifest_tmp\" \"\$manifest_live\"
+             chmod 644 \"\$apk_live\" \"\$version_live\" \"\$manifest_live\""
+
+      - name: Verify public release
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --range 0-0 "$PROD_PUBLIC_BASE_URL/warehub.apk" -o /dev/null
+          curl --fail --silent --show-error "$PROD_PUBLIC_BASE_URL/api/v1/mobile/app-update" -o update.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.load(open("update.json", encoding="utf-8"))
+          assert payload["channel"] == "prod"
+          assert payload["latest_version"] == os.environ["VERSION"]
+          assert payload["apk_url"].startswith("https://warehub.automatonsoft.de/warehub.apk")
+          PY
+
+      - name: Write release summary
+        if: success()
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.artifact.outputs.sha256 }}
+        run: |
+          {
+            echo "## Production mobile APK release"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- SHA-256: \`$SHA256\`"
+            echo "- Public APK: \`$PROD_PUBLIC_BASE_URL/warehub.apk\`"
+          } >> "$GITHUB_STEP_SUMMARY"
