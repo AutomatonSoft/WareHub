@@ -34,6 +34,7 @@ import 'qr_scan_action_model.dart';
 import 'user_facing_error.dart';
 import 'warehouse_constants.dart';
 import 'warehouse_location_utils.dart';
+import 'warehouse_map_sheet.dart';
 
 part 'qr_home_page_menu.dart';
 part 'qr_home_page_printer_ui.dart';
@@ -218,6 +219,17 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
           ],
         ),
         actions: <Widget>[
+          IconButton(
+            tooltip: strings.text('warehouse_map'),
+            onPressed: () => showWarehouseMapSheet(
+              context,
+              strings: strings,
+            ),
+            icon: const Icon(
+              Icons.map_outlined,
+              color: AuthColors.mutedForeground,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: AuthLanguagePicker(

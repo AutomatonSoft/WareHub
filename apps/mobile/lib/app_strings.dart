@@ -24,6 +24,35 @@ class AppStrings {
 
   String text(String key) => _t(key);
 
+  String profileRoleLabel(String value) {
+    switch (_normalizeEnumValue(value)) {
+      case 'admin':
+        return _t('profile_role_admin');
+      case 'user':
+      case 'worker':
+        return _t('profile_role_user');
+      case '':
+        return _t('profile_role_user');
+      default:
+        return _humanizeEnumValue(value);
+    }
+  }
+
+  String profileStatusLabel(String value) {
+    switch (_normalizeEnumValue(value)) {
+      case 'pending':
+        return _t('profile_status_pending');
+      case 'approved':
+        return _t('profile_status_approved');
+      case 'rejected':
+        return _t('profile_status_rejected');
+      case '':
+        return _t('profile_status_unknown');
+      default:
+        return _humanizeEnumValue(value);
+    }
+  }
+
   String format(String key, Map<String, String> values) {
     String text = _t(key);
     values.forEach((String name, String value) {
@@ -34,6 +63,16 @@ class AppStrings {
 
   String _t(String key) {
     return _labels[lang]?[key] ?? _labels[AppLang.en]?[key] ?? key;
+  }
+
+  String _normalizeEnumValue(String value) => value.trim().toLowerCase();
+
+  String _humanizeEnumValue(String value) {
+    final String normalized = value.trim().replaceAll(RegExp(r'[_-]+'), ' ');
+    if (normalized.isEmpty) {
+      return '-';
+    }
+    return normalized[0].toUpperCase() + normalized.substring(1).toLowerCase();
   }
 }
 

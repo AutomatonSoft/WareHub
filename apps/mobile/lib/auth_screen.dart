@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:local_auth/local_auth.dart';
 import 'app_settings.dart';
+import 'app_version_provider.dart';
 import 'auth_design_tokens.dart';
 import 'auth_widgets.dart';
 import 'mobile_auth.dart';
@@ -15,7 +16,9 @@ import 'user_facing_error.dart';
 part 'auth_screen_biometrics.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({super.key, this.appVersionProvider});
+
+  final AppVersionProvider? appVersionProvider;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -35,6 +38,13 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _loginController = TextEditingController();
   final TextEditingController _loginPasswordController =
       TextEditingController();
+  late final Future<String?> _appVersion;
+
+  @override
+  void initState() {
+    super.initState();
+    _appVersion = (widget.appVersionProvider ?? AppVersionProvider()).load();
+  }
 
   @override
   void dispose() {
@@ -271,6 +281,137 @@ class _AuthScreenState extends State<AuthScreen> {
             child: SafeArea(
               child: Stack(
                 children: <Widget>[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(
+                        child: Center(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(
+                              AuthSpacing.screenHorizontal,
+                              AuthSpacing.xxl,
+                              AuthSpacing.screenHorizontal,
+                              AuthSpacing.xxl,
+                            ),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 430),
+                              child: AuthGlassCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    AuthBrandHeader(
+                                      title: strings.loginTitle,
+                                      subtitle: strings.loginSubtitle,
+                                    ),
+                                    const SizedBox(height: AuthSpacing.xl),
+                                    AuthLoginForm(
+                                      strings: strings,
+                                      loginController: _loginController,
+                                      passwordController:
+                                          _loginPasswordController,
+                                      passwordHidden: _loginHidden,
+                                      isBusy: _loginBusy,
+                                      onSubmit: _onLoginSubmitted,
+                                      onForgotPassword: () {
+                                        unawaited(_openForgotPassword());
+                                      },
+                                      onTogglePassword: () => setState(() {
+                                        _loginHidden = !_loginHidden;
+                                      }),
+                                    ),
+                                    const SizedBox(height: AuthSpacing.md),
+                                    if (!_biometricAvailable)
+                                      Text(
+                                        strings.text('biometric_unavailable'),
+                                        style: AuthTextStyles.helper,
+                                      ),
+                                    if (_biometricAvailable &&
+                                        settings.biometricEnabled) ...<Widget>[
+                                      const SizedBox(height: AuthSpacing.sm),
+                                      FilledButton.tonalIcon(
+                                        onPressed: _biometricBusy
+                                            ? null
+                                            : _authenticateWithBiometrics,
+                                        icon: _biometricBusy
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              )
+                                            : Icon(
+                                                _preferredBiometricType ==
+                                                        BiometricType.face
+                                                    ? Icons.face_rounded
+                                                    : _preferredBiometricType ==
+                                                            BiometricType
+                                                                .fingerprint
+                                                        ? Icons.fingerprint
+                                                        : Icons
+                                                            .lock_person_rounded,
+                                                size: 20,
+                                              ),
+                                        label: Text(
+                                          _biometricLoginLabel(strings),
+                                          style: AuthTextStyles.label,
+                                        ),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: AuthColors.muted,
+                                          foregroundColor:
+                                              AuthColors.foreground,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: AuthSpacing.md,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                                AuthRadii.md),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: AuthSpacing.xl,
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            left: AuthSpacing.screenHorizontal,
+                            bottom: AuthSpacing.xs,
+                          ),
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: FutureBuilder<String?>(
+                              future: _appVersion,
+                              builder: (
+                                BuildContext context,
+                                AsyncSnapshot<String?> snapshot,
+                              ) {
+                                final String? version = snapshot.data;
+                                if (version == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Text(
+                                  version,
+                                  style: AuthTextStyles.helper.copyWith(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   Positioned(
                     top: AuthSpacing.sm,
                     right: AuthSpacing.screenHorizontal,
@@ -280,93 +421,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       onChanged: (AppLang lang) {
                         settings.setLanguage(lang);
                       },
-                    ),
-                  ),
-                  Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(
-                        AuthSpacing.screenHorizontal,
-                        AuthSpacing.xxl,
-                        AuthSpacing.screenHorizontal,
-                        AuthSpacing.xxl,
-                      ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 430),
-                        child: AuthGlassCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              AuthBrandHeader(
-                                title: strings.loginTitle,
-                                subtitle: strings.loginSubtitle,
-                              ),
-                              const SizedBox(height: AuthSpacing.xl),
-                              AuthLoginForm(
-                                strings: strings,
-                                loginController: _loginController,
-                                passwordController: _loginPasswordController,
-                                passwordHidden: _loginHidden,
-                                isBusy: _loginBusy,
-                                onSubmit: _onLoginSubmitted,
-                                onForgotPassword: () {
-                                  unawaited(_openForgotPassword());
-                                },
-                                onTogglePassword: () => setState(() {
-                                  _loginHidden = !_loginHidden;
-                                }),
-                              ),
-                              const SizedBox(height: AuthSpacing.md),
-                              if (!_biometricAvailable)
-                                Text(
-                                  strings.text('biometric_unavailable'),
-                                  style: AuthTextStyles.helper,
-                                ),
-                              if (_biometricAvailable &&
-                                  settings.biometricEnabled) ...<Widget>[
-                                const SizedBox(height: AuthSpacing.sm),
-                                FilledButton.tonalIcon(
-                                  onPressed: _biometricBusy
-                                      ? null
-                                      : _authenticateWithBiometrics,
-                                  icon: _biometricBusy
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : Icon(
-                                          _preferredBiometricType ==
-                                                  BiometricType.face
-                                              ? Icons.face_rounded
-                                              : _preferredBiometricType ==
-                                                      BiometricType.fingerprint
-                                                  ? Icons.fingerprint
-                                                  : Icons.lock_person_rounded,
-                                          size: 20,
-                                        ),
-                                  label: Text(
-                                    _biometricLoginLabel(strings),
-                                    style: AuthTextStyles.label,
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AuthColors.muted,
-                                    foregroundColor: AuthColors.foreground,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AuthSpacing.md,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(AuthRadii.md),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
                   ),
                 ],
