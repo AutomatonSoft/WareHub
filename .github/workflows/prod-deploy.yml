@@ -554,17 +554,17 @@ jobs:
           deployed_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           {
-            printf 'SOURCE_COMMIT_SHA=%s\n' "$SOURCE_COMMIT_SHA"
-            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
-            printf 'DEPLOYED_AT_UTC=%s\n' "$deployed_at_utc"
-            printf 'ENV_SHA256=%s\n' "$env_sha"
-            printf 'COMPOSE_SHA256=%s\n' "$compose_sha"
-            printf 'BACKEND_REF=%s\n' "$BACKEND_REF"
-            printf 'FRONTEND_REF=%s\n' "$FRONTEND_REF"
-            printf 'GATEWAY_REF=%s\n' "$GATEWAY_REF"
-            printf 'MOBILE_REF=%s\n' "$MOBILE_REF"
-            printf 'SERVICES_REF=%s\n' "$SERVICES_REF"
-            printf 'ORCHESTRATOR_REF=%s\n' "$ORCHESTRATOR_REF"
+            printf "SOURCE_COMMIT_SHA=%s\n" "$SOURCE_COMMIT_SHA"
+            printf "IMAGE_TAG=%s\n" "$IMAGE_TAG"
+            printf "DEPLOYED_AT_UTC=%s\n" "$deployed_at_utc"
+            printf "ENV_SHA256=%s\n" "$env_sha"
+            printf "COMPOSE_SHA256=%s\n" "$compose_sha"
+            printf "BACKEND_REF=%s\n" "$BACKEND_REF"
+            printf "FRONTEND_REF=%s\n" "$FRONTEND_REF"
+            printf "GATEWAY_REF=%s\n" "$GATEWAY_REF"
+            printf "MOBILE_REF=%s\n" "$MOBILE_REF"
+            printf "SERVICES_REF=%s\n" "$SERVICES_REF"
+            printf "ORCHESTRATOR_REF=%s\n" "$ORCHESTRATOR_REF"
           } > .deploy-state.env
           chmod 600 .deploy-state.env
 
