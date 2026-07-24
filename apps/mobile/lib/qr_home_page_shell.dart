@@ -261,6 +261,34 @@ extension _QrHomePageShell on _QrHomePageState {
                                             _printingItemId != null)
                                         ? null
                                         : () => _onPrintItem(item),
+                                    onOpenDetails: () {
+                                      Navigator.of(context).push<void>(
+                                        MaterialPageRoute<void>(
+                                          settings: const RouteSettings(
+                                            name: '/inventory/details',
+                                          ),
+                                          builder: (_) => QrHomeItemDetailsPage(
+                                            item: item,
+                                            photoUrls: _photoUrlsFromField(
+                                              item.photoUrl,
+                                            ),
+                                            partsCount: grouped.partsCount,
+                                            count: grouped.count,
+                                            warehouseLocations:
+                                                grouped.warehouseLocations,
+                                            memo: orderId.isEmpty
+                                                ? null
+                                                : _orderMemoById[orderId],
+                                            bWareComment: item.bWareComment,
+                                            onPrint: (_adding ||
+                                                    _removing ||
+                                                    _printingItemId != null)
+                                                ? null
+                                                : () => _onPrintItem(item),
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
                               ),

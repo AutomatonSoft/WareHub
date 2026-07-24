@@ -7,29 +7,17 @@ void main() {
       expect(
         resolveInitialAppRoute(
           hasLocalSession: false,
-          biometricEnabled: false,
         ),
         '/login',
       );
     });
 
-    test('opens home for a stored session without biometric lock', () {
+    test('opens home for a stored session', () {
       expect(
         resolveInitialAppRoute(
           hasLocalSession: true,
-          biometricEnabled: false,
         ),
         '/home',
-      );
-    });
-
-    test('opens biometric login for a protected stored session', () {
-      expect(
-        resolveInitialAppRoute(
-          hasLocalSession: true,
-          biometricEnabled: true,
-        ),
-        '/login',
       );
     });
   });

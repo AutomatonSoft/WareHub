@@ -8,12 +8,8 @@ import 'app_theme.dart';
 @visibleForTesting
 String resolveInitialAppRoute({
   required bool hasLocalSession,
-  required bool biometricEnabled,
 }) {
-  if (!hasLocalSession || biometricEnabled) {
-    return '/login';
-  }
-  return '/home';
+  return hasLocalSession ? '/home' : '/login';
 }
 
 class AppBootstrapScreen extends StatefulWidget {
@@ -38,7 +34,6 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
         settings.refreshToken.trim().isNotEmpty;
     final String route = resolveInitialAppRoute(
       hasLocalSession: hasLocalSession,
-      biometricEnabled: settings.biometricEnabled,
     );
     if (!mounted) {
       return;

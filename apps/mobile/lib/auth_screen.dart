@@ -2,17 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:local_auth/local_auth.dart';
 import 'app_settings.dart';
 import 'auth_design_tokens.dart';
 import 'auth_widgets.dart';
 import 'mobile_auth.dart';
 import 'mobile_logging.dart';
 import 'user_facing_error.dart';
-
-part 'auth_screen_biometrics.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -24,13 +20,6 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _loginHidden = true;
   bool _loginBusy = false;
-  bool _biometricAvailable = false;
-  bool _biometricBusy = false;
-  bool _autoPrompted = false;
-  bool _checkedBiometrics = false;
-  BiometricType? _preferredBiometricType;
-
-  final LocalAuthentication _localAuth = LocalAuthentication();
 
   final TextEditingController _loginController = TextEditingController();
   final TextEditingController _loginPasswordController =
@@ -41,16 +30,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _loginController.dispose();
     _loginPasswordController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final AppSettings settings = AppSettingsScope.of(context);
-    if (!_checkedBiometrics) {
-      _checkedBiometrics = true;
-      unawaited(_initBiometrics(settings));
-    }
   }
 
   void _showMessage(String message) {
@@ -217,7 +196,6 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     }
 
-    await _offerBiometricEnrollment();
     if (!mounted) {
       return;
     }
@@ -315,54 +293,6 @@ class _AuthScreenState extends State<AuthScreen> {
                                   _loginHidden = !_loginHidden;
                                 }),
                               ),
-                              const SizedBox(height: AuthSpacing.md),
-                              if (!_biometricAvailable)
-                                Text(
-                                  strings.text('biometric_unavailable'),
-                                  style: AuthTextStyles.helper,
-                                ),
-                              if (_biometricAvailable &&
-                                  settings.biometricEnabled) ...<Widget>[
-                                const SizedBox(height: AuthSpacing.sm),
-                                FilledButton.tonalIcon(
-                                  onPressed: _biometricBusy
-                                      ? null
-                                      : _authenticateWithBiometrics,
-                                  icon: _biometricBusy
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : Icon(
-                                          _preferredBiometricType ==
-                                                  BiometricType.face
-                                              ? Icons.face_rounded
-                                              : _preferredBiometricType ==
-                                                      BiometricType.fingerprint
-                                                  ? Icons.fingerprint
-                                                  : Icons.lock_person_rounded,
-                                          size: 20,
-                                        ),
-                                  label: Text(
-                                    _biometricLoginLabel(strings),
-                                    style: AuthTextStyles.label,
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AuthColors.muted,
-                                    foregroundColor: AuthColors.foreground,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AuthSpacing.md,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(AuthRadii.md),
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),

@@ -12,8 +12,6 @@ class AppSettings extends ChangeNotifier {
   AppSettings._(
     this._prefs,
     this._language,
-    this._biometricEnabled,
-    this._biometricAccountLogin,
     this._authToken,
     this._refreshToken,
     this._login,
@@ -29,9 +27,6 @@ class AppSettings extends ChangeNotifier {
   );
 
   static const String _langKey = 'sofortbot_mobile_lang';
-  static const String _biometricKey = 'sofortbot_mobile_biometrics';
-  static const String _biometricAccountKey =
-      'sofortbot_mobile_biometric_account_login';
   static const String _authTokenKey = 'sofortbot_mobile_auth_token';
   static const String _refreshTokenKey = 'sofortbot_mobile_refresh_token';
   static const String _loginKey = 'sofortbot_mobile_login';
@@ -50,8 +45,6 @@ class AppSettings extends ChangeNotifier {
 
   final SharedPreferences _prefs;
   AppLang _language;
-  bool _biometricEnabled;
-  String _biometricAccountLogin;
   String _authToken;
   String _refreshToken;
   String _login;
@@ -66,8 +59,6 @@ class AppSettings extends ChangeNotifier {
   String _apiBaseUrl;
 
   AppLang get language => _language;
-  bool get biometricEnabled => _biometricEnabled;
-  String get biometricAccountLogin => _biometricAccountLogin;
   String get authToken => _authToken;
   String get refreshToken => _refreshToken;
   String get login => _login;
@@ -85,8 +76,6 @@ class AppSettings extends ChangeNotifier {
   static Future<AppSettings> load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? langCode = prefs.getString(_langKey);
-    final bool biometrics = prefs.getBool(_biometricKey) ?? false;
-    final String biometricAccount = prefs.getString(_biometricAccountKey) ?? '';
     String token = '';
     try {
       token = await _secureStorage.read(key: _authTokenKey) ?? '';
@@ -148,8 +137,6 @@ class AppSettings extends ChangeNotifier {
     final AppSettings settings = AppSettings._(
       prefs,
       AppLangX.fromCode(langCode),
-      biometrics,
-      biometricAccount,
       token,
       refreshToken,
       login,
@@ -174,29 +161,6 @@ class AppSettings extends ChangeNotifier {
     _language = lang;
     notifyListeners();
     await _prefs.setString(_langKey, lang.code);
-  }
-
-  Future<void> setBiometricEnabled(bool enabled) async {
-    if (enabled == _biometricEnabled) {
-      return;
-    }
-    _biometricEnabled = enabled;
-    notifyListeners();
-    await _prefs.setBool(_biometricKey, enabled);
-    if (!enabled) {
-      _biometricAccountLogin = '';
-      await _prefs.remove(_biometricAccountKey);
-    }
-  }
-
-  Future<void> bindBiometricAccount(String login) async {
-    final String normalized = login.trim();
-    if (normalized.isEmpty) {
-      return;
-    }
-    _biometricAccountLogin = normalized;
-    notifyListeners();
-    await _prefs.setString(_biometricAccountKey, normalized);
   }
 
   Future<void> saveSession({
@@ -234,9 +198,6 @@ class AppSettings extends ChangeNotifier {
     await _prefs.setString(_avatarUrlKey, _avatarUrl);
     await _prefs.setString(_roleKey, _role);
     await _prefs.setString(_statusKey, _status);
-    if (_biometricEnabled && _login.isNotEmpty) {
-      _biometricAccountLogin = _login;
-    }
     notifyListeners();
 
     try {
@@ -256,9 +217,6 @@ class AppSettings extends ChangeNotifier {
       if (refreshToken != null) {
         await _prefs.setString(_refreshTokenKey, _refreshToken);
       }
-    }
-    if (_biometricEnabled && _biometricAccountLogin.isNotEmpty) {
-      await _prefs.setString(_biometricAccountKey, _biometricAccountLogin);
     }
     _syncSentryUser();
   }

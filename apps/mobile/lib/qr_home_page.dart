@@ -30,6 +30,7 @@ import 'photo_upload_retry_policy.dart';
 import 'photo_upload_telemetry.dart';
 import 'printer_error.dart';
 import 'qr_home_widgets.dart';
+import 'qr_home_item_details_page.dart';
 import 'qr_scan_action_model.dart';
 import 'user_facing_error.dart';
 import 'warehouse_constants.dart';
