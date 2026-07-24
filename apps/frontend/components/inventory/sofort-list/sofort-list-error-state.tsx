@@ -1,6 +1,5 @@
-﻿import { Copy, Stethoscope } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useMemo } from "react";
-import { useRouter } from "next/navigation";
 
 import { useLabels } from "@/app/use-labels";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,6 @@ export function SofortListErrorState({
   onRetry: () => void;
   retrying?: boolean;
 }) {
-  const router = useRouter();
   const t = useLabels();
   const checkedAt = useMemo(
     () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -60,10 +58,6 @@ export function SofortListErrorState({
         <Button type="button" variant="outline" onClick={() => void copyError()}>
           <Copy />
           {t.copyError}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => router.push("/marketplace")}>
-          <Stethoscope />
-          {t.openDiagnostics}
         </Button>
       </div>
 

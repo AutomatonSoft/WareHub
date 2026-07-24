@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 
 from ..domain.field_registry import filtered_payload, validate_changed_fields
@@ -128,11 +129,12 @@ class ProductEditorJvFlow:
         return None
 
     def load(self, *, ean: str, request_id: str, baseline_target_id: str | None) -> ProductEditorLoadResponse:
-        baseline_site_key = self._resolve_baseline_site_key(
-            ean=ean,
-            request_id=request_id,
-            preferred_target_id=baseline_target_id,
-            available_target_ids=[baseline_target_id] if baseline_target_id else None,
+        target_states = self.discover_targets(ean=ean, request_id=request_id)
+        found_target_ids = [target_id for target_id, state in target_states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
+        baseline_site_key = (
+            baseline_target_id
+            if baseline_target_id in found_target_ids
+            else self.recommended_baseline_from_results(target_states)
         )
         if baseline_site_key is None:
             return ProductEditorLoadResponse(
@@ -144,7 +146,13 @@ class ProductEditorJvFlow:
                 warnings=[ProductEditorWarning(code="product_editor_jv_target_not_found", message="No JV target was found for this EAN.")],
             )
 
-        local = self._load_local_draft_for_site(ean=ean, request_id=request_id, site_key=baseline_site_key)
+        with ThreadPoolExecutor(max_workers=len(found_target_ids)) as executor:
+            futures = {
+                site_key: executor.submit(self._load_local_draft_for_site, ean=ean, request_id=request_id, site_key=site_key)
+                for site_key in found_target_ids
+            }
+            site_results = {site_key: future.result() for site_key, future in futures.items()}
+        local = site_results[baseline_site_key]
 
         if not (200 <= local.status_code < 300):
             return ProductEditorLoadResponse(
@@ -167,14 +175,9 @@ class ProductEditorJvFlow:
             )
 
         draft = _normalize_jv_draft(local.body, baseline_site_key)
-        found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
         site_payloads: dict[str, dict] = {}
         for site_key in found_target_ids:
-            site_payload = local.body if site_key == baseline_site_key else self._load_local_draft_for_site(
-                ean=ean,
-                request_id=request_id,
-                site_key=site_key,
-            ).body
+            site_payload = site_results[site_key].body
             if isinstance(site_payload, dict) and site_payload.get("ean"):
                 site_payloads[site_key] = site_payload
         draft["categories_by_site_key"] = {

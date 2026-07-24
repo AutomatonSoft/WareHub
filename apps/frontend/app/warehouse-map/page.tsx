@@ -1,22 +1,15 @@
 import { AppShell } from "../../components/layout/app-shell";
-import { WarehouseMapGrid } from "../../components/warehouse/warehouse-map-grid";
-import { WarehouseZonePanel } from "../../components/warehouse/warehouse-zone-panel";
 import { Surface } from "../../components/ui/surface";
+import { WarehouseMapCanvas } from "../../components/warehouse/warehouse-map-canvas";
 
 export default function WarehouseMapPage() {
   return (
-    <AppShell
-      titleKey="navWarehouseMap"
-      subtitleKey="warehouseMapSubtitle"
-    >
-      <div className="grid gap-4 xl:grid-cols-[1.5fr_0.8fr]">
-        <Surface className="p-0">
-          <WarehouseMapGrid />
+    <AppShell titleKey="navWarehouseMap" subtitleKey="warehouseMapSubtitle">
+      <section className="flex h-[calc(100dvh-24px)] min-h-[620px] w-full flex-col">
+        <Surface className="flex min-h-0 flex-1 flex-col p-4 sm:p-6">
+          <WarehouseMapCanvas />
         </Surface>
-        <Surface className="p-0">
-          <WarehouseZonePanel />
-        </Surface>
-      </div>
+      </section>
     </AppShell>
   );
 }

@@ -340,6 +340,23 @@ class DatabaseApiTests(APITestCase):
         self.kid.in_transit = True
         self.kid.b_ware = True
         self.kid.save(update_fields=["place", "photo", "in_transit", "b_ware"])
+        self.order.status = "paid"
+        self.order.full_amount = "199.99"
+        self.order.save(update_fields=["status", "full_amount"])
+        Orders.objects.create(
+            kid=self.kid,
+            order_id="ORDER-002",
+            title="Paid formatted order",
+            status="paid",
+            full_amount="1.000,50 EUR",
+        )
+        Orders.objects.create(
+            kid=self.kid,
+            order_id="ORDER-003",
+            title="Unpaid order",
+            status="no_paid",
+            full_amount="999.99",
+        )
         Ean.objects.create(kid=self.kid, main_ean="4260174428871")
         ProductAttributes.objects.create(kid=self.kid, price=Decimal("199.99"))
         EanStatus.objects.create(
@@ -376,6 +393,7 @@ class DatabaseApiTests(APITestCase):
                 "readiness_percent": 33,
                 "in_transit_products": 2,
                 "b_ware_products": 1,
+                "paid_revenue": "1200.49",
                 "marketplace_statuses": {
                     "jv": {"true_count": 1, "false_count": 0},
                     "xl": {"true_count": 0, "false_count": 1},

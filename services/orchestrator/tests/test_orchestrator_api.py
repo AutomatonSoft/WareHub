@@ -67,14 +67,14 @@ class SuccessfulAdapters(FakeAdapters):
 
 
 class FakeEanPoolGateway:
-    def __init__(self, ean: str = "4098765432109") -> None:
-        self.ean = ean
+    def __init__(self) -> None:
+        self.eans_by_job_id: dict[str, str] = {}
         self.claimed_job_ids: list[str] = []
         self.used_job_ids: list[str] = []
 
     def claim_for_job(self, *, job_id: str, request_id: str) -> str:
         self.claimed_job_ids.append(job_id)
-        return self.ean
+        return self.eans_by_job_id.setdefault(job_id, f"4098765432{len(self.eans_by_job_id) + 100}")
 
     def mark_used_for_job(self, *, job_id: str, request_id: str) -> None:
         self.used_job_ids.append(job_id)
@@ -393,7 +393,7 @@ def test_orchestrator_publishes_to_all_main_create_marketplaces(tmp_path):
     assert fake.calls == 6
 
 
-def test_publish_uses_one_pool_ean_for_hood_and_kaufland_xl_accounts():
+def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     adapters = SuccessfulAdapters()
     pool_gateway = FakeEanPoolGateway()
     service = OrchestratorService(adapters=adapters, ean_pool_gateway=pool_gateway)
@@ -410,7 +410,7 @@ def test_publish_uses_one_pool_ean_for_hood_and_kaufland_xl_accounts():
             "channels": [
                 {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
                 {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
-                {"marketplace": "hood", "account": "jv", "changed_fields": ["title", "description", "price", "quantity"]},
+                {"marketplace": "hood", "account": "jv", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
                 {"marketplace": "hood", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
                 {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
                 {"marketplace": "kaufland", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
@@ -421,15 +421,23 @@ def test_publish_uses_one_pool_ean_for_hood_and_kaufland_xl_accounts():
     result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
 
     assert result.status == "success"
-    assert pool_gateway.claimed_job_ids == ["job-1"]
-    assert pool_gateway.used_job_ids == ["job-1"]
+    assert len(pool_gateway.claimed_job_ids) == 3
+    assert set(pool_gateway.claimed_job_ids) == set(pool_gateway.used_job_ids)
     by_target = {item.target: item.data["ean"] for item in result.results}
     assert by_target["xljv,site=JV,site_key=JV_DE"] == "4012345678901"
     assert by_target["xljv,site=XL,site_key=XLMOEBEL_DE"] == "4012345678901"
-    assert by_target["hood,account=jv"] == "4012345678901"
+    assert by_target["hood,account=jv"] != "4012345678901"
     assert by_target["kaufland,account=jv"] == "4012345678901"
-    assert by_target["hood,account=xl"] == "4098765432109"
-    assert by_target["kaufland,account=xl"] == "4098765432109"
+    assert by_target["hood,account=jv"] != by_target["hood,account=xl"]
+    assert by_target["hood,account=xl"] != by_target["kaufland,account=xl"]
+    hood_payload = next(item.data["payload"] for item in result.results if item.target == "hood,account=jv")
+    assert hood_payload["__source_ean"] == "4012345678901"
+
+    retry_result = service.execute(ean="4012345678901", request_id="request-2", job_id="job-1", command=command)
+    retry_by_target = {item.target: item.data["ean"] for item in retry_result.results}
+    assert retry_by_target["hood,account=jv"] == by_target["hood,account=jv"]
+    assert retry_by_target["hood,account=xl"] == by_target["hood,account=xl"]
+    assert len(set(pool_gateway.claimed_job_ids)) == 3
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):

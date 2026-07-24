@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useLabels } from "../../app/use-labels";
 import { AppShell } from "../layout/app-shell";
 import { Card, CardContent } from "../ui/card";
@@ -75,6 +76,7 @@ function isValidProductIdentifier(value: string): boolean {
 function ProductEditorContent() {
   const { showToast } = useToast();
   const t = useLabels();
+  const reducedMotion = useReducedMotion();
   const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
   const [eanInput, setEanInput] = useState("");
   const [tabEanInputs, setTabEanInputs] = useState<Record<string, string>>({});
@@ -194,7 +196,7 @@ function ProductEditorContent() {
   async function handleSearchGlobal() {
     const ean = eanInput.trim();
     if (!isValidProductIdentifier(ean)) return;
-    await runDiscover(ean, activeGroupId);
+    await runDiscover(ean, null);
   }
 
   async function handleSearchForActiveTab() {
@@ -1178,32 +1180,38 @@ function ProductEditorContent() {
 
   return (
     <AppShell title={t.navProductEditor} subtitle={t.productEditorWorkspaceSubtitle}>
-      <div className="wh-product-editor-page flex w-full flex-col gap-4">
-        <ProductEditorHeaderCard
-          eanInput={eanInput}
-          onChangeEan={setEanInput}
-          onSearch={() => void handleSearchGlobal()}
-          discovering={discovering}
-          isEanValid={isGlobalEanValid}
-          discover={discover}
-          foundCount={targetStats.foundCount}
-          missingCount={targetStats.missingCount}
-          totalCount={targetStats.totalCount}
+      <div className="wh-product-editor-page flex min-h-[calc(100dvh-1.5rem)] w-full flex-col gap-4">
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         >
-          <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-1.5 overflow-x-auto rounded-[var(--radius-control)] bg-muted/30 p-1 md:min-w-0">
-              {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => (
-                <TabsTrigger
-                  key={tab.key}
-                  value={tab.key}
-                  className="relative h-10 min-w-[110px] rounded-[var(--radius-control)] border border-transparent px-3 text-xs font-semibold uppercase tracking-normal transition-colors hover:border-border/80 hover:bg-background/70 data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-                >
-                  {getProductEditorDisplayTabLabel(tab.key, t)}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </ProductEditorHeaderCard>
+          <ProductEditorHeaderCard
+            eanInput={eanInput}
+            onChangeEan={setEanInput}
+            onSearch={() => void handleSearchGlobal()}
+            discovering={discovering}
+            isEanValid={isGlobalEanValid}
+            discover={discover}
+            foundCount={targetStats.foundCount}
+            missingCount={targetStats.missingCount}
+            totalCount={targetStats.totalCount}
+          >
+            <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
+              <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-2 overflow-x-auto bg-transparent p-0 md:min-w-0">
+                {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => (
+                  <TabsTrigger
+                    key={tab.key}
+                    value={tab.key}
+                    className="relative h-10 min-w-[110px] rounded-[var(--radius-control)] border border-border/70 bg-card px-3 text-xs font-semibold uppercase tracking-normal shadow-sm transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                  >
+                    {getProductEditorDisplayTabLabel(tab.key, t)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </ProductEditorHeaderCard>
+        </motion.div>
 
         {pageError ? (
           <Card className="border-destructive/20 bg-destructive/10 text-destructive shadow-sm">
@@ -1211,59 +1219,72 @@ function ProductEditorContent() {
           </Card>
         ) : null}
 
-        <ProductEditorActiveGroupPanel
-          discover={discover}
-          activeGroupId={activeGroupId}
-          activeTabLabel={PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => tab.key === activeTabKey)
-            ? getProductEditorDisplayTabLabel(activeTabKey, t)
-            : PRODUCT_EDITOR_TAB_COPY[activeGroupId].label}
-          hoodDraft={hoodDraft}
-          initialHoodDraft={initialHoodDraft}
-          hoodWarnings={hoodWarnings}
-          hoodLoading={hoodLoading}
-          hoodApplyLoading={hoodApplyLoading}
-          hoodImageUploadLoading={hoodImageUploadLoading}
-          onPatchHood={patchHoodDraft}
-          jvDraft={jvDraft}
-          initialJvDraft={initialJvDraft}
-          jvWarnings={jvWarnings}
-          jvLoading={jvLoading}
-          onPatchJv={patchJvDraft}
-          hoodChangedFields={hoodChangedFields}
-          jvChangedFields={jvChangedFields}
-          planResponse={planResponse}
-          planLoading={planLoading}
-          applyLoading={applyLoading}
-          applyConfirmed={applyConfirmed}
-          setApplyConfirmed={setApplyConfirmed}
-          onReviewChanges={handleReviewChanges}
-          onApplyPlan={handleApplyPlan}
-          jobResponse={jobResponse}
-          jobLoading={jobLoading}
-          onRefreshJob={() => {
-            if (applyResponse?.job_id) void refreshJob(applyResponse.job_id, false);
-          }}
-          eanValue={activeTabEanInput}
-          isEanValid={isEffectiveTabEanValid}
-          searching={discovering}
-          onChangeEan={patchActiveTabEan}
-          onSearch={() => void handleSearchForActiveTab()}
-          hasLocalLoadedHood={hasLocalLoadedHood}
-          hasLocalLoadedJv={hasLocalLoadedJv}
-          jvBatchApplyLoading={jvBatchApplyLoading}
-          onRemoveHoodImage={handleRemoveHoodImage}
-          onReorderHoodImages={handleReorderHoodImages}
-          onUploadHoodFiles={(files) => void handleUploadHoodFiles(files)}
-          onApplyHoodEditedProducts={() => void handleApplyHoodEditedProducts()}
-          onApplyJvEditedProducts={() => void handleApplyJvEditedProducts()}
-          kauflandDraft={kauflandDraft}
-          kauflandWarnings={kauflandWarnings}
-          kauflandLoading={kauflandLoading}
-          kauflandChangedFields={kauflandChangedFields}
-          kauflandApplyLoading={kauflandApplyLoading}
-          onPatchKaufland={patchKauflandDraft}
-          onApplyKauflandEditedProducts={() => void handleApplyKauflandEditedProducts()}
-        />
+        <div className="flex min-h-0 flex-1">
+          <AnimatePresence mode="wait" initial={!reducedMotion}>
+            <motion.div
+              key={activeTabKey}
+              initial={reducedMotion ? false : { opacity: 0, y: 12, scale: 0.992 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={reducedMotion ? undefined : { opacity: 0, y: -8, scale: 0.996 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="min-h-0 w-full flex-1"
+            >
+              <ProductEditorActiveGroupPanel
+            discover={discover}
+            activeGroupId={activeGroupId}
+            activeTabLabel={PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => tab.key === activeTabKey)
+              ? getProductEditorDisplayTabLabel(activeTabKey, t)
+              : PRODUCT_EDITOR_TAB_COPY[activeGroupId].label}
+            hoodDraft={hoodDraft}
+            initialHoodDraft={initialHoodDraft}
+            hoodWarnings={hoodWarnings}
+            hoodLoading={hoodLoading}
+            hoodApplyLoading={hoodApplyLoading}
+            hoodImageUploadLoading={hoodImageUploadLoading}
+            onPatchHood={patchHoodDraft}
+            jvDraft={jvDraft}
+            initialJvDraft={initialJvDraft}
+            jvWarnings={jvWarnings}
+            jvLoading={jvLoading}
+            onPatchJv={patchJvDraft}
+            hoodChangedFields={hoodChangedFields}
+            jvChangedFields={jvChangedFields}
+            planResponse={planResponse}
+            planLoading={planLoading}
+            applyLoading={applyLoading}
+            applyConfirmed={applyConfirmed}
+            setApplyConfirmed={setApplyConfirmed}
+            onReviewChanges={handleReviewChanges}
+            onApplyPlan={handleApplyPlan}
+            jobResponse={jobResponse}
+            jobLoading={jobLoading}
+            onRefreshJob={() => {
+              if (applyResponse?.job_id) void refreshJob(applyResponse.job_id, false);
+            }}
+            eanValue={activeTabEanInput}
+            isEanValid={isEffectiveTabEanValid}
+            searching={discovering}
+            onChangeEan={patchActiveTabEan}
+            onSearch={() => void handleSearchForActiveTab()}
+            hasLocalLoadedHood={hasLocalLoadedHood}
+            hasLocalLoadedJv={hasLocalLoadedJv}
+            jvBatchApplyLoading={jvBatchApplyLoading}
+            onRemoveHoodImage={handleRemoveHoodImage}
+            onReorderHoodImages={handleReorderHoodImages}
+            onUploadHoodFiles={(files) => void handleUploadHoodFiles(files)}
+            onApplyHoodEditedProducts={() => void handleApplyHoodEditedProducts()}
+            onApplyJvEditedProducts={() => void handleApplyJvEditedProducts()}
+            kauflandDraft={kauflandDraft}
+            kauflandWarnings={kauflandWarnings}
+            kauflandLoading={kauflandLoading}
+            kauflandChangedFields={kauflandChangedFields}
+            kauflandApplyLoading={kauflandApplyLoading}
+            onPatchKaufland={patchKauflandDraft}
+            onApplyKauflandEditedProducts={() => void handleApplyKauflandEditedProducts()}
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
     </AppShell>
   );
@@ -1345,10 +1366,10 @@ const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGr
   { key: "XL", groupId: "XL" },
   { key: "HOOD_JV", groupId: "HOOD" },
   { key: "HOOD_XL", groupId: "HOOD" },
-  { key: "OTTO_JV", groupId: "OTTO" },
-  { key: "OTTO_XL", groupId: "OTTO" },
   { key: "KAUFLAND_JV", groupId: "KAUFLAND" },
   { key: "KAUFLAND_XL", groupId: "KAUFLAND" },
+  { key: "OTTO_JV", groupId: "OTTO" },
+  { key: "OTTO_XL", groupId: "OTTO" },
   { key: "EBAY_JV", groupId: "EBAY" },
   { key: "EBAY_XL", groupId: "EBAY" }
 ];

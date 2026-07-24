@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLabels } from "../../app/use-labels";
 import { ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { buildJvChangedFields } from "./product-editor-model";
@@ -11,13 +11,14 @@ import {
   type ProductEditorJvDeliveryOption,
   type ProductEditorJvRubricNode
 } from "./product-editor-api";
-import { ProductEditorGalleryCard } from "./product-editor-gallery-card";
 import { Button } from "../ui/button";
+import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { StatusBadge } from "../ui/status-badge";
 import { cn } from "../../lib/cn";
+import { CreateProductImageGallery, JvCreateProductPanel, JvPublishingOptionsPanel, type JvPublishingSelections } from "../product-forms";
 import type {
   ProductEditorJobResponse,
   ProductEditorJvCategory,
@@ -36,6 +37,7 @@ const JV_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }
 const XL_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [
   { key: "XLMOEBEL_DE", label: "XL DE" }
 ] as const;
+type JvPublishingSiteKey = "JV_DE" | "JV_AT" | "JV_CH" | "JV_CO_UK";
 const ALL_STRUCTURED_SITE_TABS: ReadonlyArray<{ key: ProductEditorJvSiteKey; label: string }> = [...JV_SITE_TABS, ...XL_SITE_TABS];
 let cachedDeliveryOptionsBySite: Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>> = {};
 let deliveryOptionsPromiseBySite: Partial<Record<ProductEditorJvSiteKey, Promise<ProductEditorJvDeliveryOption[]>>> = {};
@@ -186,6 +188,15 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const filteredCategoryTree = filterCategoryTree(categoryTree, categoryQuery, selectedCategoryIds, onlyCheckedCategories);
   const deliveryOptions = deliveryOptionsBySite[activeSiteKey] ?? [];
   const deliveryValuesBySiteKey = getDraftDeliveryValuesBySiteKey(props.draft, baselineSiteKey);
+  const publishingSelections = useMemo<JvPublishingSelections>(() => ({
+    rubricIdsBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => [key, (categoriesBySiteKey[key] ?? []).map((item) => item.category_id)])),
+    mainRubricIdBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => [key, (categoriesBySiteKey[key] ?? []).find((item) => item.main_category)?.category_id ?? null])),
+    deliveryIdsBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
+      const deliveryId = Number(deliveryValuesBySiteKey[key] ?? "");
+      return [key, Number.isFinite(deliveryId) && deliveryId > 0 ? [deliveryId] : []];
+    })),
+  }), [categoriesBySiteKey, deliveryValuesBySiteKey]);
+  const publishingSelectionKey = useMemo(() => JSON.stringify(publishingSelections), [publishingSelections]);
   const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
@@ -438,6 +449,45 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     });
   }
 
+  function applyPublishingSelections(selections: JvPublishingSelections) {
+    const nextCategoriesBySiteKey = {
+      ...categoriesBySiteKey,
+      ...Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
+        const publishingKey = key as JvPublishingSiteKey;
+        const selectedIds = selections.rubricIdsBySite[publishingKey] ?? [];
+        const mainId = selections.mainRubricIdBySite[publishingKey] ?? selectedIds[0] ?? null;
+        return [key, selectedIds.map((category_id) => ({ category_id, main_category: category_id === mainId }))];
+      })),
+    };
+    const nextFieldsBySiteKey: ProductEditorJvFieldsBySiteKey = {
+      ...props.draft.jv_fields_by_site_key,
+      ...Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
+        const publishingKey = key as JvPublishingSiteKey;
+        const deliveryId = selections.deliveryIdsBySite[publishingKey]?.[0];
+        const current = props.draft.jv_fields_by_site_key[key] ?? {};
+        return [key, {
+          ...current,
+          lieferzeitid: deliveryId == null ? "" : String(deliveryId),
+          lieferzeit: deliveryId == null ? "" : String(deliveryId),
+          lieferzeit_id: deliveryId == null ? "" : String(deliveryId),
+        }];
+      })),
+    };
+    const jvBaselineSiteKey = baselineSiteKey as JvPublishingSiteKey;
+    const baselineDeliveryId = selections.deliveryIdsBySite[jvBaselineSiteKey]?.[0];
+    props.onChange({
+      categories_by_site_key: nextCategoriesBySiteKey,
+      categories: nextCategoriesBySiteKey[baselineSiteKey] ?? props.draft.categories,
+      jv_fields_by_site_key: nextFieldsBySiteKey,
+      jv_fields: baselineDeliveryId == null ? props.draft.jv_fields : {
+        ...props.draft.jv_fields,
+        lieferzeitid: String(baselineDeliveryId),
+        lieferzeit: String(baselineDeliveryId),
+        lieferzeit_id: String(baselineDeliveryId),
+      },
+    });
+  }
+
   return (
     <ProductEditorPanelLayout
       kicker={props.draft.ean ? `EAN ${props.draft.ean}` : "EAN -"}
@@ -446,20 +496,22 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       status={props.draft.target_id || undefined}
       headerLead={
         <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <Input
-              value={props.eanValue}
-              onChange={(event) => props.onChangeEan(event.target.value)}
-              placeholder={t.enterEanSkuOrProductId}
-              maxLength={100}
-              className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                  event.preventDefault();
-                  props.onSearch();
-                }
-              }}
-            />
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
+            <FormField label="EAN" className="min-w-0 flex-1">
+              <Input
+                value={props.eanValue}
+                onChange={(event) => props.onChangeEan(event.target.value)}
+                placeholder={t.enterEanSkuOrProductId}
+                maxLength={100}
+                className="h-10 rounded-xl border-border bg-background text-sm"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
+                    event.preventDefault();
+                    props.onSearch();
+                  }
+                }}
+              />
+            </FormField>
             <Button
               type="button"
               variant="outline"
@@ -468,6 +520,15 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               onClick={props.onSearch}
             >
               {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 shrink-0 rounded-xl px-4 text-sm font-semibold"
+              onClick={props.onApplyEditedProducts}
+              disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
+            >
+              {props.batchApplyLoading ? t.updating : t.updateEditedProducts}
             </Button>
           </div>
           {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}{isXlMode ? " · source: xl.de" : ""}</p> : null}
@@ -488,19 +549,11 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
               </StatusBadge>
             </>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 rounded-xl text-xs font-semibold"
-            onClick={props.onApplyEditedProducts}
-            disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
-          >
-            {props.batchApplyLoading ? t.updating : t.updateEditedProducts}
-          </Button>
         </div>
       }
-      topLeft={
-        <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4">
+      topLeft={<>
+        <ProductEditorJvCreateForm draft={props.draft} onChange={props.onChange} />
+        <div className="hidden flex h-full flex-col rounded-xl border border-border bg-card p-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
           <Input value={productName} onChange={(event) => patchPrimaryName(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
           <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.xljvUrlKey}</p>
@@ -590,88 +643,53 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
             </div>
           </div>
         </div>
-      }
+      </>}
       topRight={
         <div className="space-y-4">
-          <ProductEditorGalleryCard
-            items={galleryItems}
-            selectedItemId={selectedGalleryItemId}
-            uploadLoading={false}
-            uploadButtonLabel={t.productEditorUploadImagesAction}
+          <CreateProductImageGallery
+            items={galleryItems.map((item) => ({ ...item, isLocal: false }))}
+            activeItemId={selectedGalleryItemId}
+            previewAlt={t.createProductJvGalleryPreview}
+            uploadLabel={t.productEditorUploadImagesAction}
             emptyPreviewLabel={t.productEditorNoImage}
             emptyGalleryLabel={t.productEditorNoGalleryImages}
-            onSelectItem={(itemId) => {
+            thumbnailAlt={(index) => t.createProductJvGalleryThumbnail.replace("{index}", String(index + 1))}
+            deleteAlt={(index) => t.createProductDeleteImage.replace("{index}", String(index + 1))}
+            onActiveItemChange={(itemId) => {
               const item = galleryItems.find((entry) => entry.id === itemId);
               if (item) {
                 setSelectedImageUrl(item.src);
               }
             }}
-            onRemoveItem={(itemId) => {
+            onDeleteItem={(itemId) => {
               const itemIndex = galleryItems.findIndex((entry) => entry.id === itemId);
               if (itemIndex >= 0) {
                 removeGalleryImage(itemIndex);
               }
             }}
-            onReorderItems={(sourceItemId, targetItemId) => {
+            onMoveItem={(sourceItemId, targetItemId) => {
               const sourceIndex = galleryItems.findIndex((entry) => entry.id === sourceItemId);
               const targetIndex = galleryItems.findIndex((entry) => entry.id === targetItemId);
               if (sourceIndex >= 0 && targetIndex >= 0) {
                 moveGalleryImage(sourceIndex, targetIndex);
               }
             }}
-            onUploadFiles={handleUploadImages}
+            onFilesSelected={handleUploadImages}
           />
 
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.categoryLabel}</p>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                {activeSiteKey}: {currentCategories.length}
-              </span>
-            </div>
-            <SiteTabBar
-              siteTabs={siteTabs}
-              activeSiteKey={activeSiteKey}
-              onChange={setActiveSiteKey}
-              renderMeta={(siteKey) => String((categoriesBySiteKey[siteKey] ?? []).length)}
+          {!isXlMode ? (
+            <JvPublishingOptionsPanel
+              sourceSiteKey={baselineSiteKey}
+              sourceCategories={(categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
+                category_id: category.category_id,
+                main_category: Boolean(category.main_category),
+              }))}
+              sourceDeliveryId={Number(deliveryValuesBySiteKey[baselineSiteKey] ?? "") || undefined}
+              initialSelections={publishingSelections}
+              initialSelectionKey={publishingSelectionKey}
+              onSelectionsChange={applyPublishingSelections}
             />
-            <div className="flex items-center gap-2">
-              <Input
-                value={categoryQuery}
-                onChange={(event) => setCategoryQuery(event.target.value)}
-                placeholder={t.searchCategoryByNameOrId}
-                className="h-10 rounded-xl border-border bg-white text-sm"
-              />
-              <Button
-                type="button"
-                variant={onlyCheckedCategories ? "default" : "outline"}
-                className="h-10 shrink-0 rounded-xl px-3 text-xs font-semibold"
-                onClick={() => setOnlyCheckedCategories((prev) => !prev)}
-              >
-                {t.onlyChecked}
-              </Button>
-            </div>
-            <div className="mt-2 max-h-72 overflow-auto rounded-xl border border-border bg-white">
-              {filteredCategoryTree.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-muted-foreground">{t.noCategoriesFound}</p>
-              ) : (
-                filteredCategoryTree.map((node) => (
-                  <CategoryTreeRow
-                    key={node.id}
-                    node={node}
-                    level={0}
-                    expandedCategoryIds={expandedCategoryIds}
-                    selectedCategoryIds={selectedCategoryIds}
-                    mainCategoryId={mainCategoryId}
-                    radioName={`jv-main-category-${activeSiteKey}`}
-                    onToggleExpand={toggleCategoryExpand}
-                    onToggleSelect={toggleCategory}
-                    onSetMainCategory={setMainCategory}
-                  />
-                ))
-              )}
-            </div>
-          </div>
+          ) : null}
         </div>
       }
       description={
@@ -921,6 +939,29 @@ function toNumber(value: unknown): number {
 function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {
   const candidate = String(draft.target_id || draft.jv_fields?.site_key || "").trim().toUpperCase();
   return ALL_STRUCTURED_SITE_TABS.some((site) => site.key === candidate) ? (candidate as ProductEditorJvSiteKey) : "JV_DE";
+}
+
+function ProductEditorJvCreateForm({ draft, onChange }: { draft: ProductEditorJvDraft; onChange: (patch: Partial<ProductEditorJvDraft>) => void }) {
+  const content = getJvContentByLanguage(draft.jv_fields, "de");
+  const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
+  const fields = {
+    name: String(content?.name ?? ""), urlKey: String(draft.jv_fields?.urlkey ?? ""), artikelnr: String(draft.source_sku ?? draft.jv_fields?.artikelnr ?? ""), price: draft.price, evp: String(draft.jv_fields?.uvp ?? ""),
+    bezeichnung: String(content?.bezeichnung ?? content?.short_description ?? ""), kurzbeschreibung: String(content?.kurzbeschreibung ?? ""), shortDescriptionReal: String(content?.short_description_real ?? ""),
+    metaTitle: String(content?.meta_title ?? ""), metaDescription: String(content?.meta_description ?? ""), metaKeyword: String(content?.meta_keyword ?? ""), description: String(content?.description ?? ""),
+  };
+  const patchContent = (patch: Record<string, string>) => onChange({ jv_fields: setJvContentByLanguage(draft.jv_fields, "de", patch) });
+  return <JvCreateProductPanel fields={fields} previewHtml={normalizeDescriptionHtmlForPreview(fields.description)} descriptionMode={descriptionMode} labels={{ name: "Name", urlKey: "URL key", artikelnr: "Artikel-Nr.", price: "Price", bezeichnung: "Bezeichnung", kurzbeschreibung: "Kurzbeschreibung", shortDescriptionReal: "Short description", metaTitle: "Meta title", metaDescription: "Meta description", metaKeyword: "Meta keyword", description: "Description", keywordPlaceholder: "Separate keywords with commas", code: "Code", preview: "Preview" }} onFieldDraftChange={(key, value) => {
+    if (key === "price") { onChange({ price: value }); return; }
+    if (key === "artikelnr") { onChange({ source_sku: value, jv_fields: { ...draft.jv_fields, artikelnr: value } }); return; }
+    if (key === "name") { patchContent({ name: value }); return; }
+    if (key === "bezeichnung") { patchContent({ bezeichnung: value, short_description: value }); return; }
+    if (key === "kurzbeschreibung") { patchContent({ kurzbeschreibung: value }); return; }
+    if (key === "shortDescriptionReal") { patchContent({ short_description_real: value }); return; }
+    if (key === "metaTitle") { patchContent({ meta_title: value }); return; }
+    if (key === "metaDescription") { patchContent({ meta_description: value }); return; }
+    if (key === "metaKeyword") { patchContent({ meta_keyword: value }); return; }
+    if (key === "description") patchContent({ description: value });
+  }} onDescriptionModeChange={setDescriptionMode} buildUrlKey={buildUrlKeyFromName} computeEvp={(value) => { const price = parsePriceValue(value); return price === null ? "" : String(calculateUvpRoundedTo9(price)); }} />;
 }
 
 function normalizeCategorySelection(categories: ProductEditorJvCategory[]): ProductEditorJvCategory[] {

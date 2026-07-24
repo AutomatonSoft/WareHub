@@ -326,7 +326,8 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
     if (!response.ok) {
       throw new Error(payload.detail || `create_product_xl_source_sites_http:${response.status}`);
     }
-    return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> });
+    return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> })
+      .filter((site) => site.siteKey.trim().toUpperCase() === CREATE_PRODUCT_XL_DEFAULT_SITE_KEY);
   }
 
   if (input.site === "HOOD") {

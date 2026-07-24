@@ -1,9 +1,17 @@
 from django.test import SimpleTestCase, TestCase
 
+from database.models import Ean, EanStatus, Kid
+
 from .core import build_create_urls, build_delete_by_item_number_urls, sanitize_patch_payload
 from .models import HoodProductSnapshot
 from .snapshot_store import get_hood_product_snapshot_payload, save_hood_product_snapshot
-from .views import HOOD_CREATE_CATEGORY_ID, _coerce_json_list_field, _enforce_create_category, _merge_uploaded_image_urls
+from .views import (
+    HOOD_CREATE_CATEGORY_ID,
+    _coerce_json_list_field,
+    _enforce_create_category,
+    _merge_uploaded_image_urls,
+    _record_hood_marketplace_ean,
+)
 
 
 class HoodImagePayloadTests(SimpleTestCase):
@@ -106,3 +114,22 @@ class HoodProductSnapshotStoreTests(TestCase):
         snapshot = HoodProductSnapshot.objects.get(account="jv", ean="4062292028939")
         self.assertEqual(snapshot.source_item_id, "item-1")
         self.assertEqual(get_hood_product_snapshot_payload(account="jv", ean="4062292028939"), latest_payload)
+
+
+class HoodMarketplaceEanMappingTests(TestCase):
+    def test_confirmed_hood_pool_ean_is_saved_on_the_source_kid(self):
+        kid = Kid.objects.create(kid_number=["KID-HOOD-POOL"])
+        source_ean = "4012345678901"
+        Ean.objects.create(kid=kid, main_ean=source_ean)
+
+        result = _record_hood_marketplace_ean(
+            source_ean=source_ean,
+            marketplace_ean="4098765432109",
+            account="jv",
+        )
+
+        ean_row = Ean.objects.get(kid=kid)
+        status_row = EanStatus.objects.get(ean=kid)
+        self.assertEqual(result["field"], "hood_jv")
+        self.assertEqual(ean_row.hood_jv, "4098765432109")
+        self.assertTrue(status_row.hood_jv)

@@ -48,14 +48,17 @@ class HttpClient:
         last_kind = "network"
         for attempt in range(self._retries + 1):
             try:
-                request_timeout = timeout_seconds if timeout_seconds is not None and timeout_seconds > 0 else None
+                request_options = {
+                    "headers": headers,
+                    "params": params,
+                    "json": json,
+                }
+                if timeout_seconds is not None and timeout_seconds > 0:
+                    request_options["timeout"] = timeout_seconds
                 response = self._get_client().request(
                     method,
                     url,
-                    headers=headers,
-                    params=params,
-                    json=json,
-                    timeout=request_timeout,
+                    **request_options,
                 )
                 if response.status_code >= 500 and attempt < self._retries:
                     time.sleep(0.2 * (attempt + 1))

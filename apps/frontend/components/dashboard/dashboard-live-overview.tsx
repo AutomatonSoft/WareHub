@@ -4,32 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useLabels, useLanguage } from "../../app/use-labels";
 import type { KpiMetric } from "../../lib/mock-data";
-import { DashboardOrderDto as OrderDto, DashboardWarehouseSummaryDto, fetchDashboardOverviewData } from "./dashboard-api";
+import { DashboardWarehouseSummaryDto, fetchDashboardOverviewData } from "./dashboard-api";
 import { CriticalInventoryPanel } from "./critical-inventory-panel";
 import { LiveKpiGrid } from "./live-kpi-grid";
 import { MarketplacePublicationSummary } from "./marketplace-publication-summary";
 import { InventoryChangeHistory } from "./inventory-change-history";
 
-function parsePrice(value?: string | null): number {
-  if (!value) return 0;
-  const raw = value.replace(/[^\d,.-]/g, "");
-  const lastComma = raw.lastIndexOf(",");
-  const lastDot = raw.lastIndexOf(".");
-  const normalized = lastComma > lastDot ? raw.replace(/\./g, "").replace(",", ".") : raw.replace(/,/g, "");
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function getPaidRevenueAmount(order: OrderDto): number | null {
-  if (order.status !== "paid") return null;
-  const amount = parsePrice(order.full_amount);
-  return amount > 0 ? amount : null;
-}
-
 export function DashboardLiveOverview() {
   const t = useLabels();
   const lang = useLanguage();
-  const [orders, setOrders] = useState<OrderDto[]>([]);
   const [summary, setSummary] = useState<DashboardWarehouseSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +25,14 @@ export function DashboardLiveOverview() {
       setLoading(true);
       setError(null);
       try {
-        const { orders: ordersPayload, summary: summaryPayload } = await fetchDashboardOverviewData();
+        const summaryPayload = await fetchDashboardOverviewData();
 
         if (active) {
-          setOrders(ordersPayload);
           setSummary(summaryPayload);
         }
       } catch (loadError) {
         console.error("DASHBOARD_OVERVIEW_LOAD_ERROR", loadError);
         if (active) {
-          setOrders([]);
           setSummary(null);
           const message =
             loadError instanceof Error && loadError.message === "dashboard_overview_request_failed"
@@ -88,7 +69,7 @@ export function DashboardLiveOverview() {
       return [];
     }
 
-    const paidRevenue = orders.reduce((total, order) => total + (getPaidRevenueAmount(order) ?? 0), 0);
+    const paidRevenue = Number(summary.paid_revenue);
 
     return [
       {
@@ -120,7 +101,7 @@ export function DashboardLiveOverview() {
         trend: "up"
       }
     ];
-  }, [error, numberLocale, orders, summary, t]);
+  }, [error, numberLocale, summary, t]);
 
   return (
     <div className="wh-dashboard">

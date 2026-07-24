@@ -36,6 +36,10 @@ export function CreateProductEanPoolPanel() {
     void loadPoolCount();
   }, []);
 
+  useEffect(() => {
+    if (isOpen) void loadPoolCount();
+  }, [isOpen]);
+
   async function importEans() {
     if (eans.length === 0 || isSubmitting) return;
 
