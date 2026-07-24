@@ -31,7 +31,7 @@ from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLo
 from .order_amounts import parse_order_amount
 from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
-from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
+from .inventory_service import build_critical_inventory_rows, build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
 from .place_rules import (
     find_place_conflict,
     list_available_pool_places,
@@ -1998,6 +1998,13 @@ class InventoryDashboardSummaryAPIView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class CriticalInventoryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        return Response(build_critical_inventory_rows(), status=status.HTTP_200_OK)
 
 
 class InventoryChangeHistoryAPIView(APIView):

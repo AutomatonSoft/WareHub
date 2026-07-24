@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getXlRubricTree, type ProductEditorJvRubricNode } from "./product-editor-api";
-import { ProductEditorGalleryCard } from "./product-editor-gallery-card";
 import { ProductEditorAttributesEditor, ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { normalizeProductAttributes, sanitizeDescriptionPreviewHtml } from "./product-editor-model";
 import { Button } from "../ui/button";
+import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/cn";
+import { CreateProductImageGallery, XlCreateProductPanel, type XlCreateProductDraft } from "../product-forms";
 import type { ProductEditorJobResponse, ProductEditorJvDraft, ProductEditorPendingUpload, ProductEditorWarning } from "./product-editor-types";
 
 type ProductEditorXlPanelProps = {
@@ -246,20 +247,22 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
       status={props.draft.target_id || undefined}
       headerLead={
         <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <Input
-              value={props.eanValue}
-              onChange={(event) => props.onChangeEan(event.target.value)}
-              placeholder="Enter EAN, SKU or product ID"
-              maxLength={100}
-              className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                  event.preventDefault();
-                  props.onSearch();
-                }
-              }}
-            />
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
+            <FormField label="EAN" className="min-w-0 flex-1">
+              <Input
+                value={props.eanValue}
+                onChange={(event) => props.onChangeEan(event.target.value)}
+                placeholder="Enter EAN, SKU or product ID"
+                maxLength={100}
+                className="h-10 rounded-xl border-border bg-background text-sm"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
+                    event.preventDefault();
+                    props.onSearch();
+                  }
+                }}
+              />
+            </FormField>
             <Button
               type="button"
               variant="outline"
@@ -287,8 +290,9 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
           </Button>
         </div>
       }
-      topLeft={
-        <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-card p-4">
+      topLeft={<>
+        <ProductEditorXlCreateForm draft={props.draft} onChange={props.onChange} />
+        <div className="hidden flex h-full flex-col gap-4 rounded-xl border border-border bg-card p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <ReadOnlyField label="Model" value={props.draft.source_model || "-"} />
           </div>
@@ -312,20 +316,20 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
             <Switch checked={Boolean(props.draft.status)} onChange={(event) => patchStatus(event.target.checked)} aria-label="Toggle XL status" />
           </label>
 
-	          <div>
-	            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Primary description row</p>
+	          <section className="space-y-3 border-t border-border/70 pt-4">
+	            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Primary description</div>
 	            {firstDescription ? (
-	              <div className="grid gap-3">
-	                <Input value={firstDescription.name} onChange={(event) => patchDescription(0, "name", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
-	                <Input value={firstDescription.meta_title ?? ""} onChange={(event) => patchDescription(0, "meta_title", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
-	                <Input value={firstDescription.meta_description ?? ""} onChange={(event) => patchDescription(0, "meta_description", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
-	                <Textarea value={firstDescription.meta_keyword ?? ""} onChange={(event) => patchDescription(0, "meta_keyword", event.target.value)} className="min-h-20 rounded-xl border-border bg-white text-sm" />
-	                <Textarea value={firstDescription.tag ?? ""} onChange={(event) => patchDescription(0, "tag", event.target.value)} className="min-h-16 rounded-xl border-border bg-white text-sm" />
+	              <div className="grid gap-3 sm:grid-cols-2">
+	                <FormField label="Name" className="sm:col-span-2"><Input value={firstDescription.name} onChange={(event) => patchDescription(0, "name", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label="Meta title"><Input value={firstDescription.meta_title ?? ""} onChange={(event) => patchDescription(0, "meta_title", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label="Meta description"><Input value={firstDescription.meta_description ?? ""} onChange={(event) => patchDescription(0, "meta_description", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label="Meta keywords"><Textarea value={firstDescription.meta_keyword ?? ""} onChange={(event) => patchDescription(0, "meta_keyword", event.target.value)} className="min-h-20 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label="Tag"><Textarea value={firstDescription.tag ?? ""} onChange={(event) => patchDescription(0, "tag", event.target.value)} className="min-h-16 rounded-xl border-border bg-white text-sm" /></FormField>
 	              </div>
 	            ) : (
 	              <div className="rounded-xl border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">XL payload returned no description rows.</div>
 	            )}
-	          </div>
+	          </section>
 
           <ProductEditorAttributesEditor
             title="XL source attributes"
@@ -338,36 +342,38 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
             emptyText="No XL attribute fields loaded."
           />
         </div>
-      }
+      </>}
       topRight={
         <div className="space-y-4">
-          <ProductEditorGalleryCard
-            items={galleryItems}
-            selectedItemId={galleryItems.find((item) => item.src === selectedImageUrl)?.id ?? galleryItems[0]?.id ?? ""}
-            uploadLoading={false}
-            uploadButtonLabel="Upload images"
+          <CreateProductImageGallery
+            items={galleryItems.map((item) => ({ ...item, isLocal: false }))}
+            activeItemId={galleryItems.find((item) => item.src === selectedImageUrl)?.id ?? galleryItems[0]?.id ?? ""}
+            previewAlt="Product image preview"
+            uploadLabel="Upload images"
             emptyPreviewLabel="No image"
             emptyGalleryLabel="No gallery images"
-            onSelectItem={(itemId) => {
+            thumbnailAlt={(index) => `Product image ${index + 1}`}
+            deleteAlt={(index) => `Delete product image ${index + 1}`}
+            onActiveItemChange={(itemId) => {
               const item = galleryItems.find((entry) => entry.id === itemId);
               if (item) {
                 setSelectedImageUrl(item.src);
               }
             }}
-            onRemoveItem={(itemId) => {
+            onDeleteItem={(itemId) => {
               const itemIndex = galleryItems.findIndex((entry) => entry.id === itemId);
               if (itemIndex >= 0) {
                 removeGalleryImage(itemIndex);
               }
             }}
-            onReorderItems={(sourceItemId, targetItemId) => {
+            onMoveItem={(sourceItemId, targetItemId) => {
               const sourceIndex = galleryItems.findIndex((entry) => entry.id === sourceItemId);
               const targetIndex = galleryItems.findIndex((entry) => entry.id === targetItemId);
               if (sourceIndex >= 0 && targetIndex >= 0) {
                 moveGalleryImage(sourceIndex, targetIndex);
               }
             }}
-            onUploadFiles={handleUploadImages}
+            onFilesSelected={handleUploadImages}
           />
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -493,6 +499,28 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
       bottom={<></>}
     />
   );
+}
+
+function ProductEditorXlCreateForm({ draft, onChange }: { draft: ProductEditorJvDraft; onChange: (patch: Partial<ProductEditorJvDraft>) => void }) {
+  const firstDescription = draft.descriptions[0];
+  const initialFields: XlCreateProductDraft = {
+    name: firstDescription?.name ?? "",
+    seo_url: String(draft.jv_fields?.urlkey ?? ""),
+    ean: draft.ean,
+    price: draft.price,
+    uvp: String(draft.jv_fields?.uvp ?? ""),
+    description: firstDescription?.description ?? "",
+    tag: firstDescription?.tag ?? "",
+    meta_title: firstDescription?.meta_title ?? "",
+    meta_description: firstDescription?.meta_description ?? "",
+    meta_keyword: firstDescription?.meta_keyword ?? "",
+  };
+  return <XlCreateProductPanel initialFields={initialFields} draftKey={`${draft.target_id}:${draft.ean}`} codeLabel="Code" previewLabel="Preview" onDraftChange={(next) => onChange({
+    ean: next.ean,
+    price: next.price,
+    jv_fields: { ...draft.jv_fields, urlkey: next.seo_url, uvp: next.uvp },
+    descriptions: [{ ...(firstDescription ?? { language_id: 1 }), name: next.name, description: next.description, tag: next.tag, meta_title: next.meta_title, meta_description: next.meta_description, meta_keyword: next.meta_keyword }, ...draft.descriptions.slice(1)],
+  })} />;
 }
 
 function ReadOnlyField({ label, value }: { label: string; value: string }) {

@@ -1,5 +1,4 @@
 import {
-  ChartColumnBig,
   LayoutDashboard,
   List,
   Map,
@@ -14,7 +13,6 @@ export const navigationItems = [
   { href: "/sofort-list", labelKey: "navSofortList", icon: List },
   { href: "/create-product", labelKey: "navCreateProduct", icon: PlusSquare },
   { href: "/product-editor", labelKey: "navProductEditor", icon: PencilRuler },
-  { href: "/marketplace", labelKey: "navMarketplace", icon: ChartColumnBig },
   { href: "/warehouse-map", labelKey: "navWarehouseMap", icon: Map }
 ] as const;
 

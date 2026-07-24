@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import NAMESPACE_URL, uuid5
+
 from ..domain.field_registry import filtered_payload, missing_required_fields, validate_changed_fields
 from ..domain.models import (
     ChannelResult,
@@ -36,8 +38,8 @@ class OrchestratorService:
             return self._unsupported_operation_response(request_id=request_id, command=command)
 
         results: list[ChannelResult] = []
-        pool_ean = self._claim_pool_ean_if_needed(command=command, job_id=job_id, request_id=request_id)
-        pool_ean_published = False
+        pool_eans_by_reservation_id: dict[str, str] = {}
+        used_pool_reservation_ids: set[str] = set()
 
         for channel in command.channels:
             target_label = _target_label(channel)
@@ -85,6 +87,13 @@ class OrchestratorService:
                 selected = set(channel.changed_fields)
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
             scoped_payload.update(channel.overrides)
+
+            # A pooled marketplace EAN is different from the source product
+            # EAN. Preserve the source identity as internal transport metadata
+            # so database-service can save the successful HOOD mapping to the
+            # correct Kid without exposing this field to HOOD's external API.
+            if channel.marketplace is Marketplace.HOOD and channel.ean_source == "pool":
+                scoped_payload["__source_ean"] = ean
 
             missing = [] if product_editor_mode in {"jv_batch_apply", "xl_batch_apply"} else missing_required_fields(channel.marketplace, scoped_payload)
             if missing:
@@ -142,9 +151,16 @@ class OrchestratorService:
             try:
                 channel_ean = ean
                 if channel.ean_source == "pool":
-                    if not pool_ean:
-                        raise RuntimeError("Pool EAN was not allocated.")
-                    channel_ean = pool_ean
+                    reservation_id = self._pool_reservation_id(job_id=job_id, target_label=target_label)
+                    channel_ean = pool_eans_by_reservation_id.get(reservation_id)
+                    if channel_ean is None:
+                        if self.ean_pool_gateway is None:
+                            raise RuntimeError("EAN pool gateway is not configured.")
+                        channel_ean = self.ean_pool_gateway.claim_for_job(
+                            job_id=reservation_id,
+                            request_id=request_id,
+                        )
+                        pool_eans_by_reservation_id[reservation_id] = channel_ean
                 adapter_result = self.adapters.dispatch(
                     ean=channel_ean,
                     request_id=request_id,
@@ -200,7 +216,7 @@ class OrchestratorService:
             ok = 200 <= adapter_result.status_code < 300
             if ok:
                 if channel.ean_source == "pool":
-                    pool_ean_published = True
+                    used_pool_reservation_ids.add(self._pool_reservation_id(job_id=job_id, target_label=target_label))
                 if self.circuit_breaker is not None:
                     self.circuit_breaker.record_success(breaker_key)
                 results.append(
@@ -243,19 +259,18 @@ class OrchestratorService:
                 )
             )
 
-        if pool_ean_published:
-            self._mark_pool_ean_used(job_id=job_id, request_id=request_id)
+        for reservation_id in used_pool_reservation_ids:
+            self._mark_pool_ean_used(job_id=reservation_id, request_id=request_id)
 
         return OrchestrateResponse(request_id=request_id, status=_final_status(results), results=results)
 
-    def _claim_pool_ean_if_needed(self, *, command: OrchestrateRequest, job_id: str | None, request_id: str) -> str | None:
-        if not any(channel.ean_source == "pool" for channel in command.channels):
-            return None
+    def _pool_reservation_id(self, *, job_id: str | None, target_label: str) -> str:
         if not job_id:
             raise ValueError("Pool EAN allocation requires a queued orchestrator job.")
-        if self.ean_pool_gateway is None:
-            raise RuntimeError("EAN pool gateway is not configured.")
-        return self.ean_pool_gateway.claim_for_job(job_id=job_id, request_id=request_id)
+        # The pool API keeps reservations idempotent by UUID. Derive a stable
+        # UUID for each job/channel pair so HOOD JV and HOOD XL receive two
+        # different EANs, while retries preserve the same EAN for each target.
+        return str(uuid5(NAMESPACE_URL, f"warehub:ean-pool:{job_id}:{target_label}"))
 
     def _mark_pool_ean_used(self, *, job_id: str | None, request_id: str) -> None:
         if not job_id or self.ean_pool_gateway is None:

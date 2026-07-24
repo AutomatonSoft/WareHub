@@ -221,7 +221,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location --range 0-0 "$PROD_PUBLIC_BASE_URL/warehub.apk" -o /dev/null
+          apk_status="$(curl --silent --show-error --output /dev/null --range 0-0 --write-out '%{http_code}' "$PROD_PUBLIC_BASE_URL/warehub.apk")"
+          [ "$apk_status" = "200" ] || [ "$apk_status" = "206" ] || {
+            echo "Production APK endpoint returned HTTP $apk_status; expected 200 or 206 without a redirect." >&2
+            exit 1
+          }
           curl --fail --silent --show-error "$PROD_PUBLIC_BASE_URL/api/v1/mobile/app-update" -o update.json
           python3 - <<'PY'
           import json

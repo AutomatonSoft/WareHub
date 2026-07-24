@@ -15,7 +15,8 @@ import {
   getOrchestratorJobAttempts,
   getOrchestratorJobEvents,
   listReconciliationReportsByEan,
-  pushProductToOrchestrator
+  pushProductToOrchestrator,
+  type OrchestratorResponse,
 } from "./orchestrator-api";
 import {
   buildMainKauflandCreatePayload,
@@ -29,6 +30,7 @@ import {
   validateHoodCreateFields,
   validateMainKauflandCreateFields,
   validateMainXljvCreateFields,
+  type CreateProductFormInput,
   type CreateProductFieldKey,
   type HoodCreateFieldKey,
   type HoodCreateFields,
@@ -61,6 +63,24 @@ type Labels = Record<string, string>;
 
 type ToastTone = "success" | "info" | "error";
 
+export type XlPublishDraft = {
+  name: string;
+  ean: string;
+  price: string;
+  description: string;
+  tag: string;
+  meta_title: string;
+  meta_description: string;
+  meta_keyword: string;
+};
+
+export type HoodPublishDraft = {
+  name: string;
+  ean: string;
+  price: string;
+  fields: HoodCreateFields;
+};
+
 type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
@@ -73,6 +93,28 @@ type SourceCache = {
   snapshotsBySource: Map<string, CreateProductJvSourceSnapshot>;
   selectedSiteKeyBySource: Map<string, string>;
 };
+
+const JOB_STATUS_POLL_INTERVAL_MS = 500;
+const JOB_STATUS_MAX_POLLS = 20;
+
+function getCompletedJobResult(job: Record<string, unknown>): OrchestratorResponse | null {
+  const result = job.result;
+  if (!result || typeof result !== "object") return null;
+
+  const typedResult = result as Partial<OrchestratorResponse>;
+  if (
+    (typedResult.status !== "success" && typedResult.status !== "partial_success" && typedResult.status !== "failed") ||
+    !Array.isArray(typedResult.results)
+  ) {
+    return null;
+  }
+
+  return typedResult as OrchestratorResponse;
+}
+
+function waitForDelay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function sourceCacheKey(mainEan: string, sourceSite: CreateProductSourceSiteKind, siteKey = ""): string {
   return [mainEan.trim(), sourceSite, siteKey.trim()].join(":");
@@ -415,8 +457,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     showToast(t.fieldsReset, "info");
   }
 
-  function validateCreateFields(): boolean {
-    const validation = validateCreateProductInput({ ean, price, productName, imagesText });
+  function validateCreateFields(formInput: CreateProductFormInput = { ean, price, productName, imagesText }): boolean {
+    const validation = validateCreateProductInput(formInput);
     const mappedErrors: Partial<Record<CreateProductFieldKey, string>> = {};
     if (validation.errors.ean) {
       mappedErrors.ean = mapValidationErrorCodeToLabel(validation.errors.ean, t);
@@ -431,22 +473,82 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return validation.isValid;
   }
 
+  async function waitForJobOutcome(jobId: string): Promise<OrchestratorResponse | null> {
+    for (let poll = 0; poll < JOB_STATUS_MAX_POLLS; poll += 1) {
+      if (poll > 0) {
+        await waitForDelay(JOB_STATUS_POLL_INTERVAL_MS);
+      }
+
+      const job = await getOrchestratorJob(jobId);
+      setJobStatusJson(JSON.stringify(job, null, 2));
+
+      const status = typeof job.status === "string" ? job.status : "";
+      if (status === "queued" || status === "running") {
+        continue;
+      }
+
+      const [attempts, events] = await Promise.all([
+        getOrchestratorJobAttempts(jobId),
+        getOrchestratorJobEvents(jobId),
+      ]);
+      setJobAttemptsJson(JSON.stringify(attempts, null, 2));
+      setJobEventsJson(JSON.stringify(events, null, 2));
+
+      const result = getCompletedJobResult(job);
+      if (result) {
+        return result;
+      }
+
+      const jobError = job.error;
+      if (jobError && typeof jobError === "object") {
+        const errorMessage = (jobError as Record<string, unknown>).message;
+        const message = typeof errorMessage === "string"
+          ? errorMessage
+          : "Orchestrator job failed.";
+        throw new Error(message);
+      }
+
+      return null;
+    }
+
+    return null;
+  }
+
+  async function showCompletedJobOutcome(jobId: string): Promise<void> {
+    const result = await waitForJobOutcome(jobId);
+    if (!result) {
+      showToast(`Job ${jobId} is still processing. Open job status for the final result.`, "info");
+      return;
+    }
+
+    const failedCount = result.results.filter((item) => item.status === "failed").length;
+    const toast = buildOrchestratorStatusToastMessage({
+      labels: t,
+      status: result.status,
+      totalResults: result.results.length,
+      failedCount,
+      failureSummary: buildFailureSummary(result.results),
+    });
+    showToast(toast.message, toast.tone);
+  }
+
   async function submitCreateProduct(
     siteIdsOverride?: string[],
     operation = Operation.update,
-    additionalPayload?: Record<string, unknown>
+    additionalPayload?: Record<string, unknown>,
+    formInput: CreateProductFormInput = { ean, price, productName, imagesText },
   ) {
     const targetSiteIds = Array.isArray(siteIdsOverride) ? siteIdsOverride : selectedSites;
     if (targetSiteIds.length === 0) {
       showToast(t.selectAtLeastOneMarketplaceSite, "error");
       return;
     }
-    if (!validateCreateFields()) {
+    if (!validateCreateFields(formInput)) {
       showToast(t.fixFormErrorsBeforeCreate, "error");
       return;
     }
 
-    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    const normalized = normalizeCreateProductInput(formInput);
 
     setSubmitting(true);
     try {
@@ -462,6 +564,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         });
         setLatestJobId(created.jobId);
         showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
+        await showCompletedJobOutcome(created.jobId);
         return;
       }
 
@@ -493,14 +596,31 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
   }
 
-  async function handleCreateProduct(xljvOverrides: Record<string, unknown> = {}) {
-    if (!validateCreateFields()) {
+  async function handleCreateProduct(
+    xljvOverrides: Record<string, unknown> = {},
+    selectedSiteIds = ["jvmoebel-de", "xlmoebel_de", "hood-jv", "hood-xl", "kaufland-jv", "kaufland-xl"],
+    publishDraft?: {
+      kauflandDescription?: string;
+      kauflandShortDescription?: string;
+      kauflandTitle?: string;
+      kauflandEan?: string;
+      kauflandPrice?: string;
+      kauflandOverrides?: Record<string, unknown>;
+    },
+  ) {
+    const draftInput = publishDraft?.kauflandEan !== undefined
+      ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
+      : { ean, price, productName, imagesText };
+    if (!validateCreateProductInput(draftInput).isValid) {
       showToast(t.fixFormErrorsBeforeCreate, "error");
       return;
     }
-    const hoodErrors = validateHoodCreateFields(hoodFields);
-    const kauflandErrors = validateMainKauflandCreateFields(mainKauflandFields);
-    const xljvErrors = validateMainXljvCreateFields(mainXljvFields);
+    const hasHoodSelection = selectedSiteIds.some((siteId) => siteId.startsWith("hood-"));
+    const hasKauflandSelection = selectedSiteIds.some((siteId) => siteId.startsWith("kaufland-"));
+    const hasXljvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-") || siteId === "xlmoebel_de");
+    const hoodErrors = hasHoodSelection ? validateHoodCreateFields(hoodFields) : {};
+    const kauflandErrors = hasKauflandSelection ? validateMainKauflandCreateFields(mainKauflandFields) : {};
+    const xljvErrors = hasXljvSelection ? validateMainXljvCreateFields(mainXljvFields) : {};
     setHoodFieldErrors(hoodErrors);
     setMainKauflandFieldErrors(kauflandErrors);
     setMainXljvFieldErrors(xljvErrors);
@@ -509,7 +629,13 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       return;
     }
 
-    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    const kauflandDescription = publishDraft?.kauflandDescription ?? hoodFields.description;
+    if (hasKauflandSelection && !kauflandDescription.trim()) {
+      showToast("Add a description before publishing to Kaufland.", "error");
+      return;
+    }
+
+    const normalized = normalizeCreateProductInput(draftInput);
     if (normalized.imageUrls.length === 0) {
       showToast("Provide at least one image URL before creating the marketplace job.", "error");
       return;
@@ -536,10 +662,22 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       ...buildMainKauflandCreatePayload({
         ean: normalized.ean,
         imageUrls: normalized.imageUrls,
-        description: hoodFields.description,
+        description: kauflandDescription,
         fields: mainKauflandFields,
       }),
-      price: normalized.price,
+      ...publishDraft?.kauflandOverrides,
+      title: publishDraft?.kauflandTitle?.trim() || productName,
+      ean: publishDraft?.kauflandEan?.trim() || normalized.ean,
+      price: publishDraft?.kauflandPrice?.trim().replace(",", ".") || normalized.price,
+      description: kauflandDescription.trim(),
+      ...(publishDraft?.kauflandShortDescription !== undefined
+        ? {
+            short_description: publishDraft.kauflandShortDescription
+              .split(/[\n,;]/)
+              .map((item) => item.trim())
+              .filter(Boolean),
+          }
+        : {}),
     };
 
     setSubmitting(true);
@@ -547,9 +685,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       const created = await createMainMarketplaceProductJob({
         ean: normalized.ean,
         productName: normalized.productName,
-        description: hoodFields.description.trim(),
+        description: kauflandDescription.trim(),
         price: normalized.price,
         imageUrls: normalized.imageUrls,
+        selectedSiteIds,
         xljvPayload,
         hoodPayload,
         kauflandPayload,
@@ -567,25 +706,44 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     await submitCreateProduct(siteIds);
   }
 
-  async function handleCreateProductForHoodSiteIds(siteIds: string[]) {
-    const hoodErrors = validateHoodCreateFields(hoodFields);
+  async function handleCreateProductForHoodSiteIds(siteIds: string[], draft?: HoodPublishDraft) {
+    const effectiveFields = draft?.fields ?? hoodFields;
+    const hoodErrors = validateHoodCreateFields(effectiveFields);
     setHoodFieldErrors(hoodErrors);
     if (Object.keys(hoodErrors).length > 0) {
       showToast("Complete the required Hood fields before publishing.", "error");
       return;
     }
 
-    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
-    await submitCreateProduct(siteIds, Operation.publish, buildHoodCreatePayload({ ean: normalized.ean, fields: hoodFields }));
+    const input = { ean: draft?.ean ?? ean, price: draft?.price ?? price, productName: draft?.name ?? productName, imagesText };
+    const validation = validateCreateProductInput(input);
+    if (!validation.isValid) {
+      showToast(t.fixFormErrorsBeforeCreate, "error");
+      return;
+    }
+    const normalized = normalizeCreateProductInput(input);
+    await submitCreateProduct(
+      siteIds,
+      Operation.publish,
+      buildHoodCreatePayload({ ean: normalized.ean, fields: effectiveFields }),
+      input,
+    );
   }
 
-  async function handleCreateProductForXlDefaultSite() {
-    if (!validateCreateFields()) {
+  async function handleCreateProductForXlDefaultSite(draft?: XlPublishDraft) {
+    const input = {
+      ean: draft?.ean ?? ean,
+      price: draft?.price ?? price,
+      productName: draft?.name ?? productName,
+      imagesText,
+    };
+    const validation = validateCreateProductInput(input);
+    if (!validation.isValid) {
       showToast(t.fixFormErrorsBeforeCreate, "error");
       return;
     }
 
-    const normalized = normalizeCreateProductInput({ ean, price, productName, imagesText });
+    const normalized = normalizeCreateProductInput(input);
     const defaultSiteKey = CREATE_PRODUCT_XL_DEFAULT_SITE_KEY;
 
     setSubmitting(true);
@@ -624,11 +782,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           {
             language_id: 1,
             name: normalized.productName,
-            description: normalized.productName,
-            tag: "",
-            meta_title: normalized.productName,
-            meta_description: normalized.productName,
-            meta_keyword: "",
+            description: draft?.description ?? normalized.productName,
+            tag: draft?.tag ?? "",
+            meta_title: draft?.meta_title ?? normalized.productName,
+            meta_description: draft?.meta_description ?? normalized.productName,
+            meta_keyword: draft?.meta_keyword ?? "",
           },
         ],
       };
