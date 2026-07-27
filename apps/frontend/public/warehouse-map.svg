@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="776" height="331" viewBox="14 23 776 331"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Warehouse showroom map</title>
+  <desc id="desc">Warehouse map with uniform 6 pixel spacing and uniform rounded corners.</desc>
+
+  <defs>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2"
+                    flood-color="#253241" flood-opacity="0.13"/>
+    </filter>
+    <style>
+      .panel {
+        fill: #ffffff;
+        stroke: #66727f;
+        stroke-width: 3;
+        vector-effect: non-scaling-stroke;
+      }
+      .label {
+        fill: #26313c;
+        font-family: Inter, Arial, Helvetica, sans-serif;
+        font-size: 25px;
+        font-weight: 750;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .grid-box {
+        fill: #fbfcfd;
+        stroke: #bcc4cd;
+        stroke-width: 1.15;
+        vector-effect: non-scaling-stroke;
+      }
+      .grid-line {
+        stroke: #bcc4cd;
+        stroke-width: 1.15;
+        vector-effect: non-scaling-stroke;
+      }
+    </style>
+  </defs>
+
+  <!-- LEFT PANEL: all internal gaps = 6 px -->
+  <g filter="url(#shadow)">
+    <rect x="20" y="29" width="397" height="263" rx="10" class="panel"/>
+
+    <!-- A -->
+    <path fill="#f08a95"
+          d="M26 125
+             Q26 115 36 115
+             H154
+             Q164 115 164 105
+             V45
+             Q164 35 174 35
+             H235
+             Q245 35 245 45
+             V276
+             Q245 286 235 286
+             H36
+             Q26 286 26 276
+             Z"/>
+
+    <!-- Upper-left storage grid -->
+    <g>
+      <rect x="26" y="35" width="132" height="74" rx="10" class="grid-box"/>
+      <line x1="59" y1="35" x2="59" y2="109" class="grid-line"/>
+      <line x1="92" y1="35" x2="92" y2="109" class="grid-line"/>
+      <line x1="125" y1="35" x2="125" y2="109" class="grid-line"/>
+      <line x1="26" y1="72" x2="158" y2="72" class="grid-line"/>
+    </g>
+
+    <!-- E -->
+    <rect x="251" y="35" width="160" height="53" rx="10" fill="#7ac8a4"/>
+
+    <!-- B C D -->
+    <rect x="251" y="94" width="52" height="192" rx="10" fill="#a9afe1"/>
+    <rect x="309" y="94" width="23" height="192" rx="10" fill="#70c7d1"/>
+    <rect x="338" y="94" width="73" height="192" rx="10" fill="#f3c66b"/>
+
+    <rect x="20" y="29" width="397" height="263" rx="10"
+          fill="none" stroke="#66727f" stroke-width="3"/>
+  </g>
+
+  <!-- CENTER: 6 px between entrance and passage -->
+  <g>
+    <rect x="421" y="29" width="58" height="79" rx="10"
+          fill="#fff1c9" stroke="#d7aa3f" stroke-width="2"
+          filter="url(#shadow)"/>
+    <rect x="426" y="34" width="48" height="69" rx="10"
+          fill="none" stroke="#fff9e8" stroke-width="2"/>
+
+    <rect x="428" y="114" width="45" height="236" rx="10"
+          fill="#eef1f5" filter="url(#shadow)"/>
+    <line x1="450.5" y1="127" x2="450.5" y2="337"
+          stroke="#ccd3dc" stroke-width="3" stroke-linecap="round"/>
+    <path d="M450.5 169 V116 M440.5 127 L450.5 116 L460.5 127"
+          fill="none" stroke="#2f9e95" stroke-width="4"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- RIGHT PANEL: all internal gaps = 6 px -->
+  <g filter="url(#shadow)">
+    <rect x="485" y="29" width="301" height="311" rx="10" class="panel"/>
+
+    <!-- F -->
+    <rect x="491" y="35" width="51" height="298" rx="10" fill="#cde48a"/>
+
+    <!-- G H I J -->
+    <rect x="548" y="35" width="149" height="42" rx="10" fill="#72c5d3"/>
+    <rect x="548" y="83" width="149" height="42" rx="10" fill="#f08a95"/>
+    <rect x="548" y="131" width="149" height="42" rx="10" fill="#bfa1d5"/>
+    <rect x="548" y="179" width="149" height="42" rx="10" fill="#f3c66b"/>
+
+    <!-- Upper-right storage grid -->
+    <g>
+      <rect x="703" y="35" width="77" height="186" rx="10" class="grid-box"/>
+      <line x1="741.5" y1="35" x2="741.5" y2="221" class="grid-line"/>
+      <line x1="703" y1="72.2" x2="780" y2="72.2" class="grid-line"/>
+      <line x1="703" y1="109.4" x2="780" y2="109.4" class="grid-line"/>
+      <line x1="703" y1="146.6" x2="780" y2="146.6" class="grid-line"/>
+      <line x1="703" y1="183.8" x2="780" y2="183.8" class="grid-line"/>
+    </g>
+
+    <!-- K M -->
+    <rect x="548" y="227" width="232" height="48" rx="10" fill="#72c5d3"/>
+    <rect x="548" y="281" width="232" height="52" rx="10" fill="#f1b6ca"/>
+
+    <rect x="485" y="29" width="301" height="311" rx="10"
+          fill="none" stroke="#66727f" stroke-width="3"/>
+  </g>
+
+  <!-- Labels -->
+  <g class="label">
+    <text x="125" y="185">A</text>
+    <text x="277" y="190">B</text>
+    <text x="320.5" y="190">C</text>
+    <text x="374.5" y="190">D</text>
+    <text x="331" y="61.5">E</text>
+
+    <text x="516.5" y="184">F</text>
+    <text x="622.5" y="56">G</text>
+    <text x="622.5" y="104">H</text>
+    <text x="622.5" y="152">I</text>
+    <text x="622.5" y="200">J</text>
+    <text x="664" y="251">K</text>
+    <text x="664" y="307">M</text>
+  </g>
+
+  <text x="125" y="214"
+        fill="#26313c"
+        font-family="Inter, Arial, Helvetica, sans-serif"
+        font-size="13"
+        font-weight="750"
+        letter-spacing="0.7"
+        text-anchor="middle"
+        dominant-baseline="middle">SHOWROOM</text>
+</svg>

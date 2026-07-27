@@ -48,6 +48,7 @@ from database.views import (
     DevBackendSessionSyncAPIView,
     MarketplaceHoodHealthAPIView,
     MarketplaceKauflandHealthAPIView,
+    MarketplaceEanMappingConfirmAPIView,
     ServiceHealthAPIView,
     ServiceReadyAPIView,
     KidRetrieveUpdateAPIView,
@@ -124,6 +125,7 @@ from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
 from telegram_service.views import (
     TelegramAccessApproveAPIView,
+    TelegramAccessDeleteAPIView,
     TelegramAccessListAPIView,
     TelegramAccessRevokeAPIView,
     TelegramWebhookAPIView,
@@ -168,6 +170,7 @@ api_v1_patterns = [
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
     path("api/v1/marketplace/kaufland/toggle-by-kid/", MarketplaceKauflandToggleByKidAPIView.as_view(), name="marketplace-kaufland-toggle-by-kid-v1"),
     path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
+    path("api/v1/marketplace/ean-mappings/confirm/", MarketplaceEanMappingConfirmAPIView.as_view(), name="marketplace-ean-mapping-confirm-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
     path("api/v1/inventory/dashboard-summary/", InventoryDashboardSummaryAPIView.as_view(), name="inventory-dashboard-summary-v1"),
     path("api/v1/inventory/critical/", CriticalInventoryAPIView.as_view(), name="inventory-critical-v1"),
@@ -423,6 +426,11 @@ api_v1_patterns.extend(
             "api/v1/telegram/access/<int:binding_id>/revoke/",
             TelegramAccessRevokeAPIView.as_view(),
             name="telegram-access-revoke-v1",
+        ),
+        path(
+            "api/v1/telegram/access/<int:binding_id>/",
+            TelegramAccessDeleteAPIView.as_view(),
+            name="telegram-access-delete-v1",
         ),
     ]
 )

@@ -1,7 +1,24 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Search, Users, UserCheck, ShieldCheck } from "lucide-react";
+import Image from "next/image";
+import { motion, useReducedMotion } from "motion/react";
+import {
+  BadgeCheck,
+  Check,
+  CircleAlert,
+  Clock3,
+  Filter,
+  Mail,
+  RefreshCcw,
+  Save,
+  Search,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  Users,
+  X
+} from "lucide-react";
 
 import {
   AdminUser,
@@ -9,6 +26,7 @@ import {
   deleteUser,
   fetchAdminUsers,
   rejectRegistration,
+  resolvePhotoUrl,
   updateUserRole
 } from "../client-api";
 import { dateLocale, labels, Lang } from "../i18n";
@@ -53,29 +71,75 @@ function SummaryCard({
   value,
   description,
   icon,
+  accentClass,
   loading
 }: {
   title: string;
   value: string | number;
   description: string;
   icon: React.ReactNode;
+  accentClass: string;
   loading: boolean;
 }) {
   return (
-    <Card className="wh-section-card border-border/70 shadow-sm">
-      <CardContent className="flex items-start justify-between gap-4 p-4">
+    <Card className="wh-section-card group relative overflow-hidden border-border/70 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none">
+      <div className={`absolute inset-x-0 top-0 h-0.5 ${accentClass}`} />
+      <CardContent className="flex items-start justify-between gap-4 p-5">
         <div className="space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {title}
           </p>
-          {loading ? <Skeleton className="h-8 w-16" /> : <p className="text-3xl font-semibold text-foreground">{value}</p>}
+          {loading ? <Skeleton className="h-8 w-16" /> : <p className="text-3xl font-semibold tracking-tight text-foreground">{value}</p>}
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-muted/40 text-muted-foreground">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-muted/40 text-muted-foreground transition-colors duration-200 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
           {icon}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function UserAvatar({
+  initials,
+  status,
+  avatarUrl,
+  apiBase
+}: {
+  initials: string;
+  status: AdminUser["status"];
+  avatarUrl?: string | null;
+  apiBase: string;
+}) {
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const statusClass = status === "approved"
+    ? "bg-emerald-500"
+    : status === "pending"
+      ? "bg-amber-500"
+      : "bg-destructive";
+  const avatarSrc = avatarUrl && !avatarLoadError ? resolvePhotoUrl(apiBase, avatarUrl) : null;
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [avatarUrl]);
+
+  return (
+    <div className="relative shrink-0" aria-hidden="true">
+      <div className="flex size-14 items-center justify-center rounded-2xl border border-primary/15 bg-primary text-sm font-bold tracking-wide text-primary-foreground shadow-sm ring-4 ring-primary/[0.07]">
+        {avatarSrc ? (
+          <Image
+            src={avatarSrc}
+            alt=""
+            width={56}
+            height={56}
+            unoptimized
+            className="size-full rounded-[inherit] object-cover"
+            onError={() => setAvatarLoadError(true)}
+          />
+        ) : initials}
+      </div>
+      <span className={`absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-card ${statusClass}`} />
+    </div>
   );
 }
 
@@ -98,6 +162,7 @@ export function AdminRegistrationsPanel({
   const [confirmTarget, setConfirmTarget] = useState<AdminUser | null>(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, "admin" | "user">>({});
+  const prefersReducedMotion = useReducedMotion();
 
   const canRender = role === "admin" && status === "approved" && token.length > 0;
   const locale = useMemo(() => dateLocale[lang] ?? "en-US", [lang]);
@@ -177,6 +242,16 @@ export function AdminRegistrationsPanel({
   const formatFullName = useCallback((user: AdminUser) => {
     const value = [user.first_name?.trim(), user.last_name?.trim()].filter(Boolean).join(" ");
     return value.length > 0 ? value : null;
+  }, []);
+
+  const initialsFor = useCallback((user: AdminUser, fullName: string | null) => {
+    const source = fullName ?? user.username ?? user.login;
+    return source
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("");
   }, []);
 
   const formatApprover = useCallback((user: AdminUser) => {
@@ -324,13 +399,24 @@ export function AdminRegistrationsPanel({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+    <motion.div
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      className="space-y-4"
+    >
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.28, delay: prefersReducedMotion ? 0 : 0.05, ease: "easeOut" }}
+        className="grid gap-3 md:grid-cols-3"
+      >
         <SummaryCard
           title={t.totalUsers}
           value={totalUsers}
           description={t.allLoadedApplicationUsers}
           icon={<Users size={18} />}
+          accentClass="bg-primary"
           loading={loading}
         />
         <SummaryCard
@@ -338,6 +424,7 @@ export function AdminRegistrationsPanel({
           value={pendingCount}
           description={t.accountsWaitingForApproval}
           icon={<ShieldCheck size={18} />}
+          accentClass="bg-amber-500"
           loading={loading}
         />
         <SummaryCard
@@ -345,20 +432,32 @@ export function AdminRegistrationsPanel({
           value={approvedCount}
           description={t.usersWithActiveAccess}
           icon={<UserCheck size={18} />}
+          accentClass="bg-emerald-500"
           loading={loading}
         />
-      </div>
+      </motion.div>
 
-      <Card className="wh-section-card border-border/70 shadow-sm">
-        <CardHeader className="pb-3">
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: prefersReducedMotion ? 0 : 0.1, ease: "easeOut" }}
+      >
+      <Card className="wh-section-card overflow-hidden border-border/70 shadow-sm">
+        <CardHeader className="border-b border-border/60 bg-muted/[0.12] pb-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-base">{t.navAdminUsers}</CardTitle>
-              <CardDescription>{t.adminUsersSubtitle}</CardDescription>
+              <div className="flex items-center gap-2">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Users size={17} /></span>
+                <div>
+                  <CardTitle className="text-base">{t.navAdminUsers}</CardTitle>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-emerald-500" />{t.visibleCount.replace("{count}", String(totalUsers))}</div>
+                </div>
+              </div>
+              <CardDescription className="pl-11">{t.adminUsersSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{t.visibleCount.replace("{count}", String(totalUsers))}</Badge>
-              <Button type="button" variant="outline" size="sm" className="h-10 gap-2" onClick={() => void loadUsers()} disabled={loading}>
+              <Badge variant="outline" className="h-8 gap-1.5 px-2.5"><BadgeCheck size={13} />{t.approved}</Badge>
+              <Button type="button" variant="outline" size="sm" className="h-10 gap-2 transition-colors" onClick={() => void loadUsers()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? t.loading : t.refresh}
               </Button>
@@ -366,6 +465,10 @@ export function AdminRegistrationsPanel({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <Filter size={14} /> {t.filters}
+            </div>
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.7fr)_minmax(180px,0.7fr)_minmax(180px,0.7fr)]">
             <div className="space-y-1.5">
               <label htmlFor="admin-users-search" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -378,7 +481,7 @@ export function AdminRegistrationsPanel({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder={t.searchAdminPlaceholder}
-                  className="h-10 pl-9"
+                  className="h-10 border-border/70 bg-background/80 !pl-11 shadow-sm transition-shadow focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]"
                 />
               </div>
             </div>
@@ -388,7 +491,7 @@ export function AdminRegistrationsPanel({
                 {t.role}
               </label>
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter((value as RoleValue) ?? "all")}>
-                <SelectTrigger className="h-10 w-full">
+                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.allRoles} />
                 </SelectTrigger>
                 <SelectContent>
@@ -404,7 +507,7 @@ export function AdminRegistrationsPanel({
                 {t.status}
               </label>
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter((value as StatusValue) ?? "all")}>
-                <SelectTrigger className="h-10 w-full">
+                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.allStatuses} />
                 </SelectTrigger>
                 <SelectContent>
@@ -421,7 +524,7 @@ export function AdminRegistrationsPanel({
                 {t.sort}
               </label>
               <Select value={sortOrder} onValueChange={(value) => setSortOrder((value as SortValue) ?? "newest")}>
-                <SelectTrigger className="h-10 w-full">
+                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.newestFirst} />
                 </SelectTrigger>
                 <SelectContent>
@@ -431,10 +534,11 @@ export function AdminRegistrationsPanel({
               </Select>
             </div>
           </div>
+          </div>
 
           {message ? (
             <Card className="border-destructive/20 bg-destructive/5 shadow-none">
-              <CardContent className="p-3 text-sm text-destructive">{message}</CardContent>
+              <CardContent className="flex items-start gap-2 p-3 text-sm text-destructive"><CircleAlert className="mt-0.5 shrink-0" size={16} />{message}</CardContent>
             </Card>
           ) : null}
 
@@ -483,17 +587,17 @@ export function AdminRegistrationsPanel({
           {!loading && users.length > 0 ? (
             <>
               <div className="hidden lg:block">
-                <div className="overflow-hidden rounded-2xl border border-border/70 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                   <Table className="text-sm">
                     <TableHeader>
-                      <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="px-4">{t.user}</TableHead>
-                        <TableHead>{t.role}</TableHead>
-                        <TableHead>{t.status}</TableHead>
-                        <TableHead>{t.created}</TableHead>
-                        <TableHead>{t.approved}</TableHead>
-                        <TableHead>{t.adminTelegramApprovedBy}</TableHead>
-                        <TableHead className="px-4">{t.adminTelegramActions}</TableHead>
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead className="px-4 text-[11px] font-bold uppercase tracking-[0.08em]">{t.user}</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-[0.08em]">{t.role}</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-[0.08em]">{t.status}</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-[0.08em]">{t.created}</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-[0.08em]">{t.approved}</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-[0.08em]">{t.adminTelegramApprovedBy}</TableHead>
+                        <TableHead className="px-4 text-[11px] font-bold uppercase tracking-[0.08em]">{t.adminTelegramActions}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -506,13 +610,15 @@ export function AdminRegistrationsPanel({
                         const selfRoleDowngrade = user.id === currentUserId && draftRole !== "admin";
 
                         return (
-                          <TableRow key={user.id} className="align-top">
+                          <TableRow key={user.id} className="align-top transition-colors hover:bg-primary/[0.025]">
                             <TableCell className="px-4 py-4 whitespace-normal">
-                              <div className="space-y-1">
-                                <p className="font-semibold text-foreground">{user.username}</p>
-                                {fullName ? <p className="text-sm text-foreground/80">{fullName}</p> : null}
+                              <div className="flex gap-3">
+                                <UserAvatar initials={initialsFor(user, fullName)} status={user.status} avatarUrl={user.avatar_url} apiBase={apiBase} />
+                                <div className="min-w-0 space-y-1">
+                                <p className="font-semibold text-foreground">{fullName ?? user.username}</p>
                                 <p className="text-sm text-muted-foreground">@{user.login}</p>
-                                <p className="break-all text-sm text-muted-foreground">{user.email ?? "-"}</p>
+                                <p className="flex items-center gap-1.5 break-all text-sm text-muted-foreground"><Mail size={13} className="shrink-0" />{user.email ?? "-"}</p>
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell className="py-4">
@@ -522,7 +628,7 @@ export function AdminRegistrationsPanel({
                               <Badge variant={statusBadgeVariant(user.status)}>{statusName(user.status)}</Badge>
                             </TableCell>
                             <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
-                              {formatDate(user.created_at)}
+                              <span className="flex items-center gap-1.5"><Clock3 size={14} />{formatDate(user.created_at)}</span>
                             </TableCell>
                             <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
                               {user.approved_at ? formatDate(user.approved_at) : "-"}
@@ -531,7 +637,7 @@ export function AdminRegistrationsPanel({
                               {approver ?? "-"}
                             </TableCell>
                             <TableCell className="px-4 py-4 whitespace-normal">
-                              <div className="flex min-w-[280px] flex-col gap-2">
+                              <div className="min-w-[280px] space-y-2 rounded-xl border border-border/60 bg-muted/[0.16] p-2">
                                 {user.status === "pending" ? (
                                   <div className="flex flex-wrap gap-2">
                                     <Button
@@ -541,7 +647,7 @@ export function AdminRegistrationsPanel({
                                       onClick={() => void handleApprove(user.id)}
                                       disabled={isBusy}
                                     >
-                                      {isBusy ? t.working : t.approve}
+                                      <Check size={14} />{isBusy ? t.working : t.approve}
                                     </Button>
                                     <Button
                                       type="button"
@@ -551,7 +657,7 @@ export function AdminRegistrationsPanel({
                                       onClick={() => openRejectModal(user)}
                                       disabled={isBusy}
                                     >
-                                      {t.reject}
+                                      <X size={14} />{t.reject}
                                     </Button>
                                   </div>
                                 ) : null}
@@ -561,7 +667,7 @@ export function AdminRegistrationsPanel({
                                     onValueChange={(value) => handleRoleChange(user.id, (value as "admin" | "user") ?? user.role)}
                                     disabled={isBusy}
                                   >
-                                    <SelectTrigger className="h-9 min-w-[140px]">
+                                    <SelectTrigger className="h-9 min-w-[140px] border-border/70 bg-background shadow-sm">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -577,7 +683,7 @@ export function AdminRegistrationsPanel({
                                     onClick={() => void handleRoleSave(user)}
                                     disabled={isBusy || !roleChanged || selfRoleDowngrade}
                                   >
-                                    {isBusy ? t.working : t.saveRole}
+                                    <Save size={14} />{isBusy ? t.working : t.saveRole}
                                   </Button>
                                   <Button
                                     type="button"
@@ -588,7 +694,7 @@ export function AdminRegistrationsPanel({
                                     disabled={isBusy || user.id === currentUserId}
                                     title={user.id === currentUserId ? t.cannotDeleteSelf : t.deleteUser}
                                   >
-                                    {isBusy ? t.working : t.deleteUser}
+                                    <Trash2 size={14} />{isBusy ? t.working : t.deleteUser}
                                   </Button>
                                 </div>
                               </div>
@@ -615,11 +721,13 @@ export function AdminRegistrationsPanel({
                       <CardContent className="space-y-4 p-4">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="space-y-1">
-                              <p className="font-semibold text-foreground">{user.username}</p>
-                              {fullName ? <p className="text-sm text-foreground/80">{fullName}</p> : null}
+                            <div className="flex min-w-0 gap-3">
+                              <UserAvatar initials={initialsFor(user, fullName)} status={user.status} avatarUrl={user.avatar_url} apiBase={apiBase} />
+                              <div className="min-w-0 space-y-1">
+                              <p className="font-semibold text-foreground">{fullName ?? user.username}</p>
                               <p className="text-sm text-muted-foreground">@{user.login}</p>
-                              <p className="break-all text-sm text-muted-foreground">{user.email ?? "-"}</p>
+                              <p className="flex items-center gap-1.5 break-all text-sm text-muted-foreground"><Mail size={13} className="shrink-0" />{user.email ?? "-"}</p>
+                              </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <Badge variant={roleBadgeVariant(user.role)}>{roleName(user.role)}</Badge>
@@ -654,7 +762,7 @@ export function AdminRegistrationsPanel({
                               onClick={() => void handleApprove(user.id)}
                               disabled={isBusy}
                             >
-                              {isBusy ? t.working : t.approve}
+                              <Check size={14} />{isBusy ? t.working : t.approve}
                             </Button>
                             <Button
                               type="button"
@@ -664,7 +772,7 @@ export function AdminRegistrationsPanel({
                               onClick={() => openRejectModal(user)}
                               disabled={isBusy}
                             >
-                              {t.reject}
+                              <X size={14} />{t.reject}
                             </Button>
                           </div>
                         ) : null}
@@ -675,7 +783,7 @@ export function AdminRegistrationsPanel({
                             onValueChange={(value) => handleRoleChange(user.id, (value as "admin" | "user") ?? user.role)}
                             disabled={isBusy}
                           >
-                            <SelectTrigger className="h-10 w-full">
+                            <SelectTrigger className="h-10 w-full border-border/70 bg-background shadow-sm">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -692,7 +800,7 @@ export function AdminRegistrationsPanel({
                               onClick={() => void handleRoleSave(user)}
                               disabled={isBusy || !roleChanged || selfRoleDowngrade}
                             >
-                              {isBusy ? t.working : t.saveRole}
+                              <Save size={14} />{isBusy ? t.working : t.saveRole}
                             </Button>
                             <Button
                               type="button"
@@ -703,7 +811,7 @@ export function AdminRegistrationsPanel({
                               disabled={isBusy || user.id === currentUserId}
                               title={user.id === currentUserId ? t.cannotDeleteSelf : t.deleteUser}
                             >
-                              {isBusy ? t.working : t.deleteUser}
+                              <Trash2 size={14} />{isBusy ? t.working : t.deleteUser}
                             </Button>
                           </div>
                         </div>
@@ -716,6 +824,7 @@ export function AdminRegistrationsPanel({
           ) : null}
         </CardContent>
       </Card>
+      </motion.div>
 
       {confirmTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
@@ -757,6 +866,6 @@ export function AdminRegistrationsPanel({
           </Card>
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 }

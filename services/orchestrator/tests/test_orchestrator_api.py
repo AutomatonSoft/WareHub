@@ -94,6 +94,31 @@ class FakeEanPoolGateway:
         self.used_job_ids.append(job_id)
 
 
+class FakeMarketplaceEanMappingGateway:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def confirm(
+        self,
+        *,
+        request_id: str,
+        kid_number: str,
+        marketplace: str,
+        account: str,
+        ean: str,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "request_id": request_id,
+                "kid_number": kid_number,
+                "marketplace": marketplace,
+                "account": account,
+                "ean": ean,
+            }
+        )
+        return {"confirmed": True, "ean": ean}
+
+
 class BrokenIdempotencyStore:
     def ping(self) -> bool:
         raise RuntimeError("sqlite unavailable")
@@ -455,6 +480,46 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     assert retry_by_target["kaufland,account=jv"] == by_target["kaufland,account=jv"]
     assert retry_by_target["kaufland,account=xl"] == by_target["kaufland,account=xl"]
     assert len(set(pool_gateway.claimed_job_ids)) == 2
+
+
+def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
+    adapters = SuccessfulAdapters()
+    pool_gateway = FakeEanPoolGateway()
+    mapping_gateway = FakeMarketplaceEanMappingGateway()
+    service = OrchestratorService(
+        adapters=adapters,
+        ean_pool_gateway=pool_gateway,
+        marketplace_ean_mapping_gateway=mapping_gateway,
+    )
+    command = OrchestrateRequest.model_validate(
+        {
+            "operation": "publish",
+            "kid_number": "13234455",
+            "payload": {
+                "title": "Desk",
+                "description": "Oak",
+                "price": "199.99",
+                "quantity": 1,
+            },
+            "channels": [
+                {"marketplace": "hood", "account": "jv", "ean_source": "pool"},
+                {"marketplace": "kaufland", "account": "jv", "ean_source": "pool"},
+                {"marketplace": "hood", "account": "xl", "ean_source": "pool"},
+            ],
+        }
+    )
+
+    result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+
+    assert result.status == "success"
+    assert [(call["marketplace"], call["account"]) for call in mapping_gateway.calls] == [
+        ("hood", "jv"),
+        ("kaufland", "jv"),
+        ("hood", "xl"),
+    ]
+    assert mapping_gateway.calls[0]["ean"] == mapping_gateway.calls[1]["ean"]
+    assert mapping_gateway.calls[0]["ean"] != mapping_gateway.calls[2]["ean"]
+    assert all(item.data["marketplace_ean_mapping"]["status"] == "confirmed" for item in result.results)
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):

@@ -73,6 +73,16 @@ export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
   };
 }
 
+export function formatPriceForInput(value: unknown): string {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) return "";
+  const normalizedValue = rawValue.replace(",", ".");
+  const numericValue = Number(normalizedValue);
+  if (!Number.isFinite(numericValue) || numericValue < 0) return rawValue;
+  if (numericValue === 0) return "0";
+  return numericValue.toFixed(2).replace(/\.?0+$/, "");
+}
+
 export function hydrateKauflandDraft(input?: Partial<ProductEditorKauflandDraft>): ProductEditorKauflandDraft {
   const empty = createEmptyKauflandDraft();
   if (!input) return empty;
@@ -160,7 +170,7 @@ export function hydrateJvDraft(input?: {
     source_model: input.source_model || "",
     source_sku: input.source_sku || "",
     source_ean_field: input.source_ean_field || "",
-    price: input.price || "",
+    price: formatPriceForInput(input.price),
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
     image: input.image || "",
@@ -210,7 +220,7 @@ export function hydrateJvDraft(input?: {
           id: Number(row.id ?? 0) || undefined,
           customer_group_id: Number(row.customer_group_id ?? 1),
           priority: Number(row.priority ?? 0),
-          price: String(row.price ?? ""),
+          price: formatPriceForInput(row.price),
           date_start: row.date_start == null ? null : String(row.date_start),
           date_end: row.date_end == null ? null : String(row.date_end),
           is_modified_locally: Boolean(row.is_modified_locally)

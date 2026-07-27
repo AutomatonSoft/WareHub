@@ -227,3 +227,24 @@ class TelegramAccessRevokeAPIView(APIView):
         )
         logger.info("TELEGRAM_ACCESS_REVOKED", extra={"binding_id": binding.id, "actor": actor})
         return Response(_serialize_binding(binding), status=status.HTTP_200_OK)
+
+
+class TelegramAccessDeleteAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def delete(self, request, binding_id: int):
+        forbidden = _ensure_admin(request)
+        if forbidden is not None:
+            return forbidden
+
+        binding = TelegramAccessBinding.objects.filter(id=binding_id).first()
+        if binding is None:
+            return Response(
+                {"code": "telegram_access_not_found", "detail": "Telegram access binding not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        actor = _session_actor(request)
+        binding.delete()
+        logger.info("TELEGRAM_ACCESS_DELETED", extra={"binding_id": binding_id, "actor": actor})
+        return Response(status=status.HTTP_204_NO_CONTENT)

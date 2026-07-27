@@ -23,7 +23,7 @@ export function ProductEditorHeaderCard(props: {
 }) {
   const t = useLabels();
   return (
-    <div className={cn("wh-product-editor-anchor space-y-2", props.className)}>
+    <div className={cn("wh-product-editor-anchor space-y-[12px]", props.className)}>
       <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1fr)_184px]">
           <label htmlFor="product-editor-ean-command" className="sr-only">
             {t.productEditorHeaderInputLabel}

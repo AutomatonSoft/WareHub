@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Camera, LockKeyhole } from "lucide-react";
+import { BadgeCheck, Camera, Clock3, KeyRound, LockKeyhole, Mail, Phone, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import {
@@ -59,10 +59,10 @@ function ProfileAvatar({
         <Image
           src={avatarSrc}
           alt={avatarAlt}
-          width={80}
-          height={80}
+          width={104}
+          height={104}
           unoptimized
-          className="size-20 rounded-[var(--radius-card)] object-cover shadow-[var(--wh-shadow-card)]"
+          className="size-[104px] rounded-[calc(var(--radius-card)-0.15rem)] object-cover shadow-[var(--wh-shadow-card)]"
           onError={() => setHasLoadError(true)}
         />
         <span className="absolute inset-0 flex items-center justify-center bg-foreground/0 text-transparent transition-all group-hover:bg-foreground/45 group-hover:text-background">
@@ -77,7 +77,7 @@ function ProfileAvatar({
       type="button"
       onClick={onPickAvatar}
       disabled={uploading}
-      className="group relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-card)] border border-border bg-primary/10 text-xl font-semibold text-primary shadow-[var(--wh-shadow-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      className="group relative flex size-[104px] shrink-0 items-center justify-center overflow-hidden rounded-[calc(var(--radius-card)-0.15rem)] border border-primary/20 bg-primary text-2xl font-bold text-primary-foreground shadow-[var(--wh-shadow-card)] ring-4 ring-primary/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
       aria-label={actionLabel}
       title={actionLabel}
     >
@@ -103,14 +103,14 @@ function ProfileField({
   type?: React.HTMLInputTypeAttribute;
 }) {
   return (
-    <label className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-foreground">{label}</span>
+    <label className="group flex flex-col gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>
       <Input
         type={type}
         value={value}
         readOnly={readOnly}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
-        className={readOnly ? "bg-muted/35 text-muted-foreground" : ""}
+        className={readOnly ? "h-11 bg-muted/35 text-muted-foreground" : "h-11 border-border/75 bg-background/80 shadow-sm transition-shadow focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]"}
       />
     </label>
   );
@@ -128,28 +128,28 @@ function mapProfileValidationError(errorCode: string, messages: { name: string; 
 
 function ProfileHistoryPanel({ t }: { t: Record<string, string> }) {
   return (
-    <section className="wh-content-card w-full">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.changeHistory}</h2>
-        <p className="text-sm text-muted-foreground">
+    <section className="wh-content-card w-full overflow-hidden">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex size-9 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary"><Clock3 size={17} /></span>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.auditDetails}</p>
+              <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">{t.changeHistory}</h2>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
           {t.profileHistoryHint}
-        </p>
+          </p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-xs font-medium text-muted-foreground"><Clock3 size={13} />{t.noProfileHistoryYet}</span>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-[var(--radius-card)] border border-border">
-        <div className="grid min-w-[720px] grid-cols-[140px_120px_minmax(180px,1fr)_minmax(260px,1.4fr)] gap-4 border-b border-border bg-muted/20 px-5 py-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-          <div>{t.orderDate}</div>
-          <div>{t.timelineWhen}</div>
-          <div>{t.changed}</div>
-          <div>{t.auditDetails}</div>
-        </div>
-        <div className="grid min-h-36 min-w-[720px] place-items-center px-6 py-10 text-center">
-          <div className="max-w-xl">
-            <p className="text-sm font-medium text-foreground">{t.noProfileHistoryYet}</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t.profileHistoryApiMissing}
-            </p>
-          </div>
+      <div className="mt-5 grid min-h-32 place-items-center rounded-2xl border border-dashed border-border/80 bg-muted/[0.14] px-6 py-8 text-center">
+        <div className="max-w-xl">
+          <span className="mx-auto flex size-10 items-center justify-center rounded-2xl bg-background text-muted-foreground shadow-sm"><Clock3 size={18} /></span>
+          <p className="mt-3 text-sm font-semibold text-foreground">{t.noProfileHistoryYet}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{t.profileHistoryApiMissing}</p>
         </div>
       </div>
     </section>
@@ -426,24 +426,33 @@ export default function ProfilePage() {
   return (
     <AppShell title={t.profile} subtitle={t.profileWorkspaceSubtitle}>
       <div className="wh-page-stack w-full">
-        <section className="wh-content-card">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <ProfileAvatar
-              user={user}
-              apiBase={apiBase}
-              uploading={uploading}
-              onPickAvatar={() => fileInputRef.current?.click()}
-              actionLabel={t.changeAvatarAction}
-              avatarAlt={t.userAvatarAlt}
-            />
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-            <div className="min-w-0">
-              <h2 className="truncate text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                {displayName || user?.username || t.profile}
-              </h2>
-              <p className="mt-2 text-base text-muted-foreground">
-                {t.manageAccountPreferences}
-              </p>
+        <section className="wh-content-card relative overflow-hidden">
+          <div className="absolute -right-16 -top-20 size-64 rounded-full bg-primary/[0.07] blur-3xl" aria-hidden="true" />
+          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+              <ProfileAvatar
+                user={user}
+                apiBase={apiBase}
+                uploading={uploading}
+                onPickAvatar={() => fileInputRef.current?.click()}
+                actionLabel={t.changeAvatarAction}
+                avatarAlt={t.userAvatarAlt}
+              />
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/65">{t.profile}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800"><BadgeCheck size={12} />{statusLabel}</span>
+                </div>
+                <h2 className="mt-2 truncate text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  {displayName || user?.username || t.profile}
+                </h2>
+                <p className="mt-1.5 truncate text-sm text-muted-foreground">@{user?.login || t.notSet}</p>
+                <p className="mt-3 text-sm text-muted-foreground">{t.manageAccountPreferences}</p>
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-background/75 px-3 py-2 text-sm font-medium text-foreground shadow-sm"><ShieldCheck size={16} className="text-primary" />{roleLabel}</span>
             </div>
           </div>
         </section>
@@ -453,28 +462,39 @@ export default function ProfilePage() {
               onSubmit={(event) => void handleProfileSave(event)}
               className="wh-content-card w-full"
             >
-              <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-4 border-b border-border/70 pb-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.login}</div>
-                  <div className="mt-1 font-medium text-foreground">{user?.login || t.notSet}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-9 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary"><UserRound size={17} /></span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.profile}</p>
+                      <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">{t.profileDetailsTitle}</h2>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">{t.manageAccountPreferences}</p>
                 </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.status}</div>
-                  <div className="mt-1 font-medium text-foreground">{statusLabel}</div>
+                <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isProfileDirty ? "border-amber-300 bg-amber-100 text-amber-900" : "border-emerald-300 bg-emerald-100 text-emerald-900"}`}>
+                  {isProfileDirty ? t.profileUnsavedChanges : t.profileSynced}
+                </span>
+              </div>
+
+              <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
+                <div className="rounded-xl border border-border/65 bg-muted/[0.14] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.login}</div>
+                  <div className="mt-1 font-semibold text-foreground">{user?.login || t.notSet}</div>
                 </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.role}</div>
-                  <div className="mt-1 font-medium text-foreground">{roleLabel}</div>
+                <div className="rounded-xl border border-border/65 bg-muted/[0.14] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.status}</div>
+                  <div className="mt-1 font-semibold text-foreground">{statusLabel}</div>
                 </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t.user}</div>
-                  <div className="mt-1 truncate font-medium text-foreground">{displayName || user?.username || t.profile}</div>
+                <div className="rounded-xl border border-border/65 bg-muted/[0.14] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.role}</div>
+                  <div className="mt-1 font-semibold text-foreground">{roleLabel}</div>
                 </div>
               </div>
 
-              <div className="mt-8 border-t border-border pt-8">
-                <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.profileDetailsTitle}</h2>
-                <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-6">
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                   <ProfileField label={t.firstName} value={firstName} onChange={setFirstName} />
                   <ProfileField label={t.lastName} value={lastName} onChange={setLastName} />
                   <ProfileField label={t.username} value={user?.username || ""} readOnly />
@@ -484,7 +504,7 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="mt-8 flex justify-end">
+              <div className="mt-6 flex justify-end border-t border-border/70 pt-5">
                 <Button type="submit" disabled={savingProfile || !isProfileDirty} className="sm:min-w-[160px]">
                   {savingProfile ? t.saving : t.saveChanges}
                 </Button>
@@ -493,27 +513,32 @@ export default function ProfilePage() {
 
             <form
               onSubmit={(event) => void handleSecuritySave(event)}
-              className="wh-content-card w-full"
+              className="wh-content-card relative w-full overflow-hidden"
             >
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
-                  <LockKeyhole className="size-4" />
+              <div className="absolute -right-12 -top-10 size-44 rounded-full bg-primary/[0.06] blur-3xl" aria-hidden="true" />
+              <div className="relative flex items-center gap-3">
+                <div className="flex size-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                  <LockKeyhole className="size-[18px]" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">{t.changePasswordTitle}</h2>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{t.profileSecurityPosture}</p>
+                  <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">{t.changePasswordTitle}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {t.changePasswordHint}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-8 grid gap-5">
+              <div className="relative mt-6 rounded-2xl border border-border/65 bg-muted/[0.13] p-4">
+                <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground/65"><KeyRound size={14} />{t.profileCredentialRotation}</div>
+              <div className="grid gap-4">
                 <ProfileField label={t.currentPassword} value={currentPassword} onChange={setCurrentPassword} type="password" />
                 <ProfileField label={t.newPassword} value={newPassword} onChange={setNewPassword} type="password" />
                 <ProfileField label={t.confirmPassword} value={confirmNewPassword} onChange={setConfirmNewPassword} type="password" />
               </div>
+              </div>
 
-              <div className="mt-8 flex justify-end">
+              <div className="relative mt-5 flex justify-end">
                 <Button
                   type="submit"
                   disabled={requestingPasswordCode || confirmingPasswordCode}

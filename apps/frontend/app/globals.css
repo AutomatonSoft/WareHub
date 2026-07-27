@@ -4010,7 +4010,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
 }
 
 @media (min-width: 1280px) and (max-width: 1535px) {
-  .wh-page-content { padding: 10px; }
+  .wh-page-content { padding: 12px; }
   .wh-sofort-toolbar-card { padding: 10px; }
   .wh-sofort-toolbar__top { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
   .wh-sofort-toolbar__actions { gap: 6px; }

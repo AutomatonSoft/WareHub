@@ -137,6 +137,7 @@ pub(crate) struct AdminUserDto {
     pub email: Option<String>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub role: String,
     pub status: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
