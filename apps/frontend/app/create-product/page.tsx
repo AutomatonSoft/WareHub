@@ -32,6 +32,7 @@ import { JvPublishingOptionsPanel, type JvPublishingSelections } from "./jv-publ
 import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
+import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./otto-create-product-panel";
 import type { MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
