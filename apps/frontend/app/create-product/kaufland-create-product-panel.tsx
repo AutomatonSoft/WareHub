@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
@@ -33,26 +33,20 @@ export function KauflandProductDetailsPanel({ initialDraft, draftKey, codeLabel,
   const [draft, setDraft] = useState(initialDraft);
   const [mode, setMode] = useState<"code" | "preview">("preview");
   const sourceDraftRef = useRef(initialDraft);
-  const draftRef = useRef(initialDraft);
-  const callbackRef = useRef(onDraftChange);
   const [deliveryPortalTarget, setDeliveryPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { sourceDraftRef.current = initialDraft; }, [draftKey, initialDraft]);
-  useEffect(() => { callbackRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => { setDeliveryPortalTarget(document.getElementById(deliveryPortalId)); }, [deliveryPortalId]);
   useEffect(() => {
     const next = sourceDraftRef.current;
-    draftRef.current = next;
     setDraft(next);
     setMode("preview");
-    callbackRef.current(next);
   }, [draftKey]);
   const shortItems = useMemo(() => splitKeywords(draft.shortDescription), [draft.shortDescription]);
-  const update = <TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => {
-    const next = { ...draftRef.current, [key]: value };
-    draftRef.current = next;
+  const update = useCallback(<TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => {
+    const next = { ...draft, [key]: value };
     setDraft(next);
-    callbackRef.current(next);
-  };
+    onDraftChange(next);
+  }, [draft, onDraftChange]);
 
   return <div className="space-y-4">
     {deliveryPortalTarget ? createPortal(renderDeliveryTimeRange(draft.product, (product) => update("product", product)), deliveryPortalTarget) : null}
