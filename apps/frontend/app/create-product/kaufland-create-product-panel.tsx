@@ -33,14 +33,26 @@ export function KauflandProductDetailsPanel({ initialDraft, draftKey, codeLabel,
   const [draft, setDraft] = useState(initialDraft);
   const [mode, setMode] = useState<"code" | "preview">("preview");
   const sourceDraftRef = useRef(initialDraft);
+  const draftRef = useRef(initialDraft);
   const callbackRef = useRef(onDraftChange);
   const [deliveryPortalTarget, setDeliveryPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { sourceDraftRef.current = initialDraft; }, [draftKey, initialDraft]);
   useEffect(() => { callbackRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => { setDeliveryPortalTarget(document.getElementById(deliveryPortalId)); }, [deliveryPortalId]);
-  useEffect(() => { setDraft(sourceDraftRef.current); setMode("preview"); callbackRef.current(sourceDraftRef.current); }, [draftKey]);
+  useEffect(() => {
+    const next = sourceDraftRef.current;
+    draftRef.current = next;
+    setDraft(next);
+    setMode("preview");
+    callbackRef.current(next);
+  }, [draftKey]);
   const shortItems = useMemo(() => splitKeywords(draft.shortDescription), [draft.shortDescription]);
-  const update = <TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => setDraft((current) => { const next = { ...current, [key]: value }; onDraftChange(next); return next; });
+  const update = <TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => {
+    const next = { ...draftRef.current, [key]: value };
+    draftRef.current = next;
+    setDraft(next);
+    callbackRef.current(next);
+  };
 
   return <div className="space-y-4">
     {deliveryPortalTarget ? createPortal(renderDeliveryTimeRange(draft.product, (product) => update("product", product)), deliveryPortalTarget) : null}

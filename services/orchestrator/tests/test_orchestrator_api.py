@@ -72,11 +72,25 @@ class FakeEanPoolGateway:
         self.claimed_job_ids: list[str] = []
         self.used_job_ids: list[str] = []
 
-    def claim_for_job(self, *, job_id: str, request_id: str) -> str:
+    def claim_for_job(
+        self,
+        *,
+        job_id: str,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> str:
         self.claimed_job_ids.append(job_id)
         return self.eans_by_job_id.setdefault(job_id, f"4098765432{len(self.eans_by_job_id) + 100}")
 
-    def mark_used_for_job(self, *, job_id: str, request_id: str) -> None:
+    def mark_used_for_job(
+        self,
+        *,
+        job_id: str,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> None:
         self.used_job_ids.append(job_id)
 
 
@@ -400,6 +414,7 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     command = OrchestrateRequest.model_validate(
         {
             "operation": "publish",
+            "kid_number": "13234455",
             "payload": {
                 "title": "Desk",
                 "description": "Oak",
@@ -412,7 +427,7 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
                 {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE", "changed_fields": ["title", "description", "source_model", "price"]},
                 {"marketplace": "hood", "account": "jv", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
                 {"marketplace": "hood", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
-                {"marketplace": "kaufland", "account": "jv", "changed_fields": ["title", "description", "price"]},
+                {"marketplace": "kaufland", "account": "jv", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
                 {"marketplace": "kaufland", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
             ],
         }
@@ -421,15 +436,15 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
 
     assert result.status == "success"
-    assert len(pool_gateway.claimed_job_ids) == 3
+    assert len(pool_gateway.claimed_job_ids) == 2
     assert set(pool_gateway.claimed_job_ids) == set(pool_gateway.used_job_ids)
     by_target = {item.target: item.data["ean"] for item in result.results}
     assert by_target["xljv,site=JV,site_key=JV_DE"] == "4012345678901"
     assert by_target["xljv,site=XL,site_key=XLMOEBEL_DE"] == "4012345678901"
     assert by_target["hood,account=jv"] != "4012345678901"
-    assert by_target["kaufland,account=jv"] == "4012345678901"
+    assert by_target["kaufland,account=jv"] == by_target["hood,account=jv"]
     assert by_target["hood,account=jv"] != by_target["hood,account=xl"]
-    assert by_target["hood,account=xl"] != by_target["kaufland,account=xl"]
+    assert by_target["hood,account=xl"] == by_target["kaufland,account=xl"]
     hood_payload = next(item.data["payload"] for item in result.results if item.target == "hood,account=jv")
     assert hood_payload["__source_ean"] == "4012345678901"
 
@@ -437,7 +452,9 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     retry_by_target = {item.target: item.data["ean"] for item in retry_result.results}
     assert retry_by_target["hood,account=jv"] == by_target["hood,account=jv"]
     assert retry_by_target["hood,account=xl"] == by_target["hood,account=xl"]
-    assert len(set(pool_gateway.claimed_job_ids)) == 3
+    assert retry_by_target["kaufland,account=jv"] == by_target["kaufland,account=jv"]
+    assert retry_by_target["kaufland,account=xl"] == by_target["kaufland,account=xl"]
+    assert len(set(pool_gateway.claimed_job_ids)) == 2
 
 
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):

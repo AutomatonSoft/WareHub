@@ -2,6 +2,7 @@ from xl_services.views_batch import XLBatchApplyByEANAPIView, XLBatchPlanByEANAP
 from xl_services.views_read import (
     XLDeliveryOptionsAPIView,
     XLLocalProductByEANAPIView,
+    XLManufacturersAPIView,
     XLProductByEANAPIView,
     XLSitesByEANAPIView,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "XLBatchPlanByEANAPIView",
     "XLDeliveryOptionsAPIView",
     "XLLocalProductByEANAPIView",
+    "XLManufacturersAPIView",
     "XLProductByEANAPIView",
     "XLProductCreateAndPushAPIView",
     "XLProductSyncByEANAPIView",

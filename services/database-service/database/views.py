@@ -2496,7 +2496,7 @@ class EANPoolTakeNextFreeAPIView(APIView):
 
 
 class EANPoolClaimForJobAPIView(APIView):
-    """Atomically return one stable pool EAN for an orchestrator job."""
+    """Atomically return a stable pool EAN for a job or source product family."""
 
     permission_classes = [SessionRolePermission]
 
@@ -2504,7 +2504,35 @@ class EANPoolClaimForJobAPIView(APIView):
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
+        kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
+        reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
         reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+
+        ean_row = None
+        reserved_field = ""
+        if kid_number:
+            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            if ean_row is None:
+                return Response(
+                    {
+                        "code": "ean_reservation_kid_not_found",
+                        "detail": "Локальная запись EAN для указанного Kid не найдена.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            reserved_field = f"reserved_{reservation_family}"
+            reserved_ean = str(getattr(ean_row, reserved_field) or "").strip()
+            if reserved_ean:
+                item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first()
+                if item is None:
+                    return Response(
+                        {
+                            "code": "ean_reservation_pool_entry_not_found",
+                            "detail": "Сохранённый EAN отсутствует в EAN pool.",
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
         item = (
             EANPool.objects.select_for_update()
@@ -2532,6 +2560,10 @@ class EANPoolClaimForJobAPIView(APIView):
             item.reserved_at = timezone.now()
             item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
 
+        if ean_row is not None:
+            setattr(ean_row, reserved_field, item.ean)
+            ean_row.save(update_fields=[reserved_field])
+
         return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
 
@@ -2542,8 +2574,15 @@ class EANPoolMarkJobUsedAPIView(APIView):
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
-        item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
+        kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
+        reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
+        if kid_number:
+            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            reserved_ean = str(getattr(ean_row, f"reserved_{reservation_family}", "") or "").strip() if ean_row else ""
+            item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first() if reserved_ean else None
+        else:
+            reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+            item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
         if item is None:
             return Response({"detail": "Резерв EAN для задания не найден."}, status=status.HTTP_404_NOT_FOUND)
 

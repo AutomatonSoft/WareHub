@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "../../components/ui/input";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
+import { fetchXlManufacturerOptions, type XlManufacturerOption } from "./create-product-source-api";
 
-export type XlCreateProductDraft = { name: string; seo_url: string; ean: string; price: string; uvp: string; description: string; tag: string; meta_title: string; meta_description: string; meta_keyword: string };
+export type XlCreateProductDraft = { name: string; seo_url: string; ean: string; price: string; uvp: string; manufacturer_id: string; description: string; tag: string; meta_title: string; meta_description: string; meta_keyword: string };
 type FieldKey = keyof XlCreateProductDraft;
 type Props = { initialFields: XlCreateProductDraft; draftKey: string; codeLabel: string; previewLabel: string; onDraftChange: (draft: XlCreateProductDraft) => void };
 
@@ -16,17 +17,28 @@ const computeUvp = (value: string) => { const price = Number(String(value).repla
 export function XlCreateProductPanel({ initialFields, draftKey, codeLabel, previewLabel, onDraftChange }: Props) {
   const [draft, setDraft] = useState(initialFields);
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
+  const [manufacturers, setManufacturers] = useState<XlManufacturerOption[]>([]);
+  const [manufacturersError, setManufacturersError] = useState("");
   const sourceDraftRef = useRef(initialFields); const onDraftChangeRef = useRef(onDraftChange);
   useEffect(() => { sourceDraftRef.current = initialFields; }, [draftKey, initialFields]);
   useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => { setDraft(sourceDraftRef.current); setDescriptionMode("preview"); onDraftChangeRef.current(sourceDraftRef.current); }, [draftKey]);
+  useEffect(() => {
+    let active = true;
+    void fetchXlManufacturerOptions()
+      .then((items) => { if (active) { setManufacturers(items); setManufacturersError(""); } })
+      .catch(() => { if (active) setManufacturersError("Unable to load XL manufacturers."); });
+    return () => { active = false; };
+  }, []);
   const seoUrl = useMemo(() => buildSeoUrl(draft.name) || draft.seo_url, [draft.name, draft.seo_url]);
   const uvp = useMemo(() => computeUvp(draft.price) || draft.uvp, [draft.price, draft.uvp]);
+  const selectedManufacturer = manufacturers.find((item) => item.manufacturerId === draft.manufacturer_id) ?? null;
   const update = (key: FieldKey, value: string) => setDraft((current) => { const next = { ...current, [key]: value }; onDraftChange(next); return next; });
   return <div className="space-y-4">
     <div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Name</label><DeferredInput value={draft.name} onDraftChange={(value) => update("name", value)} /></div>
     <div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">SEO URL</label><Input value={seoUrl} readOnly /></div>
     <div className="grid gap-4 md:grid-cols-3"><div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">EAN</label><DeferredInput value={draft.ean} onDraftChange={(value) => update("ean", value)} /></div><div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</label><DeferredInput value={draft.price} onDraftChange={(value) => update("price", value)} /></div><div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">UVP</label><Input value={uvp} readOnly /></div></div>
+    <div className="grid gap-4 md:grid-cols-2"><div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Manufacturer</label><div className="grid gap-2">{manufacturers.map((item) => <button key={item.manufacturerId} type="button" onClick={() => update("manufacturer_id", item.manufacturerId)} className={["rounded-[var(--radius-control)] border px-3 py-2 text-left text-sm transition", item.manufacturerId === draft.manufacturer_id ? "border-primary bg-primary/10 text-foreground" : "border-border/70 bg-background text-foreground hover:border-primary/60"].join(" ")}><span className="block font-medium">{item.name}</span><span className="block text-xs text-muted-foreground">{item.deliveryTime || "No delivery time"}</span></button>)}</div>{manufacturers.length === 0 && !manufacturersError ? <p className="text-xs text-muted-foreground">Loading XL manufacturers…</p> : null}{manufacturersError ? <p className="text-xs text-destructive">{manufacturersError}</p> : null}</div><div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Lieferzeit</label><Input value={selectedManufacturer?.deliveryTime || "Select a manufacturer"} readOnly /></div></div>
     <div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Tag</label><DeferredTextarea value={draft.tag} onDraftChange={(value) => update("tag", value)} className={fieldClass.replace("min-h-[110px]", "min-h-[90px]")} /></div>
     <div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Meta title</label><DeferredInput value={draft.meta_title} onDraftChange={(value) => update("meta_title", value)} /></div>
     <div className="space-y-1.5"><label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Meta description</label><DeferredTextarea value={draft.meta_description} onDraftChange={(value) => update("meta_description", value)} className={fieldClass} /></div>
