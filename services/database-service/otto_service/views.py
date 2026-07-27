@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
 
+from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from .models import OttoProductJV, OttoProductXL
 from .serializers import (
     OttoProductJVSerializer,
@@ -34,6 +35,51 @@ def _resolve_profile(profile: str | None):
     model = PROFILE_TO_MODEL.get(normalized)
     serializer = PROFILE_TO_SERIALIZER.get(normalized)
     return normalized, model, serializer
+
+
+def _upsert_products(model_cls, raw_items: list[dict]) -> tuple[int, int, list[dict]]:
+    serializer = OttoProductPayloadSerializer(data=raw_items, many=True)
+    serializer.is_valid(raise_exception=True)
+
+    created_count = 0
+    updated_count = 0
+    result_items: list[dict] = []
+
+    with transaction.atomic():
+        for original_item, validated_item in zip(raw_items, serializer.validated_data):
+            product_reference = validated_item["productReference"]
+            defaults = {
+                "sku": validated_item.get("sku") or None,
+                "ean": validated_item.get("ean") or None,
+                "pzn": validated_item.get("pzn") or None,
+                "mpn": validated_item.get("mpn") or None,
+                "moin": validated_item.get("moin") or None,
+                "release_date": validated_item.get("releaseDate"),
+                "product_description": validated_item.get("productDescription") or {},
+                "media_assets": validated_item.get("mediaAssets") or [],
+                "order_data": validated_item.get("order") or {},
+                "pricing": validated_item.get("pricing") or {},
+                "logistics": validated_item.get("logistics") or original_item.get("delivery") or {},
+                "compliance": validated_item.get("compliance") or {},
+                "raw_payload": original_item,
+            }
+            product, created = model_cls.objects.update_or_create(
+                product_reference=product_reference,
+                defaults=defaults,
+            )
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+            result_items.append(
+                {
+                    "id": product.id,
+                    "product_reference": product.product_reference,
+                    "created": created,
+                }
+            )
+
+    return created_count, updated_count, result_items
 
 
 class OttoProductUpsertAPIView(APIView):
@@ -71,47 +117,7 @@ class OttoProductUpsertAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = OttoProductPayloadSerializer(data=raw_items, many=True)
-        serializer.is_valid(raise_exception=True)
-
-        created_count = 0
-        updated_count = 0
-        result_items: list[dict] = []
-
-        with transaction.atomic():
-            for original_item, validated_item in zip(raw_items, serializer.validated_data):
-                product_reference = validated_item["productReference"]
-                defaults = {
-                    "sku": validated_item.get("sku") or None,
-                    "ean": validated_item.get("ean") or None,
-                    "pzn": validated_item.get("pzn") or None,
-                    "mpn": validated_item.get("mpn") or None,
-                    "moin": validated_item.get("moin") or None,
-                    "release_date": validated_item.get("releaseDate"),
-                    "product_description": validated_item.get("productDescription") or {},
-                    "media_assets": validated_item.get("mediaAssets") or [],
-                    "order_data": validated_item.get("order") or {},
-                    "pricing": validated_item.get("pricing") or {},
-                    "logistics": validated_item.get("logistics") or {},
-                    "compliance": validated_item.get("compliance") or {},
-                    "raw_payload": original_item if isinstance(original_item, dict) else {},
-                }
-                product, created = model_cls.objects.update_or_create(
-                    product_reference=product_reference,
-                    defaults=defaults,
-                )
-                if created:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-                result_items.append(
-                    {
-                        "id": product.id,
-                        "product_reference": product.product_reference,
-                        "created": created,
-                    }
-                )
+        created_count, updated_count, result_items = _upsert_products(model_cls, raw_items)
 
         return Response(
             {
@@ -120,6 +126,159 @@ class OttoProductUpsertAPIView(APIView):
                 "created": created_count,
                 "updated": updated_count,
                 "items": result_items,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class OttoProductFetchBySKUAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request, profile: str, sku: str):
+        normalized_profile, model_cls, _ = _resolve_profile(profile)
+        if model_cls is None:
+            return Response(
+                {"detail": "profile должен быть 'jv' или 'xl'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            page = int(request.query_params.get("page", 0))
+            limit = int(request.query_params.get("limit", 10))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "page и limit должны быть целыми числами."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if page < 0 or not 1 <= limit <= 100:
+            return Response(
+                {"detail": "page должен быть неотрицательным, limit — от 1 до 100."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            external_payload = OttoExternalProductsClient().fetch_products(
+                sku=sku,
+                controller=normalized_profile,
+                page=page,
+                limit=limit,
+            )
+        except OttoExternalAPIError as error:
+            return Response(
+                {
+                    "code": "otto_external_fetch_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        raw_items = external_payload["productVariations"]
+        if not raw_items:
+            return Response(
+                {
+                    "code": "otto_product_not_found",
+                    "detail": "OTTO product was not found for the supplied SKU.",
+                    "sku": sku,
+                    "profile": normalized_profile,
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        created_count, updated_count, result_items = _upsert_products(model_cls, raw_items)
+        return Response(
+            {
+                "profile": normalized_profile,
+                "sku": sku,
+                "page": page,
+                "limit": limit,
+                "received": len(raw_items),
+                "created": created_count,
+                "updated": updated_count,
+                "items": result_items,
+                "product_variations": raw_items,
+                "links": external_payload.get("links", []),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class OttoCategoriesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        try:
+            page = int(request.query_params.get("page", 0))
+            limit = int(request.query_params.get("limit", 10))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "page и limit должны быть целыми числами."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if page < 0 or not 1 <= limit <= 2000:
+            return Response(
+                {"detail": "page должен быть неотрицательным, limit — от 1 до 2000."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        category = str(request.query_params.get("category") or "").strip() or None
+
+        try:
+            external_payload = OttoExternalProductsClient().fetch_categories(
+                page=page,
+                limit=limit,
+                category=category,
+            )
+        except OttoExternalAPIError as error:
+            return Response(
+                {
+                    "code": "otto_external_categories_fetch_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "page": page,
+                "limit": limit,
+                "category": category,
+                "categories": external_payload["categories"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class OttoCategoryAttributesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        category_id = str(request.query_params.get("categoryId") or "").strip()
+        if not category_id:
+            return Response(
+                {"detail": "categoryId is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            external_payload = OttoExternalProductsClient().fetch_attributes(category_id=category_id)
+        except OttoExternalAPIError as error:
+            return Response(
+                {
+                    "code": "otto_external_attributes_fetch_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "categoryId": category_id,
+                "attributes": external_payload["attributes"],
             },
             status=status.HTTP_200_OK,
         )
