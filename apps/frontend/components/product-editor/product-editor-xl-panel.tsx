@@ -509,6 +509,7 @@ function ProductEditorXlCreateForm({ draft, onChange }: { draft: ProductEditorJv
     ean: draft.ean,
     price: draft.price,
     uvp: String(draft.jv_fields?.uvp ?? ""),
+    manufacturer_id: String(draft.jv_fields?.manufacturer_id ?? ""),
     description: firstDescription?.description ?? "",
     tag: firstDescription?.tag ?? "",
     meta_title: firstDescription?.meta_title ?? "",
@@ -518,7 +519,7 @@ function ProductEditorXlCreateForm({ draft, onChange }: { draft: ProductEditorJv
   return <XlCreateProductPanel initialFields={initialFields} draftKey={`${draft.target_id}:${draft.ean}`} codeLabel="Code" previewLabel="Preview" onDraftChange={(next) => onChange({
     ean: next.ean,
     price: next.price,
-    jv_fields: { ...draft.jv_fields, urlkey: next.seo_url, uvp: next.uvp },
+    jv_fields: { ...draft.jv_fields, urlkey: next.seo_url, uvp: next.uvp, manufacturer_id: next.manufacturer_id },
     descriptions: [{ ...(firstDescription ?? { language_id: 1 }), name: next.name, description: next.description, tag: next.tag, meta_title: next.meta_title, meta_description: next.meta_description, meta_keyword: next.meta_keyword }, ...draft.descriptions.slice(1)],
   })} />;
 }

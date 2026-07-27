@@ -88,6 +88,7 @@ class OrchestrateRequest(BaseModel):
     operation: Operation = Operation.UPDATE
     payload: CanonicalPayload
     channels: list[ChannelTarget]
+    kid_number: str | None = None
 
 
 class ErrorContract(BaseModel):

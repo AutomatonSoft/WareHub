@@ -9,6 +9,7 @@ from database.permissions import SessionRolePermission
 from xl_services.models import ImportedProduct
 from xl_services.serializers import ImportedProductDetailSerializer
 from xl_services.source_client import (
+    fetch_xl_manufacturers,
     fetch_xl_product_brief_by_ean,
     fetch_xl_product_snapshot_by_ean,
     source_db_config_for_xl,
@@ -166,6 +167,47 @@ class XLDeliveryOptionsAPIView(APIView):
                 "site": ImportedProduct.Site.XL,
                 "items": [],
                 "source": "static",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class XLManufacturersAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        force_xl_site(request)
+        site_key = normalize_site_key(request.query_params.get("site_key"))
+        db_config = source_db_config_for_xl(site_key=site_key)
+        if not db_config:
+            return Response(
+                {"detail": "XL source DB is not configured for the requested site."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        try:
+            rows = fetch_xl_manufacturers(db_config)
+        except Exception:  # noqa: BLE001
+            logger.exception("XL_MANUFACTURERS_FETCH_FAILED site_key=%s", site_key)
+            return Response(
+                {"detail": "Failed to read XL manufacturers from source DB."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        items = [
+            {
+                "manufacturer_id": row.get("manufacturer_id"),
+                "name": str(row.get("name") or "").strip(),
+                "delivery_time": str(row.get("delivery_time") or "").strip(),
+            }
+            for row in rows
+            if row.get("manufacturer_id") is not None
+        ]
+        return Response(
+            {
+                "site": ImportedProduct.Site.XL,
+                "site_key": site_key,
+                "items": items,
             },
             status=status.HTTP_200_OK,
         )

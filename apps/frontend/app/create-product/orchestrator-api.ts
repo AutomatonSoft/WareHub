@@ -209,6 +209,7 @@ export async function createMainMarketplaceProductJob(input: {
   description: string;
   price: string;
   imageUrls: string[];
+  kidNumber?: string;
   selectedSiteIds: string[];
   xljvPayload: Record<string, unknown>;
   hoodPayload: Record<string, unknown>;
@@ -267,7 +268,7 @@ export async function createMainMarketplaceProductJob(input: {
         account: site.kind.toLowerCase(),
         changed_fields: kauflandChangedFields,
         overrides: input.kauflandPayload,
-        ...(site.kind === "XL" ? { ean_source: "pool" as const } : {}),
+        ean_source: "pool",
       });
     }
   }
@@ -280,7 +281,12 @@ export async function createMainMarketplaceProductJob(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: Operation.publish, payload, channels },
+      command: {
+        operation: Operation.publish,
+        payload,
+        channels,
+        ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+      },
     }),
   });
   const raw = (await response.json()) as Record<string, unknown>;

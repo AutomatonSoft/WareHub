@@ -78,6 +78,8 @@ class Ean(Model):
     hood_xl = CharField(max_length=16, null=True, blank=True)
     ebay_jv = CharField(max_length=16, null=True, blank=True)
     ebay_xl = CharField(max_length=16, null=True, blank=True)
+    reserved_jv = CharField(max_length=13, null=True, blank=True)
+    reserved_xl = CharField(max_length=13, null=True, blank=True)
 
 class EanStatus(Model):
     ean = OneToOneField(Kid, on_delete=CASCADE, related_name="status")

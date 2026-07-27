@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
@@ -33,14 +33,20 @@ export function KauflandProductDetailsPanel({ initialDraft, draftKey, codeLabel,
   const [draft, setDraft] = useState(initialDraft);
   const [mode, setMode] = useState<"code" | "preview">("preview");
   const sourceDraftRef = useRef(initialDraft);
-  const callbackRef = useRef(onDraftChange);
   const [deliveryPortalTarget, setDeliveryPortalTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { sourceDraftRef.current = initialDraft; }, [draftKey, initialDraft]);
-  useEffect(() => { callbackRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => { setDeliveryPortalTarget(document.getElementById(deliveryPortalId)); }, [deliveryPortalId]);
-  useEffect(() => { setDraft(sourceDraftRef.current); setMode("preview"); callbackRef.current(sourceDraftRef.current); }, [draftKey]);
+  useEffect(() => {
+    const next = sourceDraftRef.current;
+    setDraft(next);
+    setMode("preview");
+  }, [draftKey]);
   const shortItems = useMemo(() => splitKeywords(draft.shortDescription), [draft.shortDescription]);
-  const update = <TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => setDraft((current) => { const next = { ...current, [key]: value }; onDraftChange(next); return next; });
+  const update = useCallback(<TKey extends keyof KauflandCreateProductDraft>(key: TKey, value: KauflandCreateProductDraft[TKey]) => {
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    onDraftChange(next);
+  }, [draft, onDraftChange]);
 
   return <div className="space-y-4">
     {deliveryPortalTarget ? createPortal(renderDeliveryTimeRange(draft.product, (product) => update("product", product)), deliveryPortalTarget) : null}

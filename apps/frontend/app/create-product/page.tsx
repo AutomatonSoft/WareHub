@@ -32,6 +32,7 @@ import { JvPublishingOptionsPanel, type JvPublishingSelections } from "./jv-publ
 import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
+import type { MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 
@@ -139,6 +140,7 @@ type XlDescriptionFields = {
   ean: string;
   price: string;
   uvp: string;
+  manufacturer_id: string;
   description: string;
   tag: string;
   meta_title: string;
@@ -443,6 +445,41 @@ function flattenKauflandFields(value: unknown, path: string[] = []): KauflandDis
 function firstKauflandText(value: unknown): string {
   if (Array.isArray(value)) return String(value[0] ?? "");
   return value == null ? "" : String(value);
+}
+
+function kauflandDraftFieldText(product: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = product[key];
+    if (Array.isArray(value)) {
+      const values = value.map((item) => String(item ?? "").trim()).filter(Boolean);
+      if (values.length > 0) return values.join(", ");
+      continue;
+    }
+    const normalized = firstKauflandText(value).trim();
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function buildKauflandFieldsFromDraft(product: Record<string, unknown>): MainKauflandCreateFields {
+  return {
+    size: kauflandDraftFieldText(product, "size"),
+    color: kauflandDraftFieldText(product, "color"),
+    material: kauflandDraftFieldText(product, "material"),
+    delivery: kauflandDraftFieldText(product, "delivery"),
+    height: kauflandDraftFieldText(product, "height"),
+    length: kauflandDraftFieldText(product, "length"),
+    width: kauflandDraftFieldText(product, "width"),
+    amount: kauflandDraftFieldText(product, "amount") || "20",
+    idOffer: kauflandDraftFieldText(product, "id_offer") || kauflandDraftFieldText(product, "ean"),
+    storefronts: kauflandDraftFieldText(product, "storefronts", "storefront") || "de, cz, sk, pl, at, fr, it",
+  };
+}
+
+function sanitizeKauflandDraftProduct(product: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(product).filter(([key]) => !["undefined", "null"].includes(key.toLowerCase())),
+  );
 }
 
 function formatKauflandPrice(value: unknown): string {
@@ -1000,6 +1037,7 @@ function buildXlDescriptionFields(payload: Record<string, unknown>): XlDescripti
     ean: asTrimmedString(payload.ean),
     price,
     uvp: asTrimmedString(payload.price) || computeEvpFromPrice(price),
+    manufacturer_id: asTrimmedString(payload.manufacturer_id),
     description: asTrimmedString(primaryDescription.description),
     tag: asTrimmedString(primaryDescription.tag),
     meta_title: asTrimmedString(primaryDescription.meta_title),
@@ -1067,6 +1105,7 @@ export default function CreateProductPage() {
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
   const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
   const [activeTabGalleryImageIdByTab, setActiveTabGalleryImageIdByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const mainLocalImageFilesRef = useRef<File[]>([]);
   const [rubricTreesBySite, setRubricTreesBySite] = useState<RubricTreeCache>({});
   const [rubricTreeLoading, setRubricTreeLoading] = useState(false);
   const [rubricTreeError, setRubricTreeError] = useState("");
@@ -1671,6 +1710,12 @@ export default function CreateProductPage() {
       file,
       isLocal: true,
     }));
+    if (activeTab === "main") {
+      mainLocalImageFilesRef.current = [
+        ...mainLocalImageFilesRef.current,
+        ...nextItems.flatMap((item) => item.file instanceof File ? [item.file] : []),
+      ];
+    }
     nextItems.forEach((item) => localObjectUrlsRef.current.push(item.src));
 
     setTabGalleryItemsByTab((current) => ({
@@ -1683,10 +1728,28 @@ export default function CreateProductPage() {
     }));
   }
 
+  function getLocalImageFiles(items: GalleryItem[]): File[] {
+    return items
+      .flatMap((item) => item.isLocal && item.file instanceof File ? [item.file] : []);
+  }
+
+  function getActiveTabLocalImageFiles(): File[] {
+    if (activeTab === "main") {
+      return mainLocalImageFilesRef.current;
+    }
+    const items = activeTab === "jv"
+      ? galleryItems
+      : tabGalleryItemsByTab[activeTab] ?? [];
+    return getLocalImageFiles(items);
+  }
+
   function handleDeleteTabGalleryItem(itemId: string) {
     setTabGalleryItemsByTab((current) => {
       const currentItems = current[activeTab] ?? [];
       const target = currentItems.find((item) => item.id === itemId);
+      if (activeTab === "main" && target?.file instanceof File) {
+        mainLocalImageFilesRef.current = mainLocalImageFilesRef.current.filter((file) => file !== target.file);
+      }
       if (target?.isLocal) {
         URL.revokeObjectURL(target.src);
         localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
@@ -2329,6 +2392,26 @@ export default function CreateProductPage() {
     });
   }
 
+  function submitKauflandCreate(siteIds: string[]) {
+    const draft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
+      ? kauflandDraftRefByTab.current[activeTab].draft
+      : sourceKauflandDraft;
+    return controller.handleCreateProduct({}, siteIds, {
+      kauflandDescription: draft.description,
+      kauflandShortDescription: draft.shortDescription,
+      kauflandTitle: draft.title,
+      kauflandEan: draft.ean,
+      kauflandPrice: draft.price,
+      kauflandFields: buildKauflandFieldsFromDraft(draft.product),
+      kauflandOverrides: {
+        ...sanitizeKauflandDraftProduct(draft.product),
+        title: draft.title,
+        ean: draft.ean,
+        price: draft.price,
+      },
+    }, getActiveTabLocalImageFiles());
+  }
+
   function handlePrimaryCreateAction() {
     if (activeTab === "jv") {
       return void handleSendToAllJvSites();
@@ -2338,7 +2421,7 @@ export default function CreateProductPage() {
       const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
         ? xlDraftRefByTab.current[activeTab].draft
         : activeXlDescriptionFields;
-      return void controller.handleCreateProductForXlDefaultSite(draft);
+      return void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles());
     }
 
     if (activeTab === "main") {
@@ -2363,21 +2446,11 @@ export default function CreateProductPage() {
           itemNumber: draft.itemNumber,
           productPropertiesText: draft.productPropertiesText,
         },
-      });
+      }, getActiveTabLocalImageFiles());
     }
 
     if (activeTabMeta.marketplace === "KAUFLAND") {
-      const draft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
-        ? kauflandDraftRefByTab.current[activeTab].draft
-        : sourceKauflandDraft;
-      return void controller.handleCreateProduct({}, activeMarketplaceSiteIds, {
-        kauflandDescription: draft.description,
-        kauflandShortDescription: draft.shortDescription,
-        kauflandTitle: draft.title,
-        kauflandEan: draft.ean,
-        kauflandPrice: draft.price,
-        kauflandOverrides: { ...draft.product, title: draft.title, ean: draft.ean, price: draft.price },
-      });
+      return void submitKauflandCreate(activeMarketplaceSiteIds);
     }
 
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
@@ -2414,6 +2487,14 @@ export default function CreateProductPage() {
       void handleSendToAllJvSites(selectedJvSiteKeys);
     }
     if (selectedNonJvSiteIds.length > 0) {
+      if (activeTab === "xl") {
+        const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
+          ? xlDraftRefByTab.current[activeTab].draft
+          : activeXlDescriptionFields;
+        void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles());
+        return;
+      }
+
       if (activeTabMeta.marketplace === "HOOD") {
         const draft = hoodPublishDraftRef.current?.draftKey === activeHoodSourceKey
           ? hoodPublishDraftRef.current.draft
@@ -2432,11 +2513,16 @@ export default function CreateProductPage() {
             itemNumber: draft.itemNumber,
             productPropertiesText: draft.productPropertiesText,
           },
-        });
+        }, getActiveTabLocalImageFiles());
         return;
       }
 
-      void controller.handleCreateProduct({}, selectedNonJvSiteIds);
+      if (activeTabMeta.marketplace === "KAUFLAND") {
+        void submitKauflandCreate(selectedNonJvSiteIds);
+        return;
+      }
+
+      void controller.handleCreateProduct({}, selectedNonJvSiteIds, undefined, getActiveTabLocalImageFiles());
     }
   }
 
@@ -2475,7 +2561,7 @@ export default function CreateProductPage() {
         lieferzeit: selectedDeliveryId,
         lieferzeit_id: selectedDeliveryId,
       },
-    });
+    }, undefined, undefined, getActiveTabLocalImageFiles());
   }
 
   return (

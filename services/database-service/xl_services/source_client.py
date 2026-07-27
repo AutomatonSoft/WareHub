@@ -285,6 +285,34 @@ def fetch_xl_product_snapshot_by_ean(db_config: dict, ean: str):
         conn.close()
 
 
+def fetch_xl_manufacturers(db_config: dict) -> list[dict]:
+    conn = _connect_source_db(db_config)
+    cur = conn.cursor(dictionary=True)
+    try:
+        prefix = db_config.get("table_prefix", "oc_")
+        raw_manufacturer = f"{prefix}manufacturer"
+        if not _table_exists(cur, raw_manufacturer):
+            return []
+
+        t_manufacturer = f"`{raw_manufacturer}`"
+        delivery_time_column = (
+            "delivery_time"
+            if _table_has_column(cur, raw_manufacturer, "delivery_time")
+            else "'' AS delivery_time"
+        )
+        cur.execute(
+            f"""
+            SELECT manufacturer_id, name, {delivery_time_column}
+            FROM {t_manufacturer}
+            ORDER BY name, manufacturer_id
+            """
+        )
+        return cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+
 def fetch_xl_product_snapshot_by_product_id(db_config: dict, product_id: int):
     conn = _connect_source_db(db_config)
     cur = conn.cursor(dictionary=True)

@@ -100,6 +100,7 @@ from xl_services.views import (
     XLBatchPlanByEANAPIView,
     XLDeliveryOptionsAPIView,
     XLLocalProductByEANAPIView,
+    XLManufacturersAPIView,
     XLProductByEANAPIView,
     XLProductCreateAndPushAPIView,
     XLProductSyncByEANAPIView,
@@ -299,6 +300,7 @@ api_v1_patterns = [
     path("api/v1/xl/rubrics/tree/", XLRubricsTreeAPIView.as_view(), name="xl-rubrics-tree-v1"),
     path("api/v1/jv/rubrics/tree/", JVRubricsTreeAPIView.as_view(), name="jv-rubrics-tree-v1"),
     path("api/v1/xl/delivery-options/", XLDeliveryOptionsAPIView.as_view(), name="xl-delivery-options-v1"),
+    path("api/v1/xl/manufacturers/", XLManufacturersAPIView.as_view(), name="xl-manufacturers-v1"),
     path("api/v1/jv/delivery-options/", JVDeliveryOptionsAPIView.as_view(), name="jv-delivery-options-v1"),
     path(
         "api/v1/xl/products/create-and-push/",
