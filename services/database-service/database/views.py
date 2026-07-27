@@ -58,6 +58,7 @@ from .ftp_upload import (
     upload_public_file_for_site_payload,
 )
 from .permissions import SessionRolePermission
+from .marketplace_ean_mapping_service import MarketplaceEanMappingError, confirm_marketplace_ean_mapping
 from .serializers import (
     EANPoolImportSerializer,
     EANPoolReserveSerializer,
@@ -68,6 +69,7 @@ from .serializers import (
     EANUsageSerializer,
     EanPatchSerializer,
     EanStatusReadSerializer,
+    MarketplaceEanMappingConfirmSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
     ClientDetailViewSerializer,
@@ -88,6 +90,22 @@ from afterbuy_service.memo_sync import AfterbuyOrderMemoSyncService
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+class MarketplaceEanMappingConfirmAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        serializer = MarketplaceEanMappingConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mapping = confirm_marketplace_ean_mapping(**serializer.validated_data)
+        except MarketplaceEanMappingError as exc:
+            return Response(
+                {"code": "marketplace_ean_mapping_not_confirmed", "detail": str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"confirmed": True, "mapping": mapping}, status=status.HTTP_200_OK)
 
 
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:

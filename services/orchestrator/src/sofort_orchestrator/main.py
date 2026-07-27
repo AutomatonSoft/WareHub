@@ -24,6 +24,7 @@ from .domain.models import ErrorContract
 from .infra.channel_limiter import InMemoryChannelLimiter
 from .infra.circuit_breaker import InMemoryCircuitBreaker
 from .infra.ean_pool_gateway import EanPoolGateway
+from .infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from .infra.http_client import HttpClient
 from .infra.idempotency import SqliteIdempotencyStore
 from .infra.job_store import SqliteJobStore
@@ -80,11 +81,17 @@ def _build_service() -> OrchestratorService:
         http_client=http_client,
         service_auth_token=settings.service_auth_token,
     )
+    marketplace_ean_mapping_gateway = MarketplaceEanMappingGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     return OrchestratorService(
         adapters=adapters,
         circuit_breaker=circuit_breaker,
         channel_limiter=channel_limiter,
         ean_pool_gateway=ean_pool_gateway,
+        marketplace_ean_mapping_gateway=marketplace_ean_mapping_gateway,
     )
 
 

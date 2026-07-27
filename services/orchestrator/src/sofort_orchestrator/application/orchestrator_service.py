@@ -17,6 +17,7 @@ from ..infra.channel_limiter import InMemoryChannelLimiter
 from ..infra.http_client import RetryExhaustedError
 from ..infra.circuit_breaker import InMemoryCircuitBreaker
 from ..infra.ean_pool_gateway import EanPoolGateway
+from ..infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from ..infra.marketplace_adapters import MarketplaceAdapters
 
 
@@ -27,11 +28,13 @@ class OrchestratorService:
         circuit_breaker: InMemoryCircuitBreaker | None = None,
         channel_limiter: InMemoryChannelLimiter | None = None,
         ean_pool_gateway: EanPoolGateway | None = None,
+        marketplace_ean_mapping_gateway: MarketplaceEanMappingGateway | None = None,
     ) -> None:
         self.adapters = adapters
         self.circuit_breaker = circuit_breaker
         self.channel_limiter = channel_limiter
         self.ean_pool_gateway = ean_pool_gateway
+        self.marketplace_ean_mapping_gateway = marketplace_ean_mapping_gateway
 
     def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest, job_id: str | None = None) -> OrchestrateResponse:
         if command.operation not in {Operation.UPDATE, Operation.PUBLISH}:
@@ -224,6 +227,7 @@ class OrchestratorService:
 
             ok = 200 <= adapter_result.status_code < 300
             if ok:
+                result_data = dict(adapter_result.body)
                 if channel.ean_source == "pool":
                     reservation_family = self._pool_reservation_family(channel)
                     reservation_id = self._pool_reservation_id(
@@ -231,6 +235,14 @@ class OrchestratorService:
                         target_label=reservation_family or target_label,
                     )
                     used_pool_reservations[reservation_id] = reservation_family
+                    result_data["marketplace_ean_mapping"] = self._confirm_marketplace_ean_mapping(
+                        command=command,
+                        request_id=request_id,
+                        kid_number=kid_number,
+                        channel=channel,
+                        ean=channel_ean,
+                        reservation_family=reservation_family,
+                    )
                 if self.circuit_breaker is not None:
                     self.circuit_breaker.record_success(breaker_key)
                 results.append(
@@ -239,7 +251,7 @@ class OrchestratorService:
                         target=target_label,
                         status="success",
                         status_code=adapter_result.status_code,
-                        data=adapter_result.body,
+                        data=result_data,
                     )
                 )
                 continue
@@ -307,6 +319,32 @@ class OrchestratorService:
             kid_number=kid_number,
             reservation_family=reservation_family,
         )
+
+    def _confirm_marketplace_ean_mapping(
+        self,
+        *,
+        command: OrchestrateRequest,
+        request_id: str,
+        kid_number: str,
+        channel,
+        ean: str,
+        reservation_family: str | None,
+    ) -> dict[str, object]:
+        if command.operation is not Operation.PUBLISH or not kid_number or not reservation_family:
+            return {"status": "skipped", "reason": "not_a_pool_publish_mapping"}
+        if self.marketplace_ean_mapping_gateway is None:
+            return {"status": "skipped", "reason": "mapping_gateway_not_configured"}
+        try:
+            mapping = self.marketplace_ean_mapping_gateway.confirm(
+                request_id=request_id,
+                kid_number=kid_number,
+                marketplace=channel.marketplace.value,
+                account=reservation_family,
+                ean=ean,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "failed", "reason": str(exc)}
+        return {"status": "confirmed", "mapping": mapping}
 
     def _pool_reservation_family(self, channel) -> str | None:
         if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO}:

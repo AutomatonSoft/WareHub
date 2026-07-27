@@ -9,6 +9,25 @@ from .order_amounts import parse_order_amount
 from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
+class MarketplaceEanMappingConfirmSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=128)
+    marketplace = serializers.ChoiceField(choices=("hood", "kaufland", "otto"))
+    account = serializers.ChoiceField(choices=("jv", "xl"))
+    ean = serializers.CharField(max_length=64)
+
+    def validate_kid_number(self, value):
+        value = str(value or "").strip()
+        if not value:
+            raise serializers.ValidationError("kid_number is required.")
+        return value
+
+    def validate_ean(self, value):
+        value = str(value or "").strip()
+        if not value:
+            raise serializers.ValidationError("ean is required.")
+        return value
+
+
 class KidModelSerializer(serializers.ModelSerializer):
     place = serializers.CharField(required=False, allow_blank=True, allow_null=True, validators=[])
 
