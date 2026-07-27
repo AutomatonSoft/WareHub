@@ -122,6 +122,7 @@ from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
 from telegram_service.views import (
     TelegramAccessApproveAPIView,
+    TelegramAccessDeleteAPIView,
     TelegramAccessListAPIView,
     TelegramAccessRevokeAPIView,
     TelegramWebhookAPIView,
@@ -422,6 +423,11 @@ api_v1_patterns.extend(
             "api/v1/telegram/access/<int:binding_id>/revoke/",
             TelegramAccessRevokeAPIView.as_view(),
             name="telegram-access-revoke-v1",
+        ),
+        path(
+            "api/v1/telegram/access/<int:binding_id>/",
+            TelegramAccessDeleteAPIView.as_view(),
+            name="telegram-access-delete-v1",
         ),
     ]
 )

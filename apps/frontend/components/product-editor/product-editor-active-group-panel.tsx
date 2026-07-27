@@ -49,6 +49,11 @@ export function ProductEditorActiveGroupPanel(input: {
   searching: boolean;
   onChangeEan: (value: string) => void;
   onSearch: () => void;
+  discoveryItems: Array<{
+    label: string;
+    ean: string;
+    status: "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+  }>;
   hasLocalLoadedHood: boolean;
   hasLocalLoadedJv: boolean;
   jvBatchApplyLoading: boolean;
@@ -89,6 +94,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -102,6 +108,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -144,6 +151,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -157,6 +165,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -212,6 +221,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -235,6 +245,7 @@ export function ProductEditorActiveGroupPanel(input: {
       searching={input.searching}
       onChangeEan={input.onChangeEan}
       onSearch={input.onSearch}
+      discoveryItems={input.discoveryItems}
     />
   );
 }
