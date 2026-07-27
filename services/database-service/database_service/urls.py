@@ -71,6 +71,7 @@ from orders_pars.views import (
 from hood_service.views import HoodFetchByEANAPIView
 from otto_service.views import (
     OttoProductListAPIView,
+    OttoProductFetchBySKUAPIView,
     OttoProductRetrieveAPIView,
     OttoProductUpsertAPIView,
 )
@@ -262,34 +263,24 @@ api_v1_patterns = [
         name="hood-fetch-by-ean-v1",
     ),
     path(
-        "api/v1/otto/products/upsert/",
+        "api/v1/otto/<str:profile>/products/upsert/",
         OttoProductUpsertAPIView.as_view(),
         name="otto-products-upsert-v1",
     ),
     path(
-        "api/v1/otto/<str:profile>/products/upsert/",
-        OttoProductUpsertAPIView.as_view(),
-        name="otto-products-upsert-by-profile-v1",
-    ),
-    path(
-        "api/v1/otto/products/",
+        "api/v1/otto/<str:profile>/products/",
         OttoProductListAPIView.as_view(),
         name="otto-products-list-v1",
     ),
     path(
-        "api/v1/otto/<str:profile>/products/",
-        OttoProductListAPIView.as_view(),
-        name="otto-products-list-by-profile-v1",
-    ),
-    path(
-        "api/v1/otto/products/<int:pk>/",
-        OttoProductRetrieveAPIView.as_view(),
-        name="otto-products-detail-v1",
+        "api/v1/otto/<str:profile>/products/by-sku/<str:sku>/",
+        OttoProductFetchBySKUAPIView.as_view(),
+        name="otto-products-fetch-by-sku-v1",
     ),
     path(
         "api/v1/otto/<str:profile>/products/<int:pk>/",
         OttoProductRetrieveAPIView.as_view(),
-        name="otto-products-detail-by-profile-v1",
+        name="otto-products-detail-v1",
     ),
     path("api/v1/xl/products/by-ean/<str:ean>/", XLProductByEANAPIView.as_view(), name="xl-product-by-ean-v1"),
     path("api/v1/jv/products/by-ean/<str:ean>/", JVProductByEANAPIView.as_view(), name="jv-product-by-ean-v1"),
