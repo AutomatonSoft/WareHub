@@ -1,12 +1,15 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, RefreshCcw, Search, ShieldCheck, ShieldOff, UserRoundCheck } from "lucide-react";
+import Image from "next/image";
+import { motion, useReducedMotion } from "motion/react";
+import { BadgeCheck, CheckCircle2, CircleAlert, Clock3, Filter, Link2, Mail, MessageCircle, RefreshCcw, Search, ShieldCheck, ShieldOff, Trash2, UserRoundCheck, UserX } from "lucide-react";
 import { useLabels } from "../use-labels";
 
 import { fetchAdminUsers } from "../client-api-admin";
+import { resolvePhotoUrl } from "../client-api";
 import type { AdminUser, TelegramAccessEntry, TelegramAccessStatus } from "../client-api-types";
-import { approveTelegramAccess, fetchTelegramAccessEntries, revokeTelegramAccess } from "../client-api-telegram";
+import { approveTelegramAccess, deleteTelegramAccess, fetchTelegramAccessEntries, revokeTelegramAccess } from "../client-api-telegram";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -14,10 +17,47 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
 type SortValue = "newest" | "oldest";
 type StatusFilter = "all" | TelegramAccessStatus;
+
+function TelegramAccessAvatar({
+  user,
+  name,
+  status,
+  apiBase,
+}: {
+  user: AdminUser | null;
+  name: string;
+  status: TelegramAccessStatus;
+  apiBase: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = name.trim().slice(0, 1).toUpperCase() || "?";
+  const avatarSrc = user?.avatar_url && !imageFailed ? resolvePhotoUrl(apiBase, user.avatar_url) : null;
+  const statusClass = status === "approved" ? "bg-emerald-500" : status === "pending" ? "bg-amber-500" : "bg-destructive";
+
+  useEffect(() => setImageFailed(false), [user?.avatar_url]);
+
+  return (
+    <div className="relative shrink-0" aria-hidden="true">
+      <div className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border border-primary/15 bg-primary text-sm font-bold tracking-wide text-primary-foreground shadow-sm ring-4 ring-primary/[0.07]">
+        {avatarSrc ? (
+          <Image
+            src={avatarSrc}
+            alt=""
+            width={56}
+            height={56}
+            unoptimized
+            className="size-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : initials}
+      </div>
+      <span className={`absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-[3px] border-card ${statusClass}`} />
+    </div>
+  );
+}
 
 function SummaryCard({
   title,
@@ -25,22 +65,25 @@ function SummaryCard({
   description,
   icon,
   loading,
+  accentClass,
 }: {
   title: string;
   value: string | number;
   description: string;
   icon: React.ReactNode;
   loading: boolean;
+  accentClass: string;
 }) {
   return (
-    <Card className="wh-section-card border-border/70 shadow-sm">
-      <CardContent className="flex items-start justify-between gap-4 p-4">
+    <Card className="wh-section-card group relative overflow-hidden border-border/70 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none">
+      <div className={`absolute inset-x-0 top-0 h-0.5 ${accentClass}`} />
+      <CardContent className="flex items-start justify-between gap-4 p-5">
         <div className="space-y-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
           {loading ? <Skeleton className="h-8 w-16" /> : <p className="text-3xl font-semibold text-foreground">{value}</p>}
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-muted/40 text-muted-foreground">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-muted/40 text-muted-foreground transition-colors duration-200 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
           {icon}
         </div>
       </CardContent>
@@ -64,6 +107,7 @@ export function AdminTelegramAccessPanel({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortOrder, setSortOrder] = useState<SortValue>("newest");
   const [actionId, setActionId] = useState<number | null>(null);
+  const prefersReducedMotion = useReducedMotion();
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -167,24 +211,61 @@ export function AdminTelegramAccessPanel({
     }
   }, [actionId, loadRows, t.adminTelegramRevokeFailed]);
 
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard title={t.adminTelegramTotal} value={counts.total} description={t.adminTelegramLoadedApprovals} icon={<ShieldCheck size={18} />} loading={loading} />
-        <SummaryCard title={t.adminTelegramPending} value={counts.pending} description={t.adminTelegramWaitingDecision} icon={<UserRoundCheck size={18} />} loading={loading} />
-        <SummaryCard title={t.adminTelegramApproved} value={counts.approved} description={t.adminTelegramApprovedHint} icon={<CheckCircle2 size={18} />} loading={loading} />
-        <SummaryCard title={t.adminTelegramRevoked} value={counts.revoked} description={t.adminTelegramRevokedHint} icon={<ShieldOff size={18} />} loading={loading} />
-      </div>
+  const handleDelete = useCallback(async (bindingId: number) => {
+    if (actionId !== null || !window.confirm(t.adminTelegramDeleteConfirm)) {
+      return;
+    }
+    setActionId(bindingId);
+    setMessage(null);
+    try {
+      await deleteTelegramAccess(bindingId);
+      await loadRows();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t.adminTelegramDeleteFailed);
+    } finally {
+      setActionId(null);
+    }
+  }, [actionId, loadRows, t.adminTelegramDeleteConfirm, t.adminTelegramDeleteFailed]);
 
-      <Card className="wh-section-card border-border/70 shadow-sm">
-        <CardHeader className="pb-3">
+  return (
+    <motion.div
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      className="space-y-4"
+    >
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.28, delay: prefersReducedMotion ? 0 : 0.05, ease: "easeOut" }}
+        className="grid gap-3 md:grid-cols-4"
+      >
+        <SummaryCard title={t.adminTelegramTotal} value={counts.total} description={t.adminTelegramLoadedApprovals} icon={<ShieldCheck size={18} />} accentClass="bg-primary" loading={loading} />
+        <SummaryCard title={t.adminTelegramPending} value={counts.pending} description={t.adminTelegramWaitingDecision} icon={<UserRoundCheck size={18} />} accentClass="bg-amber-500" loading={loading} />
+        <SummaryCard title={t.adminTelegramApproved} value={counts.approved} description={t.adminTelegramApprovedHint} icon={<CheckCircle2 size={18} />} accentClass="bg-emerald-500" loading={loading} />
+        <SummaryCard title={t.adminTelegramRevoked} value={counts.revoked} description={t.adminTelegramRevokedHint} icon={<ShieldOff size={18} />} accentClass="bg-destructive" loading={loading} />
+      </motion.div>
+
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: prefersReducedMotion ? 0 : 0.1, ease: "easeOut" }}
+      >
+      <Card className="wh-section-card overflow-hidden border-border/70 shadow-sm">
+        <CardHeader className="border-b border-border/60 bg-muted/[0.12] pb-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-base">{t.telegramAccessTitle}</CardTitle>
-              <CardDescription>{t.telegramAccessSubtitle}</CardDescription>
+              <div className="flex items-center gap-2">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><MessageCircle size={17} /></span>
+                <div>
+                  <CardTitle className="text-base">{t.telegramAccessTitle}</CardTitle>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-emerald-500" />{t.adminTelegramVisibleCount.replace("{count}", String(counts.total))}</div>
+                </div>
+              </div>
+              <CardDescription className="pl-11">{t.telegramAccessSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline">{t.adminTelegramVisibleCount.replace("{count}", String(counts.total))}</Badge>
+              <Badge variant="outline" className="h-8 gap-1.5 px-2.5"><BadgeCheck size={13} />{t.adminTelegramVisibleCount.replace("{count}", String(counts.total))}</Badge>
               <Button type="button" variant="outline" size="sm" className="h-10 gap-2" onClick={() => void loadRows()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? t.loading : t.refresh}
@@ -193,21 +274,23 @@ export function AdminTelegramAccessPanel({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground"><Filter size={14} /> {t.filters}</div>
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(180px,0.7fr)_minmax(180px,0.7fr)]">
             <div className="space-y-1.5">
               <label htmlFor="telegram-access-search" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                Search
+                {t.search}
               </label>
               <div className="relative">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input id="telegram-access-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.adminTelegramSearchPlaceholder} className="h-10 pl-9" />
+                <Input id="telegram-access-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.adminTelegramSearchPlaceholder} className="h-10 border-border/70 bg-background/80 !pl-11 shadow-sm transition-shadow focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]" />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.status}</label>
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter((value as StatusFilter) ?? "all")}>
-                <SelectTrigger className="h-10 w-full">
+                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.allStatuses} />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,7 +305,7 @@ export function AdminTelegramAccessPanel({
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.sort}</label>
               <Select value={sortOrder} onValueChange={(value) => setSortOrder((value as SortValue) ?? "newest")}>
-                <SelectTrigger className="h-10 w-full">
+                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.newestFirst} />
                 </SelectTrigger>
                 <SelectContent>
@@ -232,10 +315,11 @@ export function AdminTelegramAccessPanel({
               </Select>
             </div>
           </div>
+          </div>
 
           {message ? (
             <Card className="border-destructive/20 bg-destructive/5 shadow-none">
-              <CardContent className="p-3 text-sm text-destructive">{message}</CardContent>
+              <CardContent className="flex items-start gap-2 p-3 text-sm text-destructive"><CircleAlert className="mt-0.5 shrink-0" size={16} />{message}</CardContent>
             </Card>
           ) : null}
 
@@ -252,72 +336,73 @@ export function AdminTelegramAccessPanel({
           ) : null}
 
           {!loading && rows.length > 0 ? (
-            <div className="overflow-hidden rounded-2xl border border-border/70 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <Table className="text-sm">
-                <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="px-4">{t.adminTelegramIdentity}</TableHead>
-                    <TableHead>{t.adminTelegramScope}</TableHead>
-                    <TableHead>{t.status}</TableHead>
-                    <TableHead>{t.adminTelegramRequested}</TableHead>
-                    <TableHead>{t.adminTelegramLastSeen}</TableHead>
-                    <TableHead className="px-4">{t.adminTelegramActions}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => {
+            <div className="space-y-3">
+              {rows.map((row) => {
                     const isBusy = actionId === row.id;
                     const matchedUser = row.email ? usersByEmail.get(row.email.trim().toLowerCase()) ?? null : null;
+                    const statusTone = row.status === "approved"
+                      ? "from-emerald-500 via-emerald-400 to-transparent"
+                      : row.status === "pending"
+                        ? "from-amber-500 via-amber-400 to-transparent"
+                        : "from-destructive via-rose-400 to-transparent";
                     return (
-                      <TableRow key={row.id} className="align-top">
-                        <TableCell className="px-4 py-4 whitespace-normal">
-                          <div className="space-y-1">
-                            <p className="font-semibold text-foreground">{row.display_name || row.username || t.adminTelegramUnknownUser}</p>
+                      <article key={row.id} className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md motion-reduce:transform-none">
+                        <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${statusTone}`} />
+                        <div className="grid gap-0 xl:grid-cols-[minmax(330px,1.5fr)_minmax(250px,1.05fr)_minmax(250px,1.05fr)_minmax(205px,.8fr)_minmax(210px,.85fr)]">
+                          <section className="p-4 xl:border-r xl:border-border/55">
+                            <div className="flex gap-3">
+                            <TelegramAccessAvatar
+                              user={matchedUser}
+                              name={row.display_name || row.username || t.adminTelegramUnknownUser}
+                              status={row.status}
+                              apiBase={apiBase}
+                            />
+                            <div className="min-w-0 space-y-1">
+                            <p className="truncate font-semibold text-foreground">{row.display_name || row.username || t.adminTelegramUnknownUser}</p>
                             <p className="text-sm text-muted-foreground">@{row.username || "-"}</p>
-                            <p className="break-all text-sm text-muted-foreground">{row.email || "-"}</p>
+                            <p className="flex items-center gap-1.5 break-all text-sm text-muted-foreground"><Mail size={13} className="shrink-0" />{row.email || "-"}</p>
+                            </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
                             {matchedUser ? (
-                              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                <p className="font-semibold">{t.adminTelegramMatchedUser}</p>
-                                <p>{matchedUser.username} (@{matchedUser.login})</p>
-                                <p>{matchedUser.role} / {matchedUser.status}</p>
-                              </div>
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"><Link2 size={12} />{t.adminTelegramMatchedUser}</span>
                             ) : row.email ? (
-                              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                <p className="font-semibold">{t.adminTelegramNoMatchedUser}</p>
-                                <p>{t.adminTelegramCheckEmailExists}</p>
-                              </div>
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200"><UserX size={12} />{t.adminTelegramNoMatchedUser}</span>
                             ) : null}
                             {row.app_user?.id ? (
-                              <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-                                <p className="font-semibold">{t.adminTelegramLinkedOnApproval}</p>
-                                <p>{row.app_user.username || "-"} (@{row.app_user.login || "-"})</p>
-                                <p>{row.app_user.email || "-"}</p>
-                              </div>
+                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200"><BadgeCheck size={12} />{t.adminTelegramLinkedOnApproval}</span>
                             ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
-                          <div className="space-y-1">
-                            <p>{t.adminTelegramUserId}: {row.telegram_user_id}</p>
-                            <p>{t.adminTelegramChatId}: {row.chat_id}</p>
-                            <p>{t.adminTelegramThread}: {row.thread_key || "-"}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4">
-                          <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
-                        </TableCell>
-                        <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
-                          <div className="space-y-1">
-                            <p>{formatDate(row.requested_at)}</p>
+                            </div>
+                          </section>
+                          <section className="border-t border-border/55 p-4 xl:border-r xl:border-t-0">
+                            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.adminTelegramScope}</p>
+                            <p className="flex items-center gap-1.5 text-base font-semibold text-foreground"><MessageCircle size={16} className="text-primary" />Telegram</p>
+                            <div className="mt-2 space-y-1 text-sm leading-5 text-foreground/70">
+                              <p>{t.adminTelegramUserId}: {row.telegram_user_id}</p>
+                              <p>{t.adminTelegramChatId}: {row.chat_id}</p>
+                              <p>{t.adminTelegramThread}: {row.thread_key || "-"}</p>
+                            </div>
+                          </section>
+                          <section className="border-t border-border/55 p-4 xl:border-r xl:border-t-0">
+                            <div>
+                              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.status}</p>
+                              <Badge variant={statusVariant(row.status)} className="h-7 px-2.5 text-sm capitalize">{row.status}</Badge>
+                              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.adminTelegramLastSeen}</p>
+                              <p className="mt-1 text-sm font-medium text-foreground/80">{formatDate(row.last_seen_at)}</p>
+                            </div>
+                          </section>
+                          <section className="border-t border-border/55 p-4 xl:border-r xl:border-t-0">
+                            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.adminTelegramRequested}</p>
+                            <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><Clock3 size={15} className="text-primary" />{formatDate(row.requested_at)}</p>
+                            <div className="mt-2 space-y-1 text-sm leading-5 text-foreground/70">
                             <p>{t.adminTelegramApprovedBy}: {row.approved_by || "-"}</p>
                             <p>{t.adminTelegramRevokedBy}: {row.revoked_by || "-"}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 whitespace-normal text-sm text-muted-foreground">
-                          {formatDate(row.last_seen_at)}
-                        </TableCell>
-                        <TableCell className="px-4 py-4 whitespace-normal">
-                          <div className="flex min-w-[220px] flex-wrap gap-2">
+                            </div>
+                          </section>
+                          <section className="flex border-t border-border/55 p-4 xl:border-t-0 xl:items-center">
+                            <div>
+                              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.adminTelegramActions}</p>
+                              <div className="flex flex-wrap gap-2">
                             {row.status !== "approved" ? (
                               <Button type="button" size="sm" className="h-9" onClick={() => void handleApprove(row.id, matchedUser)} disabled={isBusy}>
                                 {isBusy ? t.working : t.adminTelegramApprove}
@@ -328,17 +413,21 @@ export function AdminTelegramAccessPanel({
                                 {isBusy ? t.working : t.adminTelegramRevoke}
                               </Button>
                             ) : null}
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                            <Button type="button" variant="ghost" size="sm" className="h-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => void handleDelete(row.id)} disabled={isBusy}>
+                              <Trash2 size={14} />{isBusy ? t.working : t.adminTelegramDelete}
+                            </Button>
+                              </div>
+                            </div>
+                          </section>
+                        </div>
+                      </article>
                     );
                   })}
-                </TableBody>
-              </Table>
             </div>
           ) : null}
         </CardContent>
       </Card>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

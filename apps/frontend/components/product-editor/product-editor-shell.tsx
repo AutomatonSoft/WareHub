@@ -1,13 +1,16 @@
 ﻿"use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { CircleCheck, CircleX, LoaderCircle } from "lucide-react";
 import { useLabels } from "../../app/use-labels";
 import { AppShell } from "../layout/app-shell";
 import { Card, CardContent } from "../ui/card";
 import { useToast } from "../shared/toast-provider";
 import { LoadingState } from "../ui/loading-state";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
+import { cn } from "../../lib/utils";
 import {
   applyProductEditorPlan,
   discoverProductEditor,
@@ -63,23 +66,55 @@ type HoodWarningsByTab = Record<HoodTabKey, ProductEditorDiscoverResponse["warni
 type HoodLoadingByTab = Record<HoodTabKey, boolean>;
 type HoodApplyLoadingByTab = Record<HoodTabKey, boolean>;
 type HoodImageUploadLoadingByTab = Record<HoodTabKey, boolean>;
+type ProductEditorTabSearchStatus = "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
 
 const PRODUCT_IDENTIFIER_MAX_LENGTH = 100;
 const JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
 const JV_IMAGE_UPLOAD_RETRY_DELAY_MS = 1500;
+const PRODUCT_EDITOR_QUERY_PARAM_BY_TAB: Record<string, string> = {
+  JV: "jv",
+  XL: "xl",
+  HOOD_JV: "hood_jv",
+  HOOD_XL: "hood_xl",
+  KAUFLAND_JV: "kaufland_jv",
+  KAUFLAND_XL: "kaufland_xl",
+  OTTO_JV: "otto_jv",
+  OTTO_XL: "otto_xl",
+  EBAY_JV: "ebay_jv",
+  EBAY_XL: "ebay_xl",
+};
 
 function isValidProductIdentifier(value: string): boolean {
   const normalized = value.trim();
   return normalized.length > 0 && normalized.length <= PRODUCT_IDENTIFIER_MAX_LENGTH;
 }
 
+function hasFoundTargetInGroup(response: ProductEditorDiscoverResponse, groupId: ProductEditorGroupId): boolean {
+  return response.groups
+    .find((group) => group.id === groupId)
+    ?.targets.some((target) => target.status === "found") ?? false;
+}
+
+function getGroupSearchStatus(response: ProductEditorDiscoverResponse, groupId: ProductEditorGroupId): ProductEditorTabSearchStatus {
+  const targets = response.groups.find((group) => group.id === groupId)?.targets;
+  if (!targets) return "error";
+  if (targets.some((target) => target.status === "found")) return "found";
+  if (targets.some((target) => target.status === "error")) return "error";
+  if (targets.some((target) => target.status === "unknown" || target.status === "planned" || target.status === "unsupported" || target.status === "read_only")) {
+    return "unavailable";
+  }
+  return "missing";
+}
+
 function ProductEditorContent() {
   const { showToast } = useToast();
   const t = useLabels();
+  const searchParams = useSearchParams();
   const reducedMotion = useReducedMotion();
   const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
   const [eanInput, setEanInput] = useState("");
   const [tabEanInputs, setTabEanInputs] = useState<Record<string, string>>({});
+  const [tabSearchStatuses, setTabSearchStatuses] = useState<Record<string, ProductEditorTabSearchStatus>>({});
   const [discovering, setDiscovering] = useState(false);
   const [discover, setDiscover] = useState<ProductEditorDiscoverResponse | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<ProductEditorGroupId>("HOOD");
@@ -115,9 +150,21 @@ function ProductEditorContent() {
   const jvAutoLoadInFlightKeyRef = useRef<string | null>(null);
   const loadedJvAutoLoadKeyRef = useRef<string | null>(null);
   const kauflandLoadInFlightEanRef = useRef<string | null>(null);
+  const autoSearchHandledEanRef = useRef<string | null>(null);
+  const autoTabSearchHandledKeyRef = useRef<string | null>(null);
+  const autoSearchEan = (searchParams.get("ean") ?? "").trim();
+  const tabEansFromSearchParams = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(PRODUCT_EDITOR_QUERY_PARAM_BY_TAB)
+        .map(([tabKey, queryParam]) => [tabKey, (searchParams.get(queryParam) ?? "").trim()])
+        .filter(([, ean]) => isValidProductIdentifier(ean))
+    ) as Record<string, string>;
+  }, [searchParams]);
+  const tabEansSearchKey = Object.entries(tabEansFromSearchParams).map(([tabKey, ean]) => `${tabKey}:${ean}`).join("|");
+  const tabSearchRequestKey = `${autoSearchEan}|${tabEansSearchKey}`;
 
   const activeTabEanInput = tabEanInputs[activeTabKey] ?? "";
-  const effectiveTabEanInput = activeTabEanInput.trim() || eanInput.trim();
+  const effectiveTabEanInput = activeTabEanInput.trim();
   const activeHoodTabKey = getHoodTabKey(activeTabKey);
   const hoodDraft = activeHoodTabKey ? hoodDraftsByTab[activeHoodTabKey] : createEmptyHoodDraft();
   const initialHoodDraft = activeHoodTabKey ? initialHoodDraftsByTab[activeHoodTabKey] : createEmptyHoodDraft();
@@ -147,6 +194,13 @@ function ProductEditorContent() {
       totalCount: targets.length
     };
   }, [discover]);
+  const discoveryItems = PRODUCT_EDITOR_DISPLAY_TABS
+    .filter((tab) => tab.key === activeTabKey)
+    .map((tab) => ({
+      label: getProductEditorDisplayTabLabel(tab.key, t),
+      ean: (tabEanInputs[tab.key] ?? "").trim(),
+      status: tabSearchStatuses[tab.key] ?? "idle"
+    }));
 
   useEffect(() => {
     if (!discover) return;
@@ -196,63 +250,19 @@ function ProductEditorContent() {
   async function handleSearchGlobal() {
     const ean = eanInput.trim();
     if (!isValidProductIdentifier(ean)) return;
-    await runDiscover(ean, null);
+    const found = await runDiscover(ean, null);
+    if (!found) {
+      showToast(t.productEditorProductNotFound.replace("{tab}", "marketplaces"), "error");
+    }
   }
 
   async function handleSearchForActiveTab() {
     const ean = effectiveTabEanInput;
     if (!isValidProductIdentifier(ean)) return;
-    setDiscovering(true);
-    setPageError(null);
-    setDiscover(null);
-    try {
-      if (activeGroupId === "JV") {
-        const loaded = await loadJvDraftByEan(ean);
-        if (!loaded) {
-          showToast(t.productEditorProductNotFoundForTab.replace("{ean}", ean).replace("{tab}", "JV"), "error");
-          return;
-        }
-        showToast(`JV tab loaded for ${ean}.`, "success");
-        return;
-      }
-      if (activeGroupId === "XL") {
-        const loaded = await loadXlDraftByEan(ean);
-        if (!loaded) {
-          showToast(`Product ${ean} not found for XL tab.`, "error");
-          return;
-        }
-        showToast(`XL tab loaded for ${ean}.`, "success");
-        return;
-      }
-      if (activeGroupId === "HOOD") {
-        const loaded = await loadHoodDraftByEan(ean);
-        if (!loaded) {
-          showToast(t.productEditorProductNotFoundForTab.replace("{ean}", ean).replace("{tab}", activeTabKey.replace("_", " ")), "error");
-          return;
-        }
-        showToast(t.productEditorTabLoadedForEan.replace("{tab}", activeTabKey.replace("_", " ")).replace("{ean}", ean), "success");
-        return;
-      }
-      if (activeGroupId === "KAUFLAND") {
-        const loaded = await loadKauflandDraftByEan(ean);
-        if (!loaded) {
-          showToast(`Product ${ean} could not be loaded for Kaufland.`, "error");
-          return;
-        }
-        showToast(`Kaufland tab loaded for ${ean}.`, "success");
-        return;
-      }
-      showToast("Local tab search is currently available for JV, XL, and HOOD tabs.", "error");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorTabSearchFailed;
-      setPageError(message);
-      showToast(message, "error");
-    } finally {
-      setDiscovering(false);
-    }
+    await searchProductForTab(activeTabKey, ean, true);
   }
 
-  async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null) {
+  async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null, targetTabKey?: string): Promise<boolean> {
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
@@ -262,16 +272,49 @@ function ProductEditorContent() {
       const nextActiveGroup = activeGroup ?? normalizedResponse.selected_group_id;
       setDiscover(normalizedResponse);
       setActiveGroupId(nextActiveGroup);
-      setActiveTabKey(getDefaultTabKeyForGroup(nextActiveGroup));
-      showToast(t.productEditorDiscoverCompleted.replace("{ean}", ean), "success");
+      setActiveTabKey(targetTabKey ?? getDefaultTabKeyForGroup(nextActiveGroup));
+      return hasFoundTargetInGroup(normalizedResponse, nextActiveGroup);
     } catch (error) {
       const message = error instanceof Error ? error.message : t.productEditorDiscoverFailed;
       setPageError(message);
       showToast(message, "error");
+      return false;
     } finally {
       setDiscovering(false);
     }
   }
+
+  useEffect(() => {
+    if (tabEansSearchKey || !isValidProductIdentifier(autoSearchEan) || autoSearchHandledEanRef.current === autoSearchEan) return;
+    autoSearchHandledEanRef.current = autoSearchEan;
+    setEanInput(autoSearchEan);
+    void runDiscover(autoSearchEan, null);
+    // `runDiscover` is intentionally invoked only when the URL identifier changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSearchEan]);
+
+  useEffect(() => {
+    if ((!autoSearchEan && !tabEansSearchKey) || autoTabSearchHandledKeyRef.current === tabSearchRequestKey) return;
+    autoTabSearchHandledKeyRef.current = tabSearchRequestKey;
+    const tabEntries = Object.entries(tabEansFromSearchParams);
+    setTabEanInputs(tabEansFromSearchParams);
+    setTabSearchStatuses(
+      Object.fromEntries(
+        PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, tabEansFromSearchParams[tab.key] ? "loading" : "missing"] as const)
+      )
+    );
+    void Promise.all(tabEntries.map(([tabKey, ean]) => scanTabForProduct(tabKey, ean)));
+
+    const initialTab = PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => isValidProductIdentifier(tabEansFromSearchParams[tab.key] ?? ""));
+    if (!initialTab) return;
+    const initialEan = tabEansFromSearchParams[initialTab.key];
+    setEanInput(autoSearchEan || initialEan);
+    setActiveTabKey(initialTab.key);
+    setActiveGroupId(initialTab.groupId);
+    void searchProductForTab(initialTab.key, initialEan);
+    // The search starts only once for a distinct set of EANs received from the inventory row.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabEansFromSearchParams, tabSearchRequestKey]);
 
   async function loadHoodDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
     const tabKey = getHoodTabKey(activeTabKey) ?? getHoodTabKeyForTargetId(preferredTargetId) ?? "HOOD_JV";
@@ -346,12 +389,59 @@ function ProductEditorContent() {
     setActiveGroupId(tab.groupId);
   }
 
+  async function scanTabForProduct(tabKey: string, ean: string) {
+    const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
+    if (!tab || !isValidProductIdentifier(ean)) return;
+    setTabSearchStatuses((current) => ({ ...current, [tabKey]: "loading" }));
+    try {
+      const response = await discoverProductEditor(ean, tab.groupId);
+      setTabSearchStatuses((current) => ({
+        ...current,
+        [tabKey]: getGroupSearchStatus(response, tab.groupId)
+      }));
+    } catch {
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
+    }
+  }
+
+  async function searchProductForTab(tabKey: string, ean: string, notifyWhenMissing = false): Promise<boolean> {
+    const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
+    if (!tab || !isValidProductIdentifier(ean)) return false;
+
+    setActiveTabKey(tab.key);
+    setActiveGroupId(tab.groupId);
+    setTabSearchStatuses((current) => ({ ...current, [tab.key]: "loading" }));
+    try {
+      const found = tab.key === "JV"
+        ? await loadJvDraftByEan(ean)
+        : tab.key === "XL"
+          ? await loadXlDraftByEan(ean)
+          : tab.key === "HOOD_JV" || tab.key === "HOOD_XL"
+            ? await loadHoodDraftByEan(ean, tab.key)
+            : tab.key === "KAUFLAND_JV" || tab.key === "KAUFLAND_XL"
+              ? await loadKauflandDraftByEan(ean)
+              : await runDiscover(ean, tab.groupId, tab.key);
+      setTabSearchStatuses((current) => ({ ...current, [tab.key]: found ? "found" : "missing" }));
+      if (!found && notifyWhenMissing) {
+        showToast(t.productEditorProductNotFound.replace("{tab}", getProductEditorDisplayTabLabel(tab.key, t)), "error");
+      }
+      return found;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.productEditorDiscoverFailed;
+      setPageError(message);
+      if (notifyWhenMissing) showToast(message, "error");
+      setTabSearchStatuses((current) => ({ ...current, [tab.key]: "error" }));
+      return false;
+    }
+  }
+
   async function loadJvDraftByEan(ean: string): Promise<boolean> {
     setJvLoading(true);
     try {
       const discovered = await discoverProductEditor(ean, "JV");
       skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(ean, discovered.recommended_baseline_target_id);
       setDiscover(limitDiscoverToActiveGroup(discovered, "JV"));
+      if (!hasFoundTargetInGroup(discovered, "JV")) return false;
       const response = await loadProductEditorGroup({
         ean,
         activeGroup: "JV",
@@ -375,6 +465,7 @@ function ProductEditorContent() {
       const discovered = await discoverProductEditor(ean, "XL");
       skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(ean, discovered.recommended_baseline_target_id);
       setDiscover(limitDiscoverToActiveGroup(discovered, "XL"));
+      if (!hasFoundTargetInGroup(discovered, "XL")) return false;
       const response = await loadProductEditorGroup({
         ean,
         activeGroup: "XL",
@@ -422,6 +513,7 @@ function ProductEditorContent() {
     try {
       const discovered = await discoverProductEditor(ean, "KAUFLAND");
       setDiscover(limitDiscoverToActiveGroup(discovered, "KAUFLAND"));
+      if (!hasFoundTargetInGroup(discovered, "KAUFLAND")) return false;
       const response = await loadProductEditorGroup({
         ean,
         activeGroup: "KAUFLAND",
@@ -441,8 +533,8 @@ function ProductEditorContent() {
     }
   }
 
-  async function loadHoodDraftByEan(ean: string): Promise<boolean> {
-    const tabKey = getHoodTabKey(activeTabKey) ?? "HOOD_JV";
+  async function loadHoodDraftByEan(ean: string, tabKeyOverride?: HoodTabKey): Promise<boolean> {
+    const tabKey = tabKeyOverride ?? getHoodTabKey(activeTabKey) ?? "HOOD_JV";
     setHoodTabLoading(tabKey, true);
     try {
       const account = getHoodAccountFromTab(tabKey);
@@ -1180,7 +1272,7 @@ function ProductEditorContent() {
 
   return (
     <AppShell title={t.navProductEditor} subtitle={t.productEditorWorkspaceSubtitle}>
-      <div className="wh-product-editor-page flex min-h-[calc(100dvh-1.5rem)] w-full flex-col gap-4">
+      <div className="wh-product-editor-page flex min-h-[calc(100dvh-1.5rem)] w-full flex-col gap-[12px]">
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1199,15 +1291,43 @@ function ProductEditorContent() {
           >
             <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-2 overflow-x-auto bg-transparent p-0 md:min-w-0">
-                {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => (
-                  <TabsTrigger
-                    key={tab.key}
-                    value={tab.key}
-                    className="relative h-10 min-w-[110px] rounded-[var(--radius-control)] border border-border/70 bg-card px-3 text-xs font-semibold uppercase tracking-normal shadow-sm transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-                  >
-                    {getProductEditorDisplayTabLabel(tab.key, t)}
-                  </TabsTrigger>
-                ))}
+                {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => {
+                  const searchStatus = tabSearchStatuses[tab.key] ?? "idle";
+                  const statusLabel = searchStatus === "loading"
+                    ? "Searching"
+                    : searchStatus === "found"
+                      ? "Product found"
+                      : searchStatus === "missing"
+                        ? "Product not found"
+                        : searchStatus === "unavailable"
+                          ? "Search unavailable"
+                        : searchStatus === "error"
+                          ? "Search failed"
+                        : "Not searched";
+                  return (
+                    <TabsTrigger
+                      key={tab.key}
+                      value={tab.key}
+                      title={`${getProductEditorDisplayTabLabel(tab.key, t)} — ${statusLabel}`}
+                      className={cn(
+                        "relative flex h-10 min-w-[110px] items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-border/70 bg-card px-3 text-xs font-semibold uppercase tracking-normal shadow-sm transition-[background-color,border-color,color] duration-200 hover:border-primary/35 hover:bg-primary/5 data-[state=active]:ring-2 data-[state=active]:ring-primary/20",
+                        searchStatus === "loading" && "border-amber-300/80 bg-amber-50 text-amber-800",
+                        searchStatus === "found" && "border-emerald-300/80 bg-emerald-50 text-emerald-800",
+                        searchStatus === "missing" && "border-rose-300/80 bg-rose-50 text-rose-800",
+                        searchStatus === "unavailable" && "border-amber-300/80 bg-amber-50 text-amber-800",
+                        searchStatus === "error" && "border-rose-400 bg-rose-100 text-rose-950",
+                      )}
+                    >
+                      <span>{getProductEditorDisplayTabLabel(tab.key, t)}</span>
+                      {searchStatus === "loading" ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                      {searchStatus === "found" ? <CircleCheck className="size-3.5" aria-hidden="true" /> : null}
+                      {searchStatus === "missing" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
+                      {searchStatus === "unavailable" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
+                      {searchStatus === "error" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
+                      <span className="sr-only">{statusLabel}</span>
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
             </Tabs>
           </ProductEditorHeaderCard>
@@ -1232,6 +1352,7 @@ function ProductEditorContent() {
               <ProductEditorActiveGroupPanel
             discover={discover}
             activeGroupId={activeGroupId}
+            discoveryItems={discoveryItems}
             activeTabLabel={PRODUCT_EDITOR_DISPLAY_TABS.find((tab) => tab.key === activeTabKey)
               ? getProductEditorDisplayTabLabel(activeTabKey, t)
               : PRODUCT_EDITOR_TAB_COPY[activeGroupId].label}

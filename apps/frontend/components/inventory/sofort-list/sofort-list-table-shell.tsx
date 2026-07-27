@@ -1,13 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, ImageIcon, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FilePlus2, ImageIcon, Loader2, PencilLine, Plus, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SearchablePicker } from "@/components/ui/searchable-picker";
 import { Textarea } from "@/components/ui/textarea";
@@ -672,7 +672,9 @@ export function SofortListTableShell(props: {
   const { labels } = props;
   const t = useLabels();
   const { showToast } = useToast();
+  const router = useRouter();
   const [fullscreenGallery, setFullscreenGallery] = useState<FullscreenGalleryState | null>(null);
+  const [productActionRow, setProductActionRow] = useState<SofortListRow | null>(null);
   const [editingRow, setEditingRow] = useState<SofortListRow | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraftState | null>(null);
   const [photoPreviews, setPhotoPreviews] = useState<PhotoPreview[]>([]);
@@ -707,6 +709,14 @@ export function SofortListTableShell(props: {
   );
   const isPlaceOccupied = normalizedPlaceQuery.length > 0 && occupiedExactPlaces.has(normalizedPlaceQuery);
   const activeFullscreenPhoto = fullscreenGallery ? fullscreenGallery.photos[fullscreenGallery.index] ?? null : null;
+  const productActionEan = productActionRow?.ean.trim() ?? "";
+  const productActionMarketplaceEans = productActionRow
+    ? Object.values(productActionRow.siteEans).map((value) => value.trim()).filter((value) => value && value !== props.placeholderEan && value !== "-")
+    : [];
+  const productActionEditorEan = productActionEan && productActionEan !== props.placeholderEan && productActionEan !== "-"
+    ? productActionEan
+    : productActionMarketplaceEans[0] ?? "";
+  const canOpenProductEditor = Boolean(productActionEditorEan);
 
   function openFullscreenGallery(photos: string[], startIndex = 0) {
     const normalizedPhotos = photos.map((photo) => photo.trim()).filter(Boolean);
@@ -834,6 +844,40 @@ export function SofortListTableShell(props: {
     setEditDraft(createEditDraft(row));
     setEditError(null);
     setEditPlaceSuggestions(null);
+  }
+
+  function startProductCreation(row: SofortListRow) {
+    setProductActionRow(null);
+    router.push(`/create-product?kid=${encodeURIComponent(String(row.kidId))}`);
+  }
+
+  function openProductEditor(row: SofortListRow) {
+    const params = new URLSearchParams();
+    const mainEan = row.ean.trim();
+    if (mainEan && mainEan !== props.placeholderEan && mainEan !== "-") {
+      params.set("ean", mainEan);
+    }
+
+    const tabEans = {
+      jv: row.siteEans.jv,
+      xl: row.siteEans.xl,
+      hood_jv: row.siteEans.hoodJv,
+      hood_xl: row.siteEans.hoodXl,
+      kaufland_jv: row.siteEans.kauflandJv,
+      kaufland_xl: row.siteEans.kauflandXl,
+      otto_jv: row.siteEans.ottoJv,
+      otto_xl: row.siteEans.ottoXl,
+      ebay_jv: row.siteEans.ebayJv,
+      ebay_xl: row.siteEans.ebayXl,
+    };
+    for (const [key, rawValue] of Object.entries(tabEans)) {
+      const value = rawValue.trim();
+      if (value && value !== props.placeholderEan && value !== "-") params.set(key, value);
+    }
+
+    if (![...params.values()].length) return;
+    setProductActionRow(null);
+    router.push(`/product-editor?${params.toString()}`);
   }
 
   function closeEditModal() {
@@ -1186,14 +1230,15 @@ export function SofortListTableShell(props: {
                   </td>
                   <td className="wh-sofort-actions-cell wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-row-actions">
-                      <Link
-                        href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
-                        className={buttonVariants({ variant: "default", size: "sm", className: "min-w-[68px]" })}
-                        aria-disabled={deletingRowId === row.id}
-                        tabIndex={deletingRowId === row.id ? -1 : undefined}
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="min-w-[112px]"
+                        onClick={() => setProductActionRow(row)}
+                        disabled={deletingRowId === row.id || deactivatingRowId === row.id}
                       >
-                        {t.create}
-                      </Link>
+                        {t.create} / {t.edit}
+                      </Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)} disabled={deletingRowId === row.id || deactivatingRowId === row.id}>{t.edit}</Button>
                       <Button
                         type="button"
@@ -1320,14 +1365,14 @@ export function SofortListTableShell(props: {
                 </div>
 
                 <div className="wh-sofort-mobile-card__actions">
-                  <Link
-                    href={`/create-product?kid=${encodeURIComponent(String(row.kidId))}`}
-                    className={buttonVariants({ variant: "default", size: "sm" })}
-                    aria-disabled={deletingRowId === row.id}
-                    tabIndex={deletingRowId === row.id ? -1 : undefined}
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setProductActionRow(row)}
+                    disabled={deletingRowId === row.id || deactivatingRowId === row.id}
                   >
-                    {t.create}
-                  </Link>
+                    {t.create} / {t.edit}
+                  </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(row)} disabled={deletingRowId === row.id || deactivatingRowId === row.id}>{t.edit}</Button>
                   <Button
                     type="button"
@@ -1379,6 +1424,63 @@ export function SofortListTableShell(props: {
           </div>
         </div>
       ) : null}
+      <Dialog open={Boolean(productActionRow)} onOpenChange={(open) => { if (!open) setProductActionRow(null); }}>
+        <DialogContent className="!gap-0 overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+          <DialogHeader className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--primary)/0.08),transparent_58%)] px-6 pb-5 pt-6 pr-14">
+            <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">Choose product workflow</DialogTitle>
+            <DialogDescription>Continue with a new marketplace listing or open the existing product for editing.</DialogDescription>
+          </DialogHeader>
+          <button
+            type="button"
+            onClick={() => setProductActionRow(null)}
+            className="absolute right-4 top-4 inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t.close}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+          {productActionRow ? (
+            <div className="space-y-4 px-6 py-5">
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-muted/25 px-4 py-3.5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Selected inventory item</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-foreground">KID {productActionRow.kidNumber}</p>
+                </div>
+                <div className="shrink-0 rounded-lg border border-border/70 bg-background px-3 py-2 text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">EAN</p>
+                  <p className="mt-0.5 font-mono text-xs font-semibold text-foreground">{canOpenProductEditor ? productActionEditorEan : "Not assigned"}</p>
+                </div>
+              </div>
+              <div className="grid gap-3">
+                <Button type="button" className="group h-auto min-h-[104px] justify-start gap-4 rounded-xl px-4 py-4 text-left shadow-sm transition-colors duration-200 hover:bg-primary/90" onClick={() => startProductCreation(productActionRow)}>
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/25">
+                    <FilePlus2 className="size-5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">Create new product</span>
+                    <span className="mt-1 block text-xs font-normal leading-5 text-primary-foreground/80">Start a new marketplace listing using this inventory item.</span>
+                  </span>
+                  <ArrowRight className="size-4 shrink-0 opacity-70 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+                </Button>
+                <Button type="button" variant="outline" className="group h-auto min-h-[104px] justify-start gap-4 rounded-xl border-border/90 bg-background px-4 py-4 text-left transition-colors duration-200 hover:border-primary/40 hover:bg-primary/[0.03]" onClick={() => openProductEditor(productActionRow)} disabled={!canOpenProductEditor}>
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                    <PencilLine className="size-5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">Edit existing product</span>
+                    <span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">
+                      {canOpenProductEditor ? "Open Product Editor with this EAN already searched." : "Assign an EAN to this inventory item before editing."}
+                    </span>
+                  </span>
+                  <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="border-t border-border/70 bg-muted/[0.18] px-6 py-4">
+            <Button type="button" variant="ghost" onClick={() => setProductActionRow(null)}>{t.cancel}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(marketplaceConfirm)} onOpenChange={(open) => { if (!open) setMarketplaceConfirm(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
