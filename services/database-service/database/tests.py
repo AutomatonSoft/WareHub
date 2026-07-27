@@ -112,6 +112,25 @@ class DatabaseApiTests(APITestCase):
         jv_pool_ean.refresh_from_db()
         self.assertEqual(jv_pool_ean.status, "used")
 
+    def test_marketplace_ean_mapping_confirmation_updates_ean_and_status(self):
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "marketplace": "kaufland",
+                "account": "jv",
+                "ean": "4012345678902",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["confirmed"])
+        ean_record = Ean.objects.get(kid=self.kid)
+        status_record = EanStatus.objects.get(ean=self.kid)
+        self.assertEqual(ean_record.kaufland_jv, "4012345678902")
+        self.assertTrue(status_record.kaufland_jv)
+
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]
         self.kid.save(update_fields=["kid_number"])
