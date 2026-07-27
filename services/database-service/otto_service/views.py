@@ -204,6 +204,86 @@ class OttoProductFetchBySKUAPIView(APIView):
         )
 
 
+class OttoCategoriesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        try:
+            page = int(request.query_params.get("page", 0))
+            limit = int(request.query_params.get("limit", 10))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "page и limit должны быть целыми числами."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if page < 0 or not 1 <= limit <= 2000:
+            return Response(
+                {"detail": "page должен быть неотрицательным, limit — от 1 до 2000."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        category = str(request.query_params.get("category") or "").strip() or None
+
+        try:
+            external_payload = OttoExternalProductsClient().fetch_categories(
+                page=page,
+                limit=limit,
+                category=category,
+            )
+        except OttoExternalAPIError as error:
+            return Response(
+                {
+                    "code": "otto_external_categories_fetch_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "page": page,
+                "limit": limit,
+                "category": category,
+                "categories": external_payload["categories"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class OttoCategoryAttributesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        category_id = str(request.query_params.get("categoryId") or "").strip()
+        if not category_id:
+            return Response(
+                {"detail": "categoryId is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            external_payload = OttoExternalProductsClient().fetch_attributes(category_id=category_id)
+        except OttoExternalAPIError as error:
+            return Response(
+                {
+                    "code": "otto_external_attributes_fetch_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "categoryId": category_id,
+                "attributes": external_payload["attributes"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class OttoProductListAPIView(APIView):
     permission_classes = [SessionRolePermission]
 

@@ -70,6 +70,8 @@ from orders_pars.views import (
 )
 from hood_service.views import HoodFetchByEANAPIView
 from otto_service.views import (
+    OttoCategoryAttributesAPIView,
+    OttoCategoriesAPIView,
     OttoProductListAPIView,
     OttoProductFetchBySKUAPIView,
     OttoProductRetrieveAPIView,
@@ -261,6 +263,16 @@ api_v1_patterns = [
         "api/v1/hood/items/by-ean/<str:ean>/",
         HoodFetchByEANAPIView.as_view(),
         name="hood-fetch-by-ean-v1",
+    ),
+    path(
+        "api/v1/otto/attributes/",
+        OttoCategoryAttributesAPIView.as_view(),
+        name="otto-category-attributes-v1",
+    ),
+    path(
+        "api/v1/otto/categories/",
+        OttoCategoriesAPIView.as_view(),
+        name="otto-categories-v1",
     ),
     path(
         "api/v1/otto/<str:profile>/products/upsert/",

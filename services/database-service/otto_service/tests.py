@@ -42,6 +42,14 @@ class OttoRouteTests(SimpleTestCase):
             resolve("/api/v1/otto/xl/products/by-sku/4062292015700/").url_name,
             "otto-products-fetch-by-sku-v1",
         )
+        self.assertEqual(
+            resolve("/api/v1/otto/categories/").url_name,
+            "otto-categories-v1",
+        )
+        self.assertEqual(
+            resolve("/api/v1/otto/attributes/").url_name,
+            "otto-category-attributes-v1",
+        )
 
     def test_legacy_default_jv_routes_are_not_registered(self):
         for path in (
@@ -88,3 +96,39 @@ class OttoExternalProductsClientTests(SimpleTestCase):
 
         with self.assertRaises(OttoExternalAPIError):
             client.fetch_products(sku="4062292015700", controller="jv", page=0, limit=10)
+
+    def test_fetch_categories_uses_external_contract(self):
+        session = FakeSession(
+            FakeResponse(payload={"categories": [{"id": 25922, "name": "1,5-Sitzer"}]})
+        )
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+
+        payload = client.fetch_categories(page=0, limit=10, category="sofa")
+
+        self.assertEqual(payload["categories"][0]["id"], 25922)
+        self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/categories",))
+        self.assertEqual(session.calls[0][1]["params"], {"page": 0, "limit": 10, "category": "sofa"})
+        self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
+    def test_fetch_attributes_uses_external_contract(self):
+        session = FakeSession(
+            FakeResponse(payload={"attributes": [{"attributeId": 1, "name": "Farbe"}]})
+        )
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+
+        payload = client.fetch_attributes(category_id="23593")
+
+        self.assertEqual(payload["attributes"][0]["attributeId"], 1)
+        self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/attributes",))
+        self.assertEqual(session.calls[0][1]["params"], {"categoryId": "23593"})
+        self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
