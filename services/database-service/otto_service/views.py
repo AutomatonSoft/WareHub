@@ -82,6 +82,20 @@ def _upsert_products(model_cls, raw_items: list[dict]) -> tuple[int, int, list[d
     return created_count, updated_count, result_items
 
 
+def _normalize_products_for_local_storage(raw_items: list[dict]) -> list[dict]:
+    normalized_items: list[dict] = []
+    for raw_item in raw_items:
+        normalized_item = dict(raw_item)
+        if "productDescription" not in normalized_item and "productDescriprion" in normalized_item:
+            normalized_item["productDescription"] = normalized_item["productDescriprion"]
+        if "compliance" not in normalized_item and "compliace" in normalized_item:
+            normalized_item["compliance"] = normalized_item["compliace"]
+        if "order" not in normalized_item and "maxOrderQuantity" in normalized_item:
+            normalized_item["order"] = {"maxOrderQuantity": normalized_item["maxOrderQuantity"]}
+        normalized_items.append(normalized_item)
+    return normalized_items
+
+
 class OttoProductUpsertAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -111,13 +125,35 @@ class OttoProductUpsertAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not isinstance(raw_items, list) or not raw_items:
+        if not isinstance(raw_items, list) or not raw_items or not all(isinstance(item, dict) for item in raw_items):
             return Response(
-                {"detail": "Передайте непустой список products."},
+                {"detail": "Передайте непустой список объектов products."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        created_count, updated_count, result_items = _upsert_products(model_cls, raw_items)
+        local_items = _normalize_products_for_local_storage(raw_items)
+        serializer = OttoProductPayloadSerializer(data=local_items, many=True)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            upstream_response = OttoExternalProductsClient().create_or_update_products(
+                controller=normalized_profile,
+                products=raw_items,
+            )
+        except OttoExternalAPIError as error:
+            upstream_status = error.status_code or status.HTTP_502_BAD_GATEWAY
+            response_status = upstream_status if 400 <= upstream_status < 500 else status.HTTP_502_BAD_GATEWAY
+            return Response(
+                {
+                    "code": "otto_external_upsert_failed",
+                    "detail": str(error),
+                    "upstream_status_code": error.status_code,
+                    "upstream_response": error.details,
+                },
+                status=response_status,
+            )
+
+        created_count, updated_count, result_items = _upsert_products(model_cls, local_items)
 
         return Response(
             {
@@ -126,6 +162,7 @@ class OttoProductUpsertAPIView(APIView):
                 "created": created_count,
                 "updated": updated_count,
                 "items": result_items,
+                "upstream_response": upstream_response,
             },
             status=status.HTTP_200_OK,
         )
