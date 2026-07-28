@@ -39,6 +39,7 @@ from jv_services.view_helpers import to_date_or_none, to_datetime_or_none
 from jv_services.views_push_state import mark_push_failed, mark_push_pending, mark_push_pushed
 from jv_services.views_write_products import create_local_product_from_source, update_local_product_from_source
 from kaufland.external_requests import set_product_active_state
+from otto_service.external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from xl_services.models import ImportedProduct as XLImportedProduct
 from xl_services.source_client import (
     fetch_xl_product_brief_by_ean,
@@ -1762,8 +1763,6 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     update_fields: list[str] = []
 
     for field_name, channel in (
-        ("otto_jv", "OTTO"),
-        ("otto_xl", "OTTO"),
         ("ebay_jv", "EBAY"),
         ("ebay_xl", "EBAY"),
     ):
@@ -1802,7 +1801,7 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
                 "status_code": status.HTTP_200_OK,
                 "details": {
                     "code": "marketplace_local_status_no_targets",
-                    "detail": "Для этого Kid нет OTTO, EBAY или KAUFLAND targets для локального обновления.",
+                    "detail": "Для этого Kid нет EBAY targets для локального обновления.",
                 },
             }
         )
@@ -1878,6 +1877,140 @@ def _apply_kaufland_active_state(*, ean: str, site_key: str, controller: str, in
             "upstream_response": upstream_payload,
         },
     }
+
+
+def _apply_otto_active_state(*, ean: str, site_key: str, controller: str, inactive: bool) -> dict:
+    try:
+        upstream_payload = OttoExternalProductsClient().set_active_state(
+            ean=ean,
+            controller=controller,
+            active=not bool(inactive),
+        )
+    except OttoExternalAPIError as exc:
+        return {
+            "ok": False,
+            "site_key": site_key,
+            "channel": "OTTO",
+            "status_code": exc.status_code or status.HTTP_502_BAD_GATEWAY,
+            "details": {
+                "code": "otto_toggle_failed",
+                "detail": str(exc),
+                "ean": ean,
+                "controller": controller,
+                "inactive": bool(inactive),
+                "upstream_response": exc.details,
+            },
+        }
+
+    return {
+        "ok": True,
+        "site_key": site_key,
+        "channel": "OTTO",
+        "status_code": status.HTTP_200_OK,
+        "details": {
+            "code": "otto_toggled",
+            "ean": ean,
+            "controller": controller,
+            "inactive": bool(inactive),
+            "status": not bool(inactive),
+            "upstream_response": upstream_payload,
+        },
+    }
+
+
+def deactivate_otto_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
+    kid = _find_kid_by_number(kid_number)
+    if kid is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_not_found",
+                "detail": "Kid с таким kid_number не найден.",
+                "kid_number": str(kid_number or "").strip(),
+            },
+            "status_code": status.HTTP_404_NOT_FOUND,
+        }
+
+    ean_row = getattr(kid, "ean", None)
+    if ean_row is None:
+        return {
+            "payload": {
+                "code": "marketplace_deactivate_kid_mapping_missing",
+                "detail": "У Kid отсутствует связанный Ean.",
+                "kid_number": _primary_kid_number_value(kid),
+            },
+            "status_code": status.HTTP_409_CONFLICT,
+        }
+
+    status_row, _ = EanStatus.objects.get_or_create(ean=kid)
+    desired_status = not bool(inactive)
+    results: list[dict] = []
+
+    for source_field, site_key, controller in (
+        ("otto_jv", "OTTO_JV", "jv"),
+        ("otto_xl", "OTTO_XL", "xl"),
+    ):
+        ean_value = str(getattr(ean_row, source_field, "") or "").strip()
+        if not ean_value:
+            continue
+        if bool(getattr(status_row, source_field, False)) == desired_status:
+            continue
+
+        result = _apply_otto_active_state(
+            ean=ean_value,
+            site_key=site_key,
+            controller=controller,
+            inactive=inactive,
+        )
+        if result.get("ok") and result.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
+            setattr(status_row, source_field, desired_status)
+            status_row.save(update_fields=[source_field])
+        results.append(result)
+
+    if not results:
+        results.append(
+            {
+                "ok": True,
+                "site_key": "OTTO",
+                "channel": "OTTO",
+                "status_code": status.HTTP_200_OK,
+                "details": {
+                    "code": "marketplace_otto_toggle_noop",
+                    "detail": "У Kid нет OTTO targets, требующих изменения статуса.",
+                    "inactive": bool(inactive),
+                },
+            }
+        )
+
+    successful_results = [
+        row
+        for row in results
+        if row.get("ok") and row.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}
+        and row.get("details", {}).get("code") != "marketplace_otto_toggle_noop"
+    ]
+    if successful_results:
+        try:
+            _update_kid_place_after_marketplace_toggle(kid=kid, inactive=inactive, place=place)
+        except ValueError as exc:
+            return {
+                "payload": {
+                    "code": "marketplace_place_update_invalid",
+                    "detail": str(exc),
+                    "kid_number": _primary_kid_number_value(kid),
+                },
+                "status_code": status.HTTP_409_CONFLICT,
+            }
+
+    response_status = status.HTTP_200_OK if results and all(row.get("ok") for row in results) else status.HTTP_207_MULTI_STATUS
+    payload = _build_success_response(
+        entity_name="kid_number",
+        entity_value=_primary_kid_number_value(kid),
+        inactive=inactive,
+        results=results,
+        response_status=response_status,
+    )
+    payload["payload"]["kid_id"] = kid.id
+    payload["payload"]["mode"] = "otto_jv_xl"
+    return payload
 
 
 def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):

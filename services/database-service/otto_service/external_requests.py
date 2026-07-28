@@ -27,6 +27,9 @@ class OttoExternalProductsClient:
         self._products_endpoint = os.getenv("OTTO_API_PRODUCTS_ENDPOINT", "/extermal/get_products")
         self._categories_endpoint = os.getenv("OTTO_API_CATEGORIES_ENDPOINT", "/extermal/categories")
         self._attributes_endpoint = os.getenv("OTTO_API_ATTRIBUTES_ENDPOINT", "/extermal/attributes")
+        self._upsert_endpoint = os.getenv("OTTO_API_UPSERT_ENDPOINT", "/extermal/create_or_update_product")
+        self._activate_endpoint = os.getenv("OTTO_API_ACTIVATE_ENDPOINT", "/extermal/activate")
+        self._deactivate_endpoint = os.getenv("OTTO_API_DEACTIVATE_ENDPOINT", "/extermal/deactivate")
         self._connect_timeout = connect_timeout or int(os.getenv("OTTO_API_CONNECT_TIMEOUT", "8"))
         self._read_timeout = read_timeout or int(os.getenv("OTTO_API_READ_TIMEOUT", "30"))
 
@@ -94,6 +97,71 @@ class OttoExternalProductsClient:
         if not isinstance(payload, dict) or not isinstance(payload.get("attributes"), list):
             raise OttoExternalAPIError(
                 "OTTO attributes API response does not contain attributes.",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        return payload
+
+    def create_or_update_products(self, *, controller: str, products: list[dict[str, Any]]) -> Any:
+        try:
+            response = self._session.post(
+                f"{self._base_url}{self._upsert_endpoint}",
+                params={"controller": controller},
+                json=products,
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+                timeout=(self._connect_timeout, self._read_timeout),
+            )
+        except requests.RequestException as error:
+            raise OttoExternalAPIError("OTTO create/update API request failed.") from error
+
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise OttoExternalAPIError(
+                "OTTO create/update API returned an invalid JSON response.",
+                status_code=response.status_code,
+            ) from error
+
+        if not response.ok:
+            raise OttoExternalAPIError(
+                "OTTO create/update API returned an error response.",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        return payload
+
+    def set_active_state(self, *, ean: str, controller: str, active: bool) -> dict[str, Any]:
+        endpoint = self._activate_endpoint if active else self._deactivate_endpoint
+        try:
+            response = self._session.post(
+                f"{self._base_url}{endpoint}",
+                json={"ean": ean, "controller": controller},
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+                timeout=(self._connect_timeout, self._read_timeout),
+            )
+        except requests.RequestException as error:
+            raise OttoExternalAPIError("OTTO activate/deactivate API request failed.") from error
+
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise OttoExternalAPIError(
+                "OTTO activate/deactivate API returned an invalid JSON response.",
+                status_code=response.status_code,
+            ) from error
+
+        if not response.ok:
+            raise OttoExternalAPIError(
+                "OTTO activate/deactivate API returned an error response.",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        if not isinstance(payload, dict):
+            raise OttoExternalAPIError(
+                "OTTO activate/deactivate API response must be an object.",
                 status_code=response.status_code,
                 details=payload,
             )

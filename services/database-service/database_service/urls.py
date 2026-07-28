@@ -62,6 +62,7 @@ from database.views_dectivate import (
     MarketplaceJVDeactivateSofortByKidAPIView,
     MarketplaceKauflandToggleByKidAPIView,
     MarketplaceLocalStatusesByKidAPIView,
+    MarketplaceOttoToggleByKidAPIView,
     MarketplaceXLDeactivateByKidAPIView,
 )
 from orders_pars.views import (
@@ -169,6 +170,7 @@ api_v1_patterns = [
     path("api/v1/marketplace/xl/deactivate-by-kid/", MarketplaceXLDeactivateByKidAPIView.as_view(), name="marketplace-xl-deactivate-by-kid-v1"),
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
     path("api/v1/marketplace/kaufland/toggle-by-kid/", MarketplaceKauflandToggleByKidAPIView.as_view(), name="marketplace-kaufland-toggle-by-kid-v1"),
+    path("api/v1/marketplace/otto/toggle-by-kid/", MarketplaceOttoToggleByKidAPIView.as_view(), name="marketplace-otto-toggle-by-kid-v1"),
     path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
     path("api/v1/marketplace/ean-mappings/confirm/", MarketplaceEanMappingConfirmAPIView.as_view(), name="marketplace-ean-mapping-confirm-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),

@@ -109,6 +109,19 @@ class MarketplaceJobGateway:
         )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def toggle_otto_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> GatewayResult:
+        body = {"kid_number": kid_number, "inactive": inactive}
+        if place:
+            body["place"] = place
+        response = self.http.request(
+            "POST",
+            f"{self.base_url}/api/v1/marketplace/otto/toggle-by-kid/",
+            headers=self._headers(request_id),
+            json=body,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
 
 def _json_or_text(response) -> dict:
     try:

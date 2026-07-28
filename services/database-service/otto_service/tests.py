@@ -23,6 +23,10 @@ class FakeSession:
         self.calls.append((args, kwargs))
         return self.response
 
+    def post(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.response
+
 
 class OttoRouteTests(SimpleTestCase):
     def test_profile_routes_are_registered(self):
@@ -131,4 +135,42 @@ class OttoExternalProductsClientTests(SimpleTestCase):
         self.assertEqual(payload["attributes"][0]["attributeId"], 1)
         self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/attributes",))
         self.assertEqual(session.calls[0][1]["params"], {"categoryId": "23593"})
+        self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
+    def test_create_or_update_products_uses_external_contract(self):
+        session = FakeSession(FakeResponse(payload="updated"))
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+        products = [{"productReference": "4021234231234", "sku": "4021234231234"}]
+
+        payload = client.create_or_update_products(controller="xl", products=products)
+
+        self.assertEqual(payload, "updated")
+        self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/create_or_update_product",))
+        self.assertEqual(session.calls[0][1]["params"], {"controller": "xl"})
+        self.assertEqual(session.calls[0][1]["json"], products)
+        self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
+    def test_set_active_state_uses_activate_and_deactivate_contracts(self):
+        session = FakeSession(FakeResponse(payload={"success": True, "active": True}))
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+
+        activate_payload = client.set_active_state(ean="4250123456789", controller="jv", active=True)
+        deactivate_payload = client.set_active_state(ean="4250123456789", controller="xl", active=False)
+
+        self.assertEqual(activate_payload["active"], True)
+        self.assertEqual(deactivate_payload["success"], True)
+        self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/activate",))
+        self.assertEqual(session.calls[0][1]["json"], {"ean": "4250123456789", "controller": "jv"})
+        self.assertEqual(session.calls[1][0], ("https://otto.example.test/extermal/deactivate",))
+        self.assertEqual(session.calls[1][1]["json"], {"ean": "4250123456789", "controller": "xl"})
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))

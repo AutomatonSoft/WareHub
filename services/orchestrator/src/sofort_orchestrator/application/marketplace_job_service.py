@@ -69,6 +69,19 @@ class MarketplaceJobService:
         )
         results.extend(
             self._call_channel(
+                fallback_site_key="OTTO",
+                fallback_channel="OTTO",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_otto_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                    place=place,
+                ),
+            )
+        )
+        results.extend(
+            self._call_channel(
                 fallback_site_key="LOCAL",
                 fallback_channel="LOCAL",
                 request_id=request_id,
