@@ -130,7 +130,13 @@ function normalizeFullCacheSyncStatus(payload: OttoFullCacheSyncResponse): OttoF
 
 async function requestOttoFullCacheSync(method: "GET" | "POST"): Promise<OttoFullCacheSyncStatus> {
   const response = await apiFetch("/api/v1/services/otto/categories/full-sync/", { method });
-  const payload = await response.json() as OttoFullCacheSyncResponse;
+  const responseText = await response.text();
+  let payload: OttoFullCacheSyncResponse = {};
+  try {
+    payload = JSON.parse(responseText) as OttoFullCacheSyncResponse;
+  } catch {
+    throw new Error(`OTTO cache sync is temporarily unavailable: HTTP ${response.status}.`);
+  }
   if (!response.ok) throw new Error(errorMessage(payload, response.status));
   return normalizeFullCacheSyncStatus(payload);
 }
