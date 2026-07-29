@@ -3,11 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Progress, ProgressLabel, ProgressValue } from "../../components/ui/progress";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { cn } from "../../lib/utils";
-import { fetchOttoCategories, type OttoCategory } from "./otto-categories-api";
+import {
+  fetchOttoCategories,
+  fetchOttoFullCacheSyncStatus,
+  startOttoFullCacheSync,
+  type OttoCategory,
+  type OttoFullCacheSyncStatus,
+} from "./otto-categories-api";
 
 type Props = {
   selectedCategory: string;
@@ -25,6 +33,8 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<OttoFullCacheSyncStatus | null>(null);
+  const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
@@ -72,6 +82,40 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
   }, [categoryRequest]);
 
   useEffect(() => {
+    let active = true;
+    void fetchOttoFullCacheSyncStatus()
+      .then((status) => {
+        if (active) setSyncStatus(status);
+      })
+      .catch(() => {
+        // The category search still gives the user a useful UI if the job status is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (syncStatus?.status !== "running") return;
+    let active = true;
+    const intervalId = window.setInterval(() => {
+      void fetchOttoFullCacheSyncStatus()
+        .then((status) => {
+          if (active) setSyncStatus(status);
+        })
+        .catch((requestError) => {
+          if (active) {
+            setSyncError(requestError instanceof Error ? requestError.message : "Failed to load OTTO sync progress.");
+          }
+        });
+    }, 1500);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [syncStatus?.status]);
+
+  useEffect(() => {
     const normalizedSelectedCategory = normalizeCategoryValue(selectedCategory);
     if (!normalizedSelectedCategory) return;
 
@@ -96,13 +140,45 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
     });
   }, [categories, selectedCategory, showOnlySelected]);
 
+  const startFullSync = () => {
+    setSyncError("");
+    void startOttoFullCacheSync()
+      .then(setSyncStatus)
+      .catch((requestError) => {
+        setSyncError(requestError instanceof Error ? requestError.message : "Failed to start OTTO cache sync.");
+      });
+  };
+
+  const syncIsRunning = syncStatus?.status === "running";
+  const syncProgressText = syncStatus?.phase === "categories"
+    ? "Refreshing categories"
+    : `Attributes: ${syncStatus?.completed ?? 0} / ${syncStatus?.total ?? 0}`;
+
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>CATEGORIES</CardTitle>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle>CATEGORIES</CardTitle>
+          <Button type="button" variant="outline" size="xs" onClick={startFullSync} disabled={syncIsRunning}>
+            {syncIsRunning ? "SYNCING" : "GET"}
+          </Button>
+        </div>
         <CardDescription>Select the category for this product.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        {syncIsRunning ? (
+          <Progress value={syncStatus.progressPercent} aria-label="OTTO full cache sync progress">
+            <ProgressLabel>{syncProgressText}</ProgressLabel>
+            <ProgressValue />
+          </Progress>
+        ) : null}
+        {syncStatus?.status === "completed" ? (
+          <div className="text-xs text-muted-foreground">
+            Synced {syncStatus.cached} attributes{syncStatus.failed ? `, ${syncStatus.failed} failed` : ""}.
+          </div>
+        ) : null}
+        {syncStatus?.status === "failed" ? <div className="text-sm text-destructive">{syncStatus.error}</div> : null}
+        {syncError ? <div className="text-sm text-destructive">{syncError}</div> : null}
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground">Only selected</span>
           <Switch

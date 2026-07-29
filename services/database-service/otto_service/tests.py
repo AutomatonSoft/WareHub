@@ -15,7 +15,8 @@ from .image_resolver import (
 from .models import OttoProductJV
 from .product_mapper import build_otto_url
 from .serializers import OttoProductJVSerializer
-from .views import OttoCategoriesAPIView
+from .full_cache_sync import OttoFullCacheSyncService, OttoFullCacheSyncSettings
+from .views import OttoCategoriesAPIView, OttoFullCacheSyncAPIView
 
 
 class FakeResponse:
@@ -65,6 +66,10 @@ class OttoRouteTests(SimpleTestCase):
             "otto-categories-v1",
         )
         self.assertEqual(
+            resolve("/api/v1/otto/categories/full-sync/").url_name,
+            "otto-categories-full-sync-v1",
+        )
+        self.assertEqual(
             resolve("/api/v1/otto/attributes/").url_name,
             "otto-category-attributes-v1",
         )
@@ -112,6 +117,67 @@ class OttoCategoriesQueryTests(SimpleTestCase):
             selected_category_id="26812",
             limit=50,
         )
+
+
+class OttoFullCacheSyncTests(SimpleTestCase):
+    def test_runs_category_and_attribute_sync_with_progress(self):
+        cache = Mock()
+        cache.category_ids.return_value = ["1", "2"]
+        cache.replace_categories.return_value = 2
+        client = Mock()
+        client.fetch_all_categories.return_value = [
+            {"id": "1", "name": "Chair"},
+            {"id": "2", "name": "Table"},
+        ]
+        client.fetch_attributes.side_effect = [
+            {"attributes": [{"attributeId": "color"}]},
+            {"attributes": [{"attributeId": "material"}]},
+        ]
+        service = OttoFullCacheSyncService(
+            cache=cache,
+            settings=OttoFullCacheSyncSettings(category_page_size=2000, category_max_pages=1000, attribute_workers=1),
+        )
+
+        with patch("otto_service.full_cache_sync.OttoExternalProductsClient", return_value=client):
+            service.run()
+
+        cache.replace_categories.assert_called_once_with(client.fetch_all_categories.return_value)
+        self.assertEqual(cache.store_attributes.call_count, 2)
+        cache.update_full_sync.assert_any_call(
+            phase="attributes",
+            total=2,
+            completed=0,
+            cached=0,
+            failed=0,
+            category_count=2,
+            message="Refreshing OTTO category attributes.",
+        )
+        cache.complete_full_sync.assert_called_once_with(
+            completed=2,
+            cached=2,
+            failed=0,
+            message="OTTO categories and attributes are up to date.",
+        )
+
+    def test_status_endpoint_serializes_running_progress(self):
+        view = OttoFullCacheSyncAPIView()
+        request = view.initialize_request(RequestFactory().get("/api/v1/otto/categories/full-sync/"))
+        service = Mock()
+        service.status.return_value = {
+            "status": "running",
+            "phase": "attributes",
+            "total": 100,
+            "completed": 42,
+            "cached": 41,
+            "failed": 1,
+        }
+
+        with patch("otto_service.views.get_otto_full_cache_sync_service", return_value=service):
+            response = view.get(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["progressPercent"], 42.0)
+        self.assertEqual(response.data["failed"], 1)
 
 
 class OttoExternalProductsClientTests(SimpleTestCase):

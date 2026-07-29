@@ -5,10 +5,14 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pymongo import ASCENDING, MongoClient, UpdateOne
+from pymongo import ASCENDING, MongoClient, ReturnDocument, UpdateOne
+from pymongo.errors import DuplicateKeyError
 
 
 class OttoCategoryCache:
+    FULL_SYNC_JOB_ID = "full_sync"
+    FULL_SYNC_LEASE = timedelta(hours=2)
+
     def __init__(self) -> None:
         database_name = os.getenv("OTTO_CATEGORY_CACHE_MONGO_DATABASE", "warehub")
         host = os.getenv("OTTO_CATEGORY_CACHE_MONGO_HOST", "").strip()
@@ -114,3 +118,69 @@ class OttoCategoryCache:
 
     def store_attributes(self, category_id: str, attributes: list[dict[str, Any]]) -> None:
         self._attributes.update_one({"_id": category_id}, {"$set": {"attributes": attributes, "synced_at": datetime.now(UTC)}}, upsert=True)
+
+    def full_sync_status(self) -> dict[str, Any]:
+        return self._meta.find_one({"_id": self.FULL_SYNC_JOB_ID}) or {}
+
+    def claim_full_sync(self) -> dict[str, Any] | None:
+        now = datetime.now(UTC)
+        try:
+            job = self._meta.find_one_and_update(
+                {
+                    "_id": self.FULL_SYNC_JOB_ID,
+                    "$or": [
+                        {"status": {"$ne": "running"}},
+                        {"lease_expires_at": {"$lt": now}},
+                    ],
+                },
+                {
+                    "$set": {
+                        "status": "running",
+                        "phase": "categories",
+                        "total": 0,
+                        "completed": 0,
+                        "cached": 0,
+                        "failed": 0,
+                        "message": "Refreshing OTTO categories.",
+                        "started_at": now,
+                        "updated_at": now,
+                        "lease_expires_at": now + self.FULL_SYNC_LEASE,
+                    },
+                    "$unset": {"finished_at": "", "error": ""},
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            return None
+        return job
+
+    def update_full_sync(self, **fields: Any) -> None:
+        now = datetime.now(UTC)
+        fields["updated_at"] = now
+        fields["lease_expires_at"] = now + self.FULL_SYNC_LEASE
+        self._meta.update_one({"_id": self.FULL_SYNC_JOB_ID}, {"$set": fields})
+
+    def complete_full_sync(self, **fields: Any) -> None:
+        now = datetime.now(UTC)
+        fields.update({"status": "completed", "phase": "completed", "updated_at": now, "finished_at": now})
+        self._meta.update_one(
+            {"_id": self.FULL_SYNC_JOB_ID},
+            {"$set": fields, "$unset": {"lease_expires_at": ""}},
+        )
+
+    def fail_full_sync(self, error: str) -> None:
+        now = datetime.now(UTC)
+        self._meta.update_one(
+            {"_id": self.FULL_SYNC_JOB_ID},
+            {
+                "$set": {
+                    "status": "failed",
+                    "phase": "failed",
+                    "error": error,
+                    "updated_at": now,
+                    "finished_at": now,
+                },
+                "$unset": {"lease_expires_at": ""},
+            },
+        )

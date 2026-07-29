@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -11,6 +12,7 @@ from database.permissions import SessionRolePermission
 
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from .category_cache import OttoCategoryCache
+from .full_cache_sync import get_otto_full_cache_sync_service
 from .image_resolver import get_otto_image_resolver, resolve_cached_or_otto_image
 from .models import OttoProductJV, OttoProductXL
 from .product_mapper import enrich_otto_product
@@ -30,6 +32,31 @@ PROFILE_TO_SERIALIZER = {
     "jv": OttoProductJVSerializer,
     "xl": OttoProductXLSerializer,
 }
+
+
+def _serialize_otto_full_sync_status(job: dict) -> dict:
+    total = int(job.get("total") or 0)
+    completed = int(job.get("completed") or 0)
+    progress_percent = round((completed / total) * 100, 1) if total else 0
+
+    def timestamp(name: str) -> str | None:
+        value = job.get(name)
+        return value.isoformat() if isinstance(value, datetime) else None
+
+    return {
+        "status": str(job.get("status") or "idle"),
+        "phase": str(job.get("phase") or "idle"),
+        "total": total,
+        "completed": completed,
+        "cached": int(job.get("cached") or 0),
+        "failed": int(job.get("failed") or 0),
+        "categoryCount": int(job.get("category_count") or 0),
+        "progressPercent": progress_percent,
+        "message": str(job.get("message") or ""),
+        "error": str(job.get("error") or ""),
+        "startedAt": timestamp("started_at"),
+        "finishedAt": timestamp("finished_at"),
+    }
 
 
 def _normalize_profile(profile: str | None) -> str:
@@ -327,6 +354,31 @@ class OttoCategoriesSyncAPIView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({"status": "refreshed", "count": count}, status=status.HTTP_200_OK)
+
+
+class OttoFullCacheSyncAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        try:
+            job = get_otto_full_cache_sync_service().status()
+        except (RuntimeError, ValueError, PyMongoError):
+            return Response(
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response(_serialize_otto_full_sync_status(job), status=status.HTTP_200_OK)
+
+    def post(self, request):
+        try:
+            started, job = get_otto_full_cache_sync_service().start()
+        except (RuntimeError, ValueError, PyMongoError):
+            return Response(
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        response_status = status.HTTP_202_ACCEPTED if started else status.HTTP_200_OK
+        return Response(_serialize_otto_full_sync_status(job), status=response_status)
 
 
 class OttoCategoryAttributesAPIView(APIView):
