@@ -74,6 +74,7 @@ from hood_service.views import HoodFetchByEANAPIView
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
     OttoCategoriesAPIView,
+    OttoCategoriesSyncAPIView,
     OttoProductListAPIView,
     OttoProductFetchBySKUAPIView,
     OttoProductRetrieveAPIView,
@@ -279,6 +280,7 @@ api_v1_patterns = [
         OttoCategoriesAPIView.as_view(),
         name="otto-categories-v1",
     ),
+    path("api/v1/otto/categories/sync/", OttoCategoriesSyncAPIView.as_view(), name="otto-categories-sync-v1"),
     path(
         "api/v1/otto/<str:profile>/products/upsert/",
         OttoProductUpsertAPIView.as_view(),

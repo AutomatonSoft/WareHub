@@ -1,6 +1,7 @@
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from database.permissions import SessionRolePermission
+from database.inventory_audit_service import request_actor
 from database.views import _is_backend_session_bridge_enabled
 
 
@@ -68,3 +69,32 @@ class OrchestratorServicePermissionTests(SimpleTestCase):
         request.session = {"role": "user"}
 
         self.assertTrue(self.permission.has_permission(request, view=None))
+
+
+class InventoryAuditActorTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @override_settings(ORCHESTRATOR_SERVICE_AUTH_TOKEN="warehub-local-orchestrator")
+    def test_trusted_orchestrator_actor_is_used_for_audit_entries(self):
+        request = self.factory.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            HTTP_X_WAREHUB_SERVICE_TOKEN="warehub-local-orchestrator",
+            HTTP_X_WAREHUB_ACTOR_LOGIN="katerina",
+            HTTP_X_WAREHUB_ACTOR_NAME="Katerina Krisling",
+        )
+        request.session = {}
+
+        self.assertEqual(request_actor(request), {"login": "katerina", "name": "Katerina Krisling"})
+
+    @override_settings(ORCHESTRATOR_SERVICE_AUTH_TOKEN="warehub-local-orchestrator")
+    def test_untrusted_actor_headers_cannot_override_the_session_actor(self):
+        request = self.factory.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            HTTP_X_WAREHUB_SERVICE_TOKEN="wrong-token",
+            HTTP_X_WAREHUB_ACTOR_LOGIN="spoofed",
+            HTTP_X_WAREHUB_ACTOR_NAME="Spoofed User",
+        )
+        request.session = {"login": "ravil", "display_name": "Ravil Raykhanov"}
+
+        self.assertEqual(request_actor(request), {"login": "ravil", "name": "Ravil Raykhanov"})

@@ -1,5 +1,8 @@
+import os
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from pymongo.errors import PyMongoError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,7 +10,10 @@ from rest_framework.views import APIView
 from database.permissions import SessionRolePermission
 
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
+from .category_cache import OttoCategoryCache
+from .image_resolver import get_otto_image_resolver, resolve_cached_or_otto_image
 from .models import OttoProductJV, OttoProductXL
+from .product_mapper import enrich_otto_product
 from .serializers import (
     OttoProductJVSerializer,
     OttoProductPayloadSerializer,
@@ -63,6 +69,9 @@ def _upsert_products(model_cls, raw_items: list[dict]) -> tuple[int, int, list[d
                 "compliance": validated_item.get("compliance") or {},
                 "raw_payload": original_item,
             }
+            image_url = str(original_item.get("imageUrl") or "").strip()
+            if image_url:
+                defaults["otto_image_url"] = image_url
             product, created = model_cls.objects.update_or_create(
                 product_reference=product_reference,
                 defaults=defaults,
@@ -80,6 +89,32 @@ def _upsert_products(model_cls, raw_items: list[dict]) -> tuple[int, int, list[d
             )
 
     return created_count, updated_count, result_items
+
+
+def _enrich_products_with_image_urls(model_cls, raw_items: list[dict]) -> list[dict]:
+    product_references = [str(item.get("productReference") or "").strip() for item in raw_items]
+    cached_urls = {
+        product_reference: image_url
+        for product_reference, image_url in model_cls.objects.filter(
+            product_reference__in=[reference for reference in product_references if reference],
+            otto_image_url__isnull=False,
+        ).exclude(otto_image_url="").values_list("product_reference", "otto_image_url")
+    }
+    resolver = get_otto_image_resolver()
+    enriched_items: list[dict] = []
+
+    for raw_item in raw_items:
+        item = dict(raw_item)
+        product_reference = str(item.get("productReference") or "").strip()
+        image_url = resolve_cached_or_otto_image(
+            cached_urls.get(product_reference),
+            str(item.get("ottoUrl") or "").strip(),
+            resolver,
+        )
+        item["imageUrl"] = image_url
+        enriched_items.append(item)
+
+    return enriched_items
 
 
 def _normalize_products_for_local_storage(raw_items: list[dict]) -> list[dict]:
@@ -211,7 +246,7 @@ class OttoProductFetchBySKUAPIView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        raw_items = external_payload["productVariations"]
+        raw_items = [enrich_otto_product(item) for item in external_payload["productVariations"]]
         if not raw_items:
             return Response(
                 {
@@ -223,7 +258,8 @@ class OttoProductFetchBySKUAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        created_count, updated_count, result_items = _upsert_products(model_cls, raw_items)
+        enriched_items = _enrich_products_with_image_urls(model_cls, raw_items)
+        created_count, updated_count, result_items = _upsert_products(model_cls, enriched_items)
         return Response(
             {
                 "profile": normalized_profile,
@@ -234,7 +270,7 @@ class OttoProductFetchBySKUAPIView(APIView):
                 "created": created_count,
                 "updated": updated_count,
                 "items": result_items,
-                "product_variations": raw_items,
+                "product_variations": enriched_items,
                 "links": external_payload.get("links", []),
             },
             status=status.HTTP_200_OK,
@@ -246,46 +282,51 @@ class OttoCategoriesAPIView(APIView):
 
     def get(self, request):
         try:
-            page = int(request.query_params.get("page", 0))
-            limit = int(request.query_params.get("limit", 10))
-        except (TypeError, ValueError):
-            return Response(
-                {"detail": "page и limit должны быть целыми числами."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if page < 0 or not 1 <= limit <= 2000:
-            return Response(
-                {"detail": "page должен быть неотрицательным, limit — от 1 до 2000."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        category = str(request.query_params.get("category") or "").strip() or None
+            raw_limit = request.query_params.get("limit", "50")
+            try:
+                limit = min(max(int(raw_limit), 1), 50)
+            except (TypeError, ValueError):
+                limit = 50
 
-        try:
-            external_payload = OttoExternalProductsClient().fetch_categories(
-                page=page,
+            categories = OttoCategoryCache().search_categories(
+                query=str(request.query_params.get("q") or ""),
+                selected_category_id=str(request.query_params.get("selectedId") or ""),
                 limit=limit,
-                category=category,
             )
-        except OttoExternalAPIError as error:
+            return Response({"categories": categories}, status=status.HTTP_200_OK)
+        except (RuntimeError, PyMongoError):
             return Response(
-                {
-                    "code": "otto_external_categories_fetch_failed",
-                    "detail": str(error),
-                    "upstream_status_code": error.status_code,
-                    "upstream_response": error.details,
-                },
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+
+class OttoCategoriesSyncAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        try:
+            cache = OttoCategoryCache()
+            if not cache.categories_due() and not bool(request.data.get("force")):
+                return Response({"status": "fresh"}, status=status.HTTP_200_OK)
+            page_size = int(os.getenv("OTTO_CATEGORY_SYNC_PAGE_SIZE", "2000"))
+            max_pages = int(os.getenv("OTTO_CATEGORY_SYNC_MAX_PAGES", "1000"))
+            categories = OttoExternalProductsClient().fetch_all_categories(
+                page_size=page_size,
+                max_pages=max_pages,
+            )
+            count = cache.replace_categories(categories)
+        except (RuntimeError, PyMongoError):
+            return Response(
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except OttoExternalAPIError:
+            return Response(
+                {"detail": "OTTO categories could not be refreshed."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
-
-        return Response(
-            {
-                "page": page,
-                "limit": limit,
-                "category": category,
-                "categories": external_payload["categories"],
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response({"status": "refreshed", "count": count}, status=status.HTTP_200_OK)
 
 
 class OttoCategoryAttributesAPIView(APIView):
@@ -300,25 +341,38 @@ class OttoCategoryAttributesAPIView(APIView):
             )
 
         try:
-            external_payload = OttoExternalProductsClient().fetch_attributes(category_id=category_id)
-        except OttoExternalAPIError as error:
+            attributes = OttoCategoryCache().attributes(category_id)
+        except (RuntimeError, PyMongoError):
             return Response(
-                {
-                    "code": "otto_external_attributes_fetch_failed",
-                    "detail": str(error),
-                    "upstream_status_code": error.status_code,
-                    "upstream_response": error.details,
-                },
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if attributes is None:
+            return Response({"detail": "OTTO category attributes are not cached."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"categoryId": category_id, "attributes": attributes}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        category_id = str(request.data.get("categoryId") or "").strip()
+        if not category_id:
+            return Response({"detail": "categoryId is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cache = OttoCategoryCache()
+            attributes = cache.attributes(category_id)
+            if attributes is None:
+                payload = OttoExternalProductsClient().fetch_attributes(category_id=category_id)
+                attributes = payload["attributes"]
+                cache.store_attributes(category_id, attributes)
+        except (RuntimeError, PyMongoError):
+            return Response(
+                {"detail": "OTTO category cache is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except OttoExternalAPIError:
+            return Response(
+                {"detail": "OTTO category attributes could not be refreshed."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
-
-        return Response(
-            {
-                "categoryId": category_id,
-                "attributes": external_payload["attributes"],
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response({"categoryId": category_id, "attributes": attributes}, status=status.HTTP_200_OK)
 
 
 class OttoProductListAPIView(APIView):

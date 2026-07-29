@@ -38,6 +38,8 @@ class Settings:
         self.enable_job_worker = os.getenv("ORCHESTRATOR_ENABLE_JOB_WORKER", "1") == "1"
         self.job_worker_poll_interval_seconds = float(os.getenv("ORCHESTRATOR_JOB_WORKER_POLL_INTERVAL_SECONDS", "0.2"))
         self.enable_reconciliation_scheduler = os.getenv("ORCHESTRATOR_ENABLE_RECONCILIATION_SCHEDULER", "0") == "1"
+        self.enable_otto_category_scheduler = os.getenv("ORCHESTRATOR_ENABLE_OTTO_CATEGORY_SCHEDULER", "0") == "1"
+        self.otto_category_scheduler_poll_interval_seconds = float(os.getenv("ORCHESTRATOR_OTTO_CATEGORY_SCHEDULER_POLL_INTERVAL_SECONDS", "3600"))
         self.reconciliation_scheduler_poll_interval_seconds = float(
             os.getenv("ORCHESTRATOR_RECONCILIATION_SCHEDULER_POLL_INTERVAL_SECONDS", "5")
         )

@@ -36,6 +36,8 @@ import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./
 import type { MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
+import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
+import { OttoCategoriesPanel } from "./otto-categories-panel";
 
 const CreateProductImageGallery = dynamic(
   () => import("../../components/product-forms").then((module) => module.CreateProductImageGallery),
@@ -138,6 +140,43 @@ type LocalDraftSnapshot<TDraft> = {
   sourceKey: string;
   draft: TDraft;
 };
+
+function readOttoText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readOttoTextList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map(readOttoText).filter(Boolean)
+    : [];
+}
+
+function readOttoProductAttributes(product: Record<string, unknown> | undefined): unknown {
+  if (!product) return undefined;
+  const description = product.productDescription;
+  if (description && typeof description === "object" && !Array.isArray(description)) {
+    return (description as Record<string, unknown>).attributes ?? product.attributes;
+  }
+  return product.attributes;
+}
+
+function buildOttoDraft(product: Record<string, unknown>, fallback: OttoCreateProductDraft): OttoCreateProductDraft {
+  const description = product.productDescription && typeof product.productDescription === "object" && !Array.isArray(product.productDescription)
+    ? product.productDescription as Record<string, unknown>
+    : {};
+  const bulletPoints = readOttoTextList(description.bulletPoints);
+
+  return {
+    ...fallback,
+    productReference: readOttoText(product.productReference) || fallback.productReference,
+    sku: readOttoText(product.sku) || fallback.sku,
+    ean: readOttoText(product.ean) || fallback.ean,
+    category: readOttoText(product.category) || readOttoText(description.category) || fallback.category,
+    productLine: readOttoText(description.productLine) || readOttoText(description.title) || fallback.productLine,
+    description: readOttoText(description.description) || readOttoText(description.text) || fallback.description,
+    bulletPoints: bulletPoints.length > 0 ? bulletPoints : fallback.bulletPoints,
+  };
+}
 
 type XlDescriptionFields = {
   name: string;
@@ -1108,6 +1147,9 @@ export default function CreateProductPage() {
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
   const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft>>>>({});
   const [ottoCategoryByTab, setOttoCategoryByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
+  const [ottoSearchErrors, setOttoSearchErrors] = useState<Partial<Record<OttoProfile, string>>>({});
+  const [ottoSearchLoading, setOttoSearchLoading] = useState(false);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
   const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
@@ -1183,6 +1225,42 @@ export default function CreateProductPage() {
   }, []);
   const isLoading =
     controller.kidContextLoading || controller.sourceSitesLoading || controller.sourceSnapshotLoading;
+  useEffect(() => {
+    const sku = controller.kidContext?.mainEan.trim() || "";
+    if (!sku) {
+      setOttoProductsByProfile({});
+      setOttoSearchErrors({});
+      setOttoSearchLoading(false);
+      return;
+    }
+
+    let active = true;
+    setOttoSearchLoading(true);
+    setOttoProductsByProfile({});
+    setOttoSearchErrors({});
+
+    void Promise.allSettled((['jv', 'xl'] as OttoProfile[]).map(async (profile) => {
+      try {
+        const product = await fetchOttoProductBySku(profile, sku);
+        if (active) {
+          setOttoProductsByProfile((current) => ({ ...current, [profile]: product }));
+        }
+      } catch (error) {
+        if (active) {
+          setOttoSearchErrors((current) => ({
+            ...current,
+            [profile]: error instanceof Error ? error.message : "OTTO product search failed.",
+          }));
+        }
+      }
+    })).finally(() => {
+      if (active) setOttoSearchLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [controller.kidContext?.mainEan]);
   const galleryImages = useMemo(() => controller.sourceSnapshot?.imageUrls ?? [], [controller.sourceSnapshot?.imageUrls]);
   const jvUrlKey = useMemo(() => buildUrlKeyFromName(jvName), [jvName]);
   const jvEvp = useMemo(() => computeEvpFromPrice(jvPrice), [jvPrice]);
@@ -1428,17 +1506,24 @@ export default function CreateProductPage() {
   const activeKauflandInitialDraft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
     ? kauflandDraftRefByTab.current[activeTab].draft
     : sourceKauflandDraft;
-  const activeOttoSourceKey = activeTabMeta.sourceSite === "XL" ? activeXlSourceKey : activeJvSourceKey;
+  const activeOttoProfile: OttoProfile | null = activeTabMeta.marketplace === "OTTO"
+    ? (activeTabMeta.account === "XL" ? "xl" : "jv")
+    : null;
+  const activeOttoProduct = activeOttoProfile ? ottoProductsByProfile[activeOttoProfile] : undefined;
+  const activeOttoSourceKey = [
+    activeTabMeta.sourceSite === "XL" ? activeXlSourceKey : activeJvSourceKey,
+    readOttoText(activeOttoProduct?.productReference),
+  ].join(":");
   const activeOttoInitialDraft = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
     ? ottoDraftRefByTab.current[activeTab].draft
-    : {
+    : buildOttoDraft(activeOttoProduct ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.name : jvName,
       ean: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       sku: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       productReference: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       category: ottoCategoryByTab[activeTab] ?? "",
-    };
+    });
 
   useEffect(() => {
     const jvFields = controller.sourceSnapshot?.rawPayload?.jv_fields;
@@ -2738,13 +2823,26 @@ export default function CreateProductPage() {
                   />
                 ) : null}
                 {activeTabMeta.marketplace === "OTTO" ? (
-                  <OttoCreateProductPanel
-                    initialDraft={activeOttoInitialDraft}
-                    draftKey={activeOttoSourceKey}
-                    onDraftChange={(draft) => {
-                      ottoDraftRefByTab.current[activeTab] = { sourceKey: activeOttoSourceKey, draft };
-                    }}
-                  />
+                  <div className="space-y-3">
+                    {ottoSearchLoading ? (
+                      <div className="text-sm text-muted-foreground">Searching OTTO product data…</div>
+                    ) : null}
+                    {activeOttoProfile && ottoSearchErrors[activeOttoProfile] ? (
+                      <div className="text-sm text-destructive">{ottoSearchErrors[activeOttoProfile]}</div>
+                    ) : null}
+                    {!ottoSearchLoading && activeOttoProfile && !activeOttoProduct && !ottoSearchErrors[activeOttoProfile] ? (
+                      <div className="text-sm text-muted-foreground">No OTTO product data was found for this EAN.</div>
+                    ) : null}
+                    <OttoCreateProductPanel
+                      initialDraft={activeOttoInitialDraft}
+                      draftKey={activeOttoSourceKey}
+                      categoryId={ottoCategoryByTab[activeTab] ?? activeOttoInitialDraft.category}
+                      productAttributes={readOttoProductAttributes(activeOttoProduct)}
+                      onDraftChange={(draft) => {
+                        ottoDraftRefByTab.current[activeTab] = { sourceKey: activeOttoSourceKey, draft };
+                      }}
+                    />
+                  </div>
                 ) : null}
                 {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" ? (
                   <XlCreateProductPanel
@@ -2779,23 +2877,16 @@ export default function CreateProductPage() {
                   onMoveItem={handleMoveTabGalleryItem}
                 />
                 {activeTabMeta.marketplace === "OTTO" ? (
-                  <div className="rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</span>
-                      <Input
-                        value={activeOttoInitialDraft.category}
-                        onChange={(event) => {
-                          const category = event.target.value;
-                          setOttoCategoryByTab((current) => ({ ...current, [activeTab]: category }));
-                          ottoDraftRefByTab.current[activeTab] = {
-                            sourceKey: activeOttoSourceKey,
-                            draft: { ...activeOttoInitialDraft, category },
-                          };
-                        }}
-                        placeholder="Category"
-                      />
-                    </label>
-                  </div>
+                  <OttoCategoriesPanel
+                    selectedCategory={activeOttoInitialDraft.category}
+                    onSelectedCategoryChange={(category) => {
+                      setOttoCategoryByTab((current) => ({ ...current, [activeTab]: category }));
+                      ottoDraftRefByTab.current[activeTab] = {
+                        sourceKey: activeOttoSourceKey,
+                        draft: { ...activeOttoInitialDraft, category },
+                      };
+                    }}
+                  />
                 ) : null}
                 {activeTabMeta.sourceSite === "KAUFLAND" ? <div id="kaufland-delivery-time-range" /> : null}
                 {activeTabMeta.sourceSite === "HOOD" ? (
