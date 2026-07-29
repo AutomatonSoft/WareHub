@@ -211,3 +211,30 @@ class OttoExternalProductsClient:
             )
 
         return payload
+
+    def fetch_all_categories(self, *, page_size: int = 2000, max_pages: int = 1000) -> list[dict[str, Any]]:
+        if not 1 <= page_size <= 2000:
+            raise ValueError("page_size must be between 1 and 2000.")
+        if max_pages < 1:
+            raise ValueError("max_pages must be positive.")
+
+        categories_by_id: dict[str, dict[str, Any]] = {}
+        for page in range(max_pages):
+            page_categories = self.fetch_categories(page=page, limit=page_size)["categories"]
+            if not page_categories:
+                break
+
+            count_before_page = len(categories_by_id)
+            for category in page_categories:
+                if not isinstance(category, dict):
+                    continue
+                category_id = str(category.get("id") or category.get("categoryId") or "").strip()
+                if category_id:
+                    categories_by_id[category_id] = category
+
+            if len(page_categories) < page_size or len(categories_by_id) == count_before_page:
+                break
+        else:
+            raise OttoExternalAPIError("OTTO category API pagination exceeded the configured page limit.")
+
+        return list(categories_by_id.values())

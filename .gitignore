@@ -87,3 +87,4 @@ start-dev.ps1
 stop-dev-mac.sh
 start-local-apps.ps1
 .afterbuy_*.cookie
+error.md

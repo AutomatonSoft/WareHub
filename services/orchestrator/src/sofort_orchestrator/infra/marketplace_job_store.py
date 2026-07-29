@@ -36,6 +36,8 @@ class SqliteMarketplaceJobStore:
                     kid_number TEXT NOT NULL,
                     inactive INTEGER NOT NULL,
                     place TEXT NULL,
+                    actor_login TEXT NULL,
+                    actor_name TEXT NULL,
                     status TEXT NOT NULL,
                     result_status TEXT NULL,
                     result_json TEXT NULL,
@@ -48,19 +50,33 @@ class SqliteMarketplaceJobStore:
             columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(marketplace_toggle_jobs)").fetchall()}
             if "place" not in columns:
                 conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN place TEXT NULL")
+            if "actor_login" not in columns:
+                conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN actor_login TEXT NULL")
+            if "actor_name" not in columns:
+                conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN actor_name TEXT NULL")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_marketplace_toggle_jobs_status_created ON marketplace_toggle_jobs (status, created_at_unix_ms)")
             conn.commit()
 
-    def create_job(self, *, job_id: str, request_id: str, kid_number: str, inactive: bool, place: str | None = None) -> None:
+    def create_job(
+        self,
+        *,
+        job_id: str,
+        request_id: str,
+        kid_number: str,
+        inactive: bool,
+        place: str | None = None,
+        actor_login: str | None = None,
+        actor_name: str | None = None,
+    ) -> None:
         now = _now_ms()
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO marketplace_toggle_jobs (
-                    job_id, request_id, kid_number, inactive, place, status, result_status, result_json, error_json, created_at_unix_ms, updated_at_unix_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                    job_id, request_id, kid_number, inactive, place, actor_login, actor_name, status, result_status, result_json, error_json, created_at_unix_ms, updated_at_unix_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
                 """,
-                (job_id, request_id, kid_number, 1 if inactive else 0, place, JobStatus.QUEUED.value, now, now),
+                (job_id, request_id, kid_number, 1 if inactive else 0, place, actor_login, actor_name, JobStatus.QUEUED.value, now, now),
             )
             conn.commit()
 
@@ -68,7 +84,7 @@ class SqliteMarketplaceJobStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT job_id, request_id, kid_number, inactive, place
+                SELECT job_id, request_id, kid_number, inactive, place, actor_login, actor_name
                 FROM marketplace_toggle_jobs
                 WHERE status = ?
                 ORDER BY created_at_unix_ms ASC
@@ -93,6 +109,8 @@ class SqliteMarketplaceJobStore:
             "kid_number": str(row[2]),
             "inactive": bool(row[3]),
             "place": str(row[4]).strip() if row[4] is not None else None,
+            "actor_login": str(row[5]).strip() if row[5] is not None else "",
+            "actor_name": str(row[6]).strip() if row[6] is not None else "",
         }
 
     def mark_completed(self, *, job_id: str, result: MarketplaceToggleExecutionResult) -> None:

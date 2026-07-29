@@ -311,3 +311,18 @@ def test_marketplace_toggle_job_create_accepts_place(tmp_path):
         ).fetchone()
     assert row is not None
     assert row[0] == "18"
+
+
+def test_marketplace_toggle_job_persists_verified_actor_for_worker(tmp_path):
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/v1/orchestrator/marketplace/toggle-by-kid",
+        json={"kid_number": "566725168", "inactive": True},
+        headers={"X-WareHub-Actor-Login": "katerina", "X-WareHub-Actor-Name": "Katerina Krisling"},
+    )
+    assert created.status_code == 200
+
+    claimed = MarketplaceJobDeps.store.claim_next_queued_job()
+    assert claimed is not None
+    assert claimed["actor_login"] == "katerina"
+    assert claimed["actor_name"] == "Katerina Krisling"

@@ -4,7 +4,7 @@ import type { paths } from "../../lib/api/generated/openapi-types";
 import { readStoredLabel } from "../../app/i18n";
 import { apiFetch } from "../../lib/api/client";
 import { resolveServicesApiBase } from "../../lib/api/services-base";
-import { readAuth } from "../../app/client-api-shared";
+import { authorizedFetch, readAuth } from "../../app/client-api-shared";
 import { syncDatabaseServiceSession } from "../../app/services-session";
 
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
@@ -577,7 +577,7 @@ export async function createMarketplaceToggleJob(kidNumber: string, inactive = t
     ...(place?.trim() ? { place: place.trim() } : {}),
   };
 
-  const response = await apiFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
+  const response = await authorizedFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

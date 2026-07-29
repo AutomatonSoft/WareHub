@@ -278,6 +278,9 @@ jobs:
           AFTERBUY_XL_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_XL_ACCOUNT_TOKEN }}
           AFTERBUY_CH_PARTNER_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_PARTNER_TOKEN }}
           AFTERBUY_CH_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_ACCOUNT_TOKEN }}
+          STAGE_MONGO_USER_SECRET: ${{ secrets.STAGE_MONGO_USER }}
+          STAGE_MONGO_PASSWORD_SECRET: ${{ secrets.STAGE_MONGO_PASSWORD }}
+          STAGE_MONGO_DATABASE_SECRET: ${{ secrets.STAGE_MONGO_DATABASE }}
           TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
@@ -307,6 +310,9 @@ jobs:
             printf 'AFTERBUY_XL_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_XL_ACCOUNT_TOKEN_SECRET:-}"
             printf 'AFTERBUY_CH_PARTNER_TOKEN=%s\n' "${AFTERBUY_CH_PARTNER_TOKEN_SECRET:-}"
             printf 'AFTERBUY_CH_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_CH_ACCOUNT_TOKEN_SECRET:-}"
+            printf 'STAGE_MONGO_USER=%s\n' "${STAGE_MONGO_USER_SECRET:-}"
+            printf 'STAGE_MONGO_PASSWORD=%s\n' "${STAGE_MONGO_PASSWORD_SECRET:-}"
+            printf 'STAGE_MONGO_DATABASE=%s\n' "${STAGE_MONGO_DATABASE_SECRET:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/stage/env.stage.sanitized.template \

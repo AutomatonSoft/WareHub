@@ -1,7 +1,21 @@
+import asyncio
+from unittest.mock import Mock, patch
+
 from django.test import SimpleTestCase
 from django.urls import Resolver404, resolve
+from django.test.client import RequestFactory
 
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
+from .image_resolver import (
+    OttoImageResolver,
+    is_allowed_otto_image_url,
+    is_allowed_otto_product_url,
+    resolve_cached_or_otto_image,
+)
+from .models import OttoProductJV
+from .product_mapper import build_otto_url
+from .serializers import OttoProductJVSerializer
+from .views import OttoCategoriesAPIView
 
 
 class FakeResponse:
@@ -65,6 +79,41 @@ class OttoRouteTests(SimpleTestCase):
                 resolve(path)
 
 
+class OttoCategoriesQueryTests(SimpleTestCase):
+    def test_searches_categories_with_a_bounded_limit(self):
+        view = OttoCategoriesAPIView()
+        request = view.initialize_request(RequestFactory().get("/api/v1/otto/categories/?q=Stuhl&limit=500"))
+
+        with patch("otto_service.views.OttoCategoryCache") as cache_class:
+            cache_class.return_value.search_categories.return_value = [{"id": "26812", "name": "Stuhl"}]
+
+            response = view.get(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["categories"], [{"id": "26812", "name": "Stuhl"}])
+        cache_class.return_value.search_categories.assert_called_once_with(
+            query="Stuhl",
+            selected_category_id="",
+            limit=50,
+        )
+
+    def test_loads_only_the_selected_category_by_id(self):
+        view = OttoCategoriesAPIView()
+        request = view.initialize_request(RequestFactory().get("/api/v1/otto/categories/?selectedId=26812"))
+
+        with patch("otto_service.views.OttoCategoryCache") as cache_class:
+            cache_class.return_value.search_categories.return_value = [{"id": "26812", "name": "Stuhl"}]
+
+            response = view.get(request)
+
+        self.assertEqual(response.status_code, 200)
+        cache_class.return_value.search_categories.assert_called_once_with(
+            query="",
+            selected_category_id="26812",
+            limit=50,
+        )
+
+
 class OttoExternalProductsClientTests(SimpleTestCase):
     def test_fetch_products_uses_external_contract(self):
         session = FakeSession(
@@ -91,6 +140,7 @@ class OttoExternalProductsClientTests(SimpleTestCase):
             {"sku": "4062292015700", "page": 0, "limit": 10, "controller": "jv"},
         )
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
 
     def test_fetch_products_rejects_missing_variations(self):
         client = OttoExternalProductsClient(
@@ -174,3 +224,107 @@ class OttoExternalProductsClientTests(SimpleTestCase):
         self.assertEqual(session.calls[1][0], ("https://otto.example.test/extermal/deactivate",))
         self.assertEqual(session.calls[1][1]["json"], {"ean": "4250123456789", "controller": "xl"})
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
+
+class BuildOttoUrlTests(SimpleTestCase):
+    def test_builds_url_for_moin(self):
+        self.assertEqual(
+            build_otto_url("M0081501JW"),
+            "https://www.otto.de/p/?moin=M0081501JW",
+        )
+
+    def test_returns_none_for_missing_or_blank_moin(self):
+        for moin in (None, "", "   "):
+            with self.subTest(moin=moin):
+                self.assertIsNone(build_otto_url(moin))
+
+    def test_trims_and_encodes_moin(self):
+        self.assertEqual(
+            build_otto_url("  MOIN / 1  "),
+            "https://www.otto.de/p/?moin=MOIN%20%2F%201",
+        )
+
+
+class OttoImageResolverTests(SimpleTestCase):
+    def test_cached_image_is_returned_without_starting_resolver(self):
+        resolver = Mock()
+        image_url = "https://i.otto.de/i/otto/cached-image"
+
+        result = resolve_cached_or_otto_image(image_url, "https://www.otto.de/p/?moin=M0081501JW", resolver)
+
+        self.assertEqual(result, image_url)
+        resolver.resolve.assert_not_called()
+
+    def test_rejects_non_otto_product_and_image_urls(self):
+        self.assertFalse(is_allowed_otto_product_url("https://example.com/p/?moin=M0081501JW"))
+        self.assertFalse(is_allowed_otto_image_url("https://example.com/image.jpg"))
+        self.assertFalse(is_allowed_otto_image_url("http://i.otto.de/image.jpg"))
+
+    def test_reads_og_image_and_falls_back_to_main_image(self):
+        class FakePage:
+            def __init__(self, values):
+                self.values = iter(values)
+                self.closed = False
+
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+            async def evaluate(self, _script):
+                return next(self.values)
+
+            async def close(self):
+                self.closed = True
+
+        class FakeBrowser:
+            def __init__(self, page):
+                self.page = page
+
+            async def new_page(self):
+                return self.page
+
+        def resolve_values(values):
+            page = FakePage(values)
+            resolver = object.__new__(OttoImageResolver)
+            resolver._browser = FakeBrowser(page)
+            resolver._page_semaphore = asyncio.Semaphore(1)
+            return asyncio.run(resolver._resolve_in_browser("https://www.otto.de/p/?moin=M0081501JW")), page
+
+        og_url = "https://i.otto.de/i/otto/og-image"
+        self.assertEqual(resolve_values([og_url])[0], og_url)
+
+        fallback_url = "https://i.otto.de/i/otto/main-image"
+        result, fallback_page = resolve_values([None, fallback_url])
+        self.assertEqual(result, fallback_url)
+        self.assertTrue(fallback_page.closed)
+
+    def test_navigation_failure_returns_none(self):
+        class FailingPage:
+            async def goto(self, *_args, **_kwargs):
+                raise RuntimeError("navigation failed")
+
+            async def close(self):
+                return None
+
+        class FakeBrowser:
+            async def new_page(self):
+                return FailingPage()
+
+        resolver = object.__new__(OttoImageResolver)
+        resolver._browser = FakeBrowser()
+        resolver._page_semaphore = asyncio.Semaphore(1)
+
+        self.assertIsNone(asyncio.run(resolver._resolve_in_browser("https://www.otto.de/p/?moin=M0081501JW")))
+
+
+class OttoImageResponseSerializerTests(SimpleTestCase):
+    def test_exposes_camel_case_image_url_without_internal_storage_field(self):
+        product = OttoProductJV(
+            product_reference="4069424727661",
+            moin="M0081501JW",
+            otto_image_url="https://i.otto.de/i/otto/main-image",
+        )
+
+        data = OttoProductJVSerializer(product).data
+
+        self.assertEqual(data["imageUrl"], "https://i.otto.de/i/otto/main-image")
+        self.assertNotIn("otto_image_url", data)

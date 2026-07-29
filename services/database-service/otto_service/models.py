@@ -8,6 +8,7 @@ class OttoProductJV(models.Model):
     pzn = models.CharField(max_length=255, null=True, blank=True)
     mpn = models.CharField(max_length=255, null=True, blank=True)
     moin = models.CharField(max_length=255, null=True, blank=True)
+    otto_image_url = models.URLField(max_length=2048, null=True, blank=True)
     release_date = models.DateTimeField(null=True, blank=True)
 
     product_description = models.JSONField(default=dict, blank=True)
@@ -38,6 +39,7 @@ class OttoProductXL(models.Model):
     pzn = models.CharField(max_length=255, null=True, blank=True)
     mpn = models.CharField(max_length=255, null=True, blank=True)
     moin = models.CharField(max_length=255, null=True, blank=True)
+    otto_image_url = models.URLField(max_length=2048, null=True, blank=True)
     release_date = models.DateTimeField(null=True, blank=True)
 
     product_description = models.JSONField(default=dict, blank=True)

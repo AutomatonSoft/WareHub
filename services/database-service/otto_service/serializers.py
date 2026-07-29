@@ -1,15 +1,44 @@
 from rest_framework import serializers
 
 from .models import OttoProductJV, OttoProductXL
+from .product_mapper import build_otto_url
 
 
 class OttoProductJVSerializer(serializers.ModelSerializer):
+    ottoUrl = serializers.SerializerMethodField()
+    imageUrl = serializers.SerializerMethodField()
+
+    def get_ottoUrl(self, instance) -> str | None:
+        return build_otto_url(instance.moin)
+
+    def get_imageUrl(self, instance) -> str | None:
+        return instance.otto_image_url
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data.pop("otto_image_url", None)
+        return data
+
     class Meta:
         model = OttoProductJV
         fields = "__all__"
 
 
 class OttoProductXLSerializer(serializers.ModelSerializer):
+    ottoUrl = serializers.SerializerMethodField()
+    imageUrl = serializers.SerializerMethodField()
+
+    def get_ottoUrl(self, instance) -> str | None:
+        return build_otto_url(instance.moin)
+
+    def get_imageUrl(self, instance) -> str | None:
+        return instance.otto_image_url
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data.pop("otto_image_url", None)
+        return data
+
     class Meta:
         model = OttoProductXL
         fields = "__all__"
