@@ -75,6 +75,7 @@ from otto_service.views import (
     OttoCategoryAttributesAPIView,
     OttoCategoriesAPIView,
     OttoCategoriesSyncAPIView,
+    OttoFullCacheSyncAPIView,
     OttoProductListAPIView,
     OttoProductFetchBySKUAPIView,
     OttoProductRetrieveAPIView,
@@ -281,6 +282,11 @@ api_v1_patterns = [
         name="otto-categories-v1",
     ),
     path("api/v1/otto/categories/sync/", OttoCategoriesSyncAPIView.as_view(), name="otto-categories-sync-v1"),
+    path(
+        "api/v1/otto/categories/full-sync/",
+        OttoFullCacheSyncAPIView.as_view(),
+        name="otto-categories-full-sync-v1",
+    ),
     path(
         "api/v1/otto/<str:profile>/products/upsert/",
         OttoProductUpsertAPIView.as_view(),
