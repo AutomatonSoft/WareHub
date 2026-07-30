@@ -28,6 +28,24 @@ class MarketplaceEanMappingConfirmSerializer(serializers.Serializer):
         return value
 
 
+class KidMarketplaceStatusUpdateSerializer(serializers.Serializer):
+    marketplace = serializers.ChoiceField(
+        choices=(
+            "jv",
+            "xl",
+            "otto_jv",
+            "otto_xl",
+            "ebay_jv",
+            "ebay_xl",
+            "kaufland_jv",
+            "kaufland_xl",
+            "hood_jv",
+            "hood_xl",
+        )
+    )
+    status = serializers.BooleanField()
+
+
 class KidModelSerializer(serializers.ModelSerializer):
     place = serializers.CharField(required=False, allow_blank=True, allow_null=True, validators=[])
 

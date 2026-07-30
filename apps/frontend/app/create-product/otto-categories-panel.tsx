@@ -18,15 +18,11 @@ import {
 } from "./otto-categories-api";
 
 type Props = {
-  selectedCategory: string;
-  onSelectedCategoryChange: (category: string) => void;
+  selectedCategoryId: string;
+  onSelectedCategoryChange: (category: OttoCategory) => void;
 };
 
-function normalizeCategoryValue(value: string): string {
-  return value.trim().toLocaleLowerCase();
-}
-
-export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange }: Props) {
+export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChange }: Props) {
   const [categories, setCategories] = useState<OttoCategory[]>([]);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -42,14 +38,14 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
   }, [query]);
 
   const categoryRequest = useMemo(() => {
-    const selectedCategoryIsId = /^\d+$/.test(selectedCategory);
+    const selectedCategoryIsId = /^\d+$/.test(selectedCategoryId);
     const searchQuery = showOnlySelected
-      ? (selectedCategoryIsId ? "" : selectedCategory)
-      : (debouncedQuery || (selectedCategoryIsId ? "" : selectedCategory));
-    const selectedCategoryId = !searchQuery && selectedCategoryIsId ? selectedCategory : "";
+      ? ""
+      : debouncedQuery;
+    const selectedId = !searchQuery && selectedCategoryIsId ? selectedCategoryId : "";
 
-    return { query: searchQuery, selectedCategoryId };
-  }, [debouncedQuery, selectedCategory, showOnlySelected]);
+    return { query: searchQuery, selectedCategoryId: selectedId };
+  }, [debouncedQuery, selectedCategoryId, showOnlySelected]);
 
   useEffect(() => {
     if (!categoryRequest.query && !categoryRequest.selectedCategoryId) {
@@ -115,30 +111,12 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
     };
   }, [syncStatus?.status]);
 
-  useEffect(() => {
-    const normalizedSelectedCategory = normalizeCategoryValue(selectedCategory);
-    if (!normalizedSelectedCategory) return;
-
-    const matchingCategory = categories.find((category) =>
-      category.id === selectedCategory ||
-      normalizeCategoryValue(category.name) === normalizedSelectedCategory,
-    );
-
-    if (matchingCategory && matchingCategory.id !== selectedCategory) {
-      onSelectedCategoryChange(matchingCategory.id);
-    }
-  }, [categories, onSelectedCategoryChange, selectedCategory]);
-
   const visibleCategories = useMemo(() => {
-    const normalizedSelectedCategory = normalizeCategoryValue(selectedCategory);
-
     return categories.filter((category) => {
-      const selected =
-        category.id === selectedCategory ||
-        normalizeCategoryValue(category.name) === normalizedSelectedCategory;
+      const selected = category.id === selectedCategoryId;
       return !showOnlySelected || selected;
     });
-  }, [categories, selectedCategory, showOnlySelected]);
+  }, [categories, selectedCategoryId, showOnlySelected]);
 
   const startFullSync = () => {
     setSyncError("");
@@ -212,13 +190,12 @@ export function OttoCategoriesPanel({ selectedCategory, onSelectedCategoryChange
             <div className="flex flex-col gap-1">
               {visibleCategories.map((category) => {
                 const selected =
-                  selectedCategory === category.id ||
-                  normalizeCategoryValue(category.name) === normalizeCategoryValue(selectedCategory);
+                  selectedCategoryId === category.id;
                 return (
                   <button
                     key={category.id}
                     type="button"
-                    onClick={() => onSelectedCategoryChange(category.id)}
+                    onClick={() => onSelectedCategoryChange(category)}
                     aria-pressed={selected}
                     className={cn(
                       "flex min-h-9 items-center justify-between gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left text-sm transition",

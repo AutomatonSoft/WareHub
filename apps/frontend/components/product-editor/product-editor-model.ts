@@ -7,6 +7,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorHoodProperty,
   ProductEditorKauflandDraft,
+  ProductEditorOttoDraft,
   ProductEditorJvDraft,
   ProductEditorPendingUpload,
   ProductEditorTarget,
@@ -71,6 +72,34 @@ export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
     product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: "",
     picture_urls: [], size: "", color: "", delivery: ""
   };
+}
+
+export function createEmptyOttoDraft(): ProductEditorOttoDraft {
+  return {
+    target_id: "", profile: "jv", productReference: "", sku: "", ean: "", isbn: "", upc: "", pzn: "", mpn: "", moin: "", offeringStartDate: "", releaseDate: "", maxOrderQuantity: "", shippingProfileId: "",
+    productDescription: {}, mediaAssets: [], delivery: {}, order: {}, pricing: {}, logistics: {}, compliance: {},
+  };
+}
+
+export function hydrateOttoDraft(input?: Partial<ProductEditorOttoDraft>): ProductEditorOttoDraft {
+  const empty = createEmptyOttoDraft();
+  return {
+    ...empty,
+    ...input,
+    profile: input?.profile === "xl" ? "xl" : "jv",
+    productDescription: input?.productDescription && typeof input.productDescription === "object" ? input.productDescription : {},
+    mediaAssets: Array.isArray(input?.mediaAssets) ? input.mediaAssets : [],
+    delivery: input?.delivery && typeof input.delivery === "object" ? input.delivery : {},
+    order: input?.order && typeof input.order === "object" ? input.order : {},
+    pricing: input?.pricing && typeof input.pricing === "object" ? input.pricing : {},
+    logistics: input?.logistics && typeof input.logistics === "object" ? input.logistics : {},
+    compliance: input?.compliance && typeof input.compliance === "object" ? input.compliance : {},
+  };
+}
+
+export function buildOttoChangedFields(initial: ProductEditorOttoDraft, current: ProductEditorOttoDraft): string[] {
+  const keys = Object.keys(current).filter((key) => !["target_id", "profile"].includes(key)) as Array<keyof ProductEditorOttoDraft>;
+  return keys.filter((key) => JSON.stringify(initial[key]) !== JSON.stringify(current[key])).map(String);
 }
 
 export function formatPriceForInput(value: unknown): string {

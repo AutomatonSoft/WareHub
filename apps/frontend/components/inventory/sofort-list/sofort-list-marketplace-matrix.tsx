@@ -1,5 +1,8 @@
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
 import { buildMarketplaceMatrixRows } from "./sofort-list-marketplace-matrix-model";
+import { Checkbox } from "@/components/ui/checkbox";
+
+type MarketplaceStatusKey = keyof SofortListRow["siteEanStatuses"];
 
 function displayEan(value: string, placeholder: string): string {
   const normalized = value.trim();
@@ -14,6 +17,8 @@ export function SofortListMarketplaceMatrix(props: {
   query: string;
   placeholderEan: string;
   highlightText: HighlightText;
+  isStatusUpdating?: (marketplace: MarketplaceStatusKey) => boolean;
+  onStatusChange?: (marketplace: MarketplaceStatusKey, status: boolean) => void;
   labels: {
     matrixAria: string;
     jv: string;
@@ -45,9 +50,9 @@ export function SofortListMarketplaceMatrix(props: {
           {row.cells.map((cell) => {
             const displayValue = displayEan(cell.value, props.placeholderEan);
             return (
-              <code
+              <div
                 key={cell.key}
-                className={`rounded-lg px-2 py-1 transition ${
+                className={`flex items-center gap-1.5 rounded-lg px-2 py-1 transition ${
                   cell.matches
                     ? "bg-amber-200 text-slate-950 ring-1 ring-amber-400 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.45)]"
                     : cell.isBWare
@@ -56,11 +61,18 @@ export function SofortListMarketplaceMatrix(props: {
                         ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
                         : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
                 }`}
-                aria-label={`${row.market} ${cell.key} ${cell.matches ? props.labels.matched : props.labels.value}`}
                 title={displayValue === "—" ? undefined : displayValue}
               >
-                {props.highlightText(displayValue, props.query) || props.labels.empty}
-              </code>
+                <code aria-label={`${row.market} ${cell.key} ${cell.matches ? props.labels.matched : props.labels.value}`}>
+                  {props.highlightText(displayValue, props.query) || props.labels.empty}
+                </code>
+                <Checkbox
+                  checked={cell.status === true}
+                  disabled={props.isStatusUpdating?.(cell.key) ?? false}
+                  aria-label={`${row.market} ${cell.key} status`}
+                  onCheckedChange={(value) => props.onStatusChange?.(cell.key, value === true)}
+                />
+              </div>
             );
           })}
         </div>

@@ -131,6 +131,27 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(ean_record.kaufland_jv, "4012345678902")
         self.assertTrue(status_record.kaufland_jv)
 
+    def test_kid_marketplace_status_update_changes_only_requested_status(self):
+        EanStatus.objects.create(ean=self.kid, jv=True, hood_xl=False)
+
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-status/",
+            {"marketplace": "hood_xl", "status": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"kid_id": self.kid.id, "marketplace": "hood_xl", "status": True})
+        ean_status = EanStatus.objects.get(ean=self.kid)
+        self.assertTrue(ean_status.jv)
+        self.assertTrue(ean_status.hood_xl)
+        self.assertTrue(
+            InventoryChangeLog.objects.filter(
+                kid=self.kid,
+                action="marketplace_status_updated",
+            ).exists()
+        )
+
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]
         self.kid.save(update_fields=["kid_number"])
@@ -2591,6 +2612,21 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["otto_jv_ean"], "B_WARE")
         self.assertEqual(response.data["otto_xl_ean"], "B_WARE")
+
+    def test_marketplace_eans_patch_allows_alphanumeric_identifiers(self):
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-eans/",
+            {
+                "main_ean": "JVM-ARTICLE-42",
+                "database_ean": "JVM-ARTICLE-42",
+                "cosmoshop_ean": "JV-SKU-42",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["main_ean"], "JVM-ARTICLE-42")
+        self.assertEqual(response.data["cosmoshop_ean"], "JV-SKU-42")
 
     def test_marketplace_eans_get_hides_placeholder_values(self):
         Ean.objects.create(

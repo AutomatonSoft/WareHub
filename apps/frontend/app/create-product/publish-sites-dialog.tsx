@@ -10,7 +10,7 @@ import { cn } from "../../lib/utils";
 export type PublishSiteOption = {
   id: string;
   label: string;
-  family: "JVMOEBEL" | "XL" | "HOOD" | "KAUFLAND";
+  family: "JVMOEBEL" | "XL" | "HOOD" | "KAUFLAND" | "OTTO";
 };
 
 type PublishSitesDialogProps = {
@@ -28,6 +28,7 @@ const iconByFamily = {
   XL: Globe2Icon,
   HOOD: StoreIcon,
   KAUFLAND: StoreIcon,
+  OTTO: StoreIcon,
 } as const;
 
 export function PublishSitesDialog({ open, title, sites, selectedSiteIds, onOpenChange, onSelectedSiteIdsChange, onConfirm }: PublishSitesDialogProps) {

@@ -50,6 +50,7 @@ class OrchestratorService:
             if command.operation is Operation.PUBLISH and channel.marketplace not in {
                 Marketplace.HOOD,
                 Marketplace.KAUFLAND,
+                Marketplace.OTTO,
                 Marketplace.XLJV,
             }:
                 results.append(

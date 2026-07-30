@@ -20,10 +20,12 @@ import {
   fetchKidDetails,
   getMarketplaceToggleJob,
   patchKidDetails,
+  patchKidMarketplaceStatus,
   patchKidMarketplaceEans,
   uploadKidImages,
   CreateKidRequestError,
   type PlaceSuggestionHints,
+  type MarketplaceStatusRowKey,
 } from "../inventory-api";
 import { useToast } from "../../shared/toast-provider";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
@@ -681,6 +683,7 @@ export function SofortListTableShell(props: {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deactivatingRowId, setDeactivatingRowId] = useState<string | null>(null);
+  const [marketplaceStatusUpdating, setMarketplaceStatusUpdating] = useState<string | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editPlaceSuggestions, setEditPlaceSuggestions] = useState<PlaceSuggestionHints | null>(null);
@@ -723,6 +726,26 @@ export function SofortListTableShell(props: {
     if (normalizedPhotos.length === 0) return;
     const safeIndex = Math.max(0, Math.min(startIndex, normalizedPhotos.length - 1));
     setFullscreenGallery({ photos: normalizedPhotos, index: safeIndex });
+  }
+
+  async function updateMarketplaceStatus(row: SofortListRow, marketplace: MarketplaceStatusRowKey, nextStatus: boolean) {
+    const updateKey = `${row.id}:${marketplace}`;
+    setMarketplaceStatusUpdating(updateKey);
+    try {
+      await patchKidMarketplaceStatus({ kidId: row.kidId, marketplace, status: nextStatus });
+      props.onUpdateRow({
+        ...row,
+        siteEanStatuses: {
+          ...row.siteEanStatuses,
+          [marketplace]: nextStatus,
+        },
+      });
+      await props.onRefresh();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t.failedSaveChanges, "error");
+    } finally {
+      setMarketplaceStatusUpdating(null);
+    }
   }
 
   function closeFullscreenPhoto() {
@@ -1218,6 +1241,8 @@ export function SofortListTableShell(props: {
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
+                      isStatusUpdating={(marketplace) => marketplaceStatusUpdating === `${row.id}:${marketplace}`}
+                      onStatusChange={(marketplace, nextStatus) => void updateMarketplaceStatus(row, marketplace, nextStatus)}
                       labels={{
                         matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
                         jv: "JV",
@@ -1351,6 +1376,8 @@ export function SofortListTableShell(props: {
                         query={props.query}
                         placeholderEan={props.placeholderEan}
                         highlightText={props.highlightText}
+                        isStatusUpdating={(marketplace) => marketplaceStatusUpdating === `${row.id}:${marketplace}`}
+                        onStatusChange={(marketplace, nextStatus) => void updateMarketplaceStatus(row, marketplace, nextStatus)}
                         labels={{
                           matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
                           jv: "JV",

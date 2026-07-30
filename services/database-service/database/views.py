@@ -69,6 +69,7 @@ from .serializers import (
     EANUsageSerializer,
     EanPatchSerializer,
     EanStatusReadSerializer,
+    KidMarketplaceStatusUpdateSerializer,
     MarketplaceEanMappingConfirmSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
@@ -106,6 +107,39 @@ class MarketplaceEanMappingConfirmAPIView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response({"confirmed": True, "mapping": mapping}, status=status.HTTP_200_OK)
+
+
+class KidMarketplaceStatusUpdateAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def patch(self, request, pk: int):
+        serializer = KidMarketplaceStatusUpdateSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        kid = get_object_or_404(Kid, pk=pk)
+        marketplace = serializer.validated_data["marketplace"]
+        next_status = serializer.validated_data["status"]
+
+        with transaction.atomic():
+            ean_status, _ = EanStatus.objects.get_or_create(ean=kid)
+            previous_status = bool(getattr(ean_status, marketplace))
+            if previous_status != next_status:
+                setattr(ean_status, marketplace, next_status)
+                ean_status.save(update_fields=[marketplace])
+                record_inventory_change(
+                    kid=kid,
+                    actor=request_actor(request),
+                    action="marketplace_status_updated",
+                    changes=[{"field": f"ean_status.{marketplace}", "before": previous_status, "after": next_status}],
+                )
+
+        return Response(
+            {
+                "kid_id": kid.id,
+                "marketplace": marketplace,
+                "status": next_status,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
@@ -1510,8 +1544,8 @@ class KidMarketplaceEansAPIView(APIView):
     def _validate_ean(value: str, field_name: str, *, allow_b_ware: bool = False) -> None:
         if allow_b_ware and value == KidMarketplaceEansAPIView.B_WARE_EAN_MARKER:
             return
-        if len(value) != 13 or not value.isdigit():
-            raise ValidationError({field_name: "EAN must be a 13-digit numeric string."})
+        if len(value) > 64:
+            raise ValidationError({field_name: "Marketplace EAN must not exceed 64 characters."})
 
     @classmethod
     def _build_ean_response(cls, kid: Kid, kid_number: str, ean_row: Ean | None) -> dict:

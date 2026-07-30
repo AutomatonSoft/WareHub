@@ -52,6 +52,7 @@ class OttoProductPayloadSerializer(serializers.Serializer):
     mpn = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     moin = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     releaseDate = serializers.DateTimeField(required=False, allow_null=True)
+    shippingProfileId = serializers.UUIDField(required=False)
 
     productDescription = serializers.JSONField(required=False)
     mediaAssets = serializers.JSONField(required=False)

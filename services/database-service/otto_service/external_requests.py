@@ -11,6 +11,24 @@ class OttoExternalAPIError(Exception):
         self.details = details
 
 
+def _to_external_otto_product(product: dict[str, Any], *, controller: str) -> dict[str, Any]:
+    external_product = dict(product)
+    if controller.strip().lower() == "jv":
+        product_description = external_product.pop("productDescription", None)
+        if product_description is not None:
+            external_product["productDescriprion"] = product_description
+
+        compliance = external_product.pop("compliance", None)
+        if compliance is not None:
+            external_product["compliace"] = compliance
+
+    order = external_product.pop("order", None)
+    if isinstance(order, dict) and "maxOrderQuantity" not in external_product:
+        external_product["maxOrderQuantity"] = order.get("maxOrderQuantity")
+
+    return external_product
+
+
 class OttoExternalProductsClient:
     """HTTP adapter for the OTTO read API."""
 
@@ -104,11 +122,12 @@ class OttoExternalProductsClient:
         return payload
 
     def create_or_update_products(self, *, controller: str, products: list[dict[str, Any]]) -> Any:
+        external_products = [_to_external_otto_product(product, controller=controller) for product in products]
         try:
             response = self._session.post(
                 f"{self._base_url}{self._upsert_endpoint}",
                 params={"controller": controller},
-                json=products,
+                json=external_products,
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
                 timeout=(self._connect_timeout, self._read_timeout),
             )

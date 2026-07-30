@@ -26,16 +26,19 @@ import {
   buildHoodChangedFields,
   buildJvChangedFields,
   buildKauflandChangedFields,
+  buildOttoChangedFields,
   createEmptyHoodDraft,
   createEmptyJvDraft,
   createEmptyKauflandDraft,
+  createEmptyOttoDraft,
   findGroup,
   findTarget,
   hasActionableHoodTarget,
   hasActionableJvTarget,
   hydrateHoodDraft,
   hydrateJvDraft,
-  hydrateKauflandDraft
+  hydrateKauflandDraft,
+  hydrateOttoDraft,
 } from "./product-editor-model";
 import {
   buildHoodDraftFromApiItem,
@@ -55,6 +58,7 @@ import type {
   ProductEditorJobResponse,
   ProductEditorJvDraft,
   ProductEditorKauflandDraft,
+  ProductEditorOttoDraft,
   ProductEditorPlanResponse,
   ProductEditorJvSiteKey,
   ProductEditorTarget
@@ -137,6 +141,11 @@ function ProductEditorContent() {
   const [kauflandDraft, setKauflandDraft] = useState<ProductEditorKauflandDraft>(createEmptyKauflandDraft());
   const [initialKauflandDraft, setInitialKauflandDraft] = useState<ProductEditorKauflandDraft>(createEmptyKauflandDraft());
   const [kauflandWarnings, setKauflandWarnings] = useState<ProductEditorDiscoverResponse["warnings"]>([]);
+  const [ottoLoading, setOttoLoading] = useState(false);
+  const [ottoApplyLoading, setOttoApplyLoading] = useState(false);
+  const [ottoDraft, setOttoDraft] = useState<ProductEditorOttoDraft>(createEmptyOttoDraft());
+  const [initialOttoDraft, setInitialOttoDraft] = useState<ProductEditorOttoDraft>(createEmptyOttoDraft());
+  const [ottoWarnings, setOttoWarnings] = useState<ProductEditorDiscoverResponse["warnings"]>([]);
 
   const [planLoading, setPlanLoading] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -184,6 +193,7 @@ function ProductEditorContent() {
   const hoodChangedFields = useMemo(() => buildHoodChangedFields(initialHoodDraft, hoodDraft), [hoodDraft, initialHoodDraft]);
   const jvChangedFields = useMemo(() => buildJvChangedFields(initialJvDraft, jvDraft), [initialJvDraft, jvDraft]);
   const kauflandChangedFields = useMemo(() => buildKauflandChangedFields(initialKauflandDraft, kauflandDraft), [initialKauflandDraft, kauflandDraft]);
+  const ottoChangedFields = useMemo(() => buildOttoChangedFields(initialOttoDraft, ottoDraft), [initialOttoDraft, ottoDraft]);
   const targetStats = useMemo(() => {
     const targets = (discover?.groups ?? [])
       .flatMap((group) => group.targets)
@@ -234,6 +244,9 @@ function ProductEditorContent() {
       if (kauflandLoadInFlightEanRef.current === discover.ean) return;
       kauflandLoadInFlightEanRef.current = discover.ean;
       void loadKauflandDraft(discover, discover.recommended_baseline_target_id);
+    }
+    if (activeGroupId === "OTTO" && !ottoDraft.ean) {
+      void loadOttoDraft(discover, discover.recommended_baseline_target_id);
     }
   }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland]);
 
@@ -420,6 +433,8 @@ function ProductEditorContent() {
             ? await loadHoodDraftByEan(ean, tab.key)
             : tab.key === "KAUFLAND_JV" || tab.key === "KAUFLAND_XL"
               ? await loadKauflandDraftByEan(ean)
+              : tab.key === "OTTO_JV" || tab.key === "OTTO_XL"
+                ? await loadOttoDraftByEan(ean)
               : await runDiscover(ean, tab.groupId, tab.key);
       setTabSearchStatuses((current) => ({ ...current, [tab.key]: found ? "found" : "missing" }));
       if (!found && notifyWhenMissing) {
@@ -533,6 +548,43 @@ function ProductEditorContent() {
     }
   }
 
+  async function loadOttoDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
+    setOttoLoading(true);
+    try {
+      const response = await loadProductEditorGroup({ ean: currentDiscover.ean, activeGroup: "OTTO", baselineTargetId: preferredTargetId });
+      const hydrated = hydrateOttoDraft(response.draft as unknown as ProductEditorOttoDraft);
+      setOttoDraft(hydrated);
+      setInitialOttoDraft(hydrated);
+      setOttoWarnings(response.warnings);
+      clearPlanAndJobState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OTTO draft load failed.";
+      setPageError(message);
+      showToast(message, "error");
+    } finally {
+      setOttoLoading(false);
+    }
+  }
+
+  async function loadOttoDraftByEan(ean: string): Promise<boolean> {
+    setOttoLoading(true);
+    try {
+      const discovered = await discoverProductEditor(ean, "OTTO");
+      setDiscover(limitDiscoverToActiveGroup(discovered, "OTTO"));
+      if (!hasFoundTargetInGroup(discovered, "OTTO")) return false;
+      const response = await loadProductEditorGroup({ ean, activeGroup: "OTTO", baselineTargetId: discovered.recommended_baseline_target_id });
+      if (!response.supported) return false;
+      const hydrated = hydrateOttoDraft(response.draft as unknown as ProductEditorOttoDraft);
+      setOttoDraft(hydrated);
+      setInitialOttoDraft(hydrated);
+      setOttoWarnings(response.warnings);
+      clearPlanAndJobState();
+      return Boolean(hydrated.productReference);
+    } finally {
+      setOttoLoading(false);
+    }
+  }
+
   async function loadHoodDraftByEan(ean: string, tabKeyOverride?: HoodTabKey): Promise<boolean> {
     const tabKey = tabKeyOverride ?? getHoodTabKey(activeTabKey) ?? "HOOD_JV";
     setHoodTabLoading(tabKey, true);
@@ -590,6 +642,11 @@ function ProductEditorContent() {
 
   function patchKauflandDraft(patch: Partial<ProductEditorKauflandDraft>) {
     setKauflandDraft((current) => ({ ...current, ...patch }));
+    clearPlanStateOnly();
+  }
+
+  function patchOttoDraft(patch: Partial<ProductEditorOttoDraft>) {
+    setOttoDraft((current) => ({ ...current, ...patch }));
     clearPlanStateOnly();
   }
 
@@ -978,6 +1035,39 @@ function ProductEditorContent() {
       showToast(message, "error");
     } finally {
       setKauflandApplyLoading(false);
+    }
+  }
+
+  async function handleApplyOttoEditedProducts() {
+    const ean = ottoDraft.ean.trim();
+    if (!isValidProductIdentifier(ean) || ottoChangedFields.length === 0) {
+      showToast(!isValidProductIdentifier(ean) ? "OTTO EAN is invalid." : "No edited OTTO fields to apply.", "error");
+      return;
+    }
+    const selectedTargetIds = discover?.groups.find((group) => group.id === "OTTO")?.targets.filter((target) => target.status === "found").map((target) => target.id) ?? [];
+    if (selectedTargetIds.length === 0) {
+      showToast("No reachable OTTO targets are available for apply.", "error");
+      return;
+    }
+    setOttoApplyLoading(true);
+    try {
+      const plan = await planProductEditor({ ean, activeGroup: "OTTO", changedFields: ottoChangedFields, draft: ottoDraft as unknown as Record<string, unknown>, selectedTargetIds });
+      setPlanResponse(plan);
+      const response = await applyProductEditorPlan(plan.plan_id);
+      setApplyResponse(response);
+      const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
+      if (String(finalJob.status).toLowerCase() === "completed") {
+        setInitialOttoDraft(ottoDraft);
+        showToast("OTTO changes applied.", "success");
+      } else {
+        showToast("OTTO apply completed with failed targets.", "error");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OTTO apply failed.";
+      setPageError(message);
+      showToast(message, "error");
+    } finally {
+      setOttoApplyLoading(false);
     }
   }
 
@@ -1402,6 +1492,13 @@ function ProductEditorContent() {
             kauflandApplyLoading={kauflandApplyLoading}
             onPatchKaufland={patchKauflandDraft}
             onApplyKauflandEditedProducts={() => void handleApplyKauflandEditedProducts()}
+            ottoDraft={ottoDraft}
+            ottoWarnings={ottoWarnings}
+            ottoLoading={ottoLoading}
+            ottoChangedFields={ottoChangedFields}
+            ottoApplyLoading={ottoApplyLoading}
+            onPatchOtto={patchOttoDraft}
+            onApplyOttoEditedProducts={() => void handleApplyOttoEditedProducts()}
               />
             </motion.div>
           </AnimatePresence>
@@ -1415,7 +1512,7 @@ function limitDiscoverToActiveGroup(
   response: ProductEditorDiscoverResponse,
   activeGroup: ProductEditorGroupId | null
 ): ProductEditorDiscoverResponse {
-  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD" && activeGroup !== "XL" && activeGroup !== "KAUFLAND")) {
+  if (!activeGroup || (activeGroup !== "JV" && activeGroup !== "HOOD" && activeGroup !== "XL" && activeGroup !== "OTTO" && activeGroup !== "KAUFLAND")) {
     return response;
   }
   const activeGroupResponse = response.groups.find((group) => group.id === activeGroup);
