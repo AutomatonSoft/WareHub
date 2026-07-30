@@ -107,7 +107,7 @@ const JV_PUBLIC_BASE_BY_SITE_KEY: Record<string, string> = {
 };
 const ALL_MARKETPLACE_SITE_IDS = allMarketplaceSites.map((site) => site.id);
 const XL_MARKETPLACE_SITE_IDS = ["xlmoebel_de"];
-const PUBLISHABLE_SITE_FAMILIES = new Set<SiteFamily>(["JVMOEBEL", "XL", "HOOD", "KAUFLAND"]);
+const PUBLISHABLE_SITE_FAMILIES = new Set<SiteFamily>(["JVMOEBEL", "XL", "HOOD", "KAUFLAND", "OTTO"]);
 const PUBLISHABLE_XL_SITE_ID = "xlmoebel_de";
 const JV_SITE_KEY_BY_MARKETPLACE_SITE_ID = {
   "jvmoebel-de": "JV_DE",
@@ -171,6 +171,8 @@ function buildOttoDraft(product: Record<string, unknown>, fallback: OttoCreatePr
     productReference: readOttoText(product.productReference) || fallback.productReference,
     sku: readOttoText(product.sku) || fallback.sku,
     ean: readOttoText(product.ean) || fallback.ean,
+    price: readOttoText((product.pricing as Record<string, unknown> | undefined)?.standardPrice && ((product.pricing as Record<string, unknown>).standardPrice as Record<string, unknown>).amount) || fallback.price,
+    deliveryTime: readOttoText((product.delivery as Record<string, unknown> | undefined)?.deliveryTime) || fallback.deliveryTime,
     category: readOttoText(product.category) || readOttoText(description.category) || fallback.category,
     productLine: readOttoText(description.productLine) || readOttoText(description.title) || fallback.productLine,
     description: readOttoText(description.description) || readOttoText(description.text) || fallback.description,
@@ -1147,6 +1149,7 @@ export default function CreateProductPage() {
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
   const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft>>>>({});
   const [ottoCategoryByTab, setOttoCategoryByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const [ottoCategoryNameByTab, setOttoCategoryNameByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
   const [ottoSearchErrors, setOttoSearchErrors] = useState<Partial<Record<OttoProfile, string>>>({});
   const [ottoSearchLoading, setOttoSearchLoading] = useState(false);
@@ -1452,8 +1455,7 @@ export default function CreateProductPage() {
     .filter((site) => PUBLISHABLE_SITE_FAMILIES.has(site.family) && (site.family !== "XL" || site.id === PUBLISHABLE_XL_SITE_ID))
     .map((site) => ({ id: site.id, label: site.name, family: site.family as PublishSiteOption["family"] }));
   const isComingSoonMarketplace = activeTabMeta.marketplace === "EBAY";
-  const isOttoMarketplace = activeTabMeta.marketplace === "OTTO";
-  const canCreateProduct = !isComingSoonMarketplace && !isOttoMarketplace && (activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0);
+  const canCreateProduct = !isComingSoonMarketplace && (activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0);
   const primaryActionLoading = activeTab === "jv" ? sendAllSitesLoading : controller.submitting;
   const primaryActionLabel = primaryActionLoading ? t.createProductCreatingAction : t.createProductCreateAction;
   const tabGalleryItems = useMemo(
@@ -1510,10 +1512,9 @@ export default function CreateProductPage() {
     ? (activeTabMeta.account === "XL" ? "xl" : "jv")
     : null;
   const activeOttoProduct = activeOttoProfile ? ottoProductsByProfile[activeOttoProfile] : undefined;
-  const activeOttoSourceKey = [
-    activeTabMeta.sourceSite === "XL" ? activeXlSourceKey : activeJvSourceKey,
-    readOttoText(activeOttoProduct?.productReference),
-  ].join(":");
+  const activeOttoSourceKey = activeTabMeta.sourceSite === "XL"
+    ? activeXlSourceKey
+    : activeJvSourceKey;
   const activeOttoInitialDraft = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
     ? ottoDraftRefByTab.current[activeTab].draft
     : buildOttoDraft(activeOttoProduct ?? {}, {
@@ -1522,7 +1523,7 @@ export default function CreateProductPage() {
       ean: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       sku: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       productReference: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
-      category: ottoCategoryByTab[activeTab] ?? "",
+      category: ottoCategoryNameByTab[activeTab] ?? "",
     });
 
   useEffect(() => {
@@ -2516,6 +2517,65 @@ export default function CreateProductPage() {
     }, getActiveTabLocalImageFiles());
   }
 
+  function submitOttoCreate(siteIds: string[]) {
+    const draft = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
+      ? ottoDraftRefByTab.current[activeTab].draft
+      : activeOttoInitialDraft;
+    const imageUrls = tabGalleryItems.map((item) => item.src.trim()).filter(Boolean);
+    const productReference = draft.productReference.trim() || draft.sku.trim() || draft.ean.trim();
+    const ean = draft.ean.trim() || controller.ean.trim();
+    const deliveryTime = Number(draft.deliveryTime);
+    if (!Number.isInteger(deliveryTime) || deliveryTime < 1) {
+      showToast("Enter a delivery time in whole days for OTTO.", "error");
+      return;
+    }
+    const shippingProfileId = draft.shippingProfileId?.trim() ?? "";
+    if (!shippingProfileId) {
+      showToast("Select a shipping profile for OTTO.", "error");
+      return;
+    }
+    const attributeNames = draft.attributeNames ?? {};
+    const attributeEntries = Object.entries({ ...draft.additionalAttributes, ...draft.attributeOverrides })
+      .filter(([, value]) => value.trim());
+    const unresolvedAttributeIds = attributeEntries
+      .map(([attributeId]) => attributeId)
+      .filter((attributeId) => !attributeNames[attributeId]);
+    if (unresolvedAttributeIds.length > 0) {
+      showToast("OTTO attribute names are not loaded yet. Reopen the category and try again.", "error");
+      return;
+    }
+    const attributes = attributeEntries
+      .map(([attributeId, value]) => ({ name: attributeNames[attributeId], values: [value] }));
+    return controller.handleCreateProduct({}, siteIds, {
+      ottoEan: ean,
+      ottoTitle: draft.productLine.trim(),
+      ottoPrice: draft.price.trim() || controller.price.trim(),
+      ottoImageUrls: imageUrls,
+      ottoPayload: {
+        productReference,
+        sku: draft.sku.trim() || productReference,
+        ean,
+        shippingProfileId,
+        productDescription: {
+          category: draft.category.trim(),
+          productLine: draft.productLine.trim(),
+          description: draft.description.trim(),
+          bulletPoints: draft.bulletPoints.map((value) => value.trim()).filter(Boolean),
+          attributes,
+        },
+        mediaAssets: imageUrls.map((location) => ({
+          type: "IMAGE",
+          location,
+          filename: location.split("/").pop() || productReference,
+        })),
+        pricing: { standardPrice: { amount: Number(draft.price || controller.price), currency: "EUR" }, vat: "FULL" },
+        delivery: { type: "PARCEL", deliveryTime },
+        order: { maxOrderQuantity: 1 },
+        compliance: { productSafety: {} },
+      },
+    }, getActiveTabLocalImageFiles());
+  }
+
   function handlePrimaryCreateAction() {
     if (activeTab === "jv") {
       return void handleSendToAllJvSites();
@@ -2555,6 +2615,10 @@ export default function CreateProductPage() {
 
     if (activeTabMeta.marketplace === "KAUFLAND") {
       return void submitKauflandCreate(activeMarketplaceSiteIds);
+    }
+
+    if (activeTabMeta.marketplace === "OTTO") {
+      return void submitOttoCreate(activeMarketplaceSiteIds);
     }
 
     return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
@@ -2623,6 +2687,11 @@ export default function CreateProductPage() {
 
       if (activeTabMeta.marketplace === "KAUFLAND") {
         void submitKauflandCreate(selectedNonJvSiteIds);
+        return;
+      }
+
+      if (activeTabMeta.marketplace === "OTTO") {
+        void submitOttoCreate(selectedNonJvSiteIds);
         return;
       }
 
@@ -2836,7 +2905,8 @@ export default function CreateProductPage() {
                     <OttoCreateProductPanel
                       initialDraft={activeOttoInitialDraft}
                       draftKey={activeOttoSourceKey}
-                      categoryId={ottoCategoryByTab[activeTab] ?? activeOttoInitialDraft.category}
+                      categoryId={ottoCategoryByTab[activeTab] ?? ""}
+                      categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
                       productAttributes={readOttoProductAttributes(activeOttoProduct)}
                       onDraftChange={(draft) => {
                         ottoDraftRefByTab.current[activeTab] = { sourceKey: activeOttoSourceKey, draft };
@@ -2878,13 +2948,10 @@ export default function CreateProductPage() {
                 />
                 {activeTabMeta.marketplace === "OTTO" ? (
                   <OttoCategoriesPanel
-                    selectedCategory={activeOttoInitialDraft.category}
+                    selectedCategoryId={ottoCategoryByTab[activeTab] ?? ""}
                     onSelectedCategoryChange={(category) => {
-                      setOttoCategoryByTab((current) => ({ ...current, [activeTab]: category }));
-                      ottoDraftRefByTab.current[activeTab] = {
-                        sourceKey: activeOttoSourceKey,
-                        draft: { ...activeOttoInitialDraft, category },
-                      };
+                      setOttoCategoryByTab((current) => ({ ...current, [activeTab]: category.id }));
+                      setOttoCategoryNameByTab((current) => ({ ...current, [activeTab]: category.name }));
                     }}
                   />
                 ) : null}

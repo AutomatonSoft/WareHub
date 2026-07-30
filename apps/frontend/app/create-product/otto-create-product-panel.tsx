@@ -7,30 +7,36 @@ import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
+import { OTTO_SHIPPING_PROFILES } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
 
 export type OttoCreateProductDraft = {
   productReference: string;
   sku: string;
   ean: string;
+  price: string;
+  deliveryTime: string;
+  shippingProfileId: string;
   category: string;
   productLine: string;
   description: string;
   bulletPoints: string[];
   additionalAttributes: Record<string, string>;
   attributeOverrides: Record<string, string>;
+  attributeNames: Record<string, string>;
   removedAttributeIds: string[];
 };
 
 export const EMPTY_OTTO_CREATE_PRODUCT_DRAFT: OttoCreateProductDraft = {
-  productReference: "", sku: "", ean: "", category: "", productLine: "", description: "",
-  bulletPoints: [], additionalAttributes: {}, attributeOverrides: {}, removedAttributeIds: [],
+  productReference: "", sku: "", ean: "", price: "", deliveryTime: "", shippingProfileId: "", category: "", productLine: "", description: "",
+  bulletPoints: [], additionalAttributes: {}, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: [],
 };
 
 type Props = {
   initialDraft: OttoCreateProductDraft;
   draftKey: string;
   categoryId: string;
+  categoryName: string;
   productAttributes: unknown;
   onDraftChange: (draft: OttoCreateProductDraft) => void;
 };
@@ -67,7 +73,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, productAttributes, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
   const [draft, setDraft] = useState(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const sourceDraftRef = useRef(initialDraft);
@@ -78,22 +84,37 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
   useEffect(() => { setDraft(sourceDraftRef.current); onDraftChangeRef.current(sourceDraftRef.current); }, [draftKey]);
   useEffect(() => {
     setDraft((current) => {
-      if (current.category === categoryId) return current;
-      const next = { ...current, category: categoryId };
+      if (!categoryName || current.category === categoryName) return current;
+      const next = { ...current, category: categoryName };
       onDraftChangeRef.current(next);
       return next;
     });
-  }, [categoryId]);
+  }, [categoryName]);
   useEffect(() => {
-    if (!draft.category) { setCategoryAttributes([]); return; }
+    if (!categoryId) { setCategoryAttributes([]); return; }
     let active = true;
-    void fetchOttoCategoryAttributes(draft.category).then((items) => {
+    void fetchOttoCategoryAttributes(categoryId).then((items) => {
       if (active) setCategoryAttributes(items);
     }).catch(() => {
       if (active) setCategoryAttributes([]);
     });
     return () => { active = false; };
-  }, [draft.category]);
+  }, [categoryId]);
+  useEffect(() => {
+    const attributeNames = Object.fromEntries(
+      normalizeProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
+    );
+    if (Object.keys(attributeNames).length === 0) return;
+    setDraft((current) => {
+      const missingNames = Object.fromEntries(
+        Object.entries(attributeNames).filter(([attributeId, name]) => current.attributeNames[attributeId] !== name),
+      );
+      if (Object.keys(missingNames).length === 0) return current;
+      const next = { ...current, attributeNames: { ...current.attributeNames, ...missingNames } };
+      onDraftChangeRef.current(next);
+      return next;
+    });
+  }, [productAttributes]);
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     setDraft((current) => { const next = { ...current, [key]: value }; onDraftChange(next); return next; });
@@ -112,11 +133,27 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
     !selectedAttributeNames.has(attribute.name.trim().toLocaleLowerCase()) && !(attribute.id in draft.additionalAttributes),
   );
   const additionalAttributes = categoryAttributes.filter((attribute) => attribute.id in draft.additionalAttributes);
-  const updateAdditionalAttribute = (attributeId: string, value: string) => {
-    update("additionalAttributes", { ...draft.additionalAttributes, [attributeId]: value });
+  const updateAdditionalAttribute = (attribute: OttoCategoryAttribute, value: string) => {
+    setDraft((current) => {
+      const next = {
+        ...current,
+        additionalAttributes: { ...current.additionalAttributes, [attribute.id]: value },
+        attributeNames: { ...current.attributeNames, [attribute.id]: attribute.name },
+      };
+      onDraftChange(next);
+      return next;
+    });
   };
-  const updateProductAttribute = (attributeId: string, value: string) => {
-    update("attributeOverrides", { ...draft.attributeOverrides, [attributeId]: value });
+  const updateProductAttribute = (attribute: OttoProductAttribute, value: string) => {
+    setDraft((current) => {
+      const next = {
+        ...current,
+        attributeOverrides: { ...current.attributeOverrides, [attribute.id]: value },
+        attributeNames: { ...current.attributeNames, [attribute.id]: attribute.label },
+      };
+      onDraftChange(next);
+      return next;
+    });
   };
   const removeProductAttribute = (attributeId: string) => {
     update("removedAttributeIds", [...draft.removedAttributeIds, attributeId]);
@@ -134,6 +171,20 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
         <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
         <Field label="EAN"><Input value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
+      <Field label="Price (EUR)"><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+      <Field label="Delivery time (days)"><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
+      <Field label="Shipping profile">
+        <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>
+          <SelectTrigger><SelectValue placeholder="Select shipping profile" /></SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {OTTO_SHIPPING_PROFILES.map((profile) => (
+                <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
       <div className="grid gap-3">
         {bulletPoints.map((bulletPoint, index) => (
           <Field key={`bullet-${index}`} label={`Bullet point ${index + 1}`}>
@@ -150,7 +201,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
               value=""
               onValueChange={(attributeId) => {
                 const attribute = categoryAttributes.find((item) => item.id === attributeId);
-                if (attribute) updateAdditionalAttribute(attribute.id, "");
+                if (attribute) updateAdditionalAttribute(attribute, "");
               }}
               disabled={!draft.category || availableCategoryAttributes.length === 0}
             >
@@ -168,7 +219,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
               <div key={attribute.id} className="flex min-w-0 flex-col gap-1">
                 <dt className="text-xs font-medium text-muted-foreground">{attribute.label}</dt>
                 <dd className="flex min-w-0 gap-2">
-                  <Input value={attribute.value} onChange={(event) => updateProductAttribute(attribute.id, event.target.value)} />
+                  <Input value={attribute.value} onChange={(event) => updateProductAttribute(attribute, event.target.value)} />
                   <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${attribute.label}`} onClick={() => removeProductAttribute(attribute.id)}>
                     <Trash2 />
                   </Button>
@@ -184,7 +235,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, pro
                   <div className="flex min-w-0 gap-2">
                     <Input
                       value={draft.additionalAttributes[attribute.id] ?? ""}
-                      onChange={(event) => updateAdditionalAttribute(attribute.id, event.target.value)}
+                      onChange={(event) => updateAdditionalAttribute(attribute, event.target.value)}
                       placeholder={attribute.unit || attribute.type}
                     />
                     <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${attribute.name}`} onClick={() => removeAdditionalAttribute(attribute.id)}>

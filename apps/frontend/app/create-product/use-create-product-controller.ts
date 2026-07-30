@@ -624,12 +624,24 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       kauflandPrice?: string;
       kauflandFields?: MainKauflandCreateFields;
       kauflandOverrides?: Record<string, unknown>;
+      ottoEan?: string;
+      ottoTitle?: string;
+      ottoPrice?: string;
+      ottoImageUrls?: string[];
+      ottoPayload?: Record<string, unknown>;
     },
     uploadedImageFiles?: File[],
   ) {
     const draftInput = publishDraft?.kauflandEan !== undefined
       ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
-      : { ean, price, productName, imagesText };
+      : publishDraft?.ottoEan !== undefined
+        ? {
+            ean: publishDraft.ottoEan,
+            price: publishDraft.ottoPrice ?? "",
+            productName: publishDraft.ottoTitle ?? "",
+            imagesText: (publishDraft.ottoImageUrls ?? []).join("\n"),
+          }
+        : { ean, price, productName, imagesText };
     const baseValidation = validateCreateProductInput(draftInput);
     if (!baseValidation.isValid) {
       const invalidFields = [
@@ -642,6 +654,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
     const hasHoodSelection = selectedSiteIds.some((siteId) => siteId.startsWith("hood-"));
     const hasKauflandSelection = selectedSiteIds.some((siteId) => siteId.startsWith("kaufland-"));
+    const hasOttoSelection = selectedSiteIds.some((siteId) => siteId.startsWith("otto-"));
     const hasXljvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-") || siteId === "xlmoebel_de");
     const hoodErrors = hasHoodSelection ? validateHoodCreateFields(hoodFields) : {};
     const effectiveKauflandFields = publishDraft?.kauflandFields ?? mainKauflandFields;
@@ -688,6 +701,37 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           }));
         }
         imageUrls = Array.from(new Set(uploadedImageUrls));
+      } else if (hasOttoSelection) {
+        const uploadedImageUrls: string[] = [];
+        if (effectiveImageFiles.length > 0) {
+          const uploadResult = await xljvUploadImages({
+            site: "OTTO",
+            ean: normalized.ean,
+            files: effectiveImageFiles,
+          });
+          if (!uploadResult.response.ok) {
+            throw new Error(String(uploadResult.payload.detail || `OTTO image upload failed: HTTP ${uploadResult.response.status}`));
+          }
+          uploadedImageUrls.push(...(Array.isArray(uploadResult.payload.uploaded_image_urls)
+            ? uploadResult.payload.uploaded_image_urls.map((value) => String(value || "").trim()).filter(Boolean)
+            : []));
+        }
+        const remoteImageUrls = imageUrls.filter((value) => /^https?:\/\//i.test(value));
+        if (remoteImageUrls.length > 0) {
+          const uploadResult = await xljvUploadImages({
+            site: "OTTO",
+            ean: normalized.ean,
+            files: [],
+            sourceUrls: remoteImageUrls,
+          });
+          if (!uploadResult.response.ok) {
+            throw new Error(String(uploadResult.payload.detail || `OTTO remote image upload failed: HTTP ${uploadResult.response.status}`));
+          }
+          uploadedImageUrls.push(...(Array.isArray(uploadResult.payload.uploaded_image_urls)
+            ? uploadResult.payload.uploaded_image_urls.map((value) => String(value || "").trim()).filter(Boolean)
+            : []));
+        }
+        imageUrls = Array.from(new Set(uploadedImageUrls));
       } else if (effectiveImageFiles.length > 0) {
         const uploadResult = await xljvUploadImages({
           site: "JV",
@@ -730,7 +774,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ...overrideJvFields,
       },
     };
-    const kauflandPayload = {
+      const kauflandPayload = {
       ...publishDraft?.kauflandOverrides,
       ...buildMainKauflandCreatePayload({
         ean: normalized.ean,
@@ -750,8 +794,20 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
               .filter(Boolean),
           }
         : {}),
-    };
-
+      };
+      const requestedOttoPayload = publishDraft?.ottoPayload ?? {};
+      if (hasOttoSelection && Object.keys(requestedOttoPayload).length === 0) {
+        showToast("Complete the OTTO product fields before creating the job.", "error");
+        return;
+      }
+      const ottoPayload = {
+        ...requestedOttoPayload,
+        mediaAssets: imageUrls.map((location) => ({
+          type: "IMAGE",
+          location,
+          filename: location.split("/").pop() || normalized.ean,
+        })),
+      };
       const created = await createMainMarketplaceProductJob({
         ean: normalized.ean,
         productName: normalized.productName,
@@ -763,6 +819,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         xljvPayload,
         hoodPayload,
         kauflandPayload,
+        ottoPayload,
       });
       setLatestJobId(created.jobId);
       showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");

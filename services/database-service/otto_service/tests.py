@@ -14,7 +14,7 @@ from .image_resolver import (
 )
 from .models import OttoProductJV
 from .product_mapper import build_otto_url
-from .serializers import OttoProductJVSerializer
+from .serializers import OttoProductJVSerializer, OttoProductPayloadSerializer
 from .full_cache_sync import OttoFullCacheSyncService, OttoFullCacheSyncSettings
 from .views import OttoCategoriesAPIView, OttoFullCacheSyncAPIView
 
@@ -181,6 +181,18 @@ class OttoFullCacheSyncTests(SimpleTestCase):
 
 
 class OttoExternalProductsClientTests(SimpleTestCase):
+    def test_payload_serializer_accepts_shipping_profile_id(self):
+        serializer = OttoProductPayloadSerializer(data={
+            "productReference": "4021234231234",
+            "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            str(serializer.validated_data["shippingProfileId"]),
+            "786c6468-3baf-52e0-88b5-13757eb7f873",
+        )
+
     def test_fetch_products_uses_external_contract(self):
         session = FakeSession(
             FakeResponse(
@@ -261,15 +273,55 @@ class OttoExternalProductsClientTests(SimpleTestCase):
             connect_timeout=2,
             read_timeout=5,
         )
-        products = [{"productReference": "4021234231234", "sku": "4021234231234"}]
+        products = [{
+            "productReference": "4021234231234",
+            "sku": "4021234231234",
+            "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+            "productDescription": {"category": "Sessel"},
+            "delivery": {"type": "PARCEL", "deliveryTime": 14},
+            "order": {"maxOrderQuantity": 1},
+            "compliance": {"productSafety": {}},
+        }]
 
-        payload = client.create_or_update_products(controller="xl", products=products)
+        payload = client.create_or_update_products(controller="jv", products=products)
 
         self.assertEqual(payload, "updated")
         self.assertEqual(session.calls[0][0], ("https://otto.example.test/extermal/create_or_update_product",))
-        self.assertEqual(session.calls[0][1]["params"], {"controller": "xl"})
-        self.assertEqual(session.calls[0][1]["json"], products)
+        self.assertEqual(session.calls[0][1]["params"], {"controller": "jv"})
+        self.assertEqual(session.calls[0][1]["json"], [{
+            "productReference": "4021234231234",
+            "sku": "4021234231234",
+            "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+            "productDescriprion": {"category": "Sessel"},
+            "delivery": {"type": "PARCEL", "deliveryTime": 14},
+            "maxOrderQuantity": 1,
+            "compliace": {"productSafety": {}},
+        }])
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
+
+    def test_create_or_update_products_keeps_standard_keys_for_xl(self):
+        session = FakeSession(FakeResponse(payload="updated"))
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+        products = [{
+            "productReference": "4021234231234",
+            "productDescription": {"category": "Sessel"},
+            "compliance": {"productSafety": {}},
+            "order": {"maxOrderQuantity": 1},
+        }]
+
+        client.create_or_update_products(controller="xl", products=products)
+
+        self.assertEqual(session.calls[0][1]["json"], [{
+            "productReference": "4021234231234",
+            "productDescription": {"category": "Sessel"},
+            "compliance": {"productSafety": {}},
+            "maxOrderQuantity": 1,
+        }])
 
     def test_set_active_state_uses_activate_and_deactivate_contracts(self):
         session = FakeSession(FakeResponse(payload={"success": True, "active": True}))

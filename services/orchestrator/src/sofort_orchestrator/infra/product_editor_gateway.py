@@ -56,6 +56,12 @@ class ProductEditorGateway:
         response = self.http.request("POST", url, headers=headers, json={"ean": ean, "controller": controller, **payload})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_otto_by_sku(self, *, sku: str, profile: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id)
+        url = f"{self.base_url}/api/v1/otto/{profile}/products/by-sku/{sku}/"
+        response = self.http.request("GET", url, headers=headers)
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/jv/sites/by-artikelnr/{ean}/"

@@ -295,9 +295,7 @@ def build_product_editor_groups() -> list[ProductEditorGroup]:
             id=ProductEditorGroupId.OTTO,
             label="OTTO",
             description="Otto marketplace accounts.",
-            capabilities=ProductEditorCapability(discover=True),
-            read_only=True,
-            planned=True,
+            capabilities=ProductEditorCapability(discover=True, load=True, plan=True, apply=True, job_status=True),
             targets=otto_targets,
         ),
         ProductEditorGroup(
