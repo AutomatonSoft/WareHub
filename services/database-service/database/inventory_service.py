@@ -10,7 +10,7 @@ from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
 from .ftp_upload import normalize_managed_public_photo_value
-from .models import Kid, Orders
+from .models import EanStatus, Kid, Orders
 from .order_amounts import parse_order_amount
 
 logger = logging.getLogger(__name__)
