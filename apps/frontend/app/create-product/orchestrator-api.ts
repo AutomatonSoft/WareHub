@@ -48,6 +48,10 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.hood,
       account,
+      // HOOD requires an EAN that is unique in its catalogue. The source
+      // product EAN may already exist there, so every HOOD publication gets
+      // its own reserved number from the EAN pool.
+      ean_source: "pool",
       changed_fields: [
         "title",
         "price",
@@ -76,7 +80,7 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.otto,
       profile: account,
-      changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets"]
+      changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets", "shippingProfileId"]
     };
   }
 
@@ -205,9 +209,12 @@ export async function createMainMarketplaceProductJob(input: {
   description: string;
   price: string;
   imageUrls: string[];
+  kidNumber?: string;
+  selectedSiteIds: string[];
   xljvPayload: Record<string, unknown>;
   hoodPayload: Record<string, unknown>;
   kauflandPayload: Record<string, unknown>;
+  ottoPayload: Record<string, unknown>;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const xljvChangedFields = [
     "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
@@ -216,7 +223,10 @@ export async function createMainMarketplaceProductJob(input: {
     "title", "description", "price", "quantity", "categoryID", "condition", "itemMode", "itemNumber", "images", "productProperties",
   ];
   const kauflandChangedFields = [
-    "title", "description", "picture", "price", "size", "color", "material", "delivery", "height", "length", "width", "amount", "id_offer", "storefronts",
+    "title", "short_description", "description", "picture", "price", "size", "color", "material", "delivery", "height", "length", "width", "amount", "id_offer", "storefronts",
+  ];
+  const ottoChangedFields = [
+    "productReference", "sku", "ean", "pzn", "mpn", "moin", "releaseDate", "productDescription", "mediaAssets", "delivery", "order", "pricing", "logistics", "compliance", "shippingProfileId",
   ];
   const primaryImage = input.imageUrls[0] || "";
   const payload = {
@@ -231,53 +241,65 @@ export async function createMainMarketplaceProductJob(input: {
     image: primaryImage,
     ...input.xljvPayload,
   };
-  const channels: OrchestratorChannel[] = [
-    {
-      marketplace: Marketplace.xljv,
-      site: "JV",
-      site_key: "JV_DE",
-      changed_fields: xljvChangedFields,
-    },
-    {
-      marketplace: Marketplace.xljv,
-      site: "XL",
-      site_key: "XLMOEBEL_DE",
-      changed_fields: xljvChangedFields,
-    },
-    {
-      marketplace: Marketplace.hood,
-      account: "jv",
-      changed_fields: hoodChangedFields,
-      overrides: input.hoodPayload,
-    },
-    {
-      marketplace: Marketplace.hood,
-      account: "xl",
-      changed_fields: hoodChangedFields,
-      overrides: input.hoodPayload,
-      ean_source: "pool",
-    },
-    {
-      marketplace: Marketplace.kaufland,
-      account: "jv",
-      changed_fields: kauflandChangedFields,
-      overrides: input.kauflandPayload,
-    },
-    {
-      marketplace: Marketplace.kaufland,
-      account: "xl",
-      changed_fields: kauflandChangedFields,
-      overrides: input.kauflandPayload,
-      ean_source: "pool",
-    },
-  ];
+  const channels: OrchestratorChannel[] = [];
+  for (const siteId of [...new Set(input.selectedSiteIds)]) {
+    const site = allMarketplaceSites.find((item) => item.id === siteId);
+    if (!site) continue;
+
+    if (site.family === "JVMOEBEL") {
+      const siteKey = site.id.replace("jvmoebel-", "JV_").toUpperCase().replace("UK", "CO_UK");
+      channels.push({ marketplace: Marketplace.xljv, site: "JV", site_key: siteKey, changed_fields: xljvChangedFields });
+      continue;
+    }
+    if (site.family === "XL") {
+      const siteKey = xlSiteKeys.find((value) => value.toLowerCase() === site.id);
+      if (siteKey) channels.push({ marketplace: Marketplace.xljv, site: "XL", site_key: siteKey, changed_fields: xljvChangedFields });
+      continue;
+    }
+    if (site.family === "HOOD") {
+      channels.push({
+        marketplace: Marketplace.hood,
+        account: site.kind.toLowerCase(),
+        changed_fields: hoodChangedFields,
+        overrides: input.hoodPayload,
+        ean_source: "pool",
+      });
+      continue;
+    }
+    if (site.family === "KAUFLAND") {
+      channels.push({
+        marketplace: Marketplace.kaufland,
+        account: site.kind.toLowerCase(),
+        changed_fields: kauflandChangedFields,
+        overrides: input.kauflandPayload,
+        ean_source: "pool",
+      });
+      continue;
+    }
+    if (site.family === "OTTO") {
+      channels.push({
+        marketplace: Marketplace.otto,
+        profile: site.kind.toLowerCase(),
+        changed_fields: ottoChangedFields,
+        overrides: input.ottoPayload,
+      });
+    }
+  }
+  if (channels.length === 0) {
+    throw new ApiError("No supported marketplace sites selected.", 400);
+  }
 
   const response = await apiFetch("/api/v1/orchestrator/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: Operation.publish, payload, channels },
+      command: {
+        operation: Operation.publish,
+        payload,
+        channels,
+        ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+      },
     }),
   });
   const raw = (await response.json()) as Record<string, unknown>;

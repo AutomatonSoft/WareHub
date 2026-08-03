@@ -18,6 +18,7 @@ from database.marketplace_deactivate_service import (
     deactivate_hood_by_kid_number,
     deactivate_jv_sofort_by_kid_number,
     deactivate_kaufland_by_kid_number,
+    deactivate_otto_by_kid_number,
     deactivate_marketplaces_by_kid_number,
     deactivate_xl_by_kid_number,
     toggle_local_marketplace_statuses_by_kid_number,
@@ -163,6 +164,30 @@ class MarketplaceKauflandToggleByKidAPIView(APIView):
             actor=actor,
             place=validated.get("place"),
         )
+        return Response(result["payload"], status=result["status_code"])
+
+
+class MarketplaceOttoToggleByKidAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        actor = session_actor(request)
+        serializer = MarketplaceDeactivateByKidSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        result = deactivate_otto_by_kid_number(
+            kid_number=str(validated["kid_number"]).strip(),
+            inactive=bool(validated.get("inactive", True)),
+            actor=actor,
+            place=validated.get("place"),
+        )
+        if 200 <= result["status_code"] < 300:
+            _record_marketplace_change(
+                request,
+                kid_number=str(validated["kid_number"]).strip(),
+                inactive=bool(validated.get("inactive", True)),
+                channel="OTTO",
+            )
         return Response(result["payload"], status=result["status_code"])
 
 

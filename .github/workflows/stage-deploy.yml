@@ -171,7 +171,7 @@ jobs:
       STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
       STAGE_PROJECT_NAME: warehub-stage
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
-      STAGE_EXPECTED_SERVICE_COUNT: "8"
+      STAGE_EXPECTED_SERVICE_COUNT: "9"
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
 
     steps:
@@ -278,6 +278,9 @@ jobs:
           AFTERBUY_XL_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_XL_ACCOUNT_TOKEN }}
           AFTERBUY_CH_PARTNER_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_PARTNER_TOKEN }}
           AFTERBUY_CH_ACCOUNT_TOKEN_SECRET: ${{ secrets.AFTERBUY_CH_ACCOUNT_TOKEN }}
+          STAGE_MONGO_USER_SECRET: ${{ secrets.STAGE_MONGO_USER }}
+          STAGE_MONGO_PASSWORD_SECRET: ${{ secrets.STAGE_MONGO_PASSWORD }}
+          STAGE_MONGO_DATABASE_SECRET: ${{ secrets.STAGE_MONGO_DATABASE }}
           TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
@@ -307,6 +310,9 @@ jobs:
             printf 'AFTERBUY_XL_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_XL_ACCOUNT_TOKEN_SECRET:-}"
             printf 'AFTERBUY_CH_PARTNER_TOKEN=%s\n' "${AFTERBUY_CH_PARTNER_TOKEN_SECRET:-}"
             printf 'AFTERBUY_CH_ACCOUNT_TOKEN=%s\n' "${AFTERBUY_CH_ACCOUNT_TOKEN_SECRET:-}"
+            printf 'STAGE_MONGO_USER=%s\n' "${STAGE_MONGO_USER_SECRET:-}"
+            printf 'STAGE_MONGO_PASSWORD=%s\n' "${STAGE_MONGO_PASSWORD_SECRET:-}"
+            printf 'STAGE_MONGO_DATABASE=%s\n' "${STAGE_MONGO_DATABASE_SECRET:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/stage/env.stage.sanitized.template \
@@ -424,7 +430,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/stage"
           BACKUP_ROOT="/opt/warehub/backups/stage"
           EXPECTED_GATEWAY_PORT="8940"
-          EXPECTED_SERVICE_COUNT="8"
+          EXPECTED_SERVICE_COUNT="9"
 
           candidate_dir="$(mktemp -d /tmp/warehub-stage-deploy.XXXXXXXX)"
           cleanup() {
@@ -570,6 +576,10 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services telegram_notifier orchestrator
 
           echo "=== APPLY STAGE MIGRATIONS ==="
+          # MongoDB is a persistent dependency and is intentionally not recreated with app services.
+          # Start it explicitly so a newly introduced Mongo-backed feature is available after deploy.
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build mongodb
+
           for attempt in $(seq 1 10); do
             if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate; then
               break

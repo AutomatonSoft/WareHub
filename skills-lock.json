@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "nextjs-motion-animations": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "2fcee0a7d3208370b710ee4f67fde44b8dd676b1b07c54f32f94e6ca3f3536c0"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",

@@ -51,8 +51,20 @@ services:
     volumes:
       - warehub_rabbitmq_data:/var/lib/rabbitmq
 
+  warehub-mongodb:
+    image: mongo:8.0
+    container_name: warehub-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${DEV_MONGO_USER:?DEV_MONGO_USER must be set}"
+      MONGO_INITDB_ROOT_PASSWORD: "${DEV_MONGO_PASSWORD:?DEV_MONGO_PASSWORD must be set}"
+    ports:
+      - "${DEV_MONGO_PORT:-8938}:27017"
+    volumes:
+      - warehub_mongodb_data:/data/db
+
 volumes:
   warehub_postgres_data:
   warehub_redis_data:
   warehub_minio_data:
   warehub_rabbitmq_data:
+  warehub_mongodb_data:

@@ -136,7 +136,7 @@ export async function xljvTakeNextEan(): Promise<{ response: Response; payload: 
 }
 
 export async function xljvUploadImages(params: {
-  site: Site;
+  site: Site | "OTTO";
   siteKey?: string;
   ean?: string;
   artikelnr?: string;

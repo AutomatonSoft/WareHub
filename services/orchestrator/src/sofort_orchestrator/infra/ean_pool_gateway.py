@@ -15,17 +15,51 @@ class EanPoolGateway:
         self.http = http_client
         self.service_auth_token = service_auth_token
 
-    def claim_for_job(self, *, job_id: str, request_id: str) -> str:
-        payload = self._post(path="/api/v1/ean-pool/claim-for-job/", job_id=job_id, request_id=request_id)
+    def claim_for_job(
+        self,
+        *,
+        job_id: str,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> str:
+        payload = self._post(
+            path="/api/v1/ean-pool/claim-for-job/",
+            job_id=job_id,
+            request_id=request_id,
+            kid_number=kid_number,
+            reservation_family=reservation_family,
+        )
         ean = str(payload.get("ean") or "").strip()
         if not ean:
             raise EanPoolGatewayError("EAN pool allocation response did not contain an EAN.")
         return ean
 
-    def mark_used_for_job(self, *, job_id: str, request_id: str) -> None:
-        self._post(path="/api/v1/ean-pool/mark-job-used/", job_id=job_id, request_id=request_id)
+    def mark_used_for_job(
+        self,
+        *,
+        job_id: str,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> None:
+        self._post(
+            path="/api/v1/ean-pool/mark-job-used/",
+            job_id=job_id,
+            request_id=request_id,
+            kid_number=kid_number,
+            reservation_family=reservation_family,
+        )
 
-    def _post(self, *, path: str, job_id: str, request_id: str) -> dict[str, Any]:
+    def _post(
+        self,
+        *,
+        path: str,
+        job_id: str,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> dict[str, Any]:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
@@ -33,7 +67,11 @@ class EanPoolGateway:
             "POST",
             f"{self.base_url}{path}",
             headers=headers,
-            json={"job_id": job_id},
+            json={
+                "job_id": job_id,
+                **({"kid_number": kid_number} if kid_number else {}),
+                **({"reservation_family": reservation_family} if reservation_family else {}),
+            },
         )
         if not 200 <= response.status_code < 300:
             raise EanPoolGatewayError(f"EAN pool request failed with HTTP {response.status_code}.")

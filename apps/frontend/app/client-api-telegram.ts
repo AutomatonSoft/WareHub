@@ -99,3 +99,12 @@ export async function revokeTelegramAccess(bindingId: number): Promise<TelegramA
   }
   return (await response.json()) as TelegramAccessEntry;
 }
+
+export async function deleteTelegramAccess(bindingId: number): Promise<void> {
+  const response = await requestServices(`/api/v1/services/telegram/access/${bindingId}/`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw await parseFailure(response, `Delete telegram access failed: HTTP ${response.status}`);
+  }
+}

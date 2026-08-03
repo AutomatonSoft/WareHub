@@ -14,7 +14,7 @@ class FakeSyncClient:
         self.calls: list[dict] = []
         self.closed = False
 
-    def request(self, method, url, *, headers, params=None, json=None, timeout=None):
+    def request(self, method, url, *, headers, params=None, json=None, **kwargs):
         self.calls.append(
             {
                 "method": method,
@@ -22,7 +22,8 @@ class FakeSyncClient:
                 "headers": headers,
                 "params": params,
                 "json": json,
-                "timeout": timeout,
+                "timeout": kwargs.get("timeout"),
+                "has_timeout_override": "timeout" in kwargs,
             }
         )
         return httpx.Response(200, json={"ok": True}, request=httpx.Request(method, url))
@@ -53,6 +54,7 @@ def test_http_client_reuses_single_httpx_client(monkeypatch):
     assert created_clients[0].limits.max_connections == 20
     assert created_clients[0].limits.max_keepalive_connections == 10
     assert len(created_clients[0].calls) == 2
+    assert created_clients[0].calls[0]["has_timeout_override"] is False
 
     client.close()
 
@@ -77,3 +79,20 @@ def test_http_client_recreates_httpx_client_after_close(monkeypatch):
     assert len(created_clients) == 2
     assert created_clients[0].closed is True
     assert created_clients[1].closed is False
+
+
+def test_http_client_passes_only_explicit_timeout_override(monkeypatch):
+    created_clients: list[FakeSyncClient] = []
+
+    def fake_client_factory(*, timeout, trust_env, limits):
+        client = FakeSyncClient(timeout=timeout, trust_env=trust_env, limits=limits)
+        created_clients.append(client)
+        return client
+
+    monkeypatch.setattr(http_client_module.httpx, "Client", fake_client_factory)
+
+    client = HttpClient(timeout_seconds=8, retries=0)
+    client.request("GET", "http://example.test/one", headers={"X-Request-Id": "r1"}, timeout_seconds=3)
+
+    assert created_clients[0].calls[0]["has_timeout_override"] is True
+    assert created_clients[0].calls[0]["timeout"] == 3

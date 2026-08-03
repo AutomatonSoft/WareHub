@@ -12,6 +12,7 @@ class GatewayResult:
 
 
 class ProductEditorGateway:
+    _JV_REQUEST_TIMEOUT_SECONDS = 45
     def __init__(self, base_url: str, http_client: HttpClient, service_auth_token: str = "") -> None:
         self.base_url = base_url
         self.http = http_client
@@ -55,22 +56,28 @@ class ProductEditorGateway:
         response = self.http.request("POST", url, headers=headers, json={"ean": ean, "controller": controller, **payload})
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_otto_by_sku(self, *, sku: str, profile: str, request_id: str) -> GatewayResult:
+        headers = self._headers(request_id)
+        url = f"{self.base_url}/api/v1/otto/{profile}/products/by-sku/{sku}/"
+        response = self.http.request("GET", url, headers=headers)
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/jv/sites/by-artikelnr/{ean}/"
-        response = self.http.request("GET", url, headers=headers, params={"site": "JV"})
+        response = self.http.request("GET", url, headers=headers, params={"site": "JV"}, timeout_seconds=self._JV_REQUEST_TIMEOUT_SECONDS)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/jv/products/local-by-artikelnr/{ean}/"
-        response = self.http.request("GET", url, headers=headers, params={"site": "JV", "site_key": site_key})
+        response = self.http.request("GET", url, headers=headers, params={"site": "JV", "site_key": site_key}, timeout_seconds=self._JV_REQUEST_TIMEOUT_SECONDS)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def sync_jv_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id, content_type="application/json")
         url = f"{self.base_url}/api/v1/jv/products/sync-by-artikelnr/{ean}/"
-        response = self.http.request("POST", url, headers=headers, params={"site": "JV", "site_key": site_key}, json={})
+        response = self.http.request("POST", url, headers=headers, params={"site": "JV", "site_key": site_key}, json={}, timeout_seconds=self._JV_REQUEST_TIMEOUT_SECONDS)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict) -> GatewayResult:

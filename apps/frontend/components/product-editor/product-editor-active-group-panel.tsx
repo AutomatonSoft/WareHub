@@ -3,6 +3,7 @@ import { findGroup, hasActionableHoodTarget, hasActionableJvTarget } from "./pro
 import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
 import { ProductEditorKauflandPanel } from "./product-editor-kaufland-panel";
+import { ProductEditorOttoPanel } from "./product-editor-otto-panel";
 import { ProductEditorXlPanel } from "./product-editor-xl-panel";
 import { getProductEditorPlaceholderDetails, getProductEditorTabCopy } from "./product-editor-copy";
 import { ProductEditorEmptyPanel, ProductEditorPlaceholderPanel } from "./product-editor-shared-panels";
@@ -12,6 +13,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorJvDraft,
   ProductEditorKauflandDraft,
+  ProductEditorOttoDraft,
   ProductEditorJobResponse,
   ProductEditorPlanResponse
 } from "./product-editor-types";
@@ -49,6 +51,11 @@ export function ProductEditorActiveGroupPanel(input: {
   searching: boolean;
   onChangeEan: (value: string) => void;
   onSearch: () => void;
+  discoveryItems: Array<{
+    label: string;
+    ean: string;
+    status: "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+  }>;
   hasLocalLoadedHood: boolean;
   hasLocalLoadedJv: boolean;
   jvBatchApplyLoading: boolean;
@@ -64,6 +71,13 @@ export function ProductEditorActiveGroupPanel(input: {
   kauflandApplyLoading: boolean;
   onPatchKaufland: (patch: Partial<ProductEditorKauflandDraft>) => void;
   onApplyKauflandEditedProducts: () => void;
+  ottoDraft: ProductEditorOttoDraft;
+  ottoWarnings: ProductEditorDiscoverResponse["warnings"];
+  ottoLoading: boolean;
+  ottoChangedFields: string[];
+  ottoApplyLoading: boolean;
+  onPatchOtto: (patch: Partial<ProductEditorOttoDraft>) => void;
+  onApplyOttoEditedProducts: () => void;
 }) {
   const t = useLabels();
   const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
@@ -89,6 +103,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -102,6 +117,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -144,6 +160,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -157,6 +174,7 @@ export function ProductEditorActiveGroupPanel(input: {
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
@@ -205,17 +223,25 @@ export function ProductEditorActiveGroupPanel(input: {
     if (!input.discover && !input.kauflandDraft.ean) {
       return (
         <ProductEditorEmptyPanel
-          title="Kaufland tab"
-          body="Run discover first so orchestrator can resolve Kaufland JV and XL targets."
+          title={t.productEditorKauflandTabTitle}
+          body={t.productEditorKauflandDiscoverHint}
           eanValue={input.eanValue}
           isEanValid={input.isEanValid}
           searching={input.searching}
           onChangeEan={input.onChangeEan}
           onSearch={input.onSearch}
+          discoveryItems={input.discoveryItems}
         />
       );
     }
     return <ProductEditorKauflandPanel draft={input.kauflandDraft} warnings={input.kauflandWarnings} loading={input.kauflandLoading} applyLoading={input.kauflandApplyLoading} changedFields={input.kauflandChangedFields} onChange={input.onPatchKaufland} onApply={input.onApplyKauflandEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;
+  }
+
+  if (input.activeGroupId === "OTTO") {
+    if (!input.discover && !input.ottoDraft.ean) {
+      return <ProductEditorEmptyPanel title={t.productEditorOttoTabTitle} body={t.productEditorOttoDiscoverHint} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} discoveryItems={input.discoveryItems} />;
+    }
+    return <ProductEditorOttoPanel draft={input.ottoDraft} warnings={input.ottoWarnings} loading={input.ottoLoading} applyLoading={input.ottoApplyLoading} changedFields={input.ottoChangedFields} onChange={input.onPatchOtto} onApply={input.onApplyOttoEditedProducts} />;
   }
 
   const details =
@@ -235,6 +261,7 @@ export function ProductEditorActiveGroupPanel(input: {
       searching={input.searching}
       onChangeEan={input.onChangeEan}
       onSearch={input.onSearch}
+      discoveryItems={input.discoveryItems}
     />
   );
 }

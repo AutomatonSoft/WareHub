@@ -6,9 +6,6 @@ requireAuthEnv(test);
 test("authenticated user can open core pages", async ({ page }) => {
   await login(page);
 
-  await page.goto("/marketplace");
-  await expect(page).toHaveURL(/\/marketplace/);
-
   await page.goto("/profile");
   await expect(page).toHaveURL(/\/profile/);
 });

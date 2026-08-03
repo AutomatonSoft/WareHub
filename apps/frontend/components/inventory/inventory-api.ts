@@ -4,7 +4,7 @@ import type { paths } from "../../lib/api/generated/openapi-types";
 import { readStoredLabel } from "../../app/i18n";
 import { apiFetch } from "../../lib/api/client";
 import { resolveServicesApiBase } from "../../lib/api/services-base";
-import { readAuth } from "../../app/client-api-shared";
+import { authorizedFetch, readAuth } from "../../app/client-api-shared";
 import { syncDatabaseServiceSession } from "../../app/services-session";
 
 export type InventoryRowsApiResponse = InventoryRowsFallbackResponse;
@@ -577,7 +577,7 @@ export async function createMarketplaceToggleJob(kidNumber: string, inactive = t
     ...(place?.trim() ? { place: place.trim() } : {}),
   };
 
-  const response = await apiFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
+  const response = await authorizedFetch("/api/v1/orchestrator/marketplace/toggle-by-kid", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -1019,6 +1019,79 @@ export async function patchKidDetails(params: {
     const payload = await response.json().catch(() => null);
     const { fieldErrors, generalMessage, placeSuggestions } = parseKidRequestErrorPayload(payload);
     throw new CreateKidRequestError(generalMessage || `${inventoryLabel("failedSaveChanges", "Failed to save changes.")}: HTTP ${response.status}`, response.status, fieldErrors, placeSuggestions);
+  }
+}
+
+export async function patchKidComposite(params: {
+  kidId: number;
+  kid: Record<string, unknown>;
+  ean: Record<string, unknown>;
+  productAttributes: Record<string, unknown>;
+}): Promise<void> {
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/composite-update/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kid: params.kid,
+        ean: params.ean,
+        product_attributes: params.productAttributes,
+      }),
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) response = retriedResponse;
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const { fieldErrors, generalMessage, placeSuggestions } = parseKidRequestErrorPayload(payload);
+    throw new CreateKidRequestError(generalMessage || `${inventoryLabel("failedSaveChanges", "Failed to save changes.")}: HTTP ${response.status}`, response.status, fieldErrors, placeSuggestions);
+  }
+}
+
+const MARKETPLACE_STATUS_FIELD_BY_ROW_KEY = {
+  jv: "jv",
+  xl: "xl",
+  ottoJv: "otto_jv",
+  ottoXl: "otto_xl",
+  ebayJv: "ebay_jv",
+  ebayXl: "ebay_xl",
+  kauflandJv: "kaufland_jv",
+  kauflandXl: "kaufland_xl",
+  hoodJv: "hood_jv",
+  hoodXl: "hood_xl",
+} as const;
+
+export type MarketplaceStatusRowKey = keyof typeof MARKETPLACE_STATUS_FIELD_BY_ROW_KEY;
+
+export async function patchKidMarketplaceStatus(params: {
+  kidId: number;
+  marketplace: MarketplaceStatusRowKey;
+  status: boolean;
+}): Promise<void> {
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-status/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        marketplace: MARKETPLACE_STATUS_FIELD_BY_ROW_KEY[params.marketplace],
+        status: params.status,
+      }),
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) {
+      response = retriedResponse;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`${inventoryLabel("failedSaveChanges", "Failed to save changes.")}: HTTP ${response.status}`);
   }
 }
 

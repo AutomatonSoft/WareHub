@@ -1,8 +1,9 @@
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
-from database.inventory_service import load_kid_ean_map
+from database.inventory_service import build_inventory_rows, load_kid_ean_map
+from database.models import Ean, EanStatus, Kid, ProductAttributes
 
 
 class LoadKidEanMapTests(SimpleTestCase):
@@ -38,3 +39,18 @@ class LoadKidEanMapTests(SimpleTestCase):
             "INVENTORY_EAN_MAP_LOAD_FAILED code=inventory_ean_map_load_failed",
             exc_info=True,
         )
+
+
+class BuildInventoryRowsTests(TestCase):
+    def test_uses_joined_one_to_one_relations_for_kid_metadata(self):
+        kid = Kid.objects.create(kid_number=["123456789"])
+        Ean.objects.create(kid=kid, main_ean="4012345678901", jv="JVM4012345678901")
+        EanStatus.objects.create(ean=kid, jv=True)
+        ProductAttributes.objects.create(kid=kid, quantity=2, price="19.99")
+
+        with self.assertNumQueries(2):
+            rows = build_inventory_rows()
+
+        self.assertEqual(rows[0]["main_ean"], "4012345678901")
+        self.assertTrue(rows[0]["ean_status"]["jv"])
+        self.assertEqual(rows[0]["quantity"], 2)

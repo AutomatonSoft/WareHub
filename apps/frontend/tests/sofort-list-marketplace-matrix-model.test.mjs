@@ -52,3 +52,30 @@ test("marketplace matrix model ignores placeholder values", () => {
 
   assert.equal(rows.some((row) => row.hasMatch), false);
 });
+
+test("B-Ware masks OTTO EANs without changing the source values", () => {
+  const rows = buildMarketplaceMatrixRows(
+    {
+      jv: "1111111111111",
+      xl: "2222222222222",
+      ottoJv: "3333333333333",
+      ottoXl: "4444444444444",
+      ebayJv: "5555555555555",
+      ebayXl: "6666666666666",
+      kauflandJv: "7777777777777",
+      kauflandXl: "8888888888888",
+      hoodJv: "9999999999999",
+      hoodXl: "1231231231231"
+    },
+    "",
+    "0000000000000",
+    true,
+  );
+
+  const otto = rows.find((row) => row.market === "OTTO");
+  assert.ok(otto);
+  assert.equal(otto.cells[0].isBWare, true);
+  assert.equal(otto.cells[1].isBWare, true);
+  assert.equal(otto.cells[0].value, "B_WARE");
+  assert.equal(otto.cells[1].value, "B_WARE");
+});

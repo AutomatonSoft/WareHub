@@ -32,14 +32,4 @@ test.describe("visual regression", () => {
     });
   });
 
-  test("marketplace page snapshot", async ({ page }) => {
-    await login(page);
-    await page.goto("/marketplace");
-    await expect(page).toHaveURL(/\/marketplace/);
-    await page.waitForLoadState("networkidle");
-    await expect(page).toHaveScreenshot("marketplace-page.png", {
-      fullPage: true,
-      animations: "disabled"
-    });
-  });
 });

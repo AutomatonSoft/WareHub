@@ -245,6 +245,9 @@ jobs:
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_WEBHOOK_SECRET_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          PROD_MONGO_USER_SECRET: ${{ secrets.PROD_MONGO_USER }}
+          PROD_MONGO_PASSWORD_SECRET: ${{ secrets.PROD_MONGO_PASSWORD }}
+          PROD_MONGO_DATABASE_SECRET: ${{ secrets.PROD_MONGO_DATABASE }}
           TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
@@ -268,6 +271,9 @@ jobs:
             printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "${TELEGRAM_WEBHOOK_SECRET_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_PATH=%s\n' "${TELEGRAM_WEBHOOK_PATH_VALUE:-}"
+            printf 'PROD_MONGO_USER=%s\n' "${PROD_MONGO_USER_SECRET:-}"
+            printf 'PROD_MONGO_PASSWORD=%s\n' "${PROD_MONGO_PASSWORD_SECRET:-}"
+            printf 'PROD_MONGO_DATABASE=%s\n' "${PROD_MONGO_DATABASE_SECRET:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/prod/env.prod.sanitized.template \

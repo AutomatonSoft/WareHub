@@ -21,8 +21,8 @@ import { ProductEditorSection } from "./product-editor-shared-panels";
 export function ProductEditorDescriptionEditor({
   value,
   onChange,
-  title = "Description",
-  subtitle = "Bounded preview and source editing for marketplace HTML."
+  title,
+  subtitle
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -34,9 +34,11 @@ export function ProductEditorDescriptionEditor({
   const hasTechnicalHtml = containsTechnicalDescriptionHtml(value);
   const previewHtml = useMemo(() => sanitizeDescriptionPreviewHtml(value), [value]);
   const fullPreviewHtml = useMemo(() => value.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ""), [value]);
+  const resolvedTitle = title ?? t.descriptionLabel;
+  const resolvedSubtitle = subtitle ?? t.productEditorDescriptionEditorHint;
 
   return (
-    <ProductEditorSection title={title} subtitle={subtitle}>
+    <ProductEditorSection title={resolvedTitle} subtitle={resolvedSubtitle}>
       {hasTechnicalHtml ? (
         <p className="rounded-xl border border-amber-200 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-900 dark:text-amber-200">
           {t.productEditorDescriptionTechnicalHtml}
@@ -72,7 +74,7 @@ export function ProductEditorDescriptionEditor({
         </TabsContent>
         <TabsContent value="full" className="mt-3">
           <ScrollArea className="h-[420px] rounded-xl border border-border bg-background">
-            <iframe title="description-full-template-preview" sandbox="" srcDoc={fullPreviewHtml} className="h-[420px] w-full bg-background" />
+            <iframe title={t.productEditorFullTemplatePreviewAria} sandbox="" srcDoc={fullPreviewHtml} className="h-[420px] w-full bg-background" />
           </ScrollArea>
         </TabsContent>
       </Tabs>
@@ -118,7 +120,11 @@ export function ProductEditorGalleryPanel({
       {!hideHeader ? (
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">{t.productEditorGallerySectionTitle}</CardTitle>
-          <CardDescription>{`Images: ${images.length}${removedImagesCount > 0 ? ` | Removed: ${removedImagesCount}` : ""}`}</CardDescription>
+          <CardDescription>
+            {t.productEditorGallerySummary
+              .replace("{images}", String(images.length))
+              .replace("{removed}", removedImagesCount > 0 ? t.productEditorGalleryRemoved.replace("{count}", String(removedImagesCount)) : "")}
+          </CardDescription>
         </CardHeader>
       ) : null}
       <CardContent className="space-y-3">
@@ -272,11 +278,11 @@ function normalizeGalleryImageKey(value: string): string {
 }
 
 export function ProductEditorAttributesEditor({
-  title = "Artikelmerkmale",
+  title,
   subtitle,
   attributes,
   onChange,
-  emptyText = "No Artikelmerkmale loaded.",
+  emptyText,
   readOnly = false
 }: {
   title?: string;
@@ -287,10 +293,12 @@ export function ProductEditorAttributesEditor({
   readOnly?: boolean;
 }) {
   const t = useLabels();
+  const resolvedTitle = title ?? t.productEditorAttributesTitle;
+  const resolvedEmptyText = emptyText ?? t.productEditorNoArtikelmerkmaleLoaded;
   return (
-    <ProductEditorSection title={title} subtitle={subtitle}>
+    <ProductEditorSection title={resolvedTitle} subtitle={subtitle}>
       {attributes.length === 0 ? (
-        <p className="rounded-xl border border-border bg-muted px-2.5 py-2 text-xs text-muted-foreground">{emptyText === "No Artikelmerkmale loaded." ? t.productEditorNoArtikelmerkmaleLoaded : emptyText}</p>
+        <p className="rounded-xl border border-border bg-muted px-2.5 py-2 text-xs text-muted-foreground">{resolvedEmptyText}</p>
       ) : (
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
           {attributes.map((row, index) => (

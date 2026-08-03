@@ -147,6 +147,18 @@ class FakeProductEditorGateway:
             },
             "xl": {"detail": "not found"},
         }
+        self.otto_by_profile = {
+            "jv": {
+                "product_variations": [{
+                    "productReference": "4012345678901",
+                    "sku": "4012345678901",
+                    "ean": "4012345678901",
+                    "productDescription": {"category": "Desk", "description": "Original"},
+                    "pricing": {"standardPrice": {"amount": 19.99, "currency": "EUR"}},
+                }],
+            },
+            "xl": {"detail": "not found"},
+        }
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
         body = self.fetch_by_account[account]
@@ -172,6 +184,10 @@ class FakeProductEditorGateway:
         self.kaufland_create_calls.append({"ean": ean, "controller": controller, "payload": payload})
         return type("R", (), {"status_code": 201, "body": {"created": True}})()
 
+    def fetch_otto_by_sku(self, *, sku: str, profile: str, request_id: str):
+        body = self.otto_by_profile[profile]
+        return type("R", (), {"status_code": 200 if "product_variations" in body else 404, "body": body})()
+
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str):
         self.jv_sites_calls += 1
         return type("R", (), {"status_code": 200, "body": self.jv_sites})()
@@ -187,7 +203,8 @@ class FakeProductEditorGateway:
 
     def sync_jv_by_ean(self, *, ean: str, site_key: str, request_id: str):
         self.synced_site_keys.add(site_key)
-        return type("R", (), {"status_code": 200, "body": {"created": True, "updated": False}})()
+        body = self.jv_local[f"{site_key}_synced"] if f"{site_key}_synced" in self.jv_local else self.jv_local[site_key]
+        return type("R", (), {"status_code": 200, "body": {"created": True, "updated": False, "item": body}})()
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict):
         self.jv_batch_calls.append({"ean": ean, "payload": payload, "request_id": request_id})
@@ -334,6 +351,77 @@ def test_product_editor_discover_respects_active_group_kaufland(tmp_path):
     assert targets["KAUFLAND_JV"]["status"] == "found"
     assert targets["KAUFLAND_XL"]["status"] == "missing"
     assert gateway.kaufland_fetch_calls == ["jv", "xl"]
+
+
+def test_product_editor_otto_load_and_plan_creates_orchestrator_job(tmp_path):
+    client, _ = _client(tmp_path)
+    discover = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "OTTO"},
+    )
+    assert discover.status_code == 200
+    assert discover.json()["selected_target_ids"] == ["OTTO_JV"]
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "OTTO", "baseline_target_id": "OTTO_JV"},
+    )
+    assert loaded.status_code == 200
+    draft = loaded.json()["draft"]
+    assert draft["productReference"] == "4012345678901"
+
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "OTTO",
+            "changed_fields": ["productDescription"],
+            "draft": {**draft, "productDescription": {"category": "Desk", "description": "Updated"}},
+            "selected_target_ids": ["OTTO_JV"],
+        },
+    )
+    assert planned.status_code == 200
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    assert applied.status_code == 200
+    assert applied.json()["status"] == "queued"
+
+
+def test_product_editor_otto_apply_merges_price_change_with_current_target_payload(tmp_path):
+    client, gateway = _client(tmp_path)
+    gateway.otto_by_profile["jv"]["product_variations"][0].update(
+        {
+            "mediaAssets": [{"type": "IMAGE", "location": "https://img/original.jpg"}],
+            "delivery": {"type": "PARCEL", "deliveryTime": 7},
+            "order": {"maxOrderQuantity": 2},
+        }
+    )
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "OTTO", "baseline_target_id": "OTTO_JV"},
+    )
+    draft = loaded.json()["draft"]
+    draft["pricing"] = {"standardPrice": {"amount": 99.99, "currency": "EUR"}}
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "OTTO",
+            "changed_fields": ["pricing"],
+            "draft": draft,
+            "selected_target_ids": ["OTTO_JV"],
+        },
+    )
+
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    command = Deps.job_store.get_job_command(job_id=applied.json()["job_id"])
+
+    assert command is not None
+    override = command.channels[0].overrides
+    assert override["pricing"]["standardPrice"]["amount"] == 99.99
+    assert override["productDescription"] == {"category": "Desk", "description": "Original"}
+    assert override["mediaAssets"] == [{"type": "IMAGE", "location": "https://img/original.jpg"}]
+    assert override["delivery"] == {"type": "PARCEL", "deliveryTime": 7}
 
 
 def test_product_editor_load_returns_normalized_xl_draft(tmp_path):
@@ -491,9 +579,7 @@ def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local
     assert payload["draft"]["jv_fields_by_site_key"]["JV_CO_UK"]["lieferzeitid"] == "5"
     assert "JV_DE" in gateway.synced_site_keys
     assert gateway.jv_sites_calls == 1
-    assert gateway.jv_local_calls.count("JV_DE") == 1
-    assert gateway.jv_local_calls.count("JV_AT") == 1
-    assert gateway.jv_local_calls.count("JV_CO_UK") == 1
+    assert gateway.jv_local_calls == []
 
 
 def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):

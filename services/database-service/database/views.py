@@ -31,7 +31,7 @@ from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLo
 from .order_amounts import parse_order_amount
 from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
-from .inventory_service import build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
+from .inventory_service import build_critical_inventory_rows, build_inventory_dashboard_summary, build_inventory_rows, build_kid_ean_summary
 from .place_rules import (
     find_place_conflict,
     list_available_pool_places,
@@ -58,6 +58,7 @@ from .ftp_upload import (
     upload_public_file_for_site_payload,
 )
 from .permissions import SessionRolePermission
+from .marketplace_ean_mapping_service import MarketplaceEanMappingError, confirm_marketplace_ean_mapping
 from .serializers import (
     EANPoolImportSerializer,
     EANPoolReserveSerializer,
@@ -68,6 +69,8 @@ from .serializers import (
     EANUsageSerializer,
     EanPatchSerializer,
     EanStatusReadSerializer,
+    KidMarketplaceStatusUpdateSerializer,
+    MarketplaceEanMappingConfirmSerializer,
     KidCompositePatchSerializer,
     KidCompositeUpdateRequestSerializer,
     ClientDetailViewSerializer,
@@ -88,6 +91,55 @@ from afterbuy_service.memo_sync import AfterbuyOrderMemoSyncService
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN_PLACEHOLDER = "0000000000000"
+
+
+class MarketplaceEanMappingConfirmAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        serializer = MarketplaceEanMappingConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mapping = confirm_marketplace_ean_mapping(**serializer.validated_data)
+        except MarketplaceEanMappingError as exc:
+            return Response(
+                {"code": "marketplace_ean_mapping_not_confirmed", "detail": str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"confirmed": True, "mapping": mapping}, status=status.HTTP_200_OK)
+
+
+class KidMarketplaceStatusUpdateAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def patch(self, request, pk: int):
+        serializer = KidMarketplaceStatusUpdateSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        kid = get_object_or_404(Kid, pk=pk)
+        marketplace = serializer.validated_data["marketplace"]
+        next_status = serializer.validated_data["status"]
+
+        with transaction.atomic():
+            ean_status, _ = EanStatus.objects.get_or_create(ean=kid)
+            previous_status = bool(getattr(ean_status, marketplace))
+            if previous_status != next_status:
+                setattr(ean_status, marketplace, next_status)
+                ean_status.save(update_fields=[marketplace])
+                record_inventory_change(
+                    kid=kid,
+                    actor=request_actor(request),
+                    action="marketplace_status_updated",
+                    changes=[{"field": f"ean_status.{marketplace}", "before": previous_status, "after": next_status}],
+                )
+
+        return Response(
+            {
+                "kid_id": kid.id,
+                "marketplace": marketplace,
+                "status": next_status,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
@@ -1492,8 +1544,8 @@ class KidMarketplaceEansAPIView(APIView):
     def _validate_ean(value: str, field_name: str, *, allow_b_ware: bool = False) -> None:
         if allow_b_ware and value == KidMarketplaceEansAPIView.B_WARE_EAN_MARKER:
             return
-        if len(value) != 13 or not value.isdigit():
-            raise ValidationError({field_name: "EAN must be a 13-digit numeric string."})
+        if len(value) > 64:
+            raise ValidationError({field_name: "Marketplace EAN must not exceed 64 characters."})
 
     @classmethod
     def _build_ean_response(cls, kid: Kid, kid_number: str, ean_row: Ean | None) -> dict:
@@ -2000,6 +2052,13 @@ class InventoryDashboardSummaryAPIView(APIView):
             )
 
 
+class CriticalInventoryAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        return Response(build_critical_inventory_rows(), status=status.HTTP_200_OK)
+
+
 class InventoryChangeHistoryAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -2489,7 +2548,7 @@ class EANPoolTakeNextFreeAPIView(APIView):
 
 
 class EANPoolClaimForJobAPIView(APIView):
-    """Atomically return one stable pool EAN for an orchestrator job."""
+    """Atomically return a stable pool EAN for a job or source product family."""
 
     permission_classes = [SessionRolePermission]
 
@@ -2497,7 +2556,35 @@ class EANPoolClaimForJobAPIView(APIView):
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
+        kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
+        reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
         reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+
+        ean_row = None
+        reserved_field = ""
+        if kid_number:
+            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            if ean_row is None:
+                return Response(
+                    {
+                        "code": "ean_reservation_kid_not_found",
+                        "detail": "Локальная запись EAN для указанного Kid не найдена.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            reserved_field = f"reserved_{reservation_family}"
+            reserved_ean = str(getattr(ean_row, reserved_field) or "").strip()
+            if reserved_ean:
+                item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first()
+                if item is None:
+                    return Response(
+                        {
+                            "code": "ean_reservation_pool_entry_not_found",
+                            "detail": "Сохранённый EAN отсутствует в EAN pool.",
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
         item = (
             EANPool.objects.select_for_update()
@@ -2525,6 +2612,10 @@ class EANPoolClaimForJobAPIView(APIView):
             item.reserved_at = timezone.now()
             item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
 
+        if ean_row is not None:
+            setattr(ean_row, reserved_field, item.ean)
+            ean_row.save(update_fields=[reserved_field])
+
         return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
 
 
@@ -2535,8 +2626,15 @@ class EANPoolMarkJobUsedAPIView(APIView):
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
-        item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
+        kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
+        reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
+        if kid_number:
+            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            reserved_ean = str(getattr(ean_row, f"reserved_{reservation_family}", "") or "").strip() if ean_row else ""
+            item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first() if reserved_ean else None
+        else:
+            reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+            item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
         if item is None:
             return Response({"detail": "Резерв EAN для задания не найден."}, status=status.HTTP_404_NOT_FOUND)
 

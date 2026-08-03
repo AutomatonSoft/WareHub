@@ -37,20 +37,13 @@ function buildCellState(
   status: boolean | null,
   placeholderEan: string,
   tokens: string[],
-  isBWare: boolean
+  isBWare: boolean,
 ): MarketplaceMatrixCellState {
   const normalized = isBWare ? "B_WARE" : value.trim();
   const isEmpty = !isMeaningfulValue(normalized, placeholderEan);
   const searchable = normalized.toLowerCase();
   const matches = !isEmpty && tokens.length > 0 && tokens.every((token) => searchable.includes(token));
   return { key, value: normalized, status, matches, isEmpty, isBWare };
-}
-
-function shouldRenderBWareValue(key: MarketplaceKey, bWare: boolean): boolean {
-  if (!bWare) {
-    return false;
-  }
-  return key === "ottoJv" || key === "ottoXl";
 }
 
 export function buildMarketplaceMatrixRows(
@@ -77,7 +70,7 @@ export function buildMarketplaceMatrixRows(
         siteEanStatuses[keys[0]],
         placeholderEan,
         tokens,
-        shouldRenderBWareValue(keys[0], bWare),
+        bWare && market === "OTTO",
       ),
       buildCellState(
         keys[1],
@@ -85,13 +78,13 @@ export function buildMarketplaceMatrixRows(
         siteEanStatuses[keys[1]],
         placeholderEan,
         tokens,
-        shouldRenderBWareValue(keys[1], bWare),
+        bWare && market === "OTTO",
       )
     ];
     return {
       market,
       cells,
-      hasMatch: cells.some((cell) => cell.matches)
+      hasMatch: cells.some((cell) => cell.matches),
     };
   });
 }

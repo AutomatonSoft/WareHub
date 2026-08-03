@@ -64,6 +64,8 @@ def create_marketplace_toggle_job(
     store: SqliteMarketplaceJobStore = Depends(get_marketplace_job_store),
     _service: MarketplaceJobService = Depends(get_marketplace_job_service),
     x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+    x_warehub_actor_login: str | None = Header(default=None, alias="X-WareHub-Actor-Login"),
+    x_warehub_actor_name: str | None = Header(default=None, alias="X-WareHub-Actor-Name"),
 ) -> MarketplaceToggleCreateResponse:
     request_id = _request_id(request, x_request_id)
     response.headers["X-Request-Id"] = request_id
@@ -83,6 +85,8 @@ def create_marketplace_toggle_job(
         kid_number=kid_number,
         inactive=body.inactive,
         place=place or None,
+        actor_login=(x_warehub_actor_login or "").strip() or None,
+        actor_name=(x_warehub_actor_name or "").strip() or None,
     )
     return MarketplaceToggleCreateResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED)
 

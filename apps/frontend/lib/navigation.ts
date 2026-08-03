@@ -1,9 +1,7 @@
 import {
-  ChartColumnBig,
   LayoutDashboard,
   List,
   Map,
-  PlusSquare,
   PencilRuler,
   ShieldCheck,
   Users,
@@ -12,9 +10,7 @@ import {
 export const navigationItems = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/sofort-list", labelKey: "navSofortList", icon: List },
-  { href: "/create-product", labelKey: "navCreateProduct", icon: PlusSquare },
   { href: "/product-editor", labelKey: "navProductEditor", icon: PencilRuler },
-  { href: "/marketplace", labelKey: "navMarketplace", icon: ChartColumnBig },
   { href: "/warehouse-map", labelKey: "navWarehouseMap", icon: Map }
 ] as const;
 

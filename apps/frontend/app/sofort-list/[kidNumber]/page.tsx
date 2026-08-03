@@ -13,28 +13,27 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useLabels, useLanguage } from "@/app/use-labels";
 
 function parsePositiveNumber(value: string | null): number | null {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-const orderDateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
-  timeZone: "UTC",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function formatOrderDateTime(value: string | null): string {
+function formatOrderDateTime(value: string | null, locale: string): string {
   if (!value) {
     return "—";
   }
 
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : orderDateTimeFormatter.format(date);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function joinNonEmpty(values: Array<string | null | undefined>): string {
@@ -47,30 +46,30 @@ function getInitials(value: string): string {
 
 type ChangeLogEntry = KidDetailViewModel["inventoryChangeLog"][number];
 
-const historyFieldLabels: Record<string, string> = {
-  "order.memo": "Memo заказа",
-  "attributes.company": "Компания",
-  "attributes.color": "Цвет",
-  "attributes.material": "Материал",
-  "attributes.price": "Цена",
-  "attributes.quantity": "Количество",
-  "attributes.size": "Размер",
+const historyFieldLabelKeys = {
+  "order.memo": "orderHistoryFieldMemo",
+  "attributes.company": "orderHistoryFieldCompany",
+  "attributes.color": "orderHistoryFieldColor",
+  "attributes.material": "orderHistoryFieldMaterial",
+  "attributes.price": "orderHistoryFieldPrice",
+  "attributes.quantity": "orderHistoryFieldQuantity",
+  "attributes.size": "orderHistoryFieldSize",
   b_ware: "B-Ware",
-  commentary: "Комментарий",
-  furniture_type: "Тип",
-  in_transit: "В пути",
-  photo: "Фото",
-  place: "Место",
-  room: "Комната",
-  section: "Секция",
-};
+  commentary: "orderHistoryFieldCommentary",
+  furniture_type: "orderHistoryFieldType",
+  in_transit: "orderHistoryFieldInTransit",
+  photo: "orderHistoryFieldPhoto",
+  place: "orderHistoryFieldPlace",
+  room: "orderHistoryFieldRoom",
+  section: "orderHistoryFieldSection",
+} as const;
 
-function formatHistoryValue(value: unknown): string {
+function formatHistoryValue(value: unknown, yes: string, no: string): string {
   if (value == null || value === "") {
     return "—";
   }
   if (typeof value === "boolean") {
-    return value ? "Да" : "Нет";
+    return value ? yes : no;
   }
   if (Array.isArray(value)) {
     return value.length ? value.map((item) => String(item)).join(", ") : "—";
@@ -78,28 +77,35 @@ function formatHistoryValue(value: unknown): string {
   return String(value);
 }
 
-function historyDescription(entry: ChangeLogEntry): string {
+function historyDescription(entry: ChangeLogEntry, t: ReturnType<typeof useLabels>): string {
   const change = entry.changes[0];
   if (!change?.field) {
     if (entry.action === "product_created") {
-      return "создал товар";
+      return t.orderHistoryProductCreated;
     }
     if (entry.action === "order_memo_updated") {
-      return "изменил Memo заказа";
+      return t.orderHistoryMemoUpdated;
     }
-    return `изменил данные ${historyEntityLabel(entry)}`;
+    return t.orderHistoryDataChanged.replace("{entity}", historyEntityLabel(entry, t));
   }
 
-  const field = historyFieldLabels[change.field] ?? change.field;
-  return `изменил ${field} с «${formatHistoryValue(change.before)}» на «${formatHistoryValue(change.after)}»`;
+  const fieldKey = historyFieldLabelKeys[change.field as keyof typeof historyFieldLabelKeys];
+  const field = fieldKey ? t[fieldKey] : change.field;
+  return t.orderHistoryFieldChanged
+    .replace("{field}", field)
+    .replace("{before}", formatHistoryValue(change.before, t.yes, t.no))
+    .replace("{after}", formatHistoryValue(change.after, t.yes, t.no));
 }
 
-function historyEntityLabel(entry: ChangeLogEntry): string {
-  return entry.metadata.entity === "order" ? "Заказ" : "KID";
+function historyEntityLabel(entry: ChangeLogEntry, t: ReturnType<typeof useLabels>): string {
+  return entry.metadata.entity === "order" ? t.order : "KID";
 }
 
 export default function SofortKidOrderPage() {
   const { showToast } = useToast();
+  const t = useLabels();
+  const lang = useLanguage();
+  const locale = lang === "ru" ? "ru-RU" : lang === "de" ? "de-DE" : "en-GB";
   const params = useParams<{ kidNumber: string }>();
   const searchParams = useSearchParams();
   const kidNumber = decodeURIComponent(params.kidNumber ?? "");
@@ -116,7 +122,7 @@ export default function SofortKidOrderPage() {
   useEffect(() => {
     if (!kidId) {
       setLoading(false);
-      setError("Не указан идентификатор KID.");
+      setError(t.orderMissingKidId);
       return;
     }
 
@@ -134,7 +140,7 @@ export default function SofortKidOrderPage() {
       } catch (loadError) {
         if (!cancelled) {
           setData(null);
-          setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить данные заказа.");
+          setError(loadError instanceof Error ? loadError.message : t.failedLoadOrderData);
         }
       } finally {
         if (!cancelled) {
@@ -148,7 +154,7 @@ export default function SofortKidOrderPage() {
     return () => {
       cancelled = true;
     };
-  }, [kidId]);
+  }, [kidId, t.failedLoadOrderData, t.orderMissingKidId]);
 
   const order = data?.orders.find((item) => item.id === orderDbId) ?? data?.orders[0] ?? null;
   const changeHistory = data?.inventoryChangeLog ?? [];
@@ -189,12 +195,12 @@ export default function SofortKidOrderPage() {
       if (syncResult.syncStatus === "failed") {
         showToast(
           syncResult.syncErrorType === "afterbuy_operation_not_selectable"
-            ? "Memo сохранено локально, но заказ в архиве Afterbuy и не подлежит изменению."
-            : "Memo сохранено локально, но не отправлено в Afterbuy.",
+            ? t.memoSavedAfterbuyArchive
+            : t.memoSavedSyncFailed,
           "error",
         );
       } else if (syncResult.syncStatus === "synced") {
-        showToast("Memo сохранено и синхронизировано с Afterbuy.", "success");
+        showToast(t.memoSavedAndSynced, "success");
       }
       setData((current) => current
         ? {
@@ -211,7 +217,7 @@ export default function SofortKidOrderPage() {
           }
         : current);
     } catch (saveError) {
-      setMemoError(saveError instanceof Error ? saveError.message : "Не удалось сохранить memo.");
+      setMemoError(saveError instanceof Error ? saveError.message : t.failedSaveOrderMemo);
     } finally {
       setIsSavingMemo(false);
     }
@@ -219,7 +225,7 @@ export default function SofortKidOrderPage() {
 
   return (
     <AppShell>
-      <section aria-label="Данные заказа">
+      <section aria-label={t.orderDetailsAria}>
         {loading ? (
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
             <Card>
@@ -239,7 +245,7 @@ export default function SofortKidOrderPage() {
             </Card>
           </div>
         ) : error ? (
-          <ErrorState title="Не удалось загрузить заказ" description={error} />
+          <ErrorState title={t.failedLoadOrder} description={error} />
         ) : (
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
@@ -258,7 +264,7 @@ export default function SofortKidOrderPage() {
                     />
                   ) : (
                     <div className="flex size-full items-center justify-center px-2 text-center text-sm text-muted-foreground">
-                      Нет изображения
+                      {t.noImage}
                     </div>
                   )}
                 </div>
@@ -273,10 +279,10 @@ export default function SofortKidOrderPage() {
                               {item.afterbuyItemId || "—"}
                             </span>
                             <span className="min-w-0 break-words text-base font-medium leading-snug text-foreground sm:col-start-2 sm:line-clamp-2">
-                              {item.quantity ?? "—"} x {item.title || "Без названия"}
+                              {item.quantity ?? "—"} x {item.title || t.orderItemUntitled}
                             </span>
                             <span className="hidden truncate whitespace-nowrap text-right text-sm tabular-nums text-muted-foreground sm:col-start-3 sm:block">
-                              {item.isMainItem ? formatOrderDateTime(item.itemEndDate) : ""}
+                              {item.isMainItem ? formatOrderDateTime(item.itemEndDate, locale) : ""}
                             </span>
                             <span className="text-right text-base font-semibold tabular-nums text-foreground sm:col-start-4">
                               {item.itemPrice || "—"}
@@ -286,13 +292,13 @@ export default function SofortKidOrderPage() {
                       </ul>
                       <div className="ml-auto w-full max-w-[16rem]">
                         <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1 text-right">
-                          <dt className="truncate whitespace-nowrap text-sm text-muted-foreground">Already paid</dt>
+                          <dt className="truncate whitespace-nowrap text-sm text-muted-foreground">{t.orderAlreadyPaid}</dt>
                           <dd className="whitespace-nowrap text-base font-semibold tabular-nums text-foreground">{order?.alreadyPaid || "—"}</dd>
-                          <dt className="truncate whitespace-nowrap text-sm text-muted-foreground">Outstanding amount</dt>
+                          <dt className="truncate whitespace-nowrap text-sm text-muted-foreground">{t.orderOutstandingAmount}</dt>
                           <dd className={cn("whitespace-nowrap text-base font-semibold tabular-nums", hasOutstandingAmount ? "text-destructive" : "text-foreground")}>
                             {order?.outstandingAmount || "—"}
                           </dd>
-                          <dt className="truncate whitespace-nowrap pt-1 text-sm text-muted-foreground">Full amount</dt>
+                          <dt className="truncate whitespace-nowrap pt-1 text-sm text-muted-foreground">{t.orderFullAmount}</dt>
                           <dd className={cn("whitespace-nowrap pt-1 text-base font-semibold tabular-nums", hasOutstandingAmount ? "text-destructive" : "text-foreground")}>
                             {order?.fullAmount || "—"}
                           </dd>
@@ -300,7 +306,7 @@ export default function SofortKidOrderPage() {
                       </div>
                     </>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Позиции заказа не найдены.</p>
+                    <p className="text-sm text-muted-foreground">{t.orderItemsNotFound}</p>
                   )}
                 </div>
               </section>
@@ -309,7 +315,7 @@ export default function SofortKidOrderPage() {
 
               <Card>
               <CardContent className="p-3">
-              <aside aria-label="Данные покупателя">
+              <aside aria-label={t.buyerDetailsAria}>
                 {client ? (
                   <>
                     <header className="flex min-w-0 items-center gap-3 border-b border-border pb-3">
@@ -317,36 +323,36 @@ export default function SofortKidOrderPage() {
                         {getInitials(customerName)}
                       </div>
                       <div className="min-w-0">
-                        <h2 className="text-base font-semibold text-foreground">Покупатель</h2>
-                        <p className="mt-0.5 truncate text-sm text-muted-foreground" title={customerName}>{customerName || "Не указан"}</p>
+                        <h2 className="text-base font-semibold text-foreground">{t.buyer}</h2>
+                        <p className="mt-0.5 truncate text-sm text-muted-foreground" title={customerName}>{customerName || t.buyerUnspecified}</p>
                       </div>
                     </header>
 
                     <dl className="mt-3 grid gap-2 text-sm">
                       <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
-                        <dt className="whitespace-nowrap text-muted-foreground">Имя</dt>
+                        <dt className="whitespace-nowrap text-muted-foreground">{t.buyerName}</dt>
                         <dd className="truncate whitespace-nowrap font-medium text-foreground" title={customerName}>{customerName || "—"}</dd>
                       </div>
                       {client.billingPhone ? (
                         <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
-                          <dt className="whitespace-nowrap text-muted-foreground">Телефон</dt>
+                          <dt className="whitespace-nowrap text-muted-foreground">{t.phone}</dt>
                           <dd className="truncate whitespace-nowrap text-foreground" title={client.billingPhone}>{client.billingPhone}</dd>
                         </div>
                       ) : null}
                       {client.billingEmail ? (
                         <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
-                          <dt className="whitespace-nowrap text-muted-foreground">E-mail</dt>
+                          <dt className="whitespace-nowrap text-muted-foreground">{t.email}</dt>
                           <dd className="truncate whitespace-nowrap text-foreground" title={client.billingEmail}>{client.billingEmail}</dd>
                         </div>
                       ) : null}
                       <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-3">
-                        <dt className="whitespace-nowrap text-muted-foreground">Адрес</dt>
+                        <dt className="whitespace-nowrap text-muted-foreground">{t.address}</dt>
                         <dd className="truncate whitespace-nowrap text-foreground" title={billingAddress}>{billingAddress || "—"}</dd>
                       </div>
                     </dl>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Данные покупателя для этого товара не найдены.</p>
+                  <p className="text-sm text-muted-foreground">{t.buyerDetailsNotFound}</p>
                 )}
               </aside>
               </CardContent>
@@ -356,26 +362,26 @@ export default function SofortKidOrderPage() {
             {order ? (
               <Card>
                 <CardContent className="p-3">
-                  <section aria-label="Комментарий к заказу">
+                  <section aria-label={t.orderMemoAria}>
                     <div className="flex items-center justify-between gap-3">
-                      <h2 className="text-base font-semibold text-foreground">Memo</h2>
+                      <h2 className="text-base font-semibold text-foreground">{t.memo}</h2>
                       <Button size="sm" onClick={() => void saveMemo()} disabled={!isMemoDirty || isSavingMemo}>
-                        {isSavingMemo ? "Сохранение…" : "Сохранить"}
+                        {isSavingMemo ? t.saving : t.save}
                       </Button>
                     </div>
                     <Textarea
                       value={memoDraft}
                       onChange={(event) => setMemoDraft(event.target.value)}
-                      placeholder="Добавьте комментарий к заказу"
-                      aria-label="Memo заказа"
+                      placeholder={t.orderMemoPlaceholder}
+                      aria-label={t.orderMemoAria}
                       className="mt-2 min-h-64 resize-y"
                       disabled={isSavingMemo}
                     />
                     {memoError ? <p className="mt-2 text-sm text-destructive">{memoError}</p> : null}
                     {order.memoSyncStatus === "synced" ? (
-                      <p className="mt-2 text-sm text-muted-foreground">Синхронизировано с Afterbuy.</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{t.memoSyncedAfterbuy}</p>
                     ) : order.memoSyncStatus === "pending" ? (
-                      <p className="mt-2 text-sm text-muted-foreground">Ожидает синхронизации с Afterbuy.</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{t.memoPendingAfterbuy}</p>
                     ) : null}
                   </section>
                 </CardContent>
@@ -384,12 +390,12 @@ export default function SofortKidOrderPage() {
 
             <Card>
               <CardContent className="p-3">
-                <section aria-label="История изменений заказа и KID">
-                  <h2 className="text-base font-semibold text-foreground">История изменений</h2>
+                <section aria-label={t.orderKidHistoryAria}>
+                  <h2 className="text-base font-semibold text-foreground">{t.orderChangeHistory}</h2>
                   {changeHistory.length ? (
                     <ol className="mt-3 divide-y divide-border">
                       {changeHistory.map((entry) => {
-                        const description = historyDescription(entry);
+                        const description = historyDescription(entry, t);
                         const isLongDescription = description.length > 180;
                         const isExpanded = expandedHistoryIds.has(entry.id);
                         const descriptionId = `history-description-${entry.id}`;
@@ -397,11 +403,11 @@ export default function SofortKidOrderPage() {
                         return (
                           <li key={entry.id} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-start sm:gap-x-3">
                             <time className="whitespace-nowrap text-sm tabular-nums text-muted-foreground" dateTime={entry.occurredAt}>
-                              {formatOrderDateTime(entry.occurredAt)}
+                              {formatOrderDateTime(entry.occurredAt, locale)}
                             </time>
                             <div className="min-w-0">
                               <p id={descriptionId} className={cn("min-w-0 break-words text-sm text-foreground", isLongDescription && !isExpanded && "line-clamp-2")}>
-                                <span className="font-medium">{entry.actor.name || entry.actor.login || "Система"}</span>
+                                <span className="font-medium">{entry.actor.name || entry.actor.login || t.systemActor}</span>
                                 {" "}
                                 {description}
                               </p>
@@ -425,7 +431,7 @@ export default function SofortKidOrderPage() {
                                     });
                                   }}
                                 >
-                                  {isExpanded ? "Скрыть" : "Показать полностью"}
+                                  {isExpanded ? t.hide : t.showMore}
                                 </Button>
                               ) : null}
                             </div>
@@ -434,7 +440,7 @@ export default function SofortKidOrderPage() {
                       })}
                     </ol>
                   ) : (
-                    <p className="mt-3 text-sm text-muted-foreground">Изменений для этого заказа и KID пока нет.</p>
+                    <p className="mt-3 text-sm text-muted-foreground">{t.orderChangeHistoryEmpty}</p>
                   )}
                 </section>
               </CardContent>
