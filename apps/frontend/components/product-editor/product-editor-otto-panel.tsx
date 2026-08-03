@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 
+import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -71,6 +72,7 @@ function filenameFromUrl(location: string): string {
 }
 
 export function ProductEditorOttoPanel(props: Props) {
+  const t = useLabels();
   const productDescription = props.draft.productDescription;
   const delivery = props.draft.delivery;
   const productAttributes = readAttributes(productDescription.attributes);
@@ -122,25 +124,25 @@ export function ProductEditorOttoPanel(props: Props) {
 
   return (
     <div className="space-y-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
-      <Field label="Product line / title">
+      <Field label={t.ottoProductLine}>
         <Input value={textValue(productDescription.productLine)} onChange={(event) => patchDescription({ productLine: event.target.value })} />
       </Field>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="productReference"><Input value={props.draft.productReference} onChange={(event) => props.onChange({ productReference: event.target.value })} /></Field>
+        <Field label={t.ottoProductReference}><Input value={props.draft.productReference} onChange={(event) => props.onChange({ productReference: event.target.value })} /></Field>
         <Field label="SKU"><Input value={props.draft.sku} onChange={(event) => props.onChange({ sku: event.target.value })} /></Field>
         <Field label="EAN"><Input value={props.draft.ean} onChange={(event) => props.onChange({ ean: event.target.value })} /></Field>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="Price (EUR)"><Input inputMode="decimal" value={priceText(props.draft.pricing)} onChange={(event) => updatePrice(event.target.value)} /></Field>
-        <Field label="Delivery type"><Input value={textValue(delivery.type)} placeholder="PARCEL" onChange={(event) => props.onChange({ delivery: { ...delivery, type: event.target.value } })} /></Field>
-        <Field label="Delivery time (days)"><Input inputMode="numeric" value={textValue(delivery.deliveryTime)} onChange={(event) => updateDeliveryTime(event.target.value)} /></Field>
+        <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={priceText(props.draft.pricing)} onChange={(event) => updatePrice(event.target.value)} /></Field>
+        <Field label={t.ottoDeliveryType}><Input value={textValue(delivery.type)} placeholder="PARCEL" onChange={(event) => props.onChange({ delivery: { ...delivery, type: event.target.value } })} /></Field>
+        <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={textValue(delivery.deliveryTime)} onChange={(event) => updateDeliveryTime(event.target.value)} /></Field>
       </div>
 
-      <Field label="Shipping profile">
+      <Field label={t.ottoShippingProfile}>
         <Select value={props.draft.shippingProfileId} onValueChange={(shippingProfileId) => props.onChange({ shippingProfileId: shippingProfileId ?? "" })}>
-          <SelectTrigger><SelectValue placeholder="Select shipping profile" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder={t.ottoSelectShippingProfile} /></SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {OTTO_SHIPPING_PROFILES.map((profile) => (
@@ -153,37 +155,37 @@ export function ProductEditorOttoPanel(props: Props) {
 
       <div className="grid gap-3">
         {bulletPoints.map((bulletPoint, index) => (
-          <Field key={`bullet-${index}`} label={`Bullet point ${index + 1}`}>
+          <Field key={`bullet-${index}`} label={t.ottoBulletPoint.replace("{index}", String(index + 1))}>
             <Input value={bulletPoint} onChange={(event) => updateBullet(index, event.target.value)} />
           </Field>
         ))}
       </div>
 
-      <Field label="Description">
+      <Field label={t.descriptionLabel}>
         <Textarea value={textValue(productDescription.description)} onChange={(event) => patchDescription({ description: event.target.value })} className="min-h-40" />
       </Field>
 
-      <Field label="Image URLs (one URL per line)">
+      <Field label={t.ottoImageUrls}>
         <Textarea
           value={imageUrls(props.draft.mediaAssets).join("\n")}
           onChange={(event) => updateImageUrls(event.target.value)}
           className="min-h-28"
-          placeholder="https://example.com/product-image.jpg"
+          placeholder={t.ottoImageUrlPlaceholder}
         />
       </Field>
 
-      <section className="flex flex-col gap-3" aria-label="OTTO product attributes">
+      <section className="flex flex-col gap-3" aria-label={t.ottoCategoryAttributes}>
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase">Attributes</h3>
+          <h3 className="text-sm font-semibold uppercase">{t.attributes}</h3>
           <Button type="button" variant="outline" size="sm" onClick={() => patchDescription({ attributes: [...productAttributes, { name: "", values: [""] }] })}>
-            Add attribute
+            {t.ottoAddAttribute}
           </Button>
         </div>
         {productAttributes.map((attribute, index) => (
           <div key={`${attribute.name}-${index}`} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
-            <Input value={attribute.name} placeholder="Attribute name" onChange={(event) => updateAttribute(index, { name: event.target.value })} />
-            <Input value={attribute.values.join(", ")} placeholder="Values, separated by commas" onChange={(event) => updateAttribute(index, { values: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
-            <Button type="button" variant="ghost" size="icon" aria-label={`Remove attribute ${attribute.name || index + 1}`} onClick={() => patchDescription({ attributes: productAttributes.filter((_, attributeIndex) => attributeIndex !== index) })}>
+            <Input value={attribute.name} placeholder={t.ottoAttributeName} onChange={(event) => updateAttribute(index, { name: event.target.value })} />
+            <Input value={attribute.values.join(", ")} placeholder={t.ottoAttributeValuesPlaceholder} onChange={(event) => updateAttribute(index, { values: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
+            <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttributeAria.replace("{name}", attribute.name || String(index + 1))} onClick={() => patchDescription({ attributes: productAttributes.filter((_, attributeIndex) => attributeIndex !== index) })}>
               <Trash2 />
             </Button>
           </div>
@@ -191,20 +193,20 @@ export function ProductEditorOttoPanel(props: Props) {
       </section>
 
       <details className="rounded-[var(--radius-control)] border border-border/70 p-3">
-        <summary className="cursor-pointer text-sm font-medium">Additional OTTO identifiers</summary>
+        <summary className="cursor-pointer text-sm font-medium">{t.ottoAdditionalIdentifiers}</summary>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
           <Field label="ISBN"><Input value={props.draft.isbn} onChange={(event) => props.onChange({ isbn: event.target.value })} /></Field>
           <Field label="UPC"><Input value={props.draft.upc} onChange={(event) => props.onChange({ upc: event.target.value })} /></Field>
           <Field label="PZN"><Input value={props.draft.pzn} onChange={(event) => props.onChange({ pzn: event.target.value })} /></Field>
           <Field label="MPN"><Input value={props.draft.mpn} onChange={(event) => props.onChange({ mpn: event.target.value })} /></Field>
           <Field label="MOIN"><Input value={props.draft.moin} onChange={(event) => props.onChange({ moin: event.target.value })} /></Field>
-          <Field label="Maximum order quantity"><Input inputMode="numeric" value={props.draft.maxOrderQuantity} onChange={(event) => props.onChange({ maxOrderQuantity: event.target.value })} /></Field>
+          <Field label={t.ottoMaximumOrderQuantity}><Input inputMode="numeric" value={props.draft.maxOrderQuantity} onChange={(event) => props.onChange({ maxOrderQuantity: event.target.value })} /></Field>
         </div>
       </details>
 
       {props.warnings.map((warning) => <p key={warning.code} className="text-sm text-amber-700">{warning.message}</p>)}
       <Button type="button" disabled={props.loading || props.applyLoading || props.changedFields.length === 0} onClick={props.onApply}>
-        {props.applyLoading ? "Applying" : "Review and apply OTTO changes"}
+        {props.applyLoading ? t.ottoApplying : t.ottoReviewAndApplyChanges}
       </Button>
     </div>
   );

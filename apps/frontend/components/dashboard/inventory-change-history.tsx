@@ -71,11 +71,12 @@ function PhotoGroup({ urls, alt }: { urls: string[]; alt: string }) {
 }
 
 function PhotoChangePreview({ before, after }: { before: unknown; after: unknown }) {
+  const t = useLabels();
   return (
-    <div className="wh-dashboard-history__photo-change" aria-label="Photo changed">
-      <div className="wh-dashboard-history__photo-group"><PhotoGroup urls={imageUrls(before)} alt="Previous product photo" /></div>
+    <div className="wh-dashboard-history__photo-change" aria-label={t.inventoryPhotoChanged}>
+      <div className="wh-dashboard-history__photo-group"><PhotoGroup urls={imageUrls(before)} alt={t.previousPhoto} /></div>
       <span aria-hidden="true">→</span>
-      <div className="wh-dashboard-history__photo-group"><PhotoGroup urls={imageUrls(after)} alt="Updated product photo" /></div>
+      <div className="wh-dashboard-history__photo-group"><PhotoGroup urls={imageUrls(after)} alt={t.inventoryUpdatedPhoto} /></div>
     </div>
   );
 }

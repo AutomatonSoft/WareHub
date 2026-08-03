@@ -182,7 +182,7 @@ function EditableHoodDescriptionPreview({
     <div className="space-y-3">
       <iframe
         ref={iframeRef}
-        title="hood-description-preview"
+        title={t.hoodDescriptionPreview}
         srcDoc={frameSrcDoc}
         sandbox="allow-same-origin allow-popups allow-forms"
         className="h-[32rem] w-full rounded-lg bg-white"

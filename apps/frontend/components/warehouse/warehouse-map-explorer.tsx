@@ -197,7 +197,7 @@ export function WarehouseMapExplorer() {
         <svg
           viewBox="14 23 776 331"
           role="img"
-          aria-label="Interactive warehouse map"
+          aria-label={t.warehouseInteractiveMap}
           className="h-auto w-full"
         >
           <defs>
@@ -211,7 +211,7 @@ export function WarehouseMapExplorer() {
             const commonProps = {
               role: "button" as const,
               tabIndex: 0,
-              "aria-label": `Warehouse section ${section.id}`,
+              "aria-label": t.warehouseSectionAria.replace("{section}", section.id),
               onClick: () => activateSection(section.id),
               onKeyDown: (event: KeyboardEvent<SVGGElement>) => {
                 if (event.key === "Enter" || event.key === " ") {

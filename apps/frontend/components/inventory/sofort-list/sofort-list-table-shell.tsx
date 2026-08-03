@@ -1433,13 +1433,13 @@ export function SofortListTableShell(props: {
           </button>
           <div className="wh-sofort-photo-viewer__content" onClick={(event) => event.stopPropagation()}>
             {fullscreenGallery && fullscreenGallery.photos.length > 1 ? (
-              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--prev" onClick={showPreviousFullscreenPhoto} aria-label="Previous photo">
+              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--prev" onClick={showPreviousFullscreenPhoto} aria-label={t.previousPhoto}>
                 <ChevronLeft size={24} />
               </button>
             ) : null}
             <Image src={activeFullscreenPhoto} alt={t.productPhoto} width={1600} height={1200} unoptimized className="wh-sofort-photo-viewer__image" />
             {fullscreenGallery && fullscreenGallery.photos.length > 1 ? (
-              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--next" onClick={showNextFullscreenPhoto} aria-label="Next photo">
+              <button type="button" className="wh-sofort-photo-viewer__nav wh-sofort-photo-viewer__nav--next" onClick={showNextFullscreenPhoto} aria-label={t.nextPhoto}>
                 <ChevronRight size={24} />
               </button>
             ) : null}
@@ -1454,8 +1454,8 @@ export function SofortListTableShell(props: {
       <Dialog open={Boolean(productActionRow)} onOpenChange={(open) => { if (!open) setProductActionRow(null); }}>
         <DialogContent className="!gap-0 overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
           <DialogHeader className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--primary)/0.08),transparent_58%)] px-6 pb-5 pt-6 pr-14">
-            <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">Choose product workflow</DialogTitle>
-            <DialogDescription>Continue with a new marketplace listing or open the existing product for editing.</DialogDescription>
+            <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">{t.sofortListWorkflowTitle}</DialogTitle>
+            <DialogDescription>{t.sofortListWorkflowDescription}</DialogDescription>
           </DialogHeader>
           <button
             type="button"
@@ -1469,12 +1469,12 @@ export function SofortListTableShell(props: {
             <div className="space-y-4 px-6 py-5">
               <div className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-muted/25 px-4 py-3.5">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Selected inventory item</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t.sofortListSelectedInventoryItem}</p>
                   <p className="mt-1 truncate text-sm font-semibold text-foreground">KID {productActionRow.kidNumber}</p>
                 </div>
                 <div className="shrink-0 rounded-lg border border-border/70 bg-background px-3 py-2 text-right">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">EAN</p>
-                  <p className="mt-0.5 font-mono text-xs font-semibold text-foreground">{canOpenProductEditor ? productActionEditorEan : "Not assigned"}</p>
+                  <p className="mt-0.5 font-mono text-xs font-semibold text-foreground">{canOpenProductEditor ? productActionEditorEan : t.sofortListEanNotAssigned}</p>
                 </div>
               </div>
               <div className="grid gap-3">
@@ -1483,8 +1483,8 @@ export function SofortListTableShell(props: {
                     <FilePlus2 className="size-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">Create new product</span>
-                    <span className="mt-1 block text-xs font-normal leading-5 text-primary-foreground/80">Start a new marketplace listing using this inventory item.</span>
+                    <span className="block text-sm font-semibold">{t.sofortListCreateNewProduct}</span>
+                    <span className="mt-1 block text-xs font-normal leading-5 text-primary-foreground/80">{t.sofortListCreateNewProductHint}</span>
                   </span>
                   <ArrowRight className="size-4 shrink-0 opacity-70 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
                 </Button>
@@ -1493,9 +1493,9 @@ export function SofortListTableShell(props: {
                     <PencilLine className="size-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">Edit existing product</span>
+                    <span className="block text-sm font-semibold">{t.sofortListEditExistingProduct}</span>
                     <span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">
-                      {canOpenProductEditor ? "Open Product Editor with this EAN already searched." : "Assign an EAN to this inventory item before editing."}
+                      {canOpenProductEditor ? t.sofortListEditExistingProductHint : t.sofortListAssignEanBeforeEdit}
                     </span>
                   </span>
                   <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
