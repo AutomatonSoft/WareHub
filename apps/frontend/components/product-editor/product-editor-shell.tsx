@@ -275,6 +275,11 @@ function ProductEditorContent() {
         skipNextAutoJvLoadKeyRef.current = null;
         return;
       }
+      if (autoLoadHandledKeysRef.current.has(autoLoadKey)) {
+        return;
+      }
+      autoLoadHandledKeysRef.current.add(autoLoadKey);
+      jvAutoLoadInFlightKeyRef.current = autoLoadKey;
       void loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
     }
     if (activeGroupId === "KAUFLAND" && !hasLocalLoadedKaufland) {
