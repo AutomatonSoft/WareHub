@@ -1,13 +1,17 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
-import { useLabels } from "../../app/use-labels";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Textarea } from "../ui/textarea";
-import { OTTO_SHIPPING_PROFILES } from "../../lib/otto-shipping-profiles";
+import {
+  OttoCreateProductPanel,
+  type OttoCreateProductDraft,
+} from "../../app/create-product/otto-create-product-panel";
+import {
+  CreateProductImageGallery,
+  type CreateProductGalleryItem,
+} from "../../app/create-product/create-product-image-gallery";
+import { OttoCategoriesPanel } from "../../app/create-product/otto-categories-panel";
 import type { ProductEditorOttoDraft, ProductEditorWarning } from "./product-editor-types";
 
 type Props = {
@@ -19,21 +23,6 @@ type Props = {
   onChange: (patch: Partial<ProductEditorOttoDraft>) => void;
   onApply: () => void;
 };
-
-type OttoAttribute = {
-  name: string;
-  values: string[];
-  additional?: boolean;
-};
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>
-      {children}
-    </label>
-  );
-}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -47,22 +36,6 @@ function textList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(textValue) : [];
 }
 
-function readAttributes(value: unknown): OttoAttribute[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((attribute) => {
-    const item = asRecord(attribute);
-    return {
-      name: textValue(item.name),
-      values: textList(item.values),
-      additional: item.additional === true,
-    };
-  });
-}
-
-function priceText(pricing: Record<string, unknown>): string {
-  return textValue(asRecord(pricing.standardPrice).amount);
-}
-
 function imageUrls(mediaAssets: Array<Record<string, unknown>>): string[] {
   return mediaAssets.map((asset) => textValue(asset.location)).filter(Boolean);
 }
@@ -71,142 +44,164 @@ function filenameFromUrl(location: string): string {
   return location.split("/").pop() || "image";
 }
 
+function productAttributes(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((attribute): attribute is Record<string, unknown> => Boolean(attribute) && typeof attribute === "object" && !Array.isArray(attribute))
+    : [];
+}
+
+function attributeId(attribute: Record<string, unknown>, index: number): string {
+  return textValue(attribute.attributeId ?? attribute.attributeKey ?? attribute.id).trim() || String(index);
+}
+
+function attributeValues(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function toCreateDraft(draft: ProductEditorOttoDraft): OttoCreateProductDraft {
+  const description = draft.productDescription;
+  const attributes = productAttributes(description.attributes);
+
+  return {
+    productReference: draft.productReference,
+    sku: draft.sku,
+    ean: draft.ean,
+    price: textValue(asRecord(draft.pricing.standardPrice).amount),
+    deliveryTime: textValue(draft.delivery.deliveryTime),
+    shippingProfileId: draft.shippingProfileId,
+    category: textValue(description.category),
+    productLine: textValue(description.productLine ?? description.title),
+    description: textValue(description.description ?? description.text),
+    bulletPoints: textList(description.bulletPoints),
+    additionalAttributes: {},
+    attributeOverrides: Object.fromEntries(
+      attributes.map((attribute, index) => [attributeId(attribute, index), textList(attribute.values).join(", ")]),
+    ),
+    attributeNames: Object.fromEntries(
+      attributes.map((attribute, index) => [attributeId(attribute, index), textValue(attribute.name ?? attribute.label ?? attribute.attributeKey)]),
+    ),
+    removedAttributeIds: [],
+  };
+}
+
+function toEditorAttributes(source: Array<Record<string, unknown>>, draft: OttoCreateProductDraft): Array<Record<string, unknown>> {
+  const selectedAttributes = source
+    .map((attribute, index) => ({ attribute, id: attributeId(attribute, index) }))
+    .filter(({ id }) => !draft.removedAttributeIds.includes(id))
+    .map(({ attribute, id }) => {
+      const override = draft.attributeOverrides[id];
+      return override === undefined ? attribute : { ...attribute, values: attributeValues(override) };
+    });
+
+  const sourceIds = new Set(source.map(attributeId));
+  const addedAttributes = Object.entries(draft.additionalAttributes)
+    .filter(([id]) => !sourceIds.has(id))
+    .map(([id, value]) => ({ attributeId: id, name: draft.attributeNames[id] ?? id, values: attributeValues(value), additional: true }));
+
+  return [...selectedAttributes, ...addedAttributes];
+}
+
 export function ProductEditorOttoPanel(props: Props) {
-  const t = useLabels();
-  const productDescription = props.draft.productDescription;
-  const delivery = props.draft.delivery;
-  const productAttributes = readAttributes(productDescription.attributes);
-  const bulletPoints = Array.from({ length: 5 }, (_, index) => textList(productDescription.bulletPoints)[index] ?? "");
+  const description = props.draft.productDescription;
+  const sourceAttributes = productAttributes(description.attributes);
+  const [activeGalleryItemId, setActiveGalleryItemId] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(() => textValue(description.categoryId));
+  const galleryItems = useMemo<CreateProductGalleryItem[]>(() => (
+    imageUrls(props.draft.mediaAssets).map((src, index) => ({
+      id: `${index}:${src}`,
+      src,
+      sourcePath: src,
+      isLocal: false,
+    }))
+  ), [props.draft.mediaAssets]);
 
-  const patchDescription = (patch: Record<string, unknown>) => {
-    props.onChange({ productDescription: { ...productDescription, ...patch } });
-  };
+  const applyCreateDraft = (next: OttoCreateProductDraft) => {
+    const price = Number(next.price);
+    const deliveryTime = Number(next.deliveryTime);
 
-  const updatePrice = (value: string) => {
-    const amount = Number(value);
-    if (!Number.isFinite(amount)) return;
     props.onChange({
-      pricing: {
-        ...props.draft.pricing,
-        standardPrice: { ...asRecord(props.draft.pricing.standardPrice), amount },
-      },
-    });
-  };
-
-  const updateDeliveryTime = (value: string) => {
-    const deliveryTime = Number(value);
-    props.onChange({
+      productReference: next.productReference,
+      sku: next.sku,
+      ean: next.ean,
+      shippingProfileId: next.shippingProfileId,
+      pricing: Number.isFinite(price)
+        ? { ...props.draft.pricing, standardPrice: { ...asRecord(props.draft.pricing.standardPrice), amount: price } }
+        : props.draft.pricing,
       delivery: {
-        ...delivery,
-        type: textValue(delivery.type).trim() || "PARCEL",
-        deliveryTime: Number.isFinite(deliveryTime) ? deliveryTime : value,
+        ...props.draft.delivery,
+        type: textValue(props.draft.delivery.type).trim() || "PARCEL",
+        deliveryTime: Number.isFinite(deliveryTime) ? deliveryTime : next.deliveryTime,
+      },
+      productDescription: {
+        ...description,
+        category: next.category,
+        productLine: next.productLine,
+        description: next.description,
+        bulletPoints: next.bulletPoints,
+        attributes: toEditorAttributes(sourceAttributes, next),
       },
     });
   };
 
-  const updateBullet = (index: number, value: string) => {
-    const nextBulletPoints = [...bulletPoints];
-    nextBulletPoints[index] = value;
-    patchDescription({ bulletPoints: nextBulletPoints });
-  };
-
-  const updateAttribute = (index: number, patch: Partial<OttoAttribute>) => {
-    const nextAttributes = productAttributes.map((attribute, attributeIndex) => attributeIndex === index ? { ...attribute, ...patch } : attribute);
-    patchDescription({ attributes: nextAttributes });
-  };
-
-  const updateImageUrls = (value: string) => {
-    const urls = value.split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
+  const updateGalleryItems = (nextItems: CreateProductGalleryItem[]) => {
     props.onChange({
-      mediaAssets: urls.map((location) => ({ type: "IMAGE", location, filename: filenameFromUrl(location) })),
+      mediaAssets: nextItems.map((item) => ({ type: "IMAGE", location: item.src, filename: filenameFromUrl(item.src) })),
     });
   };
 
   return (
-    <div className="space-y-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
-      <Field label={t.ottoProductLine}>
-        <Input value={textValue(productDescription.productLine)} onChange={(event) => patchDescription({ productLine: event.target.value })} />
-      </Field>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label={t.ottoProductReference}><Input value={props.draft.productReference} onChange={(event) => props.onChange({ productReference: event.target.value })} /></Field>
-        <Field label="SKU"><Input value={props.draft.sku} onChange={(event) => props.onChange({ sku: event.target.value })} /></Field>
-        <Field label="EAN"><Input value={props.draft.ean} onChange={(event) => props.onChange({ ean: event.target.value })} /></Field>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={priceText(props.draft.pricing)} onChange={(event) => updatePrice(event.target.value)} /></Field>
-        <Field label={t.ottoDeliveryType}><Input value={textValue(delivery.type)} placeholder="PARCEL" onChange={(event) => props.onChange({ delivery: { ...delivery, type: event.target.value } })} /></Field>
-        <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={textValue(delivery.deliveryTime)} onChange={(event) => updateDeliveryTime(event.target.value)} /></Field>
-      </div>
-
-      <Field label={t.ottoShippingProfile}>
-        <Select value={props.draft.shippingProfileId} onValueChange={(shippingProfileId) => props.onChange({ shippingProfileId: shippingProfileId ?? "" })}>
-          <SelectTrigger><SelectValue placeholder={t.ottoSelectShippingProfile} /></SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {OTTO_SHIPPING_PROFILES.map((profile) => (
-                <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
-
-      <div className="grid gap-3">
-        {bulletPoints.map((bulletPoint, index) => (
-          <Field key={`bullet-${index}`} label={t.ottoBulletPoint.replace("{index}", String(index + 1))}>
-            <Input value={bulletPoint} onChange={(event) => updateBullet(index, event.target.value)} />
-          </Field>
-        ))}
-      </div>
-
-      <Field label={t.descriptionLabel}>
-        <Textarea value={textValue(productDescription.description)} onChange={(event) => patchDescription({ description: event.target.value })} className="min-h-40" />
-      </Field>
-
-      <Field label={t.ottoImageUrls}>
-        <Textarea
-          value={imageUrls(props.draft.mediaAssets).join("\n")}
-          onChange={(event) => updateImageUrls(event.target.value)}
-          className="min-h-28"
-          placeholder={t.ottoImageUrlPlaceholder}
-        />
-      </Field>
-
-      <section className="flex flex-col gap-3" aria-label={t.ottoCategoryAttributes}>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase">{t.attributes}</h3>
-          <Button type="button" variant="outline" size="sm" onClick={() => patchDescription({ attributes: [...productAttributes, { name: "", values: [""] }] })}>
-            {t.ottoAddAttribute}
-          </Button>
-        </div>
-        {productAttributes.map((attribute, index) => (
-          <div key={`${attribute.name}-${index}`} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
-            <Input value={attribute.name} placeholder={t.ottoAttributeName} onChange={(event) => updateAttribute(index, { name: event.target.value })} />
-            <Input value={attribute.values.join(", ")} placeholder={t.ottoAttributeValuesPlaceholder} onChange={(event) => updateAttribute(index, { values: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
-            <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttributeAria.replace("{name}", attribute.name || String(index + 1))} onClick={() => patchDescription({ attributes: productAttributes.filter((_, attributeIndex) => attributeIndex !== index) })}>
-              <Trash2 />
-            </Button>
+    <div className="flex flex-col gap-4">
+      <div className="rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
+            <OttoCreateProductPanel
+              initialDraft={toCreateDraft(props.draft)}
+              draftKey={`${props.draft.target_id}:${props.draft.profile}`}
+              categoryId={selectedCategoryId}
+              categoryName={textValue(description.category)}
+              productAttributes={sourceAttributes}
+              onDraftChange={applyCreateDraft}
+            />
           </div>
-        ))}
-      </section>
-
-      <details className="rounded-[var(--radius-control)] border border-border/70 p-3">
-        <summary className="cursor-pointer text-sm font-medium">{t.ottoAdditionalIdentifiers}</summary>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <Field label="ISBN"><Input value={props.draft.isbn} onChange={(event) => props.onChange({ isbn: event.target.value })} /></Field>
-          <Field label="UPC"><Input value={props.draft.upc} onChange={(event) => props.onChange({ upc: event.target.value })} /></Field>
-          <Field label="PZN"><Input value={props.draft.pzn} onChange={(event) => props.onChange({ pzn: event.target.value })} /></Field>
-          <Field label="MPN"><Input value={props.draft.mpn} onChange={(event) => props.onChange({ mpn: event.target.value })} /></Field>
-          <Field label="MOIN"><Input value={props.draft.moin} onChange={(event) => props.onChange({ moin: event.target.value })} /></Field>
-          <Field label={t.ottoMaximumOrderQuantity}><Input inputMode="numeric" value={props.draft.maxOrderQuantity} onChange={(event) => props.onChange({ maxOrderQuantity: event.target.value })} /></Field>
+          <div className="flex w-full flex-col gap-3 xl:ml-auto xl:w-[520px] xl:flex-none">
+            <CreateProductImageGallery
+              items={galleryItems}
+              activeItemId={activeGalleryItemId}
+              previewAlt="OTTO product image preview"
+              emptyPreviewLabel="No image selected"
+              emptyGalleryLabel="No images in gallery"
+              thumbnailAlt={(index) => `OTTO product image ${index + 1}`}
+              deleteAlt={(index) => `Delete OTTO product image ${index + 1}`}
+              onActiveItemChange={setActiveGalleryItemId}
+              onDeleteItem={(itemId) => {
+                const nextItems = galleryItems.filter((item) => item.id !== itemId);
+                updateGalleryItems(nextItems);
+                if (activeGalleryItemId === itemId) setActiveGalleryItemId(nextItems[0]?.id ?? "");
+              }}
+              onMoveItem={(sourceItemId, targetItemId) => {
+                const sourceIndex = galleryItems.findIndex((item) => item.id === sourceItemId);
+                const targetIndex = galleryItems.findIndex((item) => item.id === targetItemId);
+                if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+                const nextItems = [...galleryItems];
+                const [movedItem] = nextItems.splice(sourceIndex, 1);
+                nextItems.splice(targetIndex, 0, movedItem);
+                updateGalleryItems(nextItems);
+              }}
+            />
+            <OttoCategoriesPanel
+              selectedCategoryId={selectedCategoryId}
+              onSelectedCategoryChange={(category) => {
+                setSelectedCategoryId(category.id);
+                props.onChange({ productDescription: { ...description, category: category.name, categoryId: category.id } });
+              }}
+            />
+          </div>
         </div>
-      </details>
+      </div>
 
       {props.warnings.map((warning) => <p key={warning.code} className="text-sm text-amber-700">{warning.message}</p>)}
       <Button type="button" disabled={props.loading || props.applyLoading || props.changedFields.length === 0} onClick={props.onApply}>
-        {props.applyLoading ? t.ottoApplying : t.ottoReviewAndApplyChanges}
+        {props.applyLoading ? "Applying" : "Review and apply OTTO changes"}
       </Button>
     </div>
   );

@@ -23,6 +23,7 @@ start-dev.ps1
 start-dev-mac.sh
 stop-dev-mac.sh
 node_modules/
+.codebase-memory/
 .next/
 dist/
 coverage/

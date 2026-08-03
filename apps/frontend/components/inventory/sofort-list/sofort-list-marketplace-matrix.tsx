@@ -1,24 +1,24 @@
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
 import { buildMarketplaceMatrixRows } from "./sofort-list-marketplace-matrix-model";
 import { Checkbox } from "@/components/ui/checkbox";
+import { memo, useEffect, useState } from "react";
 
 type MarketplaceStatusKey = keyof SofortListRow["siteEanStatuses"];
 
 function displayEan(value: string, placeholder: string): string {
   const normalized = value.trim();
-  if (!normalized || normalized === placeholder) return "—";
+  if (!normalized || normalized === placeholder) return "";
   return normalized;
 }
 
-export function SofortListMarketplaceMatrix(props: {
+export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMatrix(props: {
   siteEans: SofortListRow["siteEans"];
   siteEanStatuses: SofortListRow["siteEanStatuses"];
   bWare: boolean;
   query: string;
   placeholderEan: string;
   highlightText: HighlightText;
-  isStatusUpdating?: (marketplace: MarketplaceStatusKey) => boolean;
-  onStatusChange?: (marketplace: MarketplaceStatusKey, status: boolean) => void;
+  onStatusChange?: (marketplace: MarketplaceStatusKey, status: boolean) => Promise<void>;
   labels: {
     matrixAria: string;
     jv: string;
@@ -28,7 +28,27 @@ export function SofortListMarketplaceMatrix(props: {
     empty: string;
   };
 }) {
-  const rows = buildMarketplaceMatrixRows(props.siteEans, props.siteEanStatuses, props.query, props.placeholderEan, props.bWare);
+  const [siteEanStatuses, setSiteEanStatuses] = useState(props.siteEanStatuses);
+  const [updatingMarketplace, setUpdatingMarketplace] = useState<MarketplaceStatusKey | null>(null);
+
+  useEffect(() => {
+    setSiteEanStatuses(props.siteEanStatuses);
+  }, [props.siteEanStatuses]);
+
+  const rows = buildMarketplaceMatrixRows(props.siteEans, siteEanStatuses, props.query, props.placeholderEan, props.bWare);
+
+  async function handleStatusChange(marketplace: MarketplaceStatusKey, status: boolean) {
+    if (!props.onStatusChange || updatingMarketplace) return;
+    setUpdatingMarketplace(marketplace);
+    try {
+      await props.onStatusChange(marketplace, status);
+      setSiteEanStatuses((current) => ({ ...current, [marketplace]: status }));
+    } catch {
+      // The caller shows the request error; retain the previous local status.
+    } finally {
+      setUpdatingMarketplace(null);
+    }
+  }
 
   return (
     <div className="wh-sofort-marketplace-matrix" role="group" aria-label={props.labels.matrixAria}>
@@ -52,25 +72,26 @@ export function SofortListMarketplaceMatrix(props: {
             return (
               <div
                 key={cell.key}
-                className={`flex items-center gap-1.5 rounded-lg px-2 py-1 transition ${
+                className={`wh-sofort-marketplace-matrix__value ${
                   cell.matches
-                    ? "bg-amber-200 text-slate-950 ring-1 ring-amber-400 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.45)]"
+                    ? "wh-sofort-marketplace-matrix__value--matched"
                     : cell.isBWare
-                      ? "bg-slate-100 text-slate-700 ring-1 ring-slate-300"
+                      ? "wh-sofort-marketplace-matrix__value--b-ware"
                       : cell.status === true
-                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                        : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
+                        ? "wh-sofort-marketplace-matrix__value--active"
+                        : "wh-sofort-marketplace-matrix__value--inactive"
                 }`}
-                title={displayValue === "—" ? undefined : displayValue}
+                title={displayValue || undefined}
               >
                 <code aria-label={`${row.market} ${cell.key} ${cell.matches ? props.labels.matched : props.labels.value}`}>
-                  {props.highlightText(displayValue, props.query) || props.labels.empty}
+                  {props.highlightText(displayValue, props.query)}
                 </code>
                 <Checkbox
+                  className="wh-sofort-marketplace-matrix__checkbox"
                   checked={cell.status === true}
-                  disabled={props.isStatusUpdating?.(cell.key) ?? false}
+                  disabled={updatingMarketplace === cell.key}
                   aria-label={`${row.market} ${cell.key} status`}
-                  onCheckedChange={(value) => props.onStatusChange?.(cell.key, value === true)}
+                  onCheckedChange={(value) => void handleStatusChange(cell.key, value === true)}
                 />
               </div>
             );
@@ -79,4 +100,4 @@ export function SofortListMarketplaceMatrix(props: {
       ))}
     </div>
   );
-}
+});

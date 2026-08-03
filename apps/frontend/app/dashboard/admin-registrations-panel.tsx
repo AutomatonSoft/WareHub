@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { motion, useReducedMotion } from "motion/react";
 import {
-  BadgeCheck,
   Check,
   CircleAlert,
   Clock3,
@@ -65,6 +63,7 @@ type AdminRegistrationsPanelProps = {
 type RoleValue = "all" | "admin" | "user";
 type StatusValue = "all" | "pending" | "approved" | "rejected";
 type SortValue = "newest" | "oldest";
+const USERS_PAGE_SIZE = 50;
 
 function SummaryCard({
   title,
@@ -162,7 +161,8 @@ export function AdminRegistrationsPanel({
   const [confirmTarget, setConfirmTarget] = useState<AdminUser | null>(null);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, "admin" | "user">>({});
-  const prefersReducedMotion = useReducedMotion();
+  const [hasMoreUsers, setHasMoreUsers] = useState(false);
+  const requestVersionRef = useRef(0);
 
   const canRender = role === "admin" && status === "approved" && token.length > 0;
   const locale = useMemo(() => dateLocale[lang] ?? "en-US", [lang]);
@@ -190,43 +190,64 @@ export function AdminRegistrationsPanel({
     return "error";
   }, []);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async ({ append = false, offset = 0 }: { append?: boolean; offset?: number } = {}) => {
     if (!canRender) {
       return;
+    }
+    const requestVersion = ++requestVersionRef.current;
+    if (!append) {
+      setHasMoreUsers(false);
     }
     setLoading(true);
     setMessage(null);
     try {
       const data = await fetchAdminUsers(apiBase, token, {
-        limit: 250,
-        offset: 0,
+        limit: USERS_PAGE_SIZE,
+        offset,
         search: query,
         role: roleFilter,
         status: statusFilter,
         sort: sortOrder
       });
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
       const nextUsers = Array.isArray(data) ? data : [];
-      setUsers(nextUsers);
-      setRoleDrafts(() => {
-        const next: Record<string, "admin" | "user"> = {};
+      setUsers((current) => append
+        ? [...current, ...nextUsers.filter((user) => !current.some((currentUser) => currentUser.id === user.id))]
+        : nextUsers);
+      setRoleDrafts((current) => {
+        const next: Record<string, "admin" | "user"> = append ? { ...current } : {};
         for (const user of nextUsers) {
-          next[user.id] = user.role;
+          if (!append || !next[user.id]) {
+            next[user.id] = user.role;
+          }
         }
         return next;
       });
+      setHasMoreUsers(nextUsers.length === USERS_PAGE_SIZE);
     } catch (error) {
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
       setMessage(error instanceof Error ? error.message : t.deleteFailed);
     } finally {
-      setLoading(false);
+      if (requestVersion === requestVersionRef.current) {
+        setLoading(false);
+      }
     }
   }, [apiBase, token, canRender, query, roleFilter, statusFilter, sortOrder, t.deleteFailed]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadUsers();
+      void loadUsers({ offset: 0 });
     }, 200);
     return () => window.clearTimeout(timer);
   }, [loadUsers]);
+
+  const loadMoreUsers = useCallback(() => {
+    void loadUsers({ append: true, offset: users.length });
+  }, [loadUsers, users.length]);
 
   const formatDate = useCallback(
     (value: string) => {
@@ -399,18 +420,8 @@ export function AdminRegistrationsPanel({
   }
 
   return (
-    <motion.div
-      initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: "easeOut" }}
-      className="space-y-4"
-    >
-      <motion.div
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.28, delay: prefersReducedMotion ? 0 : 0.05, ease: "easeOut" }}
-        className="grid gap-3 md:grid-cols-3"
-      >
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
         <SummaryCard
           title={t.totalUsers}
           value={totalUsers}
@@ -435,13 +446,9 @@ export function AdminRegistrationsPanel({
           accentClass="bg-emerald-500"
           loading={loading}
         />
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: prefersReducedMotion ? 0 : 0.1, ease: "easeOut" }}
-      >
+      <div>
       <Card className="wh-section-card overflow-hidden border-border/70 shadow-sm">
         <CardHeader className="border-b border-border/60 bg-muted/[0.12] pb-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -456,7 +463,6 @@ export function AdminRegistrationsPanel({
               <CardDescription className="pl-11">{t.adminUsersSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="h-8 gap-1.5 px-2.5"><BadgeCheck size={13} />{t.approved}</Badge>
               <Button type="button" variant="outline" size="sm" className="h-10 gap-2 transition-colors" onClick={() => void loadUsers()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? t.loading : t.refresh}
@@ -487,11 +493,11 @@ export function AdminRegistrationsPanel({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <label htmlFor="admin-users-role" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t.role}
               </label>
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter((value as RoleValue) ?? "all")}>
-                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
+                <SelectTrigger id="admin-users-role" className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.allRoles} />
                 </SelectTrigger>
                 <SelectContent>
@@ -503,11 +509,11 @@ export function AdminRegistrationsPanel({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <label htmlFor="admin-users-status" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t.status}
               </label>
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter((value as StatusValue) ?? "all")}>
-                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
+                <SelectTrigger id="admin-users-status" className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.allStatuses} />
                 </SelectTrigger>
                 <SelectContent>
@@ -520,11 +526,11 @@ export function AdminRegistrationsPanel({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <label htmlFor="admin-users-sort" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t.sort}
               </label>
               <Select value={sortOrder} onValueChange={(value) => setSortOrder((value as SortValue) ?? "newest")}>
-                <SelectTrigger className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
+                <SelectTrigger id="admin-users-sort" className="h-10 w-full border-border/70 bg-background/80 shadow-sm">
                   <SelectValue placeholder={t.newestFirst} />
                 </SelectTrigger>
                 <SelectContent>
@@ -822,9 +828,17 @@ export function AdminRegistrationsPanel({
               </div>
             </>
           ) : null}
+
+          {hasMoreUsers ? (
+            <div className="flex justify-center border-t border-border/60 pt-4">
+              <Button type="button" variant="outline" size="sm" className="min-w-36" onClick={loadMoreUsers} disabled={loading}>
+                {loading ? t.loading : t.loadMore}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
-      </motion.div>
+      </div>
 
       {confirmTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
@@ -866,6 +880,6 @@ export function AdminRegistrationsPanel({
           </Card>
         </div>
       ) : null}
-    </motion.div>
+    </div>
   );
 }

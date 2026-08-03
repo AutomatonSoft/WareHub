@@ -135,6 +135,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
     !selectedAttributeNames.has(attribute.name.trim().toLocaleLowerCase()) && !(attribute.id in draft.additionalAttributes),
   );
   const additionalAttributes = categoryAttributes.filter((attribute) => attribute.id in draft.additionalAttributes);
+  const selectedShippingProfile = OTTO_SHIPPING_PROFILES.find((profile) => profile.id === draft.shippingProfileId) ?? null;
   const updateAdditionalAttribute = (attribute: OttoCategoryAttribute, value: string) => {
     setDraft((current) => {
       const next = {
@@ -177,8 +178,8 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
       <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
       <Field label={t.ottoShippingProfile}>
         <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>
-          <SelectTrigger><SelectValue placeholder={t.ottoSelectShippingProfile} /></SelectTrigger>
-          <SelectContent>
+          <SelectTrigger id="otto-shipping-profile" className="w-full"><SelectValue placeholder="Select shipping profile">{selectedShippingProfile?.name ?? null}</SelectValue></SelectTrigger>
+          <SelectContent alignItemWithTrigger={false} style={{ width: "var(--anchor-width)" }}>
             <SelectGroup>
               {OTTO_SHIPPING_PROFILES.map((profile) => (
                 <SelectItem key={profile.id} value={profile.id}>{profile.name}</SelectItem>
