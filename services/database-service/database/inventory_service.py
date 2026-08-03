@@ -10,7 +10,7 @@ from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
 from .ftp_upload import normalize_managed_public_photo_value
-from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .models import Kid, Orders
 from .order_amounts import parse_order_amount
 
 logger = logging.getLogger(__name__)
@@ -289,53 +289,7 @@ def _join_unique_text(values: list[str], empty: str = "-") -> str:
 
 def build_inventory_rows() -> list[dict]:
     orders = list(Orders.objects.select_related("kid").all().order_by("id"))
-    kids = list(Kid.objects.all().order_by("id"))
-    eans_by_kid_id = {
-        row["kid_id"]: row
-        for row in Ean.objects.all().values(
-            "kid_id",
-            "main_ean",
-            "jv",
-            "xl",
-            "otto_jv",
-            "otto_xl",
-            "ebay_jv",
-            "ebay_xl",
-            "kaufland_jv",
-            "kaufland_xl",
-            "hood_jv",
-            "hood_xl",
-        )
-    }
-    statuses_by_kid_id = {
-        row["ean_id"]: row
-        for row in EanStatus.objects.all().values(
-            "ean_id",
-            "jv",
-            "xl",
-            "otto_jv",
-            "otto_xl",
-            "ebay_jv",
-            "ebay_xl",
-            "kaufland_jv",
-            "kaufland_xl",
-            "hood_jv",
-            "hood_xl",
-        )
-    }
-    attributes_by_kid_id = {
-        row["kid_id"]: row
-        for row in ProductAttributes.objects.all().values(
-            "kid_id",
-            "quantity",
-            "company",
-            "color",
-            "size",
-            "material",
-            "price",
-            "currency",
-        )
-    }
+    kids = list(Kid.objects.select_related("ean", "status", "product_attributes").order_by("id"))
     orders_by_kid_id: dict[int, list[dict]] = {}
     all_eans: set[str] = set()
     rows: list[dict] = []
@@ -373,21 +327,21 @@ def build_inventory_rows() -> list[dict]:
     catalog_map, hood_map = build_external_ean_links(all_eans)
 
     for kid in kids:
-        attrs = attributes_by_kid_id.get(kid.id) or {}
-        ean_row = eans_by_kid_id.get(kid.id) or {}
-        status_row = statuses_by_kid_id.get(kid.id) or {}
+        ean_row = getattr(kid, "ean", None)
+        status_row = getattr(kid, "status", None)
+        attrs = getattr(kid, "product_attributes", None)
         primary_kid = primary_kid_number(kid.kid_number)
-        main_ean = _norm_ean(ean_row.get("main_ean"))
-        cosmoshop_ean = _norm_ean(ean_row.get("jv"))
-        opencart_ean = _norm_ean(ean_row.get("xl"))
-        otto_jv_ean = _norm_ean(ean_row.get("otto_jv"))
-        otto_xl_ean = _norm_ean(ean_row.get("otto_xl"))
-        ebay_jv_ean = _norm_ean(ean_row.get("ebay_jv"))
-        ebay_xl_ean = _norm_ean(ean_row.get("ebay_xl"))
-        kaufland_jv_ean = _norm_ean(ean_row.get("kaufland_jv"))
-        kaufland_xl_ean = _norm_ean(ean_row.get("kaufland_xl"))
-        hood_jv_ean = _norm_ean(ean_row.get("hood_jv"))
-        hood_xl_ean = _norm_ean(ean_row.get("hood_xl"))
+        main_ean = _norm_ean(getattr(ean_row, "main_ean", None))
+        cosmoshop_ean = _norm_ean(getattr(ean_row, "jv", None))
+        opencart_ean = _norm_ean(getattr(ean_row, "xl", None))
+        otto_jv_ean = _norm_ean(getattr(ean_row, "otto_jv", None))
+        otto_xl_ean = _norm_ean(getattr(ean_row, "otto_xl", None))
+        ebay_jv_ean = _norm_ean(getattr(ean_row, "ebay_jv", None))
+        ebay_xl_ean = _norm_ean(getattr(ean_row, "ebay_xl", None))
+        kaufland_jv_ean = _norm_ean(getattr(ean_row, "kaufland_jv", None))
+        kaufland_xl_ean = _norm_ean(getattr(ean_row, "kaufland_xl", None))
+        hood_jv_ean = _norm_ean(getattr(ean_row, "hood_jv", None))
+        hood_xl_ean = _norm_ean(getattr(ean_row, "hood_xl", None))
         order_entries = orders_by_kid_id.get(kid.id) or []
 
         order_db_id = None
@@ -475,15 +429,18 @@ def build_inventory_rows() -> list[dict]:
                 "kaufland_xl_ean": kaufland_xl_ean,
                 "hood_jv_ean": hood_jv_ean,
                 "hood_xl_ean": hood_xl_ean,
-                "ean_status": status_row,
+                "ean_status": {
+                    field_name: getattr(status_row, field_name, False)
+                    for field_name in MARKETPLACE_STATUS_FIELDS
+                },
                 "linked_products_by_ean": {
                     "catalog": {ean: catalog_map.get(ean, []) for ean in sku_eans},
                     "hood_service": {ean: hood_map.get(ean, []) for ean in sku_eans},
                 },
                 "platform": _join_unique_text(platforms),
                 "buyer": _join_unique_text(buyers),
-                "quantity": attrs.get("quantity"),
-                "company": attrs.get("company"),
+                "quantity": getattr(attrs, "quantity", None),
+                "company": getattr(attrs, "company", None),
                 "room": kid.room,
                 "type": kid.furniture_type,
                 "commentary": kid.commentary,
@@ -492,11 +449,11 @@ def build_inventory_rows() -> list[dict]:
                 "sku": _join_unique_text(skus),
                 "full_amount": _join_unique_text(full_amounts),
                 "global_price": _join_unique_text(full_amounts),
-                "color": attrs.get("color"),
-                "size": attrs.get("size"),
-                "material": attrs.get("material"),
-                "price": str(attrs.get("price")) if attrs.get("price") is not None else None,
-                "price_currency": attrs.get("currency"),
+                "color": getattr(attrs, "color", None),
+                "size": getattr(attrs, "size", None),
+                "material": getattr(attrs, "material", None),
+                "price": str(attrs.price) if getattr(attrs, "price", None) is not None else None,
+                "price_currency": getattr(attrs, "currency", None),
                 "status": _join_unique_text(statuses, empty="no_paid"),
                 "order_date": latest_date or (kid.updated_at.isoformat() if getattr(kid, "updated_at", None) else None),
             }

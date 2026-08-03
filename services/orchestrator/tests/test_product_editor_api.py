@@ -203,7 +203,8 @@ class FakeProductEditorGateway:
 
     def sync_jv_by_ean(self, *, ean: str, site_key: str, request_id: str):
         self.synced_site_keys.add(site_key)
-        return type("R", (), {"status_code": 200, "body": {"created": True, "updated": False}})()
+        body = self.jv_local[f"{site_key}_synced"] if f"{site_key}_synced" in self.jv_local else self.jv_local[site_key]
+        return type("R", (), {"status_code": 200, "body": {"created": True, "updated": False, "item": body}})()
 
     def apply_jv_batch_by_ean(self, *, ean: str, request_id: str, payload: dict):
         self.jv_batch_calls.append({"ean": ean, "payload": payload, "request_id": request_id})
@@ -578,9 +579,7 @@ def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local
     assert payload["draft"]["jv_fields_by_site_key"]["JV_CO_UK"]["lieferzeitid"] == "5"
     assert "JV_DE" in gateway.synced_site_keys
     assert gateway.jv_sites_calls == 1
-    assert gateway.jv_local_calls.count("JV_DE") == 1
-    assert gateway.jv_local_calls.count("JV_AT") == 1
-    assert gateway.jv_local_calls.count("JV_CO_UK") == 1
+    assert gateway.jv_local_calls == []
 
 
 def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):
