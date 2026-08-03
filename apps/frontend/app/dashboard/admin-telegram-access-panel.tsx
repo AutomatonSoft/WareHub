@@ -113,26 +113,31 @@ export function AdminTelegramAccessPanel({
     setLoading(true);
     setMessage(null);
     try {
-      const [nextRows, nextUsers] = await Promise.all([
-        fetchTelegramAccessEntries({
-          search: query,
-          status: statusFilter,
-          sort: sortOrder,
-        }),
-        fetchAdminUsers(apiBase, token, {
-          limit: 250,
-          offset: 0,
-          sort: "newest",
-        }),
-      ]);
+      const nextRows = await fetchTelegramAccessEntries({
+        search: query,
+        status: statusFilter,
+        sort: sortOrder,
+      });
       setRows(nextRows);
-      setUsers(nextUsers);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t.adminTelegramFailedLoad);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, query, sortOrder, statusFilter, t.adminTelegramFailedLoad, token]);
+  }, [query, sortOrder, statusFilter, t.adminTelegramFailedLoad]);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const nextUsers = await fetchAdminUsers(apiBase, token, {
+        limit: 250,
+        offset: 0,
+        sort: "newest",
+      });
+      setUsers(nextUsers);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t.adminTelegramFailedLoad);
+    }
+  }, [apiBase, t.adminTelegramFailedLoad, token]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -140,6 +145,10 @@ export function AdminTelegramAccessPanel({
     }, 200);
     return () => window.clearTimeout(timer);
   }, [loadRows]);
+
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
 
   const formatDate = useCallback((value: string | null) => {
     if (!value) {
@@ -265,7 +274,6 @@ export function AdminTelegramAccessPanel({
               <CardDescription className="pl-11">{t.telegramAccessSubtitle}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="h-8 gap-1.5 px-2.5"><BadgeCheck size={13} />{t.adminTelegramVisibleCount.replace("{count}", String(counts.total))}</Badge>
               <Button type="button" variant="outline" size="sm" className="h-10 gap-2" onClick={() => void loadRows()} disabled={loading}>
                 <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
                 {loading ? t.loading : t.refresh}
@@ -365,12 +373,12 @@ export function AdminTelegramAccessPanel({
                             </div>
                             <div className="mt-3 flex flex-wrap gap-1.5">
                             {matchedUser ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"><Link2 size={12} />{t.adminTelegramMatchedUser}</span>
+                              <Badge variant="success"><Link2 size={12} />{t.adminTelegramMatchedUser}</Badge>
                             ) : row.email ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200"><UserX size={12} />{t.adminTelegramNoMatchedUser}</span>
+                              <Badge variant="warning"><UserX size={12} />{t.adminTelegramNoMatchedUser}</Badge>
                             ) : null}
                             {row.app_user?.id ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200"><BadgeCheck size={12} />{t.adminTelegramLinkedOnApproval}</span>
+                              <Badge variant="outline"><BadgeCheck size={12} />{t.adminTelegramLinkedOnApproval}</Badge>
                             ) : null}
                             </div>
                           </section>
@@ -399,7 +407,7 @@ export function AdminTelegramAccessPanel({
                             <p>{t.adminTelegramRevokedBy}: {row.revoked_by || "-"}</p>
                             </div>
                           </section>
-                          <section className="flex border-t border-border/55 p-4 xl:border-t-0 xl:items-center">
+                          <section className="flex border-t border-border/55 p-4 xl:items-center xl:justify-center xl:border-t-0">
                             <div>
                               <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.09em] text-foreground/65">{t.adminTelegramActions}</p>
                               <div className="flex flex-wrap gap-2">

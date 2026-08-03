@@ -576,6 +576,10 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull backend frontend gateway mobile services telegram_notifier orchestrator
 
           echo "=== APPLY STAGE MIGRATIONS ==="
+          # MongoDB is a persistent dependency and is intentionally not recreated with app services.
+          # Start it explicitly so a newly introduced Mongo-backed feature is available after deploy.
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build mongodb
+
           for attempt in $(seq 1 10); do
             if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate; then
               break

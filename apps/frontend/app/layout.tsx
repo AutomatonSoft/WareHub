@@ -9,6 +9,7 @@ import { QueryProvider } from "../components/providers/query-provider";
 import { AuthBootstrap } from "../components/providers/auth-bootstrap";
 import { LanguageSync } from "../components/providers/language-sync";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { ReactDevtoolsBridge } from "./devtools";
 
 const montserrat = Montserrat({
   subsets: ["latin", "cyrillic"],
@@ -76,6 +77,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: languageBootstrapScript }} />
+        <ReactDevtoolsBridge />
         <div className="relative z-20">
           <QueryProvider>
             <ThemeProvider>

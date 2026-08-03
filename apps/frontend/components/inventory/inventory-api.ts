@@ -1022,6 +1022,36 @@ export async function patchKidDetails(params: {
   }
 }
 
+export async function patchKidComposite(params: {
+  kidId: number;
+  kid: Record<string, unknown>;
+  ean: Record<string, unknown>;
+  productAttributes: Record<string, unknown>;
+}): Promise<void> {
+  const requestFactory = () =>
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/composite-update/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kid: params.kid,
+        ean: params.ean,
+        product_attributes: params.productAttributes,
+      }),
+    });
+
+  let response = await requestFactory();
+  if (!response.ok && response.status === 403) {
+    const retriedResponse = await retryWithSyncedDatabaseServiceSession(requestFactory);
+    if (retriedResponse) response = retriedResponse;
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const { fieldErrors, generalMessage, placeSuggestions } = parseKidRequestErrorPayload(payload);
+    throw new CreateKidRequestError(generalMessage || `${inventoryLabel("failedSaveChanges", "Failed to save changes.")}: HTTP ${response.status}`, response.status, fieldErrors, placeSuggestions);
+  }
+}
+
 const MARKETPLACE_STATUS_FIELD_BY_ROW_KEY = {
   jv: "jv",
   xl: "xl",

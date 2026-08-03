@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "d1d5a80674a2c932ef81f1d2fb71ee759dff2762",
+    "indexed_at": "2026-08-03T06:53:25Z",
+    "project": "I-WareHub",
+    "nodes": 13220,
+    "edges": 50648,
+    "original_size": 32964608,
+    "compressed_size": 7222441,
+    "compression_level": 3
+}

@@ -2942,18 +2942,18 @@ html[data-density="compact"] .ui-table-data-meta {
 .wh-sofort-table-meta__count { border-color: #e2e8f0; background: #f8fafc; color: #334155; }
 .wh-sofort-table-meta__subtitle { margin: 0; font-size: 12px; color: #64748b; }
 .wh-sofort-table-frame { height: 100%; overflow: hidden; border: 1px solid var(--wh-color-border); border-radius: var(--wh-radius-card); background: transparent; box-shadow: none; }
-.wh-sofort-table-wrap { height: 100%; max-height: none; min-height: 0; overflow-x: hidden; padding-bottom: 0; border: 0; border-radius: var(--wh-radius-card); background: transparent; box-shadow: none; }
+.wh-sofort-table-wrap { height: 100%; max-height: none; min-height: 0; overflow-x: auto; padding-bottom: 0; border: 0; border-radius: var(--wh-radius-card); background: transparent; box-shadow: none; }
 .wh-sofort-data-table {
   table-layout: fixed;
+  min-width: 1277px;
 }
 .wh-sofort-col--select { width: 36px; }
 .wh-sofort-col--place { width: 100px; }
 .wh-sofort-col--image { width: 140px; }
-.wh-sofort-col--product { width: 120px; }
+.wh-sofort-col--product { width: 125px; }
 .wh-sofort-col--attributes { width: 160px; }
-.wh-sofort-col--commentary { width: 172px; }
-.wh-sofort-col--price { width: 120px; }
-.wh-sofort-col--marketplace { width: 268px; }
+.wh-sofort-col--commentary { width: 150px; }
+.wh-sofort-col--marketplace { width: 390px; }
 .wh-sofort-col--actions { width: 176px; }
 .wh-sofort-col--hidden { width: 0; }
 .wh-sofort-cell {
@@ -3128,7 +3128,7 @@ html[data-density="compact"] .ui-table-data-meta {
 .wh-status-badge--success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; }
 .wh-status-badge--warning { background: #fffbeb; border: 1px solid #fde68a; color: #b45309; }
 .wh-sofort-kid-link { gap: 2px; }
-.wh-sofort-kid-link span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: #0f172a; letter-spacing: 0.01em; line-height: 1.35; font-variant-numeric: tabular-nums; font-family: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.wh-sofort-kid-link span { display: block; max-width: 100%; overflow: visible; white-space: nowrap; font-size: 12px; font-weight: 500; color: #0f172a; letter-spacing: 0.01em; line-height: 1.35; font-variant-numeric: tabular-nums; font-family: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .wh-sofort-kid-link { align-items: flex-start; justify-content: flex-start; width: 100%; }
 .wh-sofort-kid-value-link {
   display: inline-flex;
@@ -3520,25 +3520,35 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   line-height: 1.35;
   font-family: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-.wh-sofort-marketplace-matrix__row code {
+.wh-sofort-marketplace-matrix__value {
   display: flex;
+  gap: 6px;
   min-width: 0;
   min-height: 24px;
   align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  text-overflow: clip;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.wh-sofort-marketplace-matrix__value--matched { border-color: #fbbf24; background: #fde68a; color: #0f172a; }
+.wh-sofort-marketplace-matrix__value--b-ware { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
+.wh-sofort-marketplace-matrix__value--active { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+.wh-sofort-marketplace-matrix__value--inactive { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+.wh-sofort-marketplace-matrix__value code {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   font-family: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   font-weight: 500;
-  color: #0f172a;
+  color: inherit;
   line-height: 1.35;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  padding-inline: 8px;
   box-sizing: border-box;
 }
+.wh-sofort-marketplace-matrix__checkbox { flex: 0 0 auto; }
 .wh-sofort-price-cell {
   font-size: 12px;
   font-weight: 500;
@@ -4017,11 +4027,10 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   .wh-sofort-toolbar__actions .wh-button { min-width: 0; padding-inline: 12px; }
   .wh-sofort-col--place { width: 88px; }
   .wh-sofort-col--image { width: 118px; }
-  .wh-sofort-col--product { width: 132px; }
-  .wh-sofort-col--attributes { width: 172px; }
-  .wh-sofort-col--commentary { width: 120px; }
-  .wh-sofort-col--price { width: 84px; }
-  .wh-sofort-col--marketplace { width: 214px; }
+  .wh-sofort-col--product { width: 128px; }
+  .wh-sofort-col--attributes { width: 160px; }
+  .wh-sofort-col--commentary { width: 125px; }
+  .wh-sofort-col--marketplace { width: 330px; }
   .wh-sofort-col--actions { width: 144px; }
   .wh-sofort-cell { padding-inline: 8px !important; }
   .wh-sofort-data-table th { font-size: 11px; letter-spacing: 0.06em; }
