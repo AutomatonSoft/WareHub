@@ -590,6 +590,10 @@ async fn upload_via_ftp(
                 break;
             }
             Err(error) => {
+                if is_ftp_authentication_error(&error) {
+                    last_error = error;
+                    break;
+                }
                 last_error = error;
                 if attempt < config.ftp_retry_attempts {
                     tokio::time::sleep(Duration::from_millis(config.ftp_retry_delay_ms)).await;
@@ -627,6 +631,12 @@ async fn upload_via_ftp(
         config.ftp_port,
         ftp_path
     ))
+}
+
+fn is_ftp_authentication_error(error: &str) -> bool {
+    error
+        .split(|character: char| !character.is_ascii_digit())
+        .any(|code| code == "530")
 }
 
 fn build_upload_filename(
@@ -775,5 +785,15 @@ mod tests {
         let config = super::load_upload_storage_config();
         assert!((1..=5).contains(&config.ftp_retry_attempts));
         assert!((100..=5000).contains(&config.ftp_retry_delay_ms));
+    }
+
+    #[test]
+    fn ftp_authentication_error_detection_matches_530_only() {
+        assert!(super::is_ftp_authentication_error("530 Not logged in."));
+        assert!(super::is_ftp_authentication_error(
+            "FTP response error: code=530; authentication failed"
+        ));
+        assert!(!super::is_ftp_authentication_error("421 Service not available."));
+        assert!(!super::is_ftp_authentication_error("Unexpected 5300 value."));
     }
 }
