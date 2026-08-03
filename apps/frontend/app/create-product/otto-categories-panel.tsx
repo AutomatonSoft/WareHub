@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useLabels } from "../use-labels";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChange }: Props) {
+  const t = useLabels();
   const [categories, setCategories] = useState<OttoCategory[]>([]);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -65,7 +67,7 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
       })
       .catch((requestError) => {
         if (active) {
-          setError(requestError instanceof Error ? requestError.message : "Failed to load OTTO categories.");
+          setError(requestError instanceof Error ? requestError.message : t.ottoCategoriesLoadFailed);
         }
       })
       .finally(() => {
@@ -123,56 +125,60 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
     void startOttoFullCacheSync()
       .then(setSyncStatus)
       .catch((requestError) => {
-        setSyncError(requestError instanceof Error ? requestError.message : "Failed to start OTTO cache sync.");
+        setSyncError(requestError instanceof Error ? requestError.message : t.ottoCacheStartFailed);
       });
   };
 
   const syncIsRunning = syncStatus?.status === "running";
   const syncProgressText = syncStatus?.phase === "categories"
-    ? "Refreshing categories"
-    : `Attributes: ${syncStatus?.completed ?? 0} / ${syncStatus?.total ?? 0}`;
+    ? t.ottoRefreshingCategories
+    : t.ottoAttributesProgress
+      .replace("{completed}", String(syncStatus?.completed ?? 0))
+      .replace("{total}", String(syncStatus?.total ?? 0));
 
   return (
     <Card size="sm">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>CATEGORIES</CardTitle>
+          <CardTitle>{t.ottoCategories}</CardTitle>
           <Button type="button" variant="outline" size="xs" onClick={startFullSync} disabled={syncIsRunning}>
-            {syncIsRunning ? "SYNCING" : "GET"}
+            {syncIsRunning ? t.ottoSyncing : t.ottoGet}
           </Button>
         </div>
-        <CardDescription>Select the category for this product.</CardDescription>
+        <CardDescription>{t.ottoSelectCategoryHint}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {syncIsRunning ? (
-          <Progress value={syncStatus.progressPercent} aria-label="OTTO full cache sync progress">
+          <Progress value={syncStatus.progressPercent} aria-label={t.ottoCacheSyncProgress}>
             <ProgressLabel>{syncProgressText}</ProgressLabel>
             <ProgressValue />
           </Progress>
         ) : null}
         {syncStatus?.status === "completed" ? (
           <div className="text-xs text-muted-foreground">
-            Synced {syncStatus.cached} attributes{syncStatus.failed ? `, ${syncStatus.failed} failed` : ""}.
+            {t.ottoCacheSyncSummary
+              .replace("{cached}", String(syncStatus.cached))
+              .replace("{failed}", syncStatus.failed ? `, ${syncStatus.failed}` : "")}
           </div>
         ) : null}
         {syncStatus?.status === "failed" ? <div className="text-sm text-destructive">{syncStatus.error}</div> : null}
         {syncError ? <div className="text-sm text-destructive">{syncError}</div> : null}
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted-foreground">Only selected</span>
+          <span className="text-sm text-muted-foreground">{t.ottoOnlySelected}</span>
           <Switch
             checked={showOnlySelected}
             onChange={(event) => setShowOnlySelected(event.target.checked)}
-            aria-label="Show only selected category"
+            aria-label={t.ottoOnlySelectedAria}
           />
         </div>
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search categories"
-          aria-label="Search OTTO categories"
+          placeholder={t.ottoSearchCategories}
+          aria-label={t.ottoSearchCategoriesAria}
         />
         {loading ? (
-          <div className="flex flex-col gap-2" aria-label="Loading OTTO categories">
+          <div className="flex flex-col gap-2" aria-label={t.ottoLoadingCategoriesAria}>
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
@@ -180,10 +186,10 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
         ) : null}
         {error ? <div className="text-sm text-destructive">{error}</div> : null}
         {!loading && !error && visibleCategories.length === 0 && (categoryRequest.query || categoryRequest.selectedCategoryId) ? (
-          <div className="text-sm text-muted-foreground">No categories found.</div>
+          <div className="text-sm text-muted-foreground">{t.noCategoriesFound}</div>
         ) : null}
         {!loading && !error && visibleCategories.length === 0 && !categoryRequest.query && !categoryRequest.selectedCategoryId ? (
-          <div className="text-sm text-muted-foreground">Search for a category.</div>
+          <div className="text-sm text-muted-foreground">{t.ottoSearchCategoryHint}</div>
         ) : null}
         {!loading && !error && visibleCategories.length > 0 ? (
           <div className="max-h-80 overflow-auto rounded-[var(--radius-control)] border border-border/70 bg-background p-1">

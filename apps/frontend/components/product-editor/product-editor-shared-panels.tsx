@@ -98,14 +98,14 @@ export function ProductEditorEmptyPanel({
   const reducedMotion = useReducedMotion();
   const motionState = reducedMotion ? false : "hidden";
   const steps = [
-    { icon: ScanSearch, label: t.productEditorEmptyStep1, detail: "Use an EAN, SKU, or product identifier." },
-    { icon: PackageSearch, label: t.productEditorEmptyStep2, detail: "We will resolve matching marketplace targets." },
-    { icon: ClipboardCheck, label: t.productEditorEmptyStep3, detail: "Review the form, then publish only when ready." }
+    { icon: ScanSearch, label: t.productEditorEmptyStep1, detail: t.productEditorEmptyStep1Detail },
+    { icon: PackageSearch, label: t.productEditorEmptyStep2, detail: t.productEditorEmptyStep2Detail },
+    { icon: ClipboardCheck, label: t.productEditorEmptyStep3, detail: t.productEditorEmptyStep3Detail }
   ];
   const workspacePreviews = [
-    { title: t.productEditorSummarySection, detail: "Title, images, price, and product attributes", icon: PackageSearch },
-    { title: t.productEditorMarketplaceMatrixSection, detail: "Targets and availability across marketplaces", icon: ScanSearch },
-    { title: t.productEditorEditableFieldsSection, detail: "Edit, review, and apply your changes", icon: ClipboardCheck }
+    { title: t.productEditorSummarySection, detail: t.productEditorSummarySectionDetail, icon: PackageSearch },
+    { title: t.productEditorMarketplaceMatrixSection, detail: t.productEditorMarketplaceMatrixSectionDetail, icon: ScanSearch },
+    { title: t.productEditorEditableFieldsSection, detail: t.productEditorEditableFieldsSectionDetail, icon: ClipboardCheck }
   ];
   const visibleDiscoveryItems = discoveryItems.length > 0
     ? discoveryItems
@@ -121,24 +121,24 @@ export function ProductEditorEmptyPanel({
   };
   const getDiscoveryPresentation = (item: (typeof visibleDiscoveryItems)[number]) => {
     if (!item.ean) {
-      return { title: "No EAN assigned", badge: "No EAN", icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
+      return { title: t.productEditorDiscoveryNoEanTitle, badge: t.productEditorDiscoveryNoEanBadge, icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
     }
     if (item.status === "loading") {
-      return { title: "Searching this marketplace", badge: "Searching", icon: LoaderCircle, iconClass: "bg-sky-100 text-sky-700", surfaceClass: "border-sky-200 bg-sky-50/60", badgeClass: "bg-sky-100 text-sky-800", dotClass: "bg-sky-500" };
+      return { title: t.productEditorDiscoverySearchingTitle, badge: t.productEditorDiscoverySearchingBadge, icon: LoaderCircle, iconClass: "bg-sky-100 text-sky-700", surfaceClass: "border-sky-200 bg-sky-50/60", badgeClass: "bg-sky-100 text-sky-800", dotClass: "bg-sky-500" };
     }
     if (item.status === "found") {
-      return { title: "Product found", badge: "Found", icon: CircleCheckBig, iconClass: "bg-emerald-100 text-emerald-700", surfaceClass: "border-emerald-200 bg-emerald-50/60", badgeClass: "bg-emerald-100 text-emerald-800", dotClass: "bg-emerald-500" };
+      return { title: t.productEditorDiscoveryFoundTitle, badge: t.productEditorDiscoveryFoundBadge, icon: CircleCheckBig, iconClass: "bg-emerald-100 text-emerald-700", surfaceClass: "border-emerald-200 bg-emerald-50/60", badgeClass: "bg-emerald-100 text-emerald-800", dotClass: "bg-emerald-500" };
     }
     if (item.status === "missing") {
-      return { title: "No matching product", badge: "Not found", icon: SearchX, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
+      return { title: t.productEditorDiscoveryMissingTitle, badge: t.productEditorDiscoveryMissingBadge, icon: SearchX, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
     }
     if (item.status === "unavailable") {
-      return { title: "Marketplace lookup unavailable", badge: "Unavailable", icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
+      return { title: t.productEditorDiscoveryUnavailableTitle, badge: t.productEditorDiscoveryUnavailableBadge, icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
     }
     if (item.status === "error") {
-      return { title: "Could not complete the check", badge: "Check failed", icon: CircleAlert, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
+      return { title: t.productEditorDiscoveryErrorTitle, badge: t.productEditorDiscoveryErrorBadge, icon: CircleAlert, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
     }
-    return { title: "Ready to search", badge: "Queued", icon: ScanLine, iconClass: "bg-slate-100 text-slate-700", surfaceClass: "border-slate-200 bg-slate-50/60", badgeClass: "bg-slate-100 text-slate-700", dotClass: "bg-slate-400" };
+    return { title: t.productEditorDiscoveryQueuedTitle, badge: t.productEditorDiscoveryQueuedBadge, icon: ScanLine, iconClass: "bg-slate-100 text-slate-700", surfaceClass: "border-slate-200 bg-slate-50/60", badgeClass: "bg-slate-100 text-slate-700", dotClass: "bg-slate-400" };
   };
   const activeDiscoveryPresentation = getDiscoveryPresentation(visibleDiscoveryItems[0]);
 
@@ -191,7 +191,7 @@ export function ProductEditorEmptyPanel({
               </div>
               <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                Workspace ready
+                {t.productEditorWorkspaceReady}
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">{title}</p>
               <h2 className="mt-1 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{t.productEditorNoProductLoaded}</h2>
@@ -202,7 +202,7 @@ export function ProductEditorEmptyPanel({
               <div className="wh-editor-empty__scan pointer-events-none absolute inset-x-4 h-px bg-gradient-to-r from-transparent via-primary/80 to-transparent" />
               <div className="relative flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Discovery status</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t.productEditorDiscoveryStatus}</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{activeDiscoveryPresentation.title}</p>
                 </div>
                 <span className={cn("flex h-2.5 w-2.5 rounded-full shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]", activeDiscoveryPresentation.dotClass)} aria-label={activeDiscoveryPresentation.badge} />
@@ -268,7 +268,7 @@ export function ProductEditorEmptyPanel({
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-foreground">
                     <Icon className="h-4.5 w-4.5" aria-hidden="true" />
                   </div>
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-300">Ready</span>
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-300">{t.ready}</span>
                 </div>
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-foreground">{previewTitle}</p>
                 <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{detail}</p>
@@ -474,4 +474,3 @@ export {
   ProductEditorGalleryPanel,
   ProductEditorAttributesEditor
 } from "./product-editor-content-sections";
-

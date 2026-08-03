@@ -223,8 +223,8 @@ export function ProductEditorActiveGroupPanel(input: {
     if (!input.discover && !input.kauflandDraft.ean) {
       return (
         <ProductEditorEmptyPanel
-          title="Kaufland tab"
-          body="Run discover first so orchestrator can resolve Kaufland JV and XL targets."
+          title={t.productEditorKauflandTabTitle}
+          body={t.productEditorKauflandDiscoverHint}
           eanValue={input.eanValue}
           isEanValid={input.isEanValid}
           searching={input.searching}
@@ -239,7 +239,7 @@ export function ProductEditorActiveGroupPanel(input: {
 
   if (input.activeGroupId === "OTTO") {
     if (!input.discover && !input.ottoDraft.ean) {
-      return <ProductEditorEmptyPanel title="OTTO tab" body="Run discover first so orchestrator can resolve OTTO JV and XL targets." eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} discoveryItems={input.discoveryItems} />;
+      return <ProductEditorEmptyPanel title={t.productEditorOttoTabTitle} body={t.productEditorOttoDiscoverHint} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} discoveryItems={input.discoveryItems} />;
     }
     return <ProductEditorOttoPanel draft={input.ottoDraft} warnings={input.ottoWarnings} loading={input.ottoLoading} applyLoading={input.ottoApplyLoading} changedFields={input.ottoChangedFields} onChange={input.onPatchOtto} onApply={input.onApplyOttoEditedProducts} />;
   }

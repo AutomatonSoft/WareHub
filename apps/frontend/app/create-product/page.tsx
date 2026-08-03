@@ -656,9 +656,10 @@ function updateKauflandProductField(product: Record<string, unknown>, path: stri
   return next;
 }
 
-function KauflandDeliveryTimeRange({ product, onProductChange }: {
+function KauflandDeliveryTimeRange({ product, onProductChange, label }: {
   product: Record<string, unknown>;
   onProductChange: (product: Record<string, unknown>) => void;
+  label: string;
 }) {
   const deliveryFields = flattenKauflandFields(product)
     .filter((field) => field.label === "Delivery Time Min" || field.label === "Delivery Time Max");
@@ -682,7 +683,7 @@ function KauflandDeliveryTimeRange({ product, onProductChange }: {
 
   return (
     <section className="flex flex-col gap-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Delivery time (days)</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Min
           <Input type="number" min={1} max={30} value={range[0]} onChange={(event) => {
@@ -1250,10 +1251,12 @@ export default function CreateProductPage() {
         }
       } catch (error) {
         if (active) {
+          const message = error instanceof Error ? error.message : "OTTO product search failed.";
           setOttoSearchErrors((current) => ({
             ...current,
-            [profile]: error instanceof Error ? error.message : "OTTO product search failed.",
+            [profile]: message,
           }));
+          showToast(message, "error");
         }
       }
     })).finally(() => {
@@ -1263,7 +1266,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [controller.kidContext?.mainEan]);
+  }, [controller.kidContext?.mainEan, showToast]);
   const galleryImages = useMemo(() => controller.sourceSnapshot?.imageUrls ?? [], [controller.sourceSnapshot?.imageUrls]);
   const jvUrlKey = useMemo(() => buildUrlKeyFromName(jvName), [jvName]);
   const jvEvp = useMemo(() => computeEvpFromPrice(jvPrice), [jvPrice]);
@@ -2884,7 +2887,7 @@ export default function CreateProductPage() {
                     )}
                     deliveryPortalId="kaufland-delivery-time-range"
                     renderDeliveryTimeRange={(product, onProductChange) => (
-                      <KauflandDeliveryTimeRange product={product} onProductChange={onProductChange} />
+                      <KauflandDeliveryTimeRange product={product} onProductChange={onProductChange} label={t.ottoDeliveryTimeDays} />
                     )}
                     onDraftChange={(draft) => {
                       kauflandDraftRefByTab.current[activeTab] = { sourceKey: activeKauflandSourceKey, draft };
@@ -2894,13 +2897,10 @@ export default function CreateProductPage() {
                 {activeTabMeta.marketplace === "OTTO" ? (
                   <div className="space-y-3">
                     {ottoSearchLoading ? (
-                      <div className="text-sm text-muted-foreground">Searching OTTO product data…</div>
-                    ) : null}
-                    {activeOttoProfile && ottoSearchErrors[activeOttoProfile] ? (
-                      <div className="text-sm text-destructive">{ottoSearchErrors[activeOttoProfile]}</div>
+                      <div className="text-sm text-muted-foreground">{t.ottoProductSearchLoading}</div>
                     ) : null}
                     {!ottoSearchLoading && activeOttoProfile && !activeOttoProduct && !ottoSearchErrors[activeOttoProfile] ? (
-                      <div className="text-sm text-muted-foreground">No OTTO product data was found for this EAN.</div>
+                      <div className="text-sm text-muted-foreground">{t.ottoNoProductForEan}</div>
                     ) : null}
                     <OttoCreateProductPanel
                       initialDraft={activeOttoInitialDraft}
@@ -3041,7 +3041,7 @@ export default function CreateProductPage() {
 
         {isComingSoonMarketplace ? (
           <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-6 text-center">
-            <div className="text-lg font-semibold text-foreground">Coming soon</div>
+            <div className="text-lg font-semibold text-foreground">{t.comingSoon}</div>
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
               {activeTabMeta.label} product creation is being prepared.
             </p>

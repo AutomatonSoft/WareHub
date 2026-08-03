@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useLabels } from "../../app/use-labels";
 import { WAREHOUSE_MAP_VIEWBOX, warehouseMapZones } from "./warehouse-map.constants";
 import type { WarehouseZone } from "./warehouse-map.types";
 
 export function WarehouseMapCanvas({ onZoneSelect }: { onZoneSelect?: (zone: WarehouseZone) => void }) {
+  const t = useLabels();
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
 
   const selectZone = (zone: WarehouseZone) => {
@@ -22,8 +24,8 @@ export function WarehouseMapCanvas({ onZoneSelect }: { onZoneSelect?: (zone: War
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden rounded-[20px] border border-[#e1e5e9] bg-white">
       <svg viewBox={WAREHOUSE_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="warehouse-map-title warehouse-map-description" className="block size-full select-none">
-        <title id="warehouse-map-title">Warehouse layout map</title>
-        <desc id="warehouse-map-description">Interactive map of warehouse zones A through M.</desc>
+        <title id="warehouse-map-title">{t.warehouseLayoutMap}</title>
+        <desc id="warehouse-map-description">{t.warehouseLayoutMapDescription}</desc>
         <g>
           <rect x="60" y="80" width="1000" height="640" rx="26" fill="#F8FAFB" stroke="#667487" strokeWidth="7" />
           <rect x="1300" y="80" width="760" height="640" rx="26" fill="#F8FAFB" stroke="#667487" strokeWidth="7" />
@@ -35,7 +37,7 @@ export function WarehouseMapCanvas({ onZoneSelect }: { onZoneSelect?: (zone: War
             const selected = selectedZoneId === zone.id;
             const fontSize = fontSizeForZone(zone);
             return (
-              <g key={zone.id} role="button" tabIndex={0} aria-label={`Select warehouse zone ${zone.label}${zone.name ? `, ${zone.name.toLowerCase()}` : ""}`} onClick={() => selectZone(zone)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectZone(zone); } }} className="cursor-pointer outline-none">
+              <g key={zone.id} role="button" tabIndex={0} aria-label={t.selectWarehouseZone.replace("{zone}", `${zone.label}${zone.name ? `, ${zone.name.toLowerCase()}` : ""}`)} onClick={() => selectZone(zone)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectZone(zone); } }} className="cursor-pointer outline-none">
                 {zone.shape === "path" && zone.path ? (
                   <path d={zone.path} fill={zone.color} stroke={selected ? "#168D89" : "white"} strokeWidth={selected ? 8 : 5} strokeLinejoin="round" className="transition-opacity duration-200 hover:opacity-85" />
                 ) : (

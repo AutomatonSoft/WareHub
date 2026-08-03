@@ -3,6 +3,7 @@
 import { Package, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useLabels } from "../use-labels";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -74,6 +75,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
+  const t = useLabels();
   const [draft, setDraft] = useState(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const sourceDraftRef = useRef(initialDraft);
@@ -165,17 +167,17 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
 
   return (
     <div className="space-y-4">
-      <Field label="Product line / title"><Input value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
+      <Field label={t.ottoProductLine}><Input value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="productReference"><Input value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
+        <Field label={t.ottoProductReference}><Input value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
         <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
         <Field label="EAN"><Input value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
-      <Field label="Price (EUR)"><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
-      <Field label="Delivery time (days)"><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
-      <Field label="Shipping profile">
+      <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+      <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
+      <Field label={t.ottoShippingProfile}>
         <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>
-          <SelectTrigger><SelectValue placeholder="Select shipping profile" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder={t.ottoSelectShippingProfile} /></SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {OTTO_SHIPPING_PROFILES.map((profile) => (
@@ -187,16 +189,16 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
       </Field>
       <div className="grid gap-3">
         {bulletPoints.map((bulletPoint, index) => (
-          <Field key={`bullet-${index}`} label={`Bullet point ${index + 1}`}>
+          <Field key={`bullet-${index}`} label={t.ottoBulletPoint.replace("{index}", String(index + 1))}>
             <Input value={bulletPoint} onChange={(event) => updateBullet(index, event.target.value)} />
           </Field>
         ))}
       </div>
-      <Field label="Description"><Textarea value={draft.description} onChange={(event) => update("description", event.target.value)} className="min-h-40" /></Field>
+      <Field label={t.descriptionLabel}><Textarea value={draft.description} onChange={(event) => update("description", event.target.value)} className="min-h-40" /></Field>
       {selectedAttributes.length > 0 || draft.category ? (
-        <section className="flex flex-col gap-3" aria-label="OTTO category attributes">
+        <section className="flex flex-col gap-3" aria-label={t.ottoCategoryAttributes}>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold uppercase">Attributes</h3>
+            <h3 className="text-sm font-semibold uppercase">{t.attributes}</h3>
             <Select
               value=""
               onValueChange={(attributeId) => {
@@ -205,7 +207,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
               }}
               disabled={!draft.category || availableCategoryAttributes.length === 0}
             >
-                <SelectTrigger className="w-56"><SelectValue placeholder={!draft.category ? "Select category first" : availableCategoryAttributes.length ? "Add attribute" : "No attributes"} /></SelectTrigger>
+                <SelectTrigger className="w-56"><SelectValue placeholder={!draft.category ? t.ottoSelectCategoryFirst : availableCategoryAttributes.length ? t.ottoAddAttribute : t.ottoNoAttributes} /></SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     {availableCategoryAttributes.map((attribute) => <SelectItem key={attribute.id} value={attribute.id}>{attribute.name}</SelectItem>)}
@@ -220,7 +222,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, categoryId, cat
                 <dt className="text-xs font-medium text-muted-foreground">{attribute.label}</dt>
                 <dd className="flex min-w-0 gap-2">
                   <Input value={attribute.value} onChange={(event) => updateProductAttribute(attribute, event.target.value)} />
-                  <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${attribute.label}`} onClick={() => removeProductAttribute(attribute.id)}>
+                  <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttribute.replace("{name}", attribute.label)} onClick={() => removeProductAttribute(attribute.id)}>
                     <Trash2 />
                   </Button>
                 </dd>
