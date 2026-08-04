@@ -136,12 +136,6 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${PROD_MONGO_PASSWORD:?PROD_MONGO_PASSWORD is required}
     volumes:
       - prod_mongodb_data:/data/db
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
 
   services:
     image: ${SERVICES_IMAGE}:${SERVICES_APP_VERSION}
@@ -153,7 +147,7 @@ services:
       postgres:
         condition: service_healthy
       mongodb:
-        condition: service_healthy
+        condition: service_started
     environment:
       SECRET_KEY: ${SERVICES_SECRET_KEY:-prod-change-me}
       DEBUG: "false"
