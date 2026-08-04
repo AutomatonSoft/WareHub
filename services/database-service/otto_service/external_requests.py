@@ -16,11 +16,11 @@ def _to_external_otto_product(product: dict[str, Any], *, controller: str) -> di
     if controller.strip().lower() == "jv":
         product_description = external_product.pop("productDescription", None)
         if product_description is not None:
-            external_product["productDescriprion"] = product_description
+            external_product["productDescription"] = product_description
 
         compliance = external_product.pop("compliance", None)
         if compliance is not None:
-            external_product["compliace"] = compliance
+            external_product["compliance"] = compliance
 
     order = external_product.pop("order", None)
     if isinstance(order, dict) and "maxOrderQuantity" not in external_product:
