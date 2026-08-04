@@ -292,10 +292,10 @@ class OttoExternalProductsClientTests(SimpleTestCase):
             "productReference": "4021234231234",
             "sku": "4021234231234",
             "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
-            "productDescriprion": {"category": "Sessel"},
+            "productDescription": {"category": "Sessel"},
             "delivery": {"type": "PARCEL", "deliveryTime": 14},
             "maxOrderQuantity": 1,
-            "compliace": {"productSafety": {}},
+            "compliance": {"productSafety": {}},
         }])
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
 
