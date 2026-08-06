@@ -18,6 +18,8 @@ import { ToolbarGroup } from "@/components/ui/toolbar";
 
 type SelectOption = { value: string; label: string };
 
+const MAX_VISIBLE_FILTER_OPTIONS = 24;
+
 function SearchableFilterField(props: {
   label: string;
   ariaLabel: string;
@@ -37,11 +39,20 @@ function SearchableFilterField(props: {
   }, [open]);
 
   const selectedLabel = props.options.find((option) => option.value === props.value)?.label ?? props.placeholder;
-  const filteredOptions = useMemo(() => {
+  const visibleOptions = useMemo(() => {
     const normalized = search.trim().toLowerCase();
-    if (!normalized) return props.options;
-    return props.options.filter((option) => option.label.toLowerCase().includes(normalized));
-  }, [props.options, search]);
+    const matchingOptions = normalized
+      ? props.options.filter((option) => option.label.toLowerCase().includes(normalized))
+      : props.options;
+    const selectedOption = props.options.find((option) => option.value === props.value);
+    const cappedOptions = matchingOptions.slice(0, MAX_VISIBLE_FILTER_OPTIONS);
+
+    if (selectedOption && !cappedOptions.some((option) => option.value === selectedOption.value)) {
+      return [selectedOption, ...cappedOptions];
+    }
+
+    return cappedOptions;
+  }, [props.options, props.value, search]);
 
   return (
     <div className="wh-sofort-filter-field">
@@ -77,8 +88,8 @@ function SearchableFilterField(props: {
             />
           </div>
           <div className="wh-sofort-filter-menu__list">
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => {
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => {
                 const active = option.value === props.value;
                 return (
                   <DropdownMenuItem
@@ -187,7 +198,19 @@ export function SofortListToolbar(props: {
   void props.activeFilters;
   void props.onClearSingleFilter;
 
-  const { labels } = props;
+  const { labels, onQueryChange, query } = props;
+  const [queryDraft, setQueryDraft] = useState(query);
+
+  useEffect(() => {
+    setQueryDraft(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (queryDraft === query) return;
+    const timer = window.setTimeout(() => onQueryChange(queryDraft), 350);
+    return () => window.clearTimeout(timer);
+  }, [onQueryChange, query, queryDraft]);
+
   const clearLabel = props.hasActiveFilters ? `${labels.clear} ${labels.activeSuffix}` : labels.clear;
 
   const locationOptions: SelectOption[] = [
@@ -211,8 +234,8 @@ export function SofortListToolbar(props: {
           <div className="grid w-full gap-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{props.queryLabel}</span>
             <Input
-              value={props.query}
-              onChange={(event) => props.onQueryChange(event.target.value)}
+              value={queryDraft}
+              onChange={(event) => setQueryDraft(event.target.value)}
               placeholder={props.searchPlaceholder}
               className="wh-input w-full"
               aria-label={labels.searchProductsAria}

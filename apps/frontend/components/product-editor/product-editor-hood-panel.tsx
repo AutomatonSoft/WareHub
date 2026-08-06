@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels } from "../../app/use-labels";
+import { HoodCreateProductPanel, type HoodCreateProductDraft } from "../product-forms";
 import { Button } from "../ui/button";
+import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/cn";
@@ -91,20 +93,22 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
       hideHeaderBadges
       headerLead={
         <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <Input
-              value={props.eanValue}
-              onChange={(event) => props.onChangeEan(event.target.value)}
-              placeholder={t.enterEanSkuOrProductId}
-              maxLength={100}
-              className="h-10 min-w-0 flex-1 rounded-xl border-border bg-background text-sm"
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                  event.preventDefault();
-                  props.onSearch();
-                }
-              }}
-            />
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
+            <FormField label="EAN" className="min-w-0 flex-1">
+              <Input
+                value={props.eanValue}
+                onChange={(event) => props.onChangeEan(event.target.value)}
+                placeholder={t.enterEanSkuOrProductId}
+                maxLength={100}
+                className="h-10 rounded-xl border-border bg-background text-sm"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
+                    event.preventDefault();
+                    props.onSearch();
+                  }
+                }}
+              />
+            </FormField>
             <Button
               type="button"
               variant="outline"
@@ -129,7 +133,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
           {props.applyLoading ? t.updating : t.updateEditedProducts}
         </Button>
       }
-      topLeft={<HoodMainColumn draft={props.draft} onChange={props.onChange} />}
+      topLeft={<HoodEditorCreateForm draft={props.draft} onChange={props.onChange} />}
       topRight={
         <div className="space-y-4">
           <ProductEditorHoodGalleryCard
@@ -143,69 +147,7 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
         </div>
       }
       description={null}
-      bottom={
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.descriptionLabel}</p>
-            <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
-              <button
-                type="button"
-                onClick={() => setDescriptionMode("code")}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-                  descriptionMode === "code" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t.codeLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDescriptionMode("preview")}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-                  descriptionMode === "preview" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t.previewLabel}
-              </button>
-            </div>
-          </div>
-
-          {descriptionMode === "code" ? (
-            <Textarea
-              value={props.draft.description}
-              onChange={(event) => props.onChange({ description: event.target.value })}
-              className="min-h-[32rem] rounded-xl border-border bg-white font-sans text-sm"
-            />
-          ) : (
-            <div className="max-h-[32rem] overflow-auto rounded-xl border border-border bg-white p-4">
-              {props.draft.description.trim() ? descriptionUsesFullDocumentPreview ? (
-                <EditableHoodDescriptionPreview
-                  srcDoc={editableDescriptionPreviewSrcDoc}
-                  onSave={(nextDescription) => props.onChange({ description: nextDescription })}
-                />
-              ) : (
-                <div
-                  className="text-sm leading-6 outline-none"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(event) => props.onChange({ description: event.currentTarget.innerHTML })}
-                  dangerouslySetInnerHTML={{ __html: descriptionPreviewHtml }}
-                />
-              ) : (
-                <div
-                  className="text-sm text-muted-foreground outline-none"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(event) => props.onChange({ description: event.currentTarget.innerHTML })}
-                >
-                  {t.noDescription}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      }
+      bottom={null}
     />
   );
 }
@@ -240,7 +182,7 @@ function EditableHoodDescriptionPreview({
     <div className="space-y-3">
       <iframe
         ref={iframeRef}
-        title="hood-description-preview"
+        title={t.hoodDescriptionPreview}
         srcDoc={frameSrcDoc}
         sandbox="allow-same-origin allow-popups allow-forms"
         className="h-[32rem] w-full rounded-lg bg-white"
@@ -280,20 +222,30 @@ function EditableHoodDescriptionPreview({
   );
 }
 
-function HoodMainColumn({ draft, onChange }: { draft: ProductEditorHoodDraft; onChange: (patch: Partial<ProductEditorHoodDraft>) => void }) {
+function HoodEditorCreateForm({ draft, onChange }: { draft: ProductEditorHoodDraft; onChange: (patch: Partial<ProductEditorHoodDraft>) => void }) {
   const t = useLabels();
+  const publishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
+  const initialDraft: HoodCreateProductDraft = {
+    name: draft.title,
+    ean: draft.ean,
+    price: draft.price,
+    description: draft.description,
+    quantity: draft.quantity,
+    condition: draft.condition,
+    itemMode: draft.itemMode,
+    itemNumber: draft.itemNumber,
+    productPropertiesText: draft.productProperties.map((item) => `${item.name}: ${item.value}`).join("\n"),
+  };
   return (
-    <div className="space-y-4">
-      <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
-        <Input value={draft.title} onChange={(event) => onChange({ title: event.target.value })} className="h-11 rounded-xl border-border bg-white text-sm" />
-        <p className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.priceLabel}</p>
-        <Input value={draft.price} onChange={(event) => onChange({ price: event.target.value })} className="h-11 rounded-xl border-border bg-white text-sm" />
-      </div>
-      <div className="pt-4">
-        <ProductEditorHoodPropertiesPanel draft={draft} onChange={onChange} />
-      </div>
-    </div>
+    <HoodCreateProductPanel
+      initialDraft={initialDraft}
+      draftKey={`${draft.target_id}:${draft.ean}`}
+      publishDraftRef={publishDraftRef}
+      codeLabel={t.codeLabel}
+      previewLabel={t.previewLabel}
+      previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildHoodDescriptionPreviewDocument(description, draft.account))}
+      onDraftChange={(next) => onChange({ title: next.name, price: next.price, description: next.description, quantity: next.quantity, condition: next.condition, itemMode: next.itemMode, itemNumber: next.itemNumber })}
+    />
   );
 }
 

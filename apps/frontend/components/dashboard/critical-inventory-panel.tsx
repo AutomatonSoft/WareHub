@@ -4,7 +4,8 @@ import { Clock3, PackageSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels, useLanguage } from "../../app/use-labels";
-import { fetchInventoryRows, type InventoryRowsApiResponse } from "../inventory/inventory-api";
+import { apiFetch } from "../../lib/api/client";
+import { getServicesApiBase } from "../inventory/inventory-api";
 import type { SofortListRow } from "../inventory/sofort-list/sofort-list-types";
 import { normalizePhotoList, normalizePlaceValue, type KidDto } from "../inventory/inventory-table-utils";
 import { Badge } from "../ui/badge";
@@ -13,7 +14,6 @@ import { Card, CardContent } from "../ui/card";
 import { Skeleton } from "../ui/skeleton";
 import { CriticalInventoryEditDialog } from "./critical-inventory-edit-dialog";
 
-const INVENTORY_FETCH_PAGE_SIZE = 200;
 const CRITICAL_PAGE_SIZE = 10;
 
 const CRITICAL_WEIGHTS = {
@@ -138,19 +138,7 @@ type CriticalInventoryItem = {
   reasons: CriticalReason[];
 };
 
-function extractInventoryRows(payload: InventoryRowsApiResponse): CriticalInventorySourceRow[] {
-  if (Array.isArray(payload)) {
-    return payload as CriticalInventorySourceRow[];
-  }
-  return Array.isArray(payload.results) ? (payload.results as CriticalInventorySourceRow[]) : [];
-}
-
-function extractInventoryCount(payload: InventoryRowsApiResponse, fallbackLength: number): number {
-  if (Array.isArray(payload)) {
-    return payload.length;
-  }
-  return typeof payload.count === "number" && Number.isFinite(payload.count) ? payload.count : fallbackLength;
-}
+type CriticalInventoryResponse = { results: CriticalInventorySourceRow[]; available_places: string[]; occupied_places: string[] };
 
 function hasText(value: unknown): boolean {
   return typeof value === "string" ? value.trim().length > 0 : value !== null && value !== undefined;
@@ -440,19 +428,10 @@ export function CriticalInventoryPanel() {
       setLoading(true);
       setError(null);
       try {
-        const firstPage = await fetchInventoryRows({ page: 1, pageSize: INVENTORY_FETCH_PAGE_SIZE });
-        const firstRows = extractInventoryRows(firstPage);
-        const totalCount = extractInventoryCount(firstPage, firstRows.length);
-        const totalPages = Math.max(1, Math.ceil(totalCount / INVENTORY_FETCH_PAGE_SIZE));
-        const remainingPages = totalPages > 1
-          ? await Promise.all(
-            Array.from({ length: totalPages - 1 }, (_, index) =>
-              fetchInventoryRows({ page: index + 2, pageSize: INVENTORY_FETCH_PAGE_SIZE })
-            )
-          )
-          : [];
-
-        const allRows = [firstRows, ...remainingPages.map((payload) => extractInventoryRows(payload))].flat();
+        const response = await apiFetch(`${getServicesApiBase()}/inventory/critical/`);
+        if (!response.ok) throw new Error(`critical_inventory_request_failed:${response.status}`);
+        const payload = await response.json() as CriticalInventoryResponse;
+        const allRows = payload.results;
         const nextItems = allRows
           .map((row) => buildCriticalInventoryItem(row, t))
           .filter((item): item is CriticalInventoryItem => item !== null)
@@ -460,8 +439,8 @@ export function CriticalInventoryPanel() {
 
         if (active) {
           setItems(nextItems);
-          setAvailablePlaces(allRows.map((row) => normalizePlaceValue(row.place)).filter(Boolean));
-          setOccupiedPlaces(allRows.map((row) => normalizePlaceValue(row.place)).filter(Boolean));
+          setAvailablePlaces(payload.available_places);
+          setOccupiedPlaces(payload.occupied_places);
           setVisibleCount(CRITICAL_PAGE_SIZE);
         }
       } catch (loadError) {

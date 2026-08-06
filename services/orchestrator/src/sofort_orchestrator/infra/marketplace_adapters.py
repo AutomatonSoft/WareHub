@@ -50,7 +50,10 @@ class MarketplaceAdapters:
         if channel.marketplace is Marketplace.OTTO:
             profile = (channel.profile or channel.account or "jv").strip().lower()
             url = f"{self.base_url}/api/v1/otto/{profile}/products/upsert/"
-            response = self.http.request("POST", url, headers=headers, json=payload)
+            otto_payload = dict(payload)
+            if channel.ean_source == "pool":
+                otto_payload.update({"productReference": ean, "sku": ean, "ean": ean})
+            response = self.http.request("POST", url, headers=headers, json=otto_payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
         if channel.marketplace is Marketplace.XLJV:

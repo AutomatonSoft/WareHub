@@ -18,6 +18,7 @@ from database.idempotency import (
     finalize_success,
 )
 from database.permissions import SessionRolePermission
+from database.models import Ean, EanStatus
 
 from .core import (
     HOOD_API_BASE_URL,
@@ -97,6 +98,32 @@ def _allowed_patch_fields() -> set[str]:
 def _enforce_create_category(create_body: dict) -> dict:
     create_body["categoryID"] = HOOD_CREATE_CATEGORY_ID
     return create_body
+
+
+def _record_hood_marketplace_ean(*, source_ean: str, marketplace_ean: str, account: str) -> dict:
+    """Persist a confirmed pool EAN on the source Kid's marketplace mapping."""
+    normalized_source_ean = str(source_ean or "").strip()
+    normalized_marketplace_ean = str(marketplace_ean or "").strip()
+    field_name = f"hood_{account}"
+    if account not in {"jv", "xl"} or not normalized_source_ean or not normalized_marketplace_ean:
+        return {"saved": False, "reason": "source_ean_not_provided"}
+
+    ean_row = Ean.objects.select_related("kid").filter(main_ean=normalized_source_ean).first()
+    if ean_row is None:
+        logger.warning(
+            "HOOD_MARKETPLACE_EAN_SOURCE_NOT_FOUND source_ean=%s account=%s marketplace_ean=%s",
+            normalized_source_ean,
+            account,
+            normalized_marketplace_ean,
+        )
+        return {"saved": False, "reason": "source_ean_not_found"}
+
+    setattr(ean_row, field_name, normalized_marketplace_ean)
+    ean_row.save(update_fields=[field_name])
+    status_row, _ = EanStatus.objects.get_or_create(ean=ean_row.kid)
+    setattr(status_row, field_name, True)
+    status_row.save(update_fields=[field_name])
+    return {"saved": True, "kid_id": ean_row.kid_id, "field": field_name, "ean": normalized_marketplace_ean}
 
 
 def _extract_current_external_item(ean: str, account: str) -> dict | None:
@@ -427,6 +454,7 @@ class HoodFetchByEANAPIView(APIView):
             finalize_error(idem_record, status_code=status.HTTP_400_BAD_REQUEST, payload=payload, error_code=payload["code"])
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)
 
+        source_ean = str(create_body.pop("__source_ean", "") or "").strip()
         create_body = sanitize_patch_payload(create_body)
         create_body = {key: value for key, value in create_body.items() if key in _allowed_patch_fields()}
         create_body = _enforce_create_category(create_body)
@@ -516,11 +544,23 @@ class HoodFetchByEANAPIView(APIView):
         if isinstance(external_payload, dict) and isinstance(external_payload.get("items"), list):
             with transaction.atomic():
                 db_result = upsert_response_and_items(external_payload, account=account, ean=ean_value)
+                marketplace_ean_result = _record_hood_marketplace_ean(
+                    source_ean=source_ean,
+                    marketplace_ean=ean_value,
+                    account=account,
+                )
+        else:
+            marketplace_ean_result = _record_hood_marketplace_ean(
+                source_ean=source_ean,
+                marketplace_ean=ean_value,
+                account=account,
+            )
         set_external_push_status(account=account, ean=ean_value, pushed=True)
         response_payload = {
             "account": account,
             "ean": ean_value,
             "db": db_result,
+            "marketplace_ean": marketplace_ean_result,
             "external_status_code": external_response.status_code,
             "external_payload": external_payload,
         }

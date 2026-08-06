@@ -122,6 +122,30 @@ export type ProductEditorKauflandDraft = {
   delivery: string;
 };
 
+export type ProductEditorOttoDraft = {
+  target_id: string;
+  profile: "jv" | "xl";
+  productReference: string;
+  sku: string;
+  ean: string;
+  isbn: string;
+  upc: string;
+  pzn: string;
+  mpn: string;
+  moin: string;
+  offeringStartDate: string;
+  releaseDate: string;
+  maxOrderQuantity: string;
+  shippingProfileId: string;
+  productDescription: Record<string, unknown>;
+  mediaAssets: Array<Record<string, unknown>>;
+  delivery: Record<string, unknown>;
+  order: Record<string, unknown>;
+  pricing: Record<string, unknown>;
+  logistics: Record<string, unknown>;
+  compliance: Record<string, unknown>;
+};
+
 export type ProductEditorJvDescription = {
   language_id: number;
   name: string;

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="96" height="150" viewBox="0 0 96 150"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Truck with container, top view</title>
+  <desc id="desc">A truck carrying a container, viewed from above, with the cab facing downward.</desc>
+
+  <!-- Transparent background -->
+
+  <!-- Rear container -->
+  <rect x="14" y="4" width="68" height="88" rx="3"
+        fill="#b9c9dc" stroke="#405064" stroke-width="2.5"/>
+
+  <!-- Container roof panels -->
+  <line x1="31" y1="5" x2="31" y2="91" stroke="#9aacc1" stroke-width="1.5"/>
+  <line x1="48" y1="5" x2="48" y2="91" stroke="#9aacc1" stroke-width="1.5"/>
+  <line x1="65" y1="5" x2="65" y2="91" stroke="#9aacc1" stroke-width="1.5"/>
+
+  <!-- Chassis connector -->
+  <rect x="37" y="91" width="22" height="9" rx="3"
+        fill="#536274"/>
+
+  <!-- Side wheels -->
+  <rect x="8" y="88" width="8" height="24" rx="4" fill="#202a35"/>
+  <rect x="80" y="88" width="8" height="24" rx="4" fill="#202a35"/>
+
+  <!-- Cab body, facing downward -->
+  <path d="M24 99
+           Q24 95 29 95
+           H67
+           Q72 95 72 99
+           L78 124
+           Q79 130 75 135
+           L66 144
+           Q63 147 58 147
+           H38
+           Q33 147 30 144
+           L21 135
+           Q17 130 18 124
+           Z"
+        fill="#f06f78"
+        stroke="#405064"
+        stroke-width="2.5"
+        stroke-linejoin="round"/>
+
+  <!-- Windshield -->
+  <path d="M27 104
+           Q29 100 34 100
+           H62
+           Q67 100 69 104
+           L72 116
+           H24
+           Z"
+        fill="#c8eef5"
+        stroke="#405064"
+        stroke-width="2"/>
+
+  <!-- Cab roof -->
+  <rect x="29" y="118" width="38" height="17" rx="5"
+        fill="#ef8790" stroke="#c8525d" stroke-width="1.5"/>
+
+  <!-- Front bumper -->
+  <rect x="35" y="143" width="26" height="5" rx="2.5"
+        fill="#405064"/>
+
+  <!-- Headlights -->
+  <rect x="22" y="134" width="8" height="5" rx="2.5"
+        fill="#fff0a6"/>
+  <rect x="66" y="134" width="8" height="5" rx="2.5"
+        fill="#fff0a6"/>
+
+  <!-- Mirrors -->
+  <rect x="12" y="109" width="8" height="13" rx="3" fill="#405064"/>
+  <rect x="76" y="109" width="8" height="13" rx="3" fill="#405064"/>
+</svg>

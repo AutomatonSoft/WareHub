@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BarcodeIcon, PlusIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BarcodeIcon, LoaderCircleIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 
 import { useLabels } from "../use-labels";
 import { fetchEanPoolStatsCount, importEansToPool } from "../../components/editor/ean-pool-api";
@@ -18,23 +18,44 @@ export function CreateProductEanPoolPanel() {
   const [value, setValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [poolCount, setPoolCount] = useState<number | null>(null);
+  const [isPoolCountLoading, setIsPoolCountLoading] = useState(true);
+  const [poolCountUnavailable, setPoolCountUnavailable] = useState(false);
 
   const eans = useMemo(() => normalizeEanInputLines(value), [value]);
 
-  async function loadPoolCount() {
-    try {
-      const count = await fetchEanPoolStatsCount();
-      setPoolCount(count);
-    } catch {
-      // The count is a non-critical background request. A timeout or an aborted
-      // request must not surface as an unhandled runtime error in Next.js.
-      setPoolCount(null);
+  const loadPoolCount = useCallback(async () => {
+    setIsPoolCountLoading(true);
+    setPoolCountUnavailable(false);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const count = await fetchEanPoolStatsCount();
+        if (typeof count === "number") {
+          setPoolCount(count);
+          setIsPoolCountLoading(false);
+          return;
+        }
+      } catch {
+        // A pool-count request must never break the create-product workflow.
+      }
+
+      if (attempt === 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 350));
+      }
     }
-  }
+
+    setPoolCount(null);
+    setPoolCountUnavailable(true);
+    setIsPoolCountLoading(false);
+  }, []);
 
   useEffect(() => {
     void loadPoolCount();
-  }, []);
+  }, [loadPoolCount]);
+
+  useEffect(() => {
+    if (isOpen) void loadPoolCount();
+  }, [isOpen, loadPoolCount]);
 
   async function importEans() {
     if (eans.length === 0 || isSubmitting) return;
@@ -65,8 +86,21 @@ export function CreateProductEanPoolPanel() {
           title={t.eanPoolImport}
         >
           <BarcodeIcon className="size-4 text-primary" aria-hidden="true" />
-          {poolCount ?? "—"}
+          {poolCount ?? (isPoolCountLoading ? <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" aria-label="Loading EAN pool" /> : "Unavailable")}
         </span>
+        {poolCountUnavailable ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground"
+            onClick={() => void loadPoolCount()}
+            title="Retry EAN pool count"
+            aria-label="Retry EAN pool count"
+          >
+            <RefreshCwIcon className="size-3.5" aria-hidden="true" />
+          </Button>
+        ) : null}
         <Button type="button" variant="outline" size="sm" onClick={() => setIsOpen(true)}>
           <PlusIcon className="size-4" aria-hidden="true" />
           {t.addEan}

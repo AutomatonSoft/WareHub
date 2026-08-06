@@ -9,6 +9,43 @@ from .order_amounts import parse_order_amount
 from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 
 
+class MarketplaceEanMappingConfirmSerializer(serializers.Serializer):
+    kid_number = serializers.CharField(max_length=128)
+    marketplace = serializers.ChoiceField(choices=("hood", "kaufland", "otto"))
+    account = serializers.ChoiceField(choices=("jv", "xl"))
+    ean = serializers.CharField(max_length=64)
+
+    def validate_kid_number(self, value):
+        value = str(value or "").strip()
+        if not value:
+            raise serializers.ValidationError("kid_number is required.")
+        return value
+
+    def validate_ean(self, value):
+        value = str(value or "").strip()
+        if not value:
+            raise serializers.ValidationError("ean is required.")
+        return value
+
+
+class KidMarketplaceStatusUpdateSerializer(serializers.Serializer):
+    marketplace = serializers.ChoiceField(
+        choices=(
+            "jv",
+            "xl",
+            "otto_jv",
+            "otto_xl",
+            "ebay_jv",
+            "ebay_xl",
+            "kaufland_jv",
+            "kaufland_xl",
+            "hood_jv",
+            "hood_xl",
+        )
+    )
+    status = serializers.BooleanField()
+
+
 class KidModelSerializer(serializers.ModelSerializer):
     place = serializers.CharField(required=False, allow_blank=True, allow_null=True, validators=[])
 
@@ -420,6 +457,19 @@ class EANPoolTakeNextSerializer(serializers.Serializer):
 
 class EANPoolClaimForJobSerializer(serializers.Serializer):
     job_id = serializers.UUIDField()
+    kid_number = serializers.CharField(max_length=128, required=False)
+    reservation_family = serializers.ChoiceField(choices=("jv", "xl"), required=False)
+
+    def validate(self, attrs):
+        kid_number = str(attrs.get("kid_number") or "").strip()
+        reservation_family = str(attrs.get("reservation_family") or "").strip()
+        if bool(kid_number) != bool(reservation_family):
+            raise serializers.ValidationError(
+                "kid_number and reservation_family must be provided together.",
+            )
+        if kid_number:
+            attrs["kid_number"] = kid_number
+        return attrs
 
 
 class EANUsageMarkSerializer(serializers.Serializer):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import NAMESPACE_URL, uuid5
+
 from ..domain.field_registry import filtered_payload, missing_required_fields, validate_changed_fields
 from ..domain.models import (
     ChannelResult,
@@ -15,6 +17,7 @@ from ..infra.channel_limiter import InMemoryChannelLimiter
 from ..infra.http_client import RetryExhaustedError
 from ..infra.circuit_breaker import InMemoryCircuitBreaker
 from ..infra.ean_pool_gateway import EanPoolGateway
+from ..infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from ..infra.marketplace_adapters import MarketplaceAdapters
 
 
@@ -25,25 +28,29 @@ class OrchestratorService:
         circuit_breaker: InMemoryCircuitBreaker | None = None,
         channel_limiter: InMemoryChannelLimiter | None = None,
         ean_pool_gateway: EanPoolGateway | None = None,
+        marketplace_ean_mapping_gateway: MarketplaceEanMappingGateway | None = None,
     ) -> None:
         self.adapters = adapters
         self.circuit_breaker = circuit_breaker
         self.channel_limiter = channel_limiter
         self.ean_pool_gateway = ean_pool_gateway
+        self.marketplace_ean_mapping_gateway = marketplace_ean_mapping_gateway
 
     def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest, job_id: str | None = None) -> OrchestrateResponse:
         if command.operation not in {Operation.UPDATE, Operation.PUBLISH}:
             return self._unsupported_operation_response(request_id=request_id, command=command)
 
         results: list[ChannelResult] = []
-        pool_ean = self._claim_pool_ean_if_needed(command=command, job_id=job_id, request_id=request_id)
-        pool_ean_published = False
+        pool_eans_by_reservation_id: dict[str, str] = {}
+        used_pool_reservations: dict[str, str | None] = {}
+        kid_number = str(command.kid_number or "").strip()
 
         for channel in command.channels:
             target_label = _target_label(channel)
             if command.operation is Operation.PUBLISH and channel.marketplace not in {
                 Marketplace.HOOD,
                 Marketplace.KAUFLAND,
+                Marketplace.OTTO,
                 Marketplace.XLJV,
             }:
                 results.append(
@@ -85,6 +92,13 @@ class OrchestratorService:
                 selected = set(channel.changed_fields)
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
             scoped_payload.update(channel.overrides)
+
+            # A pooled marketplace EAN is different from the source product
+            # EAN. Preserve the source identity as internal transport metadata
+            # so database-service can save the successful HOOD mapping to the
+            # correct Kid without exposing this field to HOOD's external API.
+            if channel.marketplace is Marketplace.HOOD and channel.ean_source == "pool":
+                scoped_payload["__source_ean"] = ean
 
             missing = [] if product_editor_mode in {"jv_batch_apply", "xl_batch_apply"} else missing_required_fields(channel.marketplace, scoped_payload)
             if missing:
@@ -142,9 +156,24 @@ class OrchestratorService:
             try:
                 channel_ean = ean
                 if channel.ean_source == "pool":
-                    if not pool_ean:
-                        raise RuntimeError("Pool EAN was not allocated.")
-                    channel_ean = pool_ean
+                    reservation_family = self._pool_reservation_family(channel)
+                    if reservation_family and not kid_number:
+                        raise ValueError("Pool EAN reservation for JV/XL marketplaces requires kid_number.")
+                    reservation_id = self._pool_reservation_id(
+                        job_id=job_id,
+                        target_label=reservation_family or target_label,
+                    )
+                    channel_ean = pool_eans_by_reservation_id.get(reservation_id)
+                    if channel_ean is None:
+                        if self.ean_pool_gateway is None:
+                            raise RuntimeError("EAN pool gateway is not configured.")
+                        channel_ean = self.ean_pool_gateway.claim_for_job(
+                            job_id=reservation_id,
+                            request_id=request_id,
+                            kid_number=kid_number if reservation_family else None,
+                            reservation_family=reservation_family,
+                        )
+                        pool_eans_by_reservation_id[reservation_id] = channel_ean
                 adapter_result = self.adapters.dispatch(
                     ean=channel_ean,
                     request_id=request_id,
@@ -199,8 +228,22 @@ class OrchestratorService:
 
             ok = 200 <= adapter_result.status_code < 300
             if ok:
+                result_data = dict(adapter_result.body)
                 if channel.ean_source == "pool":
-                    pool_ean_published = True
+                    reservation_family = self._pool_reservation_family(channel)
+                    reservation_id = self._pool_reservation_id(
+                        job_id=job_id,
+                        target_label=reservation_family or target_label,
+                    )
+                    used_pool_reservations[reservation_id] = reservation_family
+                    result_data["marketplace_ean_mapping"] = self._confirm_marketplace_ean_mapping(
+                        command=command,
+                        request_id=request_id,
+                        kid_number=kid_number,
+                        channel=channel,
+                        ean=channel_ean,
+                        reservation_family=reservation_family,
+                    )
                 if self.circuit_breaker is not None:
                     self.circuit_breaker.record_success(breaker_key)
                 results.append(
@@ -209,7 +252,7 @@ class OrchestratorService:
                         target=target_label,
                         status="success",
                         status_code=adapter_result.status_code,
-                        data=adapter_result.body,
+                        data=result_data,
                     )
                 )
                 continue
@@ -243,24 +286,72 @@ class OrchestratorService:
                 )
             )
 
-        if pool_ean_published:
-            self._mark_pool_ean_used(job_id=job_id, request_id=request_id)
+        for reservation_id, reservation_family in used_pool_reservations.items():
+            self._mark_pool_ean_used(
+                job_id=reservation_id,
+                request_id=request_id,
+                kid_number=kid_number if reservation_family else None,
+                reservation_family=reservation_family,
+            )
 
         return OrchestrateResponse(request_id=request_id, status=_final_status(results), results=results)
 
-    def _claim_pool_ean_if_needed(self, *, command: OrchestrateRequest, job_id: str | None, request_id: str) -> str | None:
-        if not any(channel.ean_source == "pool" for channel in command.channels):
-            return None
+    def _pool_reservation_id(self, *, job_id: str | None, target_label: str) -> str:
         if not job_id:
             raise ValueError("Pool EAN allocation requires a queued orchestrator job.")
-        if self.ean_pool_gateway is None:
-            raise RuntimeError("EAN pool gateway is not configured.")
-        return self.ean_pool_gateway.claim_for_job(job_id=job_id, request_id=request_id)
+        # The pool API keeps reservations idempotent by UUID. For channels
+        # with a JV/XL reservation family, target_label is the family, so all
+        # marketplaces in that family share one EAN within the job.
+        return str(uuid5(NAMESPACE_URL, f"warehub:ean-pool:{job_id}:{target_label}"))
 
-    def _mark_pool_ean_used(self, *, job_id: str | None, request_id: str) -> None:
+    def _mark_pool_ean_used(
+        self,
+        *,
+        job_id: str | None,
+        request_id: str,
+        kid_number: str | None = None,
+        reservation_family: str | None = None,
+    ) -> None:
         if not job_id or self.ean_pool_gateway is None:
             raise RuntimeError("EAN pool gateway is not configured.")
-        self.ean_pool_gateway.mark_used_for_job(job_id=job_id, request_id=request_id)
+        self.ean_pool_gateway.mark_used_for_job(
+            job_id=job_id,
+            request_id=request_id,
+            kid_number=kid_number,
+            reservation_family=reservation_family,
+        )
+
+    def _confirm_marketplace_ean_mapping(
+        self,
+        *,
+        command: OrchestrateRequest,
+        request_id: str,
+        kid_number: str,
+        channel,
+        ean: str,
+        reservation_family: str | None,
+    ) -> dict[str, object]:
+        if command.operation is not Operation.PUBLISH or not kid_number or not reservation_family:
+            return {"status": "skipped", "reason": "not_a_pool_publish_mapping"}
+        if self.marketplace_ean_mapping_gateway is None:
+            return {"status": "skipped", "reason": "mapping_gateway_not_configured"}
+        try:
+            mapping = self.marketplace_ean_mapping_gateway.confirm(
+                request_id=request_id,
+                kid_number=kid_number,
+                marketplace=channel.marketplace.value,
+                account=reservation_family,
+                ean=ean,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "failed", "reason": str(exc)}
+        return {"status": "confirmed", "mapping": mapping}
+
+    def _pool_reservation_family(self, channel) -> str | None:
+        if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO}:
+            return None
+        account = str(channel.account or channel.profile or "").strip().lower()
+        return account if account in {"jv", "xl"} else None
 
     def _unsupported_operation_response(self, *, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:
         results: list[ChannelResult] = []

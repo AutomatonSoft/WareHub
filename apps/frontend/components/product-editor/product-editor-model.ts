@@ -7,6 +7,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorHoodProperty,
   ProductEditorKauflandDraft,
+  ProductEditorOttoDraft,
   ProductEditorJvDraft,
   ProductEditorPendingUpload,
   ProductEditorTarget,
@@ -71,6 +72,44 @@ export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
     product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: "",
     picture_urls: [], size: "", color: "", delivery: ""
   };
+}
+
+export function createEmptyOttoDraft(): ProductEditorOttoDraft {
+  return {
+    target_id: "", profile: "jv", productReference: "", sku: "", ean: "", isbn: "", upc: "", pzn: "", mpn: "", moin: "", offeringStartDate: "", releaseDate: "", maxOrderQuantity: "", shippingProfileId: "",
+    productDescription: {}, mediaAssets: [], delivery: {}, order: {}, pricing: {}, logistics: {}, compliance: {},
+  };
+}
+
+export function hydrateOttoDraft(input?: Partial<ProductEditorOttoDraft>): ProductEditorOttoDraft {
+  const empty = createEmptyOttoDraft();
+  return {
+    ...empty,
+    ...input,
+    profile: input?.profile === "xl" ? "xl" : "jv",
+    productDescription: input?.productDescription && typeof input.productDescription === "object" ? input.productDescription : {},
+    mediaAssets: Array.isArray(input?.mediaAssets) ? input.mediaAssets : [],
+    delivery: input?.delivery && typeof input.delivery === "object" ? input.delivery : {},
+    order: input?.order && typeof input.order === "object" ? input.order : {},
+    pricing: input?.pricing && typeof input.pricing === "object" ? input.pricing : {},
+    logistics: input?.logistics && typeof input.logistics === "object" ? input.logistics : {},
+    compliance: input?.compliance && typeof input.compliance === "object" ? input.compliance : {},
+  };
+}
+
+export function buildOttoChangedFields(initial: ProductEditorOttoDraft, current: ProductEditorOttoDraft): string[] {
+  const keys = Object.keys(current).filter((key) => !["target_id", "profile"].includes(key)) as Array<keyof ProductEditorOttoDraft>;
+  return keys.filter((key) => JSON.stringify(initial[key]) !== JSON.stringify(current[key])).map(String);
+}
+
+export function formatPriceForInput(value: unknown): string {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) return "";
+  const normalizedValue = rawValue.replace(",", ".");
+  const numericValue = Number(normalizedValue);
+  if (!Number.isFinite(numericValue) || numericValue < 0) return rawValue;
+  if (numericValue === 0) return "0";
+  return numericValue.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function hydrateKauflandDraft(input?: Partial<ProductEditorKauflandDraft>): ProductEditorKauflandDraft {
@@ -160,7 +199,7 @@ export function hydrateJvDraft(input?: {
     source_model: input.source_model || "",
     source_sku: input.source_sku || "",
     source_ean_field: input.source_ean_field || "",
-    price: input.price || "",
+    price: formatPriceForInput(input.price),
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
     image: input.image || "",
@@ -210,7 +249,7 @@ export function hydrateJvDraft(input?: {
           id: Number(row.id ?? 0) || undefined,
           customer_group_id: Number(row.customer_group_id ?? 1),
           priority: Number(row.priority ?? 0),
-          price: String(row.price ?? ""),
+          price: formatPriceForInput(row.price),
           date_start: row.date_start == null ? null : String(row.date_start),
           date_end: row.date_end == null ? null : String(row.date_end),
           is_modified_locally: Boolean(row.is_modified_locally)

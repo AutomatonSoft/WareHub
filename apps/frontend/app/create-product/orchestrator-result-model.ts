@@ -12,8 +12,20 @@ export function extractFailureReason(result: OrchestratorResult): string {
   if (upstreamResponse && typeof upstreamResponse === "object") {
     const code = (upstreamResponse as Record<string, unknown>)["code"];
     const detail = (upstreamResponse as Record<string, unknown>)["detail"];
+    const body = (upstreamResponse as Record<string, unknown>)["body"];
+    let bodyDetail = "";
+    if (typeof body === "string") {
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (typeof parsed.detail === "string") {
+          bodyDetail = `: ${parsed.detail}`;
+        }
+      } catch {
+        // The upstream body is not JSON; the adapter-level error remains useful.
+      }
+    }
     if (typeof code === "string") {
-      upstreamDetail = `, upstream=${code}`;
+      upstreamDetail = `, upstream=${code}${bodyDetail}`;
     } else if (typeof detail === "string") {
       upstreamDetail = `, upstream=${detail}`;
     }

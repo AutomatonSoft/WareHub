@@ -52,13 +52,6 @@ class FakeMarketplaceGateway:
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
                         },
-                        {
-                            "ok": True,
-                            "site_key": "OTTO_JV",
-                            "channel": "OTTO",
-                            "status_code": 200,
-                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
-                        },
                     ],
                 },
             },
@@ -134,13 +127,6 @@ class FakeMarketplaceGateway:
                         },
                         {
                             "ok": True,
-                            "site_key": "OTTO_JV",
-                            "channel": "OTTO",
-                            "status_code": 200,
-                            "details": {"kid_number": kid_number, "inactive": inactive},
-                        },
-                        {
-                            "ok": True,
                             "site_key": "EBAY_JV",
                             "channel": "EBAY",
                             "status_code": 200,
@@ -195,6 +181,35 @@ class FakeMarketplaceGateway:
             },
         )()
 
+    def toggle_otto_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
+        return type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "body": {
+                    "status": "ok",
+                    "inactive": inactive,
+                    "results": [
+                        {
+                            "ok": True,
+                            "site_key": "OTTO_JV",
+                            "channel": "OTTO",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
+                        },
+                        {
+                            "ok": True,
+                            "site_key": "OTTO_XL",
+                            "channel": "OTTO",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive, "place": place},
+                        },
+                    ],
+                },
+            },
+        )()
+
 
 class TimeoutMarketplaceGateway(FakeMarketplaceGateway):
     def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
@@ -236,8 +251,8 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)
     assert result.status == "ok"
-    assert result.summary.total == 7
-    assert result.summary.success == 7
+    assert result.summary.total == 8
+    assert result.summary.success == 8
     assert result.summary.failed == 0
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
@@ -245,6 +260,7 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     assert site_keys["XLMOEBEL_DE"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
+    assert site_keys["OTTO_XL"].ok is True
     assert site_keys["EBAY_JV"].ok is True
     assert site_keys["KAUFLAND_JV"].ok is True
 
@@ -259,6 +275,7 @@ def test_marketplace_job_service_activate_combines_jv_and_local_channels():
     assert site_keys["XLMOEBEL_DE"].ok is True
     assert site_keys["HOOD_JV"].ok is True
     assert site_keys["OTTO_JV"].ok is True
+    assert site_keys["OTTO_XL"].ok is True
     assert site_keys["EBAY_JV"].ok is True
     assert site_keys["KAUFLAND_JV"].ok is True
 
@@ -294,3 +311,18 @@ def test_marketplace_toggle_job_create_accepts_place(tmp_path):
         ).fetchone()
     assert row is not None
     assert row[0] == "18"
+
+
+def test_marketplace_toggle_job_persists_verified_actor_for_worker(tmp_path):
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/v1/orchestrator/marketplace/toggle-by-kid",
+        json={"kid_number": "566725168", "inactive": True},
+        headers={"X-WareHub-Actor-Login": "katerina", "X-WareHub-Actor-Name": "Katerina Krisling"},
+    )
+    assert created.status_code == 200
+
+    claimed = MarketplaceJobDeps.store.claim_next_queued_job()
+    assert claimed is not None
+    assert claimed["actor_login"] == "katerina"
+    assert claimed["actor_name"] == "Katerina Krisling"

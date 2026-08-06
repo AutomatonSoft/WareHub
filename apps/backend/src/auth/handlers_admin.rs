@@ -394,7 +394,7 @@ async fn load_admin_user(
 
 fn admin_users_select_clause(alias: &str) -> String {
     format!(
-        "SELECT {alias}.id, {alias}.username, {alias}.login, {alias}.email, {alias}.first_name, {alias}.last_name, {alias}.role, {alias}.status, {alias}.created_at, {alias}.approved_at, {alias}.approved_by, approver.login AS approved_by_login"
+        "SELECT {alias}.id, {alias}.username, {alias}.login, {alias}.email, {alias}.first_name, {alias}.last_name, {alias}.avatar_url, {alias}.role, {alias}.status, {alias}.created_at, {alias}.approved_at, {alias}.approved_by, approver.login AS approved_by_login"
     )
 }
 

@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 import logging
+from hmac import compare_digest
 from typing import Any
 
+from django.conf import settings
 from django.utils import timezone
 from django.db.models import Q
 
@@ -19,6 +21,18 @@ INVENTORY_CHANGE_HISTORY_RETENTION_DAYS = 90
 
 def request_actor(request) -> dict[str, str]:
     session = getattr(request, "session", {})
+    expected_service_token = str(getattr(settings, "ORCHESTRATOR_SERVICE_AUTH_TOKEN", "") or "").strip()
+    provided_service_token = str(request.headers.get("x-warehub-service-token") or "").strip()
+    trusted_service_actor = bool(
+        expected_service_token
+        and provided_service_token
+        and compare_digest(provided_service_token, expected_service_token)
+    )
+    if trusted_service_actor:
+        login = str(request.headers.get("x-warehub-actor-login") or "").strip()
+        name = str(request.headers.get("x-warehub-actor-name") or "").strip()
+        if login or name:
+            return {"login": login, "name": name or login}
     login = str(session.get("login") or session.get("username") or session.get("user") or "").strip()
     name = str(session.get("display_name") or "").strip()
     if not name:

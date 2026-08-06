@@ -32,6 +32,7 @@ from database.views import (
     EANPoolTakeNextFreeAPIView,
     EANPoolUsageByEANAPIView,
     InventoryDashboardSummaryAPIView,
+    CriticalInventoryAPIView,
     InventoryChangeHistoryAPIView,
     InventoryFilterOptionsAPIView,
     InventoryRowsAPIView,
@@ -42,11 +43,13 @@ from database.views import (
     KidDetailViewAPIView,
     KidListCreateAPIView,
     KidEanSummaryAPIView,
+    KidMarketplaceStatusUpdateAPIView,
     KidMarketplaceEansAPIView,
     KidOrderIDsAPIView,
     DevBackendSessionSyncAPIView,
     MarketplaceHoodHealthAPIView,
     MarketplaceKauflandHealthAPIView,
+    MarketplaceEanMappingConfirmAPIView,
     ServiceHealthAPIView,
     ServiceReadyAPIView,
     KidRetrieveUpdateAPIView,
@@ -60,6 +63,7 @@ from database.views_dectivate import (
     MarketplaceJVDeactivateSofortByKidAPIView,
     MarketplaceKauflandToggleByKidAPIView,
     MarketplaceLocalStatusesByKidAPIView,
+    MarketplaceOttoToggleByKidAPIView,
     MarketplaceXLDeactivateByKidAPIView,
 )
 from orders_pars.views import (
@@ -69,7 +73,12 @@ from orders_pars.views import (
 )
 from hood_service.views import HoodFetchByEANAPIView
 from otto_service.views import (
+    OttoCategoryAttributesAPIView,
+    OttoCategoriesAPIView,
+    OttoCategoriesSyncAPIView,
+    OttoFullCacheSyncAPIView,
     OttoProductListAPIView,
+    OttoProductFetchBySKUAPIView,
     OttoProductRetrieveAPIView,
     OttoProductUpsertAPIView,
 )
@@ -99,6 +108,7 @@ from xl_services.views import (
     XLBatchPlanByEANAPIView,
     XLDeliveryOptionsAPIView,
     XLLocalProductByEANAPIView,
+    XLManufacturersAPIView,
     XLProductByEANAPIView,
     XLProductCreateAndPushAPIView,
     XLProductSyncByEANAPIView,
@@ -119,6 +129,7 @@ from database_service.openapi_schema import generate_openapi_document
 from telegram_service.config import load_telegram_runtime_config
 from telegram_service.views import (
     TelegramAccessApproveAPIView,
+    TelegramAccessDeleteAPIView,
     TelegramAccessListAPIView,
     TelegramAccessRevokeAPIView,
     TelegramWebhookAPIView,
@@ -152,6 +163,7 @@ api_v1_patterns = [
     path("api/v1/dev/session/sync/", DevBackendSessionSyncAPIView.as_view(), name="dev-backend-session-sync-v1"),
     path("api/v1/kids/", KidListCreateAPIView.as_view(), name="kid-list-create-v1"),
     path("api/v1/kids/<int:pk>/", KidRetrieveUpdateAPIView.as_view(), name="kid-detail-v1"),
+    path("api/v1/kids/<int:pk>/marketplace-status/", KidMarketplaceStatusUpdateAPIView.as_view(), name="kid-marketplace-status-v1"),
     path("api/v1/kids/<int:pk>/detail-view/", KidDetailViewAPIView.as_view(), name="kid-detail-view-v1"),
     path("api/v1/kids/<int:pk>/composite-update/", KidCompositeUpdateAPIView.as_view(), name="kid-composite-update-v1"),
     path("api/v1/kids/bulk-update/", KidsBulkUpdateAPIView.as_view(), name="kids-bulk-update-v1"),
@@ -162,9 +174,12 @@ api_v1_patterns = [
     path("api/v1/marketplace/xl/deactivate-by-kid/", MarketplaceXLDeactivateByKidAPIView.as_view(), name="marketplace-xl-deactivate-by-kid-v1"),
     path("api/v1/marketplace/hood/deactivate-by-kid/", MarketplaceHoodDeactivateByKidAPIView.as_view(), name="marketplace-hood-deactivate-by-kid-v1"),
     path("api/v1/marketplace/kaufland/toggle-by-kid/", MarketplaceKauflandToggleByKidAPIView.as_view(), name="marketplace-kaufland-toggle-by-kid-v1"),
+    path("api/v1/marketplace/otto/toggle-by-kid/", MarketplaceOttoToggleByKidAPIView.as_view(), name="marketplace-otto-toggle-by-kid-v1"),
     path("api/v1/marketplace/local-statuses-by-kid/", MarketplaceLocalStatusesByKidAPIView.as_view(), name="marketplace-local-statuses-by-kid-v1"),
+    path("api/v1/marketplace/ean-mappings/confirm/", MarketplaceEanMappingConfirmAPIView.as_view(), name="marketplace-ean-mapping-confirm-v1"),
     path("api/v1/inventory/rows/", InventoryRowsAPIView.as_view(), name="inventory-rows-v1"),
     path("api/v1/inventory/dashboard-summary/", InventoryDashboardSummaryAPIView.as_view(), name="inventory-dashboard-summary-v1"),
+    path("api/v1/inventory/critical/", CriticalInventoryAPIView.as_view(), name="inventory-critical-v1"),
     path("api/v1/inventory/change-history/", InventoryChangeHistoryAPIView.as_view(), name="inventory-change-history-v1"),
     path("api/v1/inventory/filter-options/", InventoryFilterOptionsAPIView.as_view(), name="inventory-filter-options-v1"),
     path("api/v1/kids/import-kid-green/", KidGreenImportAPIView.as_view(), name="kid-green-import-v1"),
@@ -259,34 +274,40 @@ api_v1_patterns = [
         name="hood-fetch-by-ean-v1",
     ),
     path(
-        "api/v1/otto/products/upsert/",
-        OttoProductUpsertAPIView.as_view(),
-        name="otto-products-upsert-v1",
+        "api/v1/otto/attributes/",
+        OttoCategoryAttributesAPIView.as_view(),
+        name="otto-category-attributes-v1",
+    ),
+    path(
+        "api/v1/otto/categories/",
+        OttoCategoriesAPIView.as_view(),
+        name="otto-categories-v1",
+    ),
+    path("api/v1/otto/categories/sync/", OttoCategoriesSyncAPIView.as_view(), name="otto-categories-sync-v1"),
+    path(
+        "api/v1/otto/categories/full-sync/",
+        OttoFullCacheSyncAPIView.as_view(),
+        name="otto-categories-full-sync-v1",
     ),
     path(
         "api/v1/otto/<str:profile>/products/upsert/",
         OttoProductUpsertAPIView.as_view(),
-        name="otto-products-upsert-by-profile-v1",
-    ),
-    path(
-        "api/v1/otto/products/",
-        OttoProductListAPIView.as_view(),
-        name="otto-products-list-v1",
+        name="otto-products-upsert-v1",
     ),
     path(
         "api/v1/otto/<str:profile>/products/",
         OttoProductListAPIView.as_view(),
-        name="otto-products-list-by-profile-v1",
+        name="otto-products-list-v1",
     ),
     path(
-        "api/v1/otto/products/<int:pk>/",
-        OttoProductRetrieveAPIView.as_view(),
-        name="otto-products-detail-v1",
+        "api/v1/otto/<str:profile>/products/by-sku/<str:sku>/",
+        OttoProductFetchBySKUAPIView.as_view(),
+        name="otto-products-fetch-by-sku-v1",
     ),
     path(
         "api/v1/otto/<str:profile>/products/<int:pk>/",
         OttoProductRetrieveAPIView.as_view(),
-        name="otto-products-detail-by-profile-v1",
+        name="otto-products-detail-v1",
     ),
     path("api/v1/xl/products/by-ean/<str:ean>/", XLProductByEANAPIView.as_view(), name="xl-product-by-ean-v1"),
     path("api/v1/jv/products/by-ean/<str:ean>/", JVProductByEANAPIView.as_view(), name="jv-product-by-ean-v1"),
@@ -297,6 +318,7 @@ api_v1_patterns = [
     path("api/v1/xl/rubrics/tree/", XLRubricsTreeAPIView.as_view(), name="xl-rubrics-tree-v1"),
     path("api/v1/jv/rubrics/tree/", JVRubricsTreeAPIView.as_view(), name="jv-rubrics-tree-v1"),
     path("api/v1/xl/delivery-options/", XLDeliveryOptionsAPIView.as_view(), name="xl-delivery-options-v1"),
+    path("api/v1/xl/manufacturers/", XLManufacturersAPIView.as_view(), name="xl-manufacturers-v1"),
     path("api/v1/jv/delivery-options/", JVDeliveryOptionsAPIView.as_view(), name="jv-delivery-options-v1"),
     path(
         "api/v1/xl/products/create-and-push/",
@@ -416,6 +438,11 @@ api_v1_patterns.extend(
             "api/v1/telegram/access/<int:binding_id>/revoke/",
             TelegramAccessRevokeAPIView.as_view(),
             name="telegram-access-revoke-v1",
+        ),
+        path(
+            "api/v1/telegram/access/<int:binding_id>/",
+            TelegramAccessDeleteAPIView.as_view(),
+            name="telegram-access-delete-v1",
         ),
     ]
 )

@@ -3,16 +3,6 @@ import { DEFAULT_API_BASE } from "../../app/client-api";
 import { authorizedFetch } from "../../app/client-api-shared";
 import { resolveServicesApiBase } from "../../lib/api/services-base";
 
-export type DashboardOrderDto = {
-  id?: number | string;
-  status?: string | null;
-  order_date?: string | null;
-  full_amount?: string | null;
-  quantity?: number | null;
-  title?: string | null;
-  sku?: string | null;
-};
-
 export type DashboardWarehouseSummaryDto = {
   total_products: number;
   placed_products: number;
@@ -24,6 +14,7 @@ export type DashboardWarehouseSummaryDto = {
   readiness_percent: number;
   in_transit_products: number;
   b_ware_products: number;
+  paid_revenue: string;
   marketplace_statuses: Record<DashboardMarketplaceStatusKey, DashboardMarketplaceStatusCountsDto>;
 };
 
@@ -79,26 +70,28 @@ function getServicesApiBase(): string {
   return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
-export async function fetchDashboardOverviewData(): Promise<{
-  orders: DashboardOrderDto[];
-  summary: DashboardWarehouseSummaryDto;
-}> {
+export async function fetchDashboardOverviewData(): Promise<DashboardWarehouseSummaryDto> {
   const base = getServicesApiBase();
-  const [ordersResponse, summaryResponse] = await Promise.all([
-    fetch(`${base}/orders/`, { credentials: "include", cache: "no-store" }),
-    fetch(`${base}/inventory/dashboard-summary/`, { credentials: "include", cache: "no-store" })
-  ]);
+  const summaryResponse = await fetch(`${base}/inventory/dashboard-summary/`, {
+    credentials: "include",
+    cache: "no-store"
+  });
 
-  if (!ordersResponse.ok || !summaryResponse.ok) {
-    const code = !ordersResponse.ok ? ordersResponse.status : summaryResponse.status;
-    console.error("DASHBOARD_OVERVIEW_REQUEST_FAILED", { code });
+  if (!summaryResponse.ok) {
+    console.error("DASHBOARD_OVERVIEW_REQUEST_FAILED", { code: summaryResponse.status });
     throw new Error("dashboard_overview_request_failed");
   }
 
-  return {
-    orders: (await ordersResponse.json()) as DashboardOrderDto[],
-    summary: (await summaryResponse.json()) as DashboardWarehouseSummaryDto
-  };
+  const body = await summaryResponse.text();
+  if (!body.trim()) {
+    throw new Error("dashboard_overview_empty_response");
+  }
+
+  try {
+    return JSON.parse(body) as DashboardWarehouseSummaryDto;
+  } catch {
+    throw new Error("dashboard_overview_invalid_response");
+  }
 }
 
 export async function fetchTimelineLogs(limit = 80): Promise<ServiceLogEntry[]> {

@@ -76,6 +76,12 @@ export type CreateProductHoodSourceFields = {
 export type CreateProductSourceSiteKind = "JV" | "XL" | "HOOD" | "KAUFLAND";
 export const CREATE_PRODUCT_XL_DEFAULT_SITE_KEY = "XLMOEBEL_DE";
 
+export type XlManufacturerOption = {
+  manufacturerId: string;
+  name: string;
+  deliveryTime: string;
+};
+
 function asTrimmedString(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -301,6 +307,28 @@ export async function fetchCreateProductKidContext(kidId: number): Promise<Creat
   };
 }
 
+export async function fetchXlManufacturerOptions(siteKey = CREATE_PRODUCT_XL_DEFAULT_SITE_KEY): Promise<XlManufacturerOption[]> {
+  const response = await apiFetch(
+    `/api/v1/xl/manufacturers/?site_key=${encodeURIComponent(siteKey.trim() || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY)}`,
+  );
+  const payload = (await response.json()) as { detail?: unknown; items?: unknown };
+  if (!response.ok) {
+    throw new Error(asTrimmedString(payload.detail) || `xl_manufacturers_http:${response.status}`);
+  }
+  return Array.isArray(payload.items)
+    ? payload.items
+        .map((item) => {
+          const row = item as Record<string, unknown>;
+          return {
+            manufacturerId: asTrimmedString(row.manufacturer_id),
+            name: asTrimmedString(row.name),
+            deliveryTime: asTrimmedString(row.delivery_time),
+          };
+        })
+        .filter((item) => item.manufacturerId && item.name)
+    : [];
+}
+
 export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promise<CreateProductJvSourceSite[]> {
   if (!normalizeEanOrEmpty(mainEan)) {
     return [];
@@ -326,7 +354,8 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
     if (!response.ok) {
       throw new Error(payload.detail || `create_product_xl_source_sites_http:${response.status}`);
     }
-    return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> });
+    return normalizeSourceSites(payload as { found?: Array<Record<string, unknown>> })
+      .filter((site) => site.siteKey.trim().toUpperCase() === CREATE_PRODUCT_XL_DEFAULT_SITE_KEY);
   }
 
   if (input.site === "HOOD") {

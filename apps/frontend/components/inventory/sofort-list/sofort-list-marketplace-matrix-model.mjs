@@ -12,15 +12,15 @@ function isMeaningfulValue(value, placeholderEan) {
   return normalized.length > 0 && normalized !== placeholderEan && normalized !== "—";
 }
 
-function buildCellState(key, value, placeholderEan, tokens) {
-  const normalized = String(value || "").trim();
+function buildCellState(key, value, placeholderEan, tokens, isBWare) {
+  const normalized = isBWare ? "B_WARE" : String(value || "").trim();
   const isEmpty = !isMeaningfulValue(normalized, placeholderEan);
   const searchable = normalized.toLowerCase();
   const matches = !isEmpty && tokens.length > 0 && tokens.every((token) => searchable.includes(token));
-  return { key, value, matches, isEmpty };
+  return { key, value: normalized, matches, isEmpty, isBWare };
 }
 
-export function buildMarketplaceMatrixRows(siteEans, query, placeholderEan) {
+export function buildMarketplaceMatrixRows(siteEans, query, placeholderEan, bWare = false) {
   const tokens = tokenizeQuery(query);
   const rows = [
     { market: "SITES", keys: ["jv", "xl"] },
@@ -32,8 +32,8 @@ export function buildMarketplaceMatrixRows(siteEans, query, placeholderEan) {
 
   return rows.map(({ market, keys }) => {
     const cells = [
-      buildCellState(keys[0], siteEans[keys[0]], placeholderEan, tokens),
-      buildCellState(keys[1], siteEans[keys[1]], placeholderEan, tokens)
+      buildCellState(keys[0], siteEans[keys[0]], placeholderEan, tokens, bWare && market === "OTTO"),
+      buildCellState(keys[1], siteEans[keys[1]], placeholderEan, tokens, bWare && market === "OTTO")
     ];
     return {
       market,

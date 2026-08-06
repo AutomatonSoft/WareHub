@@ -13,8 +13,18 @@ class MarketplaceJobService:
     def __init__(self, gateway: MarketplaceJobGateway) -> None:
         self.gateway = gateway
 
-    def execute(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None) -> MarketplaceToggleExecutionResult:
+    def execute(
+        self,
+        *,
+        kid_number: str,
+        inactive: bool,
+        request_id: str,
+        place: str | None = None,
+        actor_login: str = "",
+        actor_name: str = "",
+    ) -> MarketplaceToggleExecutionResult:
         results: list[MarketplaceToggleResultItem] = []
+        actor_kwargs = {"actor_login": actor_login, "actor_name": actor_name} if actor_login or actor_name else {}
         results.extend(
             self._call_channel(
                 fallback_site_key="JV",
@@ -25,6 +35,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    **actor_kwargs,
                 ),
             )
         )
@@ -38,6 +49,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    **actor_kwargs,
                 ),
             )
         )
@@ -51,6 +63,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    **actor_kwargs,
                 ),
             )
         )
@@ -60,6 +73,20 @@ class MarketplaceJobService:
                 fallback_channel="KAUFLAND",
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_kaufland_by_kid(
+                    kid_number=kid_number,
+                    inactive=inactive,
+                    request_id=request_id,
+                    place=place,
+                    **actor_kwargs,
+                ),
+            )
+        )
+        results.extend(
+            self._call_channel(
+                fallback_site_key="OTTO",
+                fallback_channel="OTTO",
+                request_id=request_id,
+                call=lambda: self.gateway.toggle_otto_by_kid(
                     kid_number=kid_number,
                     inactive=inactive,
                     request_id=request_id,
@@ -76,6 +103,7 @@ class MarketplaceJobService:
                     kid_number=kid_number,
                     inactive=inactive,
                     request_id=request_id,
+                    **actor_kwargs,
                 ),
             )
         )
