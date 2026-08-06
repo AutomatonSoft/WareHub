@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "../ui/button";
 import {
@@ -106,6 +106,13 @@ export function ProductEditorOttoPanel(props: Props) {
   const sourceAttributes = productAttributes(description.attributes);
   const [activeGalleryItemId, setActiveGalleryItemId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(() => textValue(description.categoryId));
+  const initialCreateDraft = useMemo(() => toCreateDraft(props.draft), [props.draft]);
+  const categoryId = textValue(description.categoryId);
+
+  useEffect(() => {
+    setSelectedCategoryId(categoryId);
+  }, [categoryId]);
+
   const galleryItems = useMemo<CreateProductGalleryItem[]>(() => (
     imageUrls(props.draft.mediaAssets).map((src, index) => ({
       id: `${index}:${src}`,
@@ -155,8 +162,9 @@ export function ProductEditorOttoPanel(props: Props) {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
           <div className="min-w-0 flex-1">
             <OttoCreateProductPanel
-              initialDraft={toCreateDraft(props.draft)}
+              initialDraft={initialCreateDraft}
               draftKey={`${props.draft.target_id}:${props.draft.profile}`}
+              profile={props.draft.profile}
               categoryId={selectedCategoryId}
               categoryName={textValue(description.category)}
               productAttributes={sourceAttributes}

@@ -455,3 +455,4 @@ class OttoProductRetrieveAPIView(APIView):
         product = get_object_or_404(model_cls, pk=pk)
         serializer = serializer_cls(product)
         return Response(serializer.data, status=status.HTTP_200_OK)
+

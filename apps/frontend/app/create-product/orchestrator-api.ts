@@ -71,6 +71,7 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.kaufland,
       account,
+      ean_source: "pool",
       changed_fields: ["title", "description", "price", "picture_urls", "storefront"],
       overrides: { storefront: account === "xl" ? "xl" : "jv" }
     };
@@ -80,6 +81,7 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.otto,
       profile: account,
+      ean_source: "pool",
       changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets", "shippingProfileId"]
     };
   }
@@ -282,6 +284,7 @@ export async function createMainMarketplaceProductJob(input: {
         profile: site.kind.toLowerCase(),
         changed_fields: ottoChangedFields,
         overrides: input.ottoPayload,
+        ean_source: "pool",
       });
     }
   }
