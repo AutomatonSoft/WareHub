@@ -152,7 +152,7 @@ def _normalize_products_for_local_storage(raw_items: list[dict]) -> list[dict]:
             normalized_item["productDescription"] = normalized_item["productDescription"]
         if "compliance" not in normalized_item and "compliance" in normalized_item:
             normalized_item["compliance"] = normalized_item["compliance"]
-        if "order" not in normalized_item and "maxOrderQuantity" in normalized_item:
+        if "order" in normalized_item and "maxOrderQuantity" in normalized_item:
             normalized_item["order"] = {"maxOrderQuantity": normalized_item["maxOrderQuantity"]}
         normalized_items.append(normalized_item)
     return normalized_items
