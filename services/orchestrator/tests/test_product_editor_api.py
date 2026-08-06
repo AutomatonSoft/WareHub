@@ -424,6 +424,55 @@ def test_product_editor_otto_apply_merges_price_change_with_current_target_paylo
     assert override["delivery"] == {"type": "PARCEL", "deliveryTime": 7}
 
 
+def test_product_editor_otto_apply_normalizes_source_payload_for_upsert(tmp_path):
+    client, gateway = _client(tmp_path)
+    gateway.otto_by_profile["jv"]["product_variations"][0].update(
+        {
+            "imageUrl": "https://i.otto.de/i/otto/main-image.jpg",
+            "mediaAssets": [
+                {"type": "IMAGE", "filename": "main-image.jpg"},
+                {"type": "IMAGE", "filename": "secondary-image.jpg"},
+            ],
+            "order": {"maxOrderQuantity": {}},
+            "productDescription": {
+                "category": "Desk",
+                "productLine": "x" * 60,
+                "description": "Original",
+            },
+        }
+    )
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "OTTO", "baseline_target_id": "OTTO_JV"},
+    )
+    draft = loaded.json()["draft"]
+    draft["pricing"] = {"standardPrice": {"amount": 99.99, "currency": "EUR"}}
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "OTTO",
+            "changed_fields": ["pricing"],
+            "draft": draft,
+            "selected_target_ids": ["OTTO_JV"],
+        },
+    )
+
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    command = Deps.job_store.get_job_command(job_id=applied.json()["job_id"])
+
+    assert command is not None
+    override = command.channels[0].overrides
+    assert "maxOrderQuantity" not in override
+    assert override["productDescription"]["productLine"] == "x" * 50
+    assert override["mediaAssets"] == [{
+        "type": "IMAGE",
+        "location": "https://i.otto.de/i/otto/main-image.jpg",
+        "filename": "main-image.jpg",
+    }]
+
+
 def test_product_editor_load_returns_normalized_xl_draft(tmp_path):
     client, gateway = _client(tmp_path)
     response = client.post(

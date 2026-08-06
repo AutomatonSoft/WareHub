@@ -13,6 +13,21 @@ class OttoExternalAPIError(Exception):
 
 def _to_external_otto_product(product: dict[str, Any], *, controller: str) -> dict[str, Any]:
     external_product = dict(product)
+    product_description = external_product.get("productDescription")
+    if isinstance(product_description, dict) and "productLine" in product_description:
+        external_product["productDescription"] = {
+            **product_description,
+            "productLine": str(product_description.get("productLine") or "").strip()[:50],
+        }
+
+    media_assets = external_product.get("mediaAssets")
+    if isinstance(media_assets, list):
+        external_product["mediaAssets"] = [
+            asset
+            for asset in media_assets
+            if isinstance(asset, dict) and str(asset.get("location") or "").strip()
+        ]
+
     if controller.strip().lower() == "jv":
         product_description = external_product.pop("productDescription", None)
         if product_description is not None:
@@ -24,7 +39,9 @@ def _to_external_otto_product(product: dict[str, Any], *, controller: str) -> di
 
     order = external_product.pop("order", None)
     if isinstance(order, dict) and "maxOrderQuantity" not in external_product:
-        external_product["maxOrderQuantity"] = order.get("maxOrderQuantity")
+        max_order_quantity = order.get("maxOrderQuantity")
+        if isinstance(max_order_quantity, int) and not isinstance(max_order_quantity, bool):
+            external_product["maxOrderQuantity"] = max_order_quantity
 
     return external_product
 
