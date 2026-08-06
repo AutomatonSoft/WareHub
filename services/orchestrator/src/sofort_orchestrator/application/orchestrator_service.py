@@ -350,7 +350,7 @@ class OrchestratorService:
     def _pool_reservation_family(self, channel) -> str | None:
         if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO}:
             return None
-        account = str(channel.account or "").strip().lower()
+        account = str(channel.account or channel.profile or "").strip().lower()
         return account if account in {"jv", "xl"} else None
 
     def _unsupported_operation_response(self, *, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:

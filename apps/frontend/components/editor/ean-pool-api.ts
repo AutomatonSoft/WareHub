@@ -102,3 +102,28 @@ export async function takeNextFreeEan(): Promise<{ response: Response; ean: stri
   }
   return { response, ean: null, errorText: payload ? JSON.stringify(payload) : "" };
 }
+
+export async function claimEanForKid(input: {
+  kidNumber: string;
+  reservationFamily: "jv" | "xl";
+}): Promise<{ response: Response; ean: string | null; errorText: string }> {
+  const response = await fetchWithTimeout(
+    "/api/v1/services/ean-pool/claim-for-job/",
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: crypto.randomUUID(),
+        kid_number: input.kidNumber,
+        reservation_family: input.reservationFamily,
+      }),
+    },
+    10000,
+  );
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (response.ok) {
+    return { response, ean: parseEanFromPayload(payload), errorText: "" };
+  }
+  return { response, ean: null, errorText: payload ? JSON.stringify(payload) : "" };
+}

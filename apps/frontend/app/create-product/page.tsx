@@ -38,6 +38,8 @@ import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
 import { OttoCategoriesPanel } from "./otto-categories-panel";
+import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
+import { claimEanForKid } from "../../components/editor/ean-pool-api";
 
 const CreateProductImageGallery = dynamic(
   () => import("../../components/product-forms").then((module) => module.CreateProductImageGallery),
@@ -85,6 +87,7 @@ const PAGE_TABS = [
 ] as const;
 type CreateProductTab = "main" | (typeof PAGE_TABS)[number];
 type MarketplaceAccount = "JV" | "XL";
+type MarketplaceReservationFamily = "jv" | "xl";
 type CreateProductTabMeta = {
   label: string;
   sourceSite: "JV" | "XL" | "HOOD" | "KAUFLAND";
@@ -1153,6 +1156,7 @@ export default function CreateProductPage() {
   const [ottoCategoryNameByTab, setOttoCategoryNameByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
   const [ottoSearchErrors, setOttoSearchErrors] = useState<Partial<Record<OttoProfile, string>>>({});
+  const [reservedMarketplaceEans, setReservedMarketplaceEans] = useState<Partial<Record<MarketplaceReservationFamily, string>>>({});
   const [ottoSearchLoading, setOttoSearchLoading] = useState(false);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
@@ -1470,6 +1474,13 @@ export default function CreateProductPage() {
     () => buildXlDescriptionFields(sourcePayload),
     [sourcePayload],
   );
+  const activeReservationFamily: MarketplaceReservationFamily | null =
+    activeTabMeta.marketplace && activeTabMeta.account
+      ? activeTabMeta.account.toLowerCase() as MarketplaceReservationFamily
+      : null;
+  const activeReservedMarketplaceEan = activeReservationFamily
+    ? reservedMarketplaceEans[activeReservationFamily] ?? ""
+    : "";
   const activeXlSeoUrl = buildUrlKeyFromName(activeXlDescriptionFields.name) || activeXlDescriptionFields.seo_url;
   const activeXlSourceKey = [
     controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
@@ -1497,17 +1508,17 @@ export default function CreateProductPage() {
   );
   const sourceKauflandDraft = useMemo<KauflandCreateProductDraft>(() => ({
     title: firstKauflandText(kauflandProduct.title),
-    ean: firstKauflandText(kauflandProduct.ean),
+    ean: activeReservedMarketplaceEan || firstKauflandText(kauflandProduct.ean),
     price: formatKauflandPrice(firstKauflandText(kauflandProduct.price)),
     product: kauflandProduct,
     ...activeKauflandDescriptionFields,
-  }), [activeKauflandDescriptionFields, kauflandProduct]);
+  }), [activeKauflandDescriptionFields, activeReservedMarketplaceEan, kauflandProduct]);
   const activeXlInitialDraft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
     ? xlDraftRefByTab.current[activeTab].draft
     : activeXlDescriptionFields;
   const activeHoodInitialDraft = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
     ? hoodDraftRefByTab.current[activeTab].draft
-    : { name: controller.productName, ean: controller.ean, price: controller.price, ...controller.hoodFields };
+    : { name: controller.productName, price: controller.price, ...controller.hoodFields, ean: activeReservedMarketplaceEan || controller.ean };
   const activeKauflandInitialDraft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
     ? kauflandDraftRefByTab.current[activeTab].draft
     : sourceKauflandDraft;
@@ -1523,11 +1534,64 @@ export default function CreateProductPage() {
     : buildOttoDraft(activeOttoProduct ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.name : jvName,
-      ean: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
-      sku: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
-      productReference: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
+      ean: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
+      sku: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
+      productReference: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
       category: ottoCategoryNameByTab[activeTab] ?? "",
     });
+
+  useEffect(() => {
+    const kidNumber = controller.kidContext?.kidNumber.trim() || "";
+    if (!activeReservationFamily || !kidNumber) {
+      return;
+    }
+
+    let active = true;
+    void claimEanForKid({ kidNumber, reservationFamily: activeReservationFamily })
+      .then(({ ean, errorText }) => {
+        if (!active) return;
+        if (!ean) {
+          showToast(errorText || "Unable to reserve a marketplace EAN.", "error");
+          return;
+        }
+        if (activeTabMeta.marketplace === "HOOD") {
+          const current = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
+            ? hoodDraftRefByTab.current[activeTab].draft
+            : activeHoodInitialDraft;
+          hoodDraftRefByTab.current[activeTab] = {
+            sourceKey: activeHoodSourceKey,
+            draft: { ...current, ean },
+          };
+        } else if (activeTabMeta.marketplace === "KAUFLAND") {
+          const current = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
+            ? kauflandDraftRefByTab.current[activeTab].draft
+            : sourceKauflandDraft;
+          kauflandDraftRefByTab.current[activeTab] = {
+            sourceKey: activeKauflandSourceKey,
+            draft: { ...current, ean },
+          };
+        } else if (activeTabMeta.marketplace === "OTTO") {
+          const current = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
+            ? ottoDraftRefByTab.current[activeTab].draft
+            : activeOttoInitialDraft;
+          ottoDraftRefByTab.current[activeTab] = {
+            sourceKey: activeOttoSourceKey,
+            draft: { ...current, productReference: ean, sku: ean, ean },
+          };
+        }
+        setReservedMarketplaceEans((current) =>
+          current[activeReservationFamily] === ean
+            ? current
+            : { ...current, [activeReservationFamily]: ean },
+        );
+      })
+      .catch(() => {
+        if (active) showToast("Unable to reserve a marketplace EAN.", "error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeReservationFamily, controller.kidContext?.kidNumber, showToast]);
 
   useEffect(() => {
     const jvFields = controller.sourceSnapshot?.rawPayload?.jv_fields;
@@ -2547,8 +2611,9 @@ export default function CreateProductPage() {
       showToast("OTTO attribute names are not loaded yet. Reopen the category and try again.", "error");
       return;
     }
-    const attributes = attributeEntries
-      .map(([attributeId, value]) => ({ name: attributeNames[attributeId], values: [value] }));
+    const attributes = deduplicateOttoAttributes(
+      attributeEntries.map(([attributeId, value]) => ({ name: attributeNames[attributeId], values: [value] })),
+    );
     return controller.handleCreateProduct({}, siteIds, {
       ottoEan: ean,
       ottoTitle: draft.productLine.trim(),
@@ -2865,7 +2930,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "HOOD" ? (
                   <HoodCreateProductPanel
                     initialDraft={activeHoodInitialDraft}
-                    draftKey={activeHoodSourceKey}
+                    draftKey={`${activeHoodSourceKey}:${activeReservedMarketplaceEan}`}
                     publishDraftRef={hoodPublishDraftRef}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
@@ -2878,7 +2943,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "KAUFLAND" ? (
                   <KauflandProductDetailsPanel
                     initialDraft={activeKauflandInitialDraft}
-                    draftKey={activeKauflandSourceKey}
+                    draftKey={`${activeKauflandSourceKey}:${activeReservedMarketplaceEan}`}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(description))}
@@ -2904,7 +2969,8 @@ export default function CreateProductPage() {
                     ) : null}
                     <OttoCreateProductPanel
                       initialDraft={activeOttoInitialDraft}
-                      draftKey={activeOttoSourceKey}
+                      draftKey={`${activeOttoSourceKey}:${activeReservedMarketplaceEan}`}
+                      profile={activeOttoProfile ?? "jv"}
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
                       productAttributes={readOttoProductAttributes(activeOttoProduct)}
