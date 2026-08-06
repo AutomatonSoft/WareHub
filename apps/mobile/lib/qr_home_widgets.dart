@@ -107,26 +107,11 @@ class QrHomeItemCard extends StatelessWidget {
               ),
               if (count > 1) ...<Widget>[
                 const SizedBox(width: 8),
-                Chip(
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (hasMultipleLocations) ...<Widget>[
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 14,
-                          color: countChipForeground,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        '${strings.text('count')}: $count',
-                        style: TextStyle(color: countChipForeground),
-                      ),
-                    ],
-                  ),
+                InventoryCountChip(
+                  label: strings.text('count'),
+                  count: count,
                   backgroundColor: countChipBackground,
-                  visualDensity: VisualDensity.compact,
+                  foregroundColor: countChipForeground,
                 ),
               ],
               if (removed) ...<Widget>[
@@ -374,6 +359,44 @@ class QrHomeItemCard extends StatelessWidget {
           return _buildPhotoThumbnail(context, urls[index]);
         },
       ),
+    );
+  }
+}
+
+class InventoryCountChip extends StatelessWidget {
+  const InventoryCountChip({
+    super.key,
+    required this.label,
+    required this.count,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final int count;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 14,
+            color: foregroundColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$label: $count',
+            style: TextStyle(color: foregroundColor),
+          ),
+        ],
+      ),
+      backgroundColor: backgroundColor,
+      visualDensity: VisualDensity.compact,
     );
   }
 }
