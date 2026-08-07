@@ -1,6 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDirectUpdatePayload, buildJobUpdatePayload } from "../app/create-product/orchestrator-payload-model.mjs";
+import {
+  buildDirectUpdatePayload,
+  buildJobUpdatePayload,
+  deduplicateOttoAttributes,
+} from "../app/create-product/orchestrator-payload-model.mjs";
+
+test("deduplicateOttoAttributes collapses duplicate names and keeps the last value", () => {
+  const attributes = deduplicateOttoAttributes([
+    { name: "Breite", values: ["80"] },
+    { name: "  breite ", values: ["90"] },
+    { name: "Höhe", values: ["100"] },
+  ]);
+
+  assert.deepEqual(attributes, [
+    { name: "Breite", values: ["90"] },
+    { name: "Höhe", values: ["100"] },
+  ]);
+});
 
 test("buildDirectUpdatePayload builds full update payload", () => {
   const payload = buildDirectUpdatePayload({

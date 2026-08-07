@@ -585,7 +585,7 @@ class _MobileProfileTabState extends State<MobileProfileTab> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _profileSubtitle(profile, settings),
+                              _profileSubtitle(profile, settings, strings),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AuthTextStyles.helper,
@@ -627,8 +627,8 @@ class _MobileProfileTabState extends State<MobileProfileTab> {
                       const SizedBox(width: _profileItemGap),
                       Expanded(
                         child: _ProfileFact(
-                          label: 'Status',
-                          value: _profileStatusLabel(profile),
+                          label: strings.text('profile_status'),
+                          value: strings.profileStatusLabel(profile.status),
                         ),
                       ),
                     ],
@@ -638,14 +638,14 @@ class _MobileProfileTabState extends State<MobileProfileTab> {
                     children: <Widget>[
                       Expanded(
                         child: _ProfileFact(
-                          label: 'Role',
-                          value: _profileRoleLabel(profile),
+                          label: strings.text('profile_role'),
+                          value: strings.profileRoleLabel(profile.role),
                         ),
                       ),
                       const SizedBox(width: _profileItemGap),
                       Expanded(
                         child: _ProfileFact(
-                          label: 'User',
+                          label: strings.text('profile_user'),
                           value: profile.profileUsername,
                         ),
                       ),
@@ -683,13 +683,13 @@ class _MobileProfileTabState extends State<MobileProfileTab> {
                   ),
                   const SizedBox(height: _profileItemGap),
                   AppReadonlyField(
-                    label: 'Username',
+                    label: strings.text('profile_username'),
                     value: profile.profileUsername,
                   ),
                   const SizedBox(height: _profileItemGap),
                   AppReadonlyField(
-                    label: 'Role',
-                    value: _profileRoleLabel(profile),
+                    label: strings.text('profile_role'),
+                    value: strings.profileRoleLabel(profile.role),
                   ),
                   const SizedBox(height: _profileActionGap),
                   AppPrimaryButton(
@@ -789,28 +789,16 @@ String _profileDisplayName(MobileProfile profile) {
   return profile.displayName.isNotEmpty ? profile.displayName : '-';
 }
 
-String _profileRoleLabel(MobileProfile profile) {
-  final String role = profile.role.trim();
-  if (role.isEmpty) {
-    return 'User';
-  }
-  return role[0].toUpperCase() + role.substring(1);
-}
-
-String _profileStatusLabel(MobileProfile profile) {
-  final String status = profile.status.trim();
-  if (status.isEmpty) {
-    return 'Unknown';
-  }
-  return status[0].toUpperCase() + status.substring(1);
-}
-
-String _profileSubtitle(MobileProfile? profile, AppSettings settings) {
+String _profileSubtitle(
+  MobileProfile? profile,
+  AppSettings settings,
+  AppStrings strings,
+) {
   final MobileProfile effectiveProfile =
       profile ?? MobileProfile.fromSettings(settings);
   final List<String> parts = <String>[
-    _profileRoleLabel(effectiveProfile),
-    _profileStatusLabel(effectiveProfile),
+    strings.profileRoleLabel(effectiveProfile.role),
+    strings.profileStatusLabel(effectiveProfile.status),
   ].where((String value) => value.isNotEmpty).toList(growable: false);
   return parts.isEmpty ? '-' : parts.join(' / ');
 }

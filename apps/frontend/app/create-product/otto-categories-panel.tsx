@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels } from "../use-labels";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -20,10 +20,11 @@ import {
 
 type Props = {
   selectedCategoryId: string;
+  selectedCategoryName?: string;
   onSelectedCategoryChange: (category: OttoCategory) => void;
 };
 
-export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChange }: Props) {
+export function OttoCategoriesPanel({ selectedCategoryId, selectedCategoryName = "", onSelectedCategoryChange }: Props) {
   const t = useLabels();
   const [categories, setCategories] = useState<OttoCategory[]>([]);
   const [query, setQuery] = useState("");
@@ -33,6 +34,11 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
   const [loading, setLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<OttoFullCacheSyncStatus | null>(null);
   const [syncError, setSyncError] = useState("");
+  const onSelectedCategoryChangeRef = useRef(onSelectedCategoryChange);
+
+  useEffect(() => {
+    onSelectedCategoryChangeRef.current = onSelectedCategoryChange;
+  }, [onSelectedCategoryChange]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
@@ -41,13 +47,14 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
 
   const categoryRequest = useMemo(() => {
     const selectedCategoryIsId = /^\d+$/.test(selectedCategoryId);
+    const normalizedSelectedCategoryName = selectedCategoryName.trim();
     const searchQuery = showOnlySelected
       ? ""
-      : debouncedQuery;
+      : debouncedQuery || (!selectedCategoryIsId ? normalizedSelectedCategoryName : "");
     const selectedId = !searchQuery && selectedCategoryIsId ? selectedCategoryId : "";
 
     return { query: searchQuery, selectedCategoryId: selectedId };
-  }, [debouncedQuery, selectedCategoryId, showOnlySelected]);
+  }, [debouncedQuery, selectedCategoryId, selectedCategoryName, showOnlySelected]);
 
   useEffect(() => {
     if (!categoryRequest.query && !categoryRequest.selectedCategoryId) {
@@ -63,7 +70,12 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
 
     void fetchOttoCategories(categoryRequest)
       .then((items) => {
-        if (active) setCategories(items);
+        if (!active) return;
+        setCategories(items);
+        if (!categoryRequest.selectedCategoryId && selectedCategoryName.trim()) {
+          const selectedCategory = items.find((category) => category.name.trim().toLocaleLowerCase() === selectedCategoryName.trim().toLocaleLowerCase());
+          if (selectedCategory) onSelectedCategoryChangeRef.current(selectedCategory);
+        }
       })
       .catch((requestError) => {
         if (active) {
@@ -77,7 +89,7 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
     return () => {
       active = false;
     };
-  }, [categoryRequest]);
+  }, [categoryRequest, selectedCategoryName]);
 
   useEffect(() => {
     let active = true;
@@ -115,10 +127,10 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
 
   const visibleCategories = useMemo(() => {
     return categories.filter((category) => {
-      const selected = category.id === selectedCategoryId;
+      const selected = category.id === selectedCategoryId || category.name.trim().toLocaleLowerCase() === selectedCategoryName.trim().toLocaleLowerCase();
       return !showOnlySelected || selected;
     });
-  }, [categories, selectedCategoryId, showOnlySelected]);
+  }, [categories, selectedCategoryId, selectedCategoryName, showOnlySelected]);
 
   const startFullSync = () => {
     setSyncError("");
@@ -196,7 +208,7 @@ export function OttoCategoriesPanel({ selectedCategoryId, onSelectedCategoryChan
             <div className="flex flex-col gap-1">
               {visibleCategories.map((category) => {
                 const selected =
-                  selectedCategoryId === category.id;
+                  selectedCategoryId === category.id || category.name.trim().toLocaleLowerCase() === selectedCategoryName.trim().toLocaleLowerCase();
                 return (
                   <button
                     key={category.id}

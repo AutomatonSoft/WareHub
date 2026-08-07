@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { Button } from "../ui/button";
 import {
   OttoCreateProductPanel,
   type OttoCreateProductDraft,
@@ -37,7 +36,18 @@ function textList(value: unknown): string[] {
 }
 
 function imageUrls(mediaAssets: Array<Record<string, unknown>>): string[] {
-  return mediaAssets.map((asset) => textValue(asset.location)).filter(Boolean);
+  const seen = new Set<string>();
+  return mediaAssets.flatMap((asset) => {
+    const url = textValue(asset.location ?? asset.url ?? asset.imageUrl ?? asset.image_url).trim();
+    const key = url.toLowerCase();
+    if (!url || seen.has(key)) return [];
+    seen.add(key);
+    return [url];
+  });
+}
+
+function hasPublicImageUrl(asset: Record<string, unknown>): boolean {
+  return Boolean(textValue(asset.location ?? asset.url ?? asset.imageUrl ?? asset.image_url).trim());
 }
 
 function filenameFromUrl(location: string): string {
@@ -105,8 +115,20 @@ export function ProductEditorOttoPanel(props: Props) {
   const description = props.draft.productDescription;
   const sourceAttributes = productAttributes(description.attributes);
   const [activeGalleryItemId, setActiveGalleryItemId] = useState("");
+  const [failedImageItemIds, setFailedImageItemIds] = useState<Set<string>>(() => new Set());
   const [selectedCategoryId, setSelectedCategoryId] = useState(() => textValue(description.categoryId));
-  const galleryItems = useMemo<CreateProductGalleryItem[]>(() => (
+  const initialCreateDraft = useMemo(() => toCreateDraft(props.draft), [props.draft]);
+  const categoryId = textValue(description.categoryId);
+
+  useEffect(() => {
+    setSelectedCategoryId(categoryId);
+  }, [categoryId]);
+
+  useEffect(() => {
+    setFailedImageItemIds(new Set());
+  }, [props.draft.mediaAssets]);
+
+  const availableGalleryItems = useMemo<CreateProductGalleryItem[]>(() => (
     imageUrls(props.draft.mediaAssets).map((src, index) => ({
       id: `${index}:${src}`,
       src,
@@ -114,6 +136,10 @@ export function ProductEditorOttoPanel(props: Props) {
       isLocal: false,
     }))
   ), [props.draft.mediaAssets]);
+  const galleryItems = availableGalleryItems.filter((item) => !failedImageItemIds.has(item.id));
+  const missingLocationImageCount = props.draft.mediaAssets.filter(
+    (asset) => textValue(asset.type).toUpperCase() === "IMAGE" && !hasPublicImageUrl(asset),
+  ).length;
 
   const applyCreateDraft = (next: OttoCreateProductDraft) => {
     const price = Number(next.price);
@@ -155,8 +181,9 @@ export function ProductEditorOttoPanel(props: Props) {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
           <div className="min-w-0 flex-1">
             <OttoCreateProductPanel
-              initialDraft={toCreateDraft(props.draft)}
+              initialDraft={initialCreateDraft}
               draftKey={`${props.draft.target_id}:${props.draft.profile}`}
+              profile={props.draft.profile}
               categoryId={selectedCategoryId}
               categoryName={textValue(description.category)}
               productAttributes={sourceAttributes}
@@ -173,6 +200,10 @@ export function ProductEditorOttoPanel(props: Props) {
               thumbnailAlt={(index) => `OTTO product image ${index + 1}`}
               deleteAlt={(index) => `Delete OTTO product image ${index + 1}`}
               onActiveItemChange={setActiveGalleryItemId}
+              onImageError={(itemId) => {
+                setFailedImageItemIds((current) => new Set(current).add(itemId));
+                if (activeGalleryItemId === itemId) setActiveGalleryItemId("");
+              }}
               onDeleteItem={(itemId) => {
                 const nextItems = galleryItems.filter((item) => item.id !== itemId);
                 updateGalleryItems(nextItems);
@@ -188,11 +219,20 @@ export function ProductEditorOttoPanel(props: Props) {
                 updateGalleryItems(nextItems);
               }}
             />
+            {missingLocationImageCount > 0 || failedImageItemIds.size > 0 ? (
+              <p className="rounded-[var(--radius-control)] border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {missingLocationImageCount > 0
+                  ? "Some OTTO images have only a filename. A public image URL was not returned, so they cannot be previewed."
+                  : "Some OTTO image URLs are unavailable, so they cannot be previewed."}
+              </p>
+            ) : null}
             <OttoCategoriesPanel
               selectedCategoryId={selectedCategoryId}
+              selectedCategoryName={textValue(description.category)}
               onSelectedCategoryChange={(category) => {
                 setSelectedCategoryId(category.id);
-                props.onChange({ productDescription: { ...description, category: category.name, categoryId: category.id } });
+                const { categoryId: _categoryId, ...descriptionWithoutCategoryId } = description;
+                props.onChange({ productDescription: { ...descriptionWithoutCategoryId, category: category.name } });
               }}
             />
           </div>
@@ -200,9 +240,6 @@ export function ProductEditorOttoPanel(props: Props) {
       </div>
 
       {props.warnings.map((warning) => <p key={warning.code} className="text-sm text-amber-700">{warning.message}</p>)}
-      <Button type="button" disabled={props.loading || props.applyLoading || props.changedFields.length === 0} onClick={props.onApply}>
-        {props.applyLoading ? "Applying" : "Review and apply OTTO changes"}
-      </Button>
     </div>
   );
 }

@@ -323,6 +323,32 @@ class OttoExternalProductsClientTests(SimpleTestCase):
             "maxOrderQuantity": 1,
         }])
 
+    def test_create_or_update_products_normalizes_external_upsert_fields(self):
+        session = FakeSession(FakeResponse(payload="updated"))
+        client = OttoExternalProductsClient(
+            session=session,
+            base_url="https://otto.example.test",
+            connect_timeout=2,
+            read_timeout=5,
+        )
+
+        client.create_or_update_products(controller="jv", products=[{
+            "productReference": "4021234231234",
+            "productDescription": {"productLine": "x" * 60},
+            "mediaAssets": [
+                {"type": "IMAGE", "filename": "missing-location.jpg"},
+                {"type": "IMAGE", "location": "https://i.otto.de/i/otto/main-image.jpg"},
+            ],
+            "order": {"maxOrderQuantity": {}},
+        }])
+
+        sent_product = session.calls[0][1]["json"][0]
+        self.assertNotIn("maxOrderQuantity", sent_product)
+        self.assertEqual(sent_product["productDescription"]["productLine"], "x" * 50)
+        self.assertEqual(sent_product["mediaAssets"], [
+            {"type": "IMAGE", "location": "https://i.otto.de/i/otto/main-image.jpg"},
+        ])
+
     def test_set_active_state_uses_activate_and_deactivate_contracts(self):
         session = FakeSession(FakeResponse(payload={"success": True, "active": True}))
         client = OttoExternalProductsClient(

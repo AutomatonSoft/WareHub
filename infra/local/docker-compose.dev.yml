@@ -61,6 +61,12 @@ services:
       - "${DEV_MONGO_PORT:-8938}:27017"
     volumes:
       - warehub_mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'db.adminCommand(\"ping\").ok' | grep 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   warehub_postgres_data:

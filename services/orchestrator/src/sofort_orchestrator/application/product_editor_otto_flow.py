@@ -139,15 +139,76 @@ class ProductEditorOttoFlowError(RuntimeError):
         self.code, self.message, self.status_code, self.details = code, message, status_code, details or {}
 
 
+def _normalize_otto_media_assets(product: dict) -> list[dict]:
+    media_assets = product.get("mediaAssets")
+    if isinstance(media_assets, list) and media_assets:
+        return [item for item in media_assets if isinstance(item, dict)]
+
+    image_url = str(product.get("imageUrl") or product.get("image_url") or "").strip()
+    return [{"type": "IMAGE", "location": image_url}] if image_url else []
+
+
 def _normalize_otto_draft(body: dict, target_id: str, fallback_ean: str) -> dict:
     variations = body.get("product_variations") if isinstance(body.get("product_variations"), list) else []
     product = variations[0] if variations and isinstance(variations[0], dict) else {}
-    return {"target_id": target_id, "profile": _OTTO_PROFILE_BY_TARGET[target_id], "productReference": str(product.get("productReference") or fallback_ean), "sku": str(product.get("sku") or fallback_ean), "ean": str(product.get("ean") or fallback_ean), "isbn": str(product.get("isbn") or ""), "upc": str(product.get("upc") or ""), "pzn": str(product.get("pzn") or ""), "mpn": str(product.get("mpn") or ""), "moin": str(product.get("moin") or ""), "offeringStartDate": str(product.get("offeringStartDate") or ""), "releaseDate": str(product.get("releaseDate") or ""), "maxOrderQuantity": str(product.get("maxOrderQuantity") or ""), "shippingProfileId": str(product.get("shippingProfileId") or ""), "productDescription": product.get("productDescription") if isinstance(product.get("productDescription"), dict) else {}, "mediaAssets": product.get("mediaAssets") if isinstance(product.get("mediaAssets"), list) else [], "delivery": product.get("delivery") if isinstance(product.get("delivery"), dict) else {}, "order": product.get("order") if isinstance(product.get("order"), dict) else {}, "pricing": product.get("pricing") if isinstance(product.get("pricing"), dict) else {}, "logistics": product.get("logistics") if isinstance(product.get("logistics"), dict) else {}, "compliance": product.get("compliance") if isinstance(product.get("compliance"), dict) else {}}
+    product_description = product.get("productDescription") if isinstance(product.get("productDescription"), dict) else {}
+    product_description = dict(product_description)
+    if "productLine" in product_description:
+        product_description["productLine"] = str(product_description.get("productLine") or "").strip()[:50]
+    order = product.get("order") if isinstance(product.get("order"), dict) else {}
+    max_order_quantity = product.get("maxOrderQuantity", order.get("maxOrderQuantity"))
+    if not isinstance(max_order_quantity, int) or isinstance(max_order_quantity, bool):
+        max_order_quantity = None
+
+    return {
+        "target_id": target_id,
+        "profile": _OTTO_PROFILE_BY_TARGET[target_id],
+        "productReference": str(product.get("productReference") or fallback_ean),
+        "sku": str(product.get("sku") or fallback_ean),
+        "ean": str(product.get("ean") or fallback_ean),
+        "isbn": str(product.get("isbn") or ""),
+        "upc": str(product.get("upc") or ""),
+        "pzn": str(product.get("pzn") or ""),
+        "mpn": str(product.get("mpn") or ""),
+        "moin": str(product.get("moin") or ""),
+        "offeringStartDate": str(product.get("offeringStartDate") or ""),
+        "releaseDate": str(product.get("releaseDate") or ""),
+        "maxOrderQuantity": max_order_quantity,
+        "shippingProfileId": str(product.get("shippingProfileId") or ""),
+        "productDescription": product_description,
+        "mediaAssets": _normalize_otto_media_assets(product.get("mediaAssets"), product.get("imageUrl")),
+        "delivery": product.get("delivery") if isinstance(product.get("delivery"), dict) else {},
+        "order": order,
+        "pricing": product.get("pricing") if isinstance(product.get("pricing"), dict) else {},
+        "logistics": product.get("logistics") if isinstance(product.get("logistics"), dict) else {},
+        "compliance": product.get("compliance") if isinstance(product.get("compliance"), dict) else {},
+    }
+
+
+def _normalize_otto_media_assets(raw_assets: object, primary_image_url: object) -> list[dict]:
+    assets = raw_assets if isinstance(raw_assets, list) else []
+    normalized_assets = [dict(asset) for asset in assets if isinstance(asset, dict) and str(asset.get("location") or "").strip()]
+    if normalized_assets:
+        return normalized_assets
+
+    image_url = str(primary_image_url or "").strip()
+    if not image_url:
+        return []
+
+    first_asset = next((asset for asset in assets if isinstance(asset, dict)), {})
+    return [{"type": str(first_asset.get("type") or "IMAGE"), "location": image_url, "filename": str(first_asset.get("filename") or "")}]
 
 
 def _prepare_otto_payload(draft: dict) -> dict:
     optional_fields = {"isbn", "upc", "pzn", "mpn", "moin", "offeringStartDate", "releaseDate", "maxOrderQuantity"}
     payload = filtered_payload(Marketplace.OTTO, draft)
+    product_description = payload.get("productDescription")
+    if isinstance(product_description, dict):
+        payload["productDescription"] = {
+            key: value
+            for key, value in product_description.items()
+            if key not in {"categoryId", "category_id"}
+        }
     return {key: value for key, value in payload.items() if key not in optional_fields or value not in (None, "")}
 
 

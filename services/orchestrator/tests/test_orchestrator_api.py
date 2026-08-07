@@ -446,6 +446,8 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
                 "price": "199.99",
                 "quantity": 1,
                 "source_model": "4012345678901",
+                "productReference": "4012345678901",
+                "ean": "4012345678901",
             },
             "channels": [
                 {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE", "changed_fields": ["title", "description", "source_model", "price"]},
@@ -454,6 +456,8 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
                 {"marketplace": "hood", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price", "quantity"]},
                 {"marketplace": "kaufland", "account": "jv", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
                 {"marketplace": "kaufland", "account": "xl", "ean_source": "pool", "changed_fields": ["title", "description", "price"]},
+                {"marketplace": "otto", "profile": "jv", "ean_source": "pool", "changed_fields": ["productReference", "ean"]},
+                {"marketplace": "otto", "profile": "xl", "ean_source": "pool", "changed_fields": ["productReference", "ean"]},
             ],
         }
     )
@@ -470,6 +474,8 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     assert by_target["kaufland,account=jv"] == by_target["hood,account=jv"]
     assert by_target["hood,account=jv"] != by_target["hood,account=xl"]
     assert by_target["hood,account=xl"] == by_target["kaufland,account=xl"]
+    assert by_target["otto,profile=jv"] == by_target["hood,account=jv"]
+    assert by_target["otto,profile=xl"] == by_target["hood,account=xl"]
     hood_payload = next(item.data["payload"] for item in result.results if item.target == "hood,account=jv")
     assert hood_payload["__source_ean"] == "4012345678901"
 
@@ -479,6 +485,8 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
     assert retry_by_target["hood,account=xl"] == by_target["hood,account=xl"]
     assert retry_by_target["kaufland,account=jv"] == by_target["kaufland,account=jv"]
     assert retry_by_target["kaufland,account=xl"] == by_target["kaufland,account=xl"]
+    assert retry_by_target["otto,profile=jv"] == by_target["otto,profile=jv"]
+    assert retry_by_target["otto,profile=xl"] == by_target["otto,profile=xl"]
     assert len(set(pool_gateway.claimed_job_ids)) == 2
 
 
@@ -500,11 +508,14 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
                 "description": "Oak",
                 "price": "199.99",
                 "quantity": 1,
+                "productReference": "4012345678901",
+                "ean": "4012345678901",
             },
             "channels": [
                 {"marketplace": "hood", "account": "jv", "ean_source": "pool"},
                 {"marketplace": "kaufland", "account": "jv", "ean_source": "pool"},
                 {"marketplace": "hood", "account": "xl", "ean_source": "pool"},
+                {"marketplace": "otto", "profile": "jv", "ean_source": "pool"},
             ],
         }
     )
@@ -516,9 +527,11 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
         ("hood", "jv"),
         ("kaufland", "jv"),
         ("hood", "xl"),
+        ("otto", "jv"),
     ]
     assert mapping_gateway.calls[0]["ean"] == mapping_gateway.calls[1]["ean"]
     assert mapping_gateway.calls[0]["ean"] != mapping_gateway.calls[2]["ean"]
+    assert mapping_gateway.calls[0]["ean"] == mapping_gateway.calls[3]["ean"]
     assert all(item.data["marketplace_ean_mapping"]["status"] == "confirmed" for item in result.results)
 
 

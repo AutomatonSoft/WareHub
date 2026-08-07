@@ -7,6 +7,7 @@ import { CircleCheck, CircleX, LoaderCircle } from "lucide-react";
 import { useLabels } from "../../app/use-labels";
 import { AppShell } from "../layout/app-shell";
 import { Card, CardContent } from "../ui/card";
+import { Button } from "../ui/button";
 import { useToast } from "../shared/toast-provider";
 import { LoadingState } from "../ui/loading-state";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
@@ -22,6 +23,11 @@ import {
 import { fetchHoodByEan, patchHoodByEan } from "../hood/hood-api";
 import { extractFirstItemFromPayload } from "../hood/hood-search-utils";
 import { ProductEditorHeaderCard } from "./product-editor-header-card";
+import {
+  ProductEditorBatchEditDialog,
+  type ProductEditorBatchEditResult,
+  type ProductEditorBatchEditSite,
+} from "./product-editor-batch-edit-dialog";
 import {
   buildHoodChangedFields,
   buildJvChangedFields,
@@ -77,6 +83,20 @@ type DraftsByTab<TDraft, TTabKey extends string> = Record<TTabKey, TDraft>;
 type WarningsByTab<TTabKey extends string> = Record<TTabKey, ProductEditorDiscoverResponse["warnings"]>;
 type LoadingByTab<TTabKey extends string> = Record<TTabKey, boolean>;
 type ProductEditorTabSearchStatus = "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+
+type ProductEditorChangedMarketplace = {
+  tabKey: string;
+  groupId: ProductEditorGroupId;
+  ean: string;
+  changedFields: string[];
+  draft: Record<string, unknown>;
+  selectedTargetIds: string[];
+};
+
+type ProductEditorPlannedMarketplace = {
+  change: ProductEditorChangedMarketplace;
+  plan: ProductEditorPlanResponse;
+};
 
 const PRODUCT_IDENTIFIER_MAX_LENGTH = 100;
 const JV_IMAGE_UPLOAD_MAX_ATTEMPTS_PER_SITE = 12;
@@ -137,8 +157,9 @@ function ProductEditorContent() {
   const [tabSearchStatuses, setTabSearchStatuses] = useState<Record<string, ProductEditorTabSearchStatus>>({});
   const [discovering, setDiscovering] = useState(false);
   const [discover, setDiscover] = useState<ProductEditorDiscoverResponse | null>(null);
-  const [activeGroupId, setActiveGroupId] = useState<ProductEditorGroupId>("HOOD");
+  const discoverRequestVersionRef = useRef(0);
   const [activeTabKey, setActiveTabKey] = useState<string>("HOOD_JV");
+  const activeGroupId = getGroupIdForTab(activeTabKey);
   const [pageError, setPageError] = useState<string | null>(null);
 
   const [hoodLoadingByTab, setHoodLoadingByTab] = useState<HoodLoadingByTab>(createEmptyHoodLoadingByTab());
@@ -168,6 +189,13 @@ function ProductEditorContent() {
   const [jobLoading, setJobLoading] = useState(false);
   const [jvBatchApplyLoading, setJvBatchApplyLoading] = useState(false);
   const [planResponse, setPlanResponse] = useState<ProductEditorPlanResponse | null>(null);
+  const [globalPlans, setGlobalPlans] = useState<ProductEditorPlannedMarketplace[]>([]);
+  const [globalPlanLoading, setGlobalPlanLoading] = useState(false);
+  const [globalApplyLoading, setGlobalApplyLoading] = useState(false);
+  const [globalApplyConfirmed, setGlobalApplyConfirmed] = useState(false);
+  const [batchEditDialogOpen, setBatchEditDialogOpen] = useState(false);
+  const [batchEditResults, setBatchEditResults] = useState<ProductEditorBatchEditResult[]>([]);
+  const [dirtyTabKeys, setDirtyTabKeys] = useState<Set<string>>(() => new Set());
   const [applyResponse, setApplyResponse] = useState<ProductEditorApplyResponse | null>(null);
   const [jobResponse, setJobResponse] = useState<ProductEditorJobResponse | null>(null);
   const [applyConfirmed, setApplyConfirmed] = useState(false);
@@ -227,6 +255,90 @@ function ProductEditorContent() {
   const jvChangedFields = useMemo(() => buildJvChangedFields(initialJvDraft, jvDraft), [initialJvDraft, jvDraft]);
   const kauflandChangedFields = useMemo(() => buildKauflandChangedFields(initialKauflandDraft, kauflandDraft), [initialKauflandDraft, kauflandDraft]);
   const ottoChangedFields = useMemo(() => buildOttoChangedFields(initialOttoDraft, ottoDraft), [initialOttoDraft, ottoDraft]);
+  const changedMarketplacePlans = useMemo(() => {
+    const changes: ProductEditorChangedMarketplace[] = [];
+    const addChange = (input: ProductEditorChangedMarketplace) => {
+      if (!isValidProductIdentifier(input.ean) || input.changedFields.length === 0 || input.selectedTargetIds.length === 0) return;
+      changes.push(input);
+    };
+
+    (Object.keys(hoodDraftsByTab) as HoodTabKey[]).forEach((tabKey) => {
+      if (!dirtyTabKeys.has(tabKey)) return;
+      const draft = hoodDraftsByTab[tabKey];
+      addChange({
+        tabKey,
+        groupId: "HOOD",
+        ean: draft.ean.trim(),
+        changedFields: buildHoodChangedFields(initialHoodDraftsByTab[tabKey], draft),
+        draft: draft as unknown as Record<string, unknown>,
+        selectedTargetIds: draft.target_id ? [draft.target_id] : [],
+      });
+    });
+
+    (Object.keys(jvDraftsByTab) as JvTabKey[]).forEach((tabKey) => {
+      if (!dirtyTabKeys.has(tabKey)) return;
+      const draft = jvDraftsByTab[tabKey];
+      addChange({
+        tabKey,
+        groupId: tabKey,
+        ean: draft.ean.trim(),
+        changedFields: buildJvChangedFields(initialJvDraftsByTab[tabKey], draft),
+        draft: draft as unknown as Record<string, unknown>,
+        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found"]),
+      });
+    });
+
+    (Object.keys(kauflandDraftsByTab) as KauflandTabKey[]).forEach((tabKey) => {
+      if (!dirtyTabKeys.has(tabKey)) return;
+      const draft = kauflandDraftsByTab[tabKey];
+      addChange({
+        tabKey,
+        groupId: "KAUFLAND",
+        ean: draft.ean.trim(),
+        changedFields: buildKauflandChangedFields(initialKauflandDraftsByTab[tabKey], draft),
+        draft: draft as unknown as Record<string, unknown>,
+        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found"]),
+      });
+    });
+
+    (Object.keys(ottoDraftsByTab) as OttoTabKey[]).forEach((tabKey) => {
+      if (!dirtyTabKeys.has(tabKey)) return;
+      const draft = ottoDraftsByTab[tabKey];
+      addChange({
+        tabKey,
+        groupId: "OTTO",
+        ean: draft.ean.trim(),
+        changedFields: buildOttoChangedFields(initialOttoDraftsByTab[tabKey], draft),
+        draft: draft as unknown as Record<string, unknown>,
+        selectedTargetIds: draft.target_id ? [draft.target_id] : getTargetIdsForTab(discover, tabKey, ["found"]),
+      });
+    });
+
+    return changes;
+  }, [
+    discover,
+    hoodDraftsByTab,
+    dirtyTabKeys,
+    initialHoodDraftsByTab,
+    initialJvDraftsByTab,
+    initialKauflandDraftsByTab,
+    initialOttoDraftsByTab,
+    jvDraftsByTab,
+    kauflandDraftsByTab,
+    ottoDraftsByTab,
+  ]);
+  const batchEditSites = useMemo<ProductEditorBatchEditSite[]>(() => (
+    changedMarketplacePlans.map((change) => {
+      const group = findGroup(discover, change.groupId);
+      return {
+        tabKey: change.tabKey,
+        label: getProductEditorDisplayTabLabel(change.tabKey, t),
+        targetIds: change.selectedTargetIds,
+        targetLabels: change.selectedTargetIds.map((targetId) => findTarget(group, targetId)?.label ?? targetId),
+        changedFieldsCount: change.changedFields.length,
+      };
+    })
+  ), [changedMarketplacePlans, discover, t]);
   const targetStats = useMemo(() => {
     const targets = (discover?.groups ?? [])
       .flatMap((group) => group.targets)
@@ -324,6 +436,7 @@ function ProductEditorContent() {
   }
 
   async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null, targetTabKey?: string): Promise<boolean> {
+    const requestVersion = ++discoverRequestVersionRef.current;
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
@@ -332,14 +445,13 @@ function ProductEditorContent() {
       const normalizedResponse = limitDiscoverToActiveGroup(response, activeGroup);
       const nextActiveGroup = activeGroup ?? activeGroupId;
       setDiscover(normalizedResponse);
-      setActiveGroupId(nextActiveGroup);
       setActiveTabKey(targetTabKey ?? getDefaultTabKeyForGroup(nextActiveGroup));
       if (!activeGroup) {
         const nextTabEans = Object.fromEntries(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, ean]));
         setTabEanInputs(nextTabEans);
         setTabSearchStatuses(Object.fromEntries(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, "loading"] as const)));
         globalPrefetchInFlightRef.current = true;
-        await Promise.all(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => prefetchGlobalTab(tab.key, response)));
+        await Promise.all(PRODUCT_EDITOR_DISCOVERY_GROUPS.map((groupId) => prefetchGlobalGroup(ean, groupId, requestVersion)));
         globalPrefetchInFlightRef.current = false;
       }
       return activeGroup
@@ -382,7 +494,6 @@ function ProductEditorContent() {
     const initialEan = tabEansFromSearchParams[initialTab.key];
     setEanInput(autoSearchEan || initialEan);
     setActiveTabKey(initialTab.key);
-    setActiveGroupId(initialTab.groupId);
     void searchProductForTab(initialTab.key, initialEan);
     // The search starts only once for a distinct set of EANs received from the inventory row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -391,7 +502,6 @@ function ProductEditorContent() {
   async function loadHoodDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
     const tabKey = getHoodTabKey(activeTabKey) ?? getHoodTabKeyForTargetId(preferredTargetId) ?? "HOOD_JV";
     setHoodTabLoading(tabKey, true);
-    setPageError(null);
     try {
       const account = getHoodAccountFromTab(tabKey);
       const { response, payload } = await fetchHoodByEan(currentDiscover.ean, account);
@@ -412,12 +522,10 @@ function ProductEditorContent() {
       setHoodTabDraft(tabKey, hydrated);
       setInitialHoodTabDraft(tabKey, hydrated);
       setHoodTabWarnings(tabKey, []);
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "found" }));
       clearPlanAndJobState();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorHoodDraftLoadFailed;
-      setPageError(message);
-      showToast(message, "error");
+    } catch {
+      // Discovery status remains authoritative; a failed HOOD draft load must not replace it
+      // with a raw external-provider message in the Product Editor UI.
     } finally {
       setHoodTabLoading(tabKey, false);
     }
@@ -443,7 +551,6 @@ function ProductEditorContent() {
     const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
     if (!tab) return;
     setActiveTabKey(tab.key);
-    setActiveGroupId(tab.groupId);
   }
 
   async function scanTabForProduct(tabKey: string, ean: string) {
@@ -466,7 +573,6 @@ function ProductEditorContent() {
     if (!tab || !isValidProductIdentifier(ean)) return false;
 
     setActiveTabKey(tab.key);
-    setActiveGroupId(tab.groupId);
     setTabSearchStatuses((current) => ({ ...current, [tab.key]: "loading" }));
     try {
       const found = tab.key === "JV"
@@ -588,7 +694,6 @@ function ProductEditorContent() {
       setJvTabDraft(tabKey, hydrated);
       setInitialJvTabDraft(tabKey, hydrated);
       setJvTabWarnings(tabKey, response.warnings);
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "found" }));
       loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(ean, baselineTargetId ?? response.baseline_target_id);
       clearPlanAndJobState();
       return true;
@@ -607,7 +712,6 @@ function ProductEditorContent() {
       setKauflandTabDraft(tabKey, hydrated);
       setInitialKauflandTabDraft(tabKey, hydrated);
       setKauflandTabWarnings(tabKey, response.warnings);
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "found" }));
       clearPlanAndJobState();
       return true;
     } finally {
@@ -625,7 +729,6 @@ function ProductEditorContent() {
       setOttoTabDraft(tabKey, hydrated);
       setInitialOttoTabDraft(tabKey, hydrated);
       setOttoTabWarnings(tabKey, response.warnings);
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "found" }));
       clearPlanAndJobState();
       return true;
     } finally {
@@ -633,35 +736,72 @@ function ProductEditorContent() {
     }
   }
 
-  async function prefetchGlobalTab(tabKey: string, response: ProductEditorDiscoverResponse): Promise<void> {
-    const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
-    if (!tab) return;
-
-    const searchStatus = getTabSearchStatus(response, tabKey);
-    if (searchStatus !== "found") {
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: searchStatus }));
-      return;
+  async function prefetchGlobalGroup(
+    ean: string,
+    groupId: ProductEditorGroupId,
+    requestVersion: number,
+  ): Promise<void> {
+    const groupTabs = PRODUCT_EDITOR_DISPLAY_TABS.filter((tab) => tab.groupId === groupId);
+    try {
+      const response = await discoverProductEditor(ean, groupId);
+      if (discoverRequestVersionRef.current !== requestVersion) return;
+      setTabSearchStatuses((current) => ({
+        ...current,
+        ...Object.fromEntries(groupTabs.map((tab) => [tab.key, getTabSearchStatus(response, tab.key)])),
+      }));
+      setDiscover((current) => {
+        if (!current || current.ean !== ean) return current;
+        const discoveredGroup = response.groups.find((group) => group.id === groupId);
+        if (!discoveredGroup) return current;
+        return {
+          ...current,
+          groups: current.groups.map((group) => group.id === groupId ? discoveredGroup : group),
+        };
+      });
+      await Promise.all(groupTabs.map((tab) => preloadGlobalTab(tab.key, response, requestVersion)));
+    } catch {
+      if (discoverRequestVersionRef.current !== requestVersion) return;
+      setTabSearchStatuses((current) => ({
+        ...current,
+        ...Object.fromEntries(groupTabs.map((tab) => [tab.key, "error"])),
+      }));
     }
+  }
+
+  async function preloadGlobalTab(
+    tabKey: string,
+    response: ProductEditorDiscoverResponse,
+    requestVersion: number,
+  ): Promise<void> {
+    if (discoverRequestVersionRef.current !== requestVersion || getTabSearchStatus(response, tabKey) !== "found") return;
 
     try {
       const baselineTargetId = getPreferredTargetIdForTab(response, tabKey);
-      const found = tabKey === "JV" || tabKey === "XL"
-        ? await loadJvDraftForTab(response.ean, tabKey, baselineTargetId)
-        : tabKey === "HOOD_JV" || tabKey === "HOOD_XL"
-          ? await loadHoodDraftByEan(response.ean, tabKey)
-          : tabKey === "KAUFLAND_JV" || tabKey === "KAUFLAND_XL"
-            ? await loadKauflandDraftForTab(response.ean, tabKey, baselineTargetId)
-            : tabKey === "OTTO_JV" || tabKey === "OTTO_XL"
-              ? await loadOttoDraftForTab(response.ean, tabKey, baselineTargetId)
-              : false;
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: found ? "found" : "error" }));
+      if (tabKey === "JV" || tabKey === "XL") {
+        await loadJvDraftForTab(response.ean, tabKey, baselineTargetId);
+      } else if (tabKey === "HOOD_JV" || tabKey === "HOOD_XL") {
+        await loadHoodDraftByEan(response.ean, tabKey);
+      } else if (tabKey === "KAUFLAND_JV" || tabKey === "KAUFLAND_XL") {
+        await loadKauflandDraftForTab(response.ean, tabKey, baselineTargetId);
+      } else if (tabKey === "OTTO_JV" || tabKey === "OTTO_XL") {
+        await loadOttoDraftForTab(response.ean, tabKey, baselineTargetId);
+      }
     } catch {
-      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
+      // The tab remains "found" because discovery succeeded; loading a draft is a separate concern.
     }
   }
 
   function patchActiveTabEan(value: string) {
     setTabEanInputs((current) => ({ ...current, [activeTabKey]: value }));
+  }
+
+  function markTabDirty(tabKey: string) {
+    setDirtyTabKeys((current) => {
+      if (current.has(tabKey)) return current;
+      const next = new Set(current);
+      next.add(tabKey);
+      return next;
+    });
   }
 
   function patchHoodDraft(patch: Partial<ProductEditorHoodDraft>) {
@@ -671,6 +811,7 @@ function ProductEditorContent() {
       ...current,
       [tabKey]: { ...current[tabKey], ...patch }
     }));
+    markTabDirty(tabKey);
     clearPlanStateOnly();
   }
 
@@ -686,6 +827,7 @@ function ProductEditorContent() {
     const tabKey = getJvTabKey(activeTabKey);
     if (!tabKey) return;
     setJvDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
+    markTabDirty(tabKey);
     clearPlanStateOnly();
   }
 
@@ -693,6 +835,7 @@ function ProductEditorContent() {
     const tabKey = getKauflandTabKey(activeTabKey);
     if (!tabKey) return;
     setKauflandDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
+    markTabDirty(tabKey);
     clearPlanStateOnly();
   }
 
@@ -700,6 +843,7 @@ function ProductEditorContent() {
     const tabKey = getOttoTabKey(activeTabKey);
     if (!tabKey) return;
     setOttoDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
+    markTabDirty(tabKey);
     clearPlanStateOnly();
   }
 
@@ -948,6 +1092,135 @@ function ProductEditorContent() {
     }
   }
 
+  async function handleApplySelectedMarketplaces(selectedTabKeys: string[]) {
+    const selectedTabKeySet = new Set(selectedTabKeys);
+    const selectedChanges = changedMarketplacePlans.filter((change) => selectedTabKeySet.has(change.tabKey));
+    if (selectedChanges.length === 0) {
+      showToast(t.productEditorNoDraftChanges, "error");
+      return;
+    }
+
+    setBatchEditResults([]);
+    setGlobalPlanLoading(true);
+    setPageError(null);
+    let plans: ProductEditorPlannedMarketplace[];
+    try {
+      plans = [];
+      for (const change of selectedChanges) {
+        const preparedChange = await prepareMarketplaceChangeForPlan(change);
+        const plan = await planProductEditor({
+          ean: preparedChange.ean,
+          activeGroup: preparedChange.groupId,
+          changedFields: preparedChange.changedFields,
+          draft: preparedChange.draft,
+          selectedTargetIds: preparedChange.selectedTargetIds,
+        });
+        plans.push({ change: preparedChange, plan });
+      }
+      setGlobalPlans(plans);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.productEditorPlanFailed;
+      setPageError(message);
+      showToast(message, "error");
+      return;
+    } finally {
+      setGlobalPlanLoading(false);
+    }
+
+    setGlobalApplyLoading(true);
+    try {
+      const results = await Promise.allSettled(plans.map(async (item) => {
+        const response = await applyProductEditorPlan(item.plan.plan_id);
+        const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
+        return { item, response, finalJob };
+      }));
+      const completedTabs = new Set<string>();
+      const batchResults: ProductEditorBatchEditResult[] = [];
+
+      results.forEach((result, index) => {
+        const planItem = plans[index];
+        const group = findGroup(discover, planItem.change.groupId);
+        if (result.status === "rejected") {
+          planItem.change.selectedTargetIds.forEach((targetId) => {
+            batchResults.push({
+              targetId,
+              label: findTarget(group, targetId)?.label ?? targetId,
+              status: "failed",
+              errorMessage: result.reason instanceof Error ? result.reason.message : "Update request failed.",
+            });
+          });
+          return;
+        }
+
+        setApplyResponse(result.value.response);
+        setJobResponse(result.value.finalJob);
+        const targetResults = result.value.finalJob.targets.length > 0
+          ? result.value.finalJob.targets
+          : planItem.change.selectedTargetIds.map((targetId) => ({
+            target_id: targetId,
+            status: "failed" as const,
+            status_code: 0,
+          }));
+        targetResults.forEach((target) => {
+          batchResults.push({
+            targetId: target.target_id,
+            label: findTarget(group, target.target_id)?.label ?? target.target_id,
+            status: target.status,
+            errorMessage: "error" in target ? target.error?.message : "Update status was not returned.",
+          });
+        });
+        if (targetResults.every((target) => target.status === "success")) {
+          completedTabs.add(planItem.change.tabKey);
+          markMarketplaceChangeApplied(planItem.change);
+        }
+      });
+
+      setBatchEditResults(batchResults);
+      setGlobalPlans((current) => current.filter((item) => !completedTabs.has(item.change.tabKey)));
+      const successfulCount = batchResults.filter((result) => result.status === "success").length;
+      const failedCount = batchResults.length - successfulCount;
+      if (failedCount === 0) {
+        showToast(`${successfulCount} site(s) updated.`, "success");
+      }
+    } finally {
+      setGlobalApplyLoading(false);
+    }
+  }
+
+  async function prepareMarketplaceChangeForPlan(change: ProductEditorChangedMarketplace): Promise<ProductEditorChangedMarketplace> {
+    if (change.groupId !== "JV" && change.groupId !== "XL") return change;
+    const draft = change.draft as unknown as ProductEditorJvDraft;
+    const requiresImageSync = draft.pending_uploads.length > 0 || change.changedFields.includes("image") || change.changedFields.includes("images");
+    if (!requiresImageSync) return change;
+
+    const synchronizedDraft = await synchronizeJvGalleryAssets(draft, change.selectedTargetIds as ProductEditorJvSiteKey[]);
+    const tabKey = getJvTabKey(change.tabKey);
+    if (tabKey) setJvTabDraft(tabKey, synchronizedDraft);
+    return { ...change, draft: synchronizedDraft as unknown as Record<string, unknown> };
+  }
+
+  function markMarketplaceChangeApplied(change: ProductEditorChangedMarketplace) {
+    const hoodTabKey = getHoodTabKey(change.tabKey);
+    if (hoodTabKey) {
+      setInitialHoodTabDraft(hoodTabKey, change.draft as unknown as ProductEditorHoodDraft);
+      return;
+    }
+    const jvTabKey = getJvTabKey(change.tabKey);
+    if (jvTabKey) {
+      setInitialJvTabDraft(jvTabKey, change.draft as unknown as ProductEditorJvDraft);
+      return;
+    }
+    const kauflandTabKey = getKauflandTabKey(change.tabKey);
+    if (kauflandTabKey) {
+      setInitialKauflandTabDraft(kauflandTabKey, change.draft as unknown as ProductEditorKauflandDraft);
+      return;
+    }
+    const ottoTabKey = getOttoTabKey(change.tabKey);
+    if (ottoTabKey) {
+      setInitialOttoTabDraft(ottoTabKey, change.draft as unknown as ProductEditorOttoDraft);
+    }
+  }
+
   async function handleApplyJvEditedProducts() {
     const activeStructuredGroup = activeGroupId === "XL" ? "XL" : "JV";
     const activeStructuredLabel = activeStructuredGroup === "XL" ? "XL" : "JV";
@@ -1056,10 +1329,7 @@ function ProductEditorContent() {
       showToast("No edited Kaufland fields to apply.", "error");
       return;
     }
-    const selectedTargetIds = discover?.groups
-      .find((group) => group.id === "KAUFLAND")
-      ?.targets.filter((target) => target.status === "found" || target.status === "missing")
-      .map((target) => target.id) ?? [];
+    const selectedTargetIds = getTargetIdsForTab(discover, activeTabKey, ["found", "missing"]);
     if (selectedTargetIds.length === 0) {
       showToast("No reachable Kaufland targets are available for apply.", "error");
       return;
@@ -1100,7 +1370,9 @@ function ProductEditorContent() {
       showToast(!isValidProductIdentifier(ean) ? "OTTO EAN is invalid." : "No edited OTTO fields to apply.", "error");
       return;
     }
-    const selectedTargetIds = discover?.groups.find((group) => group.id === "OTTO")?.targets.filter((target) => target.status === "found").map((target) => target.id) ?? [];
+    const selectedTargetIds = ottoDraft.target_id.trim()
+      ? [ottoDraft.target_id]
+      : getTargetIdsForTab(discover, activeTabKey, ["found"]);
     if (selectedTargetIds.length === 0) {
       showToast("No reachable OTTO targets are available for apply.", "error");
       return;
@@ -1361,8 +1633,10 @@ function ProductEditorContent() {
 
   function clearPlanStateOnly() {
     setPlanResponse(null);
+    setGlobalPlans([]);
     setApplyResponse(null);
     setApplyConfirmed(false);
+    setGlobalApplyConfirmed(false);
   }
 
   function clearPlanAndJobState() {
@@ -1372,10 +1646,12 @@ function ProductEditorContent() {
 
   function resetEditorState() {
     setDiscover(null);
+    setTabSearchStatuses({});
     jvAutoLoadInFlightKeyRef.current = null;
     loadedJvAutoLoadKeyRef.current = null;
     kauflandLoadInFlightEanRef.current = null;
     autoLoadHandledKeysRef.current.clear();
+    setDirtyTabKeys(new Set());
     setHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setInitialHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setHoodWarningsByTab(createEmptyHoodWarningsByTab());
@@ -1490,6 +1766,8 @@ function ProductEditorContent() {
             foundCount={targetStats.foundCount}
             missingCount={targetStats.missingCount}
             totalCount={targetStats.totalCount}
+            onEdit={() => setBatchEditDialogOpen(true)}
+            canEdit={batchEditSites.length > 0 && !globalPlanLoading && !globalApplyLoading}
           >
             <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-2 overflow-x-auto bg-transparent p-0 md:min-w-0">
@@ -1533,6 +1811,14 @@ function ProductEditorContent() {
               </TabsList>
             </Tabs>
           </ProductEditorHeaderCard>
+          <ProductEditorBatchEditDialog
+            open={batchEditDialogOpen}
+            sites={batchEditSites}
+            results={batchEditResults}
+            loading={globalPlanLoading || globalApplyLoading}
+            onOpenChange={setBatchEditDialogOpen}
+            onApply={(tabKeys) => void handleApplySelectedMarketplaces(tabKeys)}
+          />
         </motion.div>
 
         {pageError ? (
@@ -1704,6 +1990,8 @@ const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGr
   { key: "EBAY_XL", groupId: "EBAY" }
 ];
 
+const PRODUCT_EDITOR_DISCOVERY_GROUPS: ProductEditorGroupId[] = ["JV", "XL", "HOOD", "KAUFLAND", "OTTO", "EBAY"];
+
 function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof useLabels>): string {
   switch (tabKey) {
     case "JV":
@@ -1821,6 +2109,10 @@ function getDefaultTabKeyForGroup(groupId: ProductEditorGroupId): string {
   return tab?.key ?? "HOOD_JV";
 }
 
+function getGroupIdForTab(tabKey: string): ProductEditorGroupId {
+  return PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey)?.groupId ?? "HOOD";
+}
+
 function getSourceVariantFromTab(tabKey: string): "jv" | "xl" | null {
   if (tabKey.endsWith("_JV")) return "jv";
   if (tabKey.endsWith("_XL")) return "xl";
@@ -1857,6 +2149,31 @@ function getPreferredTargetIdForTab(discover: ProductEditorDiscoverResponse, tab
     return id.includes(`_${variantUpper}`) || family === variantUpper || label.includes(variantUpper);
   });
   return matched?.id ?? null;
+}
+
+function getTargetIdsForTab(
+  discover: ProductEditorDiscoverResponse | null,
+  tabKey: string,
+  allowedStatuses: Array<ProductEditorTarget["status"]>
+): string[] {
+  if (!discover) return [];
+  const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
+  if (!tab) return [];
+  const group = findGroup(discover, tab.groupId);
+  if (!group) return [];
+  const variant = getSourceVariantFromTab(tabKey);
+  const variantUpper = variant?.toUpperCase();
+
+  return group.targets
+    .filter((target) => allowedStatuses.includes(target.status))
+    .filter((target) => {
+      if (!variantUpper) return true;
+      const id = String(target.id || "").toUpperCase();
+      const family = String(target.account_family || "").toUpperCase();
+      const label = String(target.label || "").toUpperCase();
+      return id.includes(`_${variantUpper}`) || family === variantUpper || label.includes(variantUpper);
+    })
+    .map((target) => target.id);
 }
 
 export function ProductEditorShell() {

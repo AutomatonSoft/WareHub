@@ -72,7 +72,7 @@ export function HoodCreateProductPanel({ initialDraft, draftKey, codeLabel, prev
             <button type="button" onClick={() => setMode("preview")} className={["rounded-[var(--radius-pill)] px-3 py-1 text-[11px] font-semibold uppercase", mode === "preview" ? "bg-primary text-primary-foreground" : "text-muted-foreground"].join(" ")}>{previewLabel}</button>
           </div>
         </div>
-        {mode === "code" ? <DeferredTextarea value={draft.description} onDraftChange={(value) => update("description", value)} className="min-h-[30rem] flex-1 w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 font-mono text-sm text-foreground outline-none" /> : <EditableDescriptionPreview title={t.hoodDescriptionPreview} srcDoc={previewDocumentFor(draft.description)} onSave={(value) => update("description", value)} />}
+        {mode === "code" ? <DeferredTextarea value={draft.description} onDraftChange={(value) => update("description", value)} className="min-h-[30rem] flex-1 w-full rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 font-mono text-sm text-foreground outline-none" /> : <EditableDescriptionPreview title={t.hoodDescriptionPreview} srcDoc={previewDocumentFor(draft.description)} onSave={(value) => update("description", value)} autoHeight />}
       </div>
     </div>
   );
