@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_prod_apk_release:
-        description: "Type PUBLISH_PRODUCTION_APK to publish the APK declared in apps/mobile/pubspec.yaml"
+        description: "Type PUBLISH_PRODUCTION_APK to publish the next automatically versioned production APK"
         required: true
         type: string
       release_notes:
@@ -60,7 +60,7 @@ jobs:
           done
           [[ "$PROD_APK_DEPLOY_PATH" = /* ]] || { echo "PROD_APK_DEPLOY_PATH must be absolute." >&2; exit 1; }
 
-      - name: Read and validate mobile version
+      - name: Resolve next production mobile version
         id: version
         shell: bash
         run: |
@@ -70,10 +70,24 @@ jobs:
             echo "apps/mobile/pubspec.yaml must use X.Y.Z+BUILD or X.Y.Z-stage.N+BUILD." >&2
             exit 1
           }
-          echo "version=v${BASH_REMATCH[1]}+${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
-          echo "display_version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          echo "build_name=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          echo "build_number=${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
+          core_version="${BASH_REMATCH[1]}"
+          declared_build="${BASH_REMATCH[3]}"
+
+          published_version="$(curl --fail --silent --show-error --max-time 10 "$PROD_PUBLIC_BASE_URL/api/v1/mobile/app-update" | jq -r '.latest_version // empty' || true)"
+          if [[ "$published_version" =~ ^v?${core_version//./\.}\+([1-9][0-9]*)$ ]]; then
+            published_build="${BASH_REMATCH[1]}"
+          else
+            published_build=0
+          fi
+
+          next_build=$(( declared_build > published_build ? declared_build : published_build ))
+          next_build=$((next_build + 1))
+          version="v${core_version}+${next_build}"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "display_version=v$core_version" >> "$GITHUB_OUTPUT"
+          echo "build_name=$core_version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$next_build" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java
         uses: actions/setup-java@v4

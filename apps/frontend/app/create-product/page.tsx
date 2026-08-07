@@ -977,17 +977,17 @@ function buildSourceGalleryItems(
     });
   }
 
-  const galleryRows = Array.isArray(payload.images_public_urls) ? payload.images_public_urls : [];
-  const fallbackRows = Array.isArray(payload.images) ? payload.images : [];
+  const galleryRows = [payload.images_public_urls, payload.images]
+    .flatMap((value) => Array.isArray(value) ? value : []);
 
   galleryRows.forEach((row, index) => {
-    const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-    const sourcePath = normalizeSourceImagePath(record.image);
-    const publicUrl = asTrimmedString(record.public_url);
+    const record = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
+    const sourcePath = normalizeSourceImagePath(typeof row === "string" ? row : record.image);
+    const publicUrl = typeof row === "string"
+      ? row
+      : asTrimmedString(record.public_url) || asTrimmedString(record.url);
     const src = resolveDisplaySrc(publicUrl || sourcePath, sourceSiteKey);
-    if (!src) {
-      return;
-    }
+    if (!src) return;
     pushUnique({
       id: `remote-gallery-${index}`,
       src,
@@ -996,36 +996,35 @@ function buildSourceGalleryItems(
     });
   });
 
-  if (items.length <= 1 && fallbackRows.length > 0) {
-    fallbackRows.forEach((row, index) => {
-      const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-      const sourcePath = normalizeSourceImagePath(record.image);
-      if (!sourcePath) {
-        return;
-      }
-      pushUnique({
-        id: `remote-fallback-${index}`,
-        src: resolveDisplaySrc(sourcePath, sourceSiteKey),
-        sourcePath,
-        isLocal: false,
-      });
+  // Some GET responses expose only fully resolved URLs. Preserve every URL from
+  // the normalized snapshot even when the raw payload has no gallery metadata.
+  publicUrls.forEach((url, index) => {
+    const src = resolveDisplaySrc(url, sourceSiteKey);
+    if (!src) return;
+    pushUnique({
+      id: `remote-url-${index}`,
+      src,
+      isLocal: false,
     });
-  }
+  });
 
   return items;
 }
 
 function buildXlSourceGalleryItems(payload: Record<string, unknown>, sourceSiteKey: string): GalleryItem[] {
-  const rows = Array.isArray(payload.images) ? payload.images : [];
+  const rows = [payload.images_public_urls, payload.images]
+    .flatMap((value) => Array.isArray(value) ? value : []);
   const items: Array<GalleryItem & { sortOrder: number }> = [];
   const seen = new Set<string>();
   rows.forEach((row, index) => {
-    const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-    const sourcePath = normalizeSourceImagePath(record.image);
-    if (!sourcePath) {
-      return;
-    }
-    const dedupeKey = sourcePath.toLowerCase();
+    const record = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
+    const sourcePath = normalizeSourceImagePath(typeof row === "string" ? row : record.image);
+    const publicUrl = typeof row === "string"
+      ? row
+      : asTrimmedString(record.public_url) || asTrimmedString(record.url);
+    const src = toXljvImageUrl("XL", sourceSiteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, publicUrl || sourcePath);
+    if (!src) return;
+    const dedupeKey = src.toLowerCase();
     if (seen.has(dedupeKey)) {
       return;
     }
@@ -1033,9 +1032,9 @@ function buildXlSourceGalleryItems(payload: Record<string, unknown>, sourceSiteK
     const sortOrderRaw = Number(record.sort_order);
     const sortOrder = Number.isFinite(sortOrderRaw) ? sortOrderRaw : index + 1;
     items.push({
-      id: `xl-gallery-${items.length}-${sortOrder}-${sourcePath}`,
-      src: toXljvImageUrl("XL", sourceSiteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, sourcePath),
-      sourcePath,
+      id: `xl-gallery-${items.length}-${sortOrder}-${src}`,
+      src,
+      sourcePath: sourcePath || undefined,
       isLocal: false,
       sortOrder,
     });

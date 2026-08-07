@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Download, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
 import type { AuthUser } from "../../app/client-api-types";
-import { MOBILE_APK_DOWNLOAD_PATH } from "../../app/mobile-apk-url";
 import { useLabels } from "../../app/use-labels";
 import { adminNavigationItem, navigationItems, telegramAdminNavigationItem } from "../../lib/navigation";
 import { cn } from "../../lib/cn";
@@ -18,6 +18,7 @@ import {
 } from "../ui/sheet";
 import { GlobalLanguageSwitcher } from "../providers/global-language-switcher";
 import { AppUserMenu } from "./app-user-menu";
+import { MobileAppDownloadDialog } from "./mobile-app-download-dialog";
 
 export function MobileNavigation({
   currentUser,
@@ -32,6 +33,7 @@ export function MobileNavigation({
 }) {
   const pathname = usePathname();
   const t = useLabels();
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
   const visibleNavigationItems = currentUser?.role === "admin"
     ? [...navigationItems, adminNavigationItem, telegramAdminNavigationItem]
     : navigationItems;
@@ -56,10 +58,14 @@ export function MobileNavigation({
             </Link>
           );
         })}
-        <a className="wh-mobile-bottom-nav__item" href={MOBILE_APK_DOWNLOAD_PATH}>
+        <button
+          type="button"
+          className="wh-mobile-bottom-nav__item"
+          onClick={() => setDownloadDialogOpen(true)}
+        >
           <Download size={19} aria-hidden="true" />
           <span>{t.downloadApp}</span>
-        </a>
+        </button>
         <button
           type="button"
           className="wh-mobile-bottom-nav__item"
@@ -106,6 +112,7 @@ export function MobileNavigation({
         </div>
       </SheetContent>
       </Sheet>
+      <MobileAppDownloadDialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen} />
     </>
   );
 }

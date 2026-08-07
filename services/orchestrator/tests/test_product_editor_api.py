@@ -393,6 +393,8 @@ def test_product_editor_otto_apply_merges_price_change_with_current_target_paylo
             "mediaAssets": [{"type": "IMAGE", "location": "https://img/original.jpg"}],
             "delivery": {"type": "PARCEL", "deliveryTime": 7},
             "order": {"maxOrderQuantity": 2},
+            "shippingProfileId": "5b1087dc-d7d4-5c68-8ba4-81e3bc5b6f1d",
+            "productDescription": {"category": "Desk", "categoryId": "123", "description": "Original"},
         }
     )
 
@@ -422,6 +424,7 @@ def test_product_editor_otto_apply_merges_price_change_with_current_target_paylo
     assert override["productDescription"] == {"category": "Desk", "description": "Original"}
     assert override["mediaAssets"] == [{"type": "IMAGE", "location": "https://img/original.jpg"}]
     assert override["delivery"] == {"type": "PARCEL", "deliveryTime": 7}
+    assert override["shippingProfileId"] == "5b1087dc-d7d4-5c68-8ba4-81e3bc5b6f1d"
 
 
 def test_product_editor_otto_apply_normalizes_source_payload_for_upsert(tmp_path):
