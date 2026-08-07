@@ -141,12 +141,68 @@ Runtime env source of truth:
 - committed sanitized env templates are the runtime base:
   - `infra/deploy/stage/env.stage.sanitized.template`
   - `infra/deploy/prod/env.prod.sanitized.template`
-- stage deploy builds the runtime `.env` from the committed template plus the secret overlay in `STAGE_ENV_FILE`, then copies only the merged runtime file to the server.
-- production deploy builds the runtime `.env` from the committed template plus the secret overlay in `PROD_ENV_FILE`, then copies only the merged runtime file to the server.
-- `STAGE_ENV_FILE` is therefore an override layer for secrets and environment-specific deviations, not a git-tracked full env file.
-- `PROD_ENV_FILE` is the corresponding production override layer.
-- if a runtime capability is expected on stage, its required env must be present either in the committed template defaults or in the secret overlay; otherwise deploy validation should fail before release.
-- local workstation `.env` can be used as the operator source for those overlays via `infra/scripts/sync-runtime-env-to-github.ps1`; this uploads only the stage/prod subset to GitHub Environment secrets and still keeps real secrets out of git.
+- stage deploy builds the runtime `.env` from the template, `SHARED_ENV_FILE`, and `STAGE_ENV_FILE`, then copies only the merged runtime file to the server.
+- production deploy uses the same layering with `PROD_ENV_FILE`; its GitHub Environment name is **`production`**, not `prod`.
+- `SHARED_ENV_FILE` contains shared third-party credentials. `STAGE_ENV_FILE` and `PROD_ENV_FILE` contain environment-specific values and win over shared values.
+- all runtime source files are untracked. `.env`, `.env.*`, and `*.local` must never be committed.
+
+### Runtime env operations
+
+Use distinct local source files. The root `.env` is for local development and the stage source only; it must never be used to update production.
+
+| Target | GitHub Environment / secret | Local source file |
+| --- | --- | --- |
+| Shared credentials | `stage` and `production` / `SHARED_ENV_FILE` | `.env.shared.local` |
+| Stage override | `stage` / `STAGE_ENV_FILE` | `.env` |
+| Production override | `production` / `PROD_ENV_FILE` | `.env.prod.local` |
+
+The production source file is a protected local copy of the current production runtime env. Bootstrap or refresh it without printing its contents:
+
+```powershell
+scp warehub-prod:/opt/warehub/prod/.env .\.env.prod.local
+```
+
+#### Stage
+
+Validate first, then upload the override. A secret update does not restart containers, so run Stage Deploy afterwards.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-runtime-env-to-github.ps1 -Environment stage -DryRun
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-runtime-env-to-github.ps1 -Environment stage
+gh workflow run stage-deploy.yml --ref stage -f confirm_stage_deploy=DEPLOY_STAGE_RUNTIME
+```
+
+#### Production
+
+Never point the production command at root `.env`. Validate the protected production source first, then upload. This changes the GitHub secret only; it is applied only by a separately approved Prod Deploy with an immutable release version.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-runtime-env-to-github.ps1 `
+  -Environment prod `
+  -SourceEnvFile .\.env.prod.local `
+  -DryRun
+
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-runtime-env-to-github.ps1 `
+  -Environment prod `
+  -SourceEnvFile .\.env.prod.local
+
+gh workflow run prod-deploy.yml --ref main `
+  -f confirm_prod_deploy=DEPLOY_PRODUCTION_RUNTIME `
+  -f release_version=vX.Y.Z
+```
+
+The sync script maps `-Environment prod` to the GitHub Environment `production`. Do not create or use a GitHub Environment named `prod`.
+
+#### Shared credentials
+
+Update `SHARED_ENV_FILE` only when the key is genuinely identical for both environments. Use a complete, reviewed `.env.shared.local` source and replace both environment secrets together:
+
+```powershell
+Get-Content -LiteralPath .\.env.shared.local | gh secret set SHARED_ENV_FILE --env stage
+Get-Content -LiteralPath .\.env.shared.local | gh secret set SHARED_ENV_FILE --env production
+```
+
+Then deploy stage and validate it before scheduling an approved production deploy. Never echo, print, commit, or paste env values into logs or chat.
 
 Sentry backend:
 - `BACKEND_STAGE_SENTRY_DSN`
@@ -268,18 +324,9 @@ Run infra ops preflight (env + migration checks):
 powershell -ExecutionPolicy Bypass -File scripts/ops-preflight.ps1 -RepoPath .
 ```
 
-Sync local root `.env` into GitHub Environment secret overlays:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage
-powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment prod
-```
-
-Dry-run the same sync without uploading:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/sync-runtime-env-to-github.ps1 -Environment stage -DryRun
-```
+For the authoritative stage, production, and shared env sync procedure, see
+[Runtime env operations](#runtime-env-operations). In particular, do not use
+root `.env` as the source for a production sync.
 
 Run infra ops preflight in remote mode (server-hosted stage/prod):
 
