@@ -270,6 +270,7 @@ initialize_local_runtime_env() {
   export NEXT_PUBLIC_SERVICES_API_BASE_URL="$services_origin/api/v1"
   export SERVICES_API_BASE_URL="$services_origin"
   export NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL="$orchestrator_origin/api/v1"
+  export ORCHESTRATOR_INTERNAL_API_BASE_URL="http://127.0.0.1:$orchestrator_port/api/v1"
   export ORCHESTRATOR_API_BASE_URL="$orchestrator_origin"
   export MOBILE_DEV_API_BASE_URL="http://127.0.0.1:$backend_port/api/v1"
   export DATABASE_SERVICE_BASE_URL="$services_origin"
@@ -667,6 +668,7 @@ build_local_runtime_env_lines() {
     NEXT_PUBLIC_SERVICES_API_BASE_URL
     SERVICES_API_BASE_URL
     NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL
+    ORCHESTRATOR_INTERNAL_API_BASE_URL
     ORCHESTRATOR_API_BASE_URL
     MOBILE_DEV_API_BASE_URL
     DATABASE_SERVICE_BASE_URL
