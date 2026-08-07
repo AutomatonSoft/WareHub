@@ -211,6 +211,15 @@ class JVRoutesSmokeTest(SimpleTestCase):
         self.assertEqual(split_jv_image_path("cosmoshop/default/pix/a/v/photo.PNG"), ("photo", "png"))
         self.assertEqual(split_jv_image_path(""), ("image", "jpg"))
 
+    def test_jv_source_writer_uses_source_ean_field_for_shopartikel_ean(self):
+        from types import SimpleNamespace
+
+        from jv_services.source_writer_jv import _source_ean_for_jv_shopartikel
+
+        product = SimpleNamespace(ean="JVM4062292005305", source_ean_field="4062292005305")
+
+        self.assertEqual(_source_ean_for_jv_shopartikel(product), "4062292005305")
+
     def test_jv_shopmedia_sync_supports_sortierung_schema(self):
         from types import SimpleNamespace
         from unittest.mock import MagicMock, call, patch

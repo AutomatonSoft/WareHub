@@ -1,5 +1,4 @@
 export function mapValidationErrorCodeToLabel(code, labels) {
-  if (code === "ean_exactly_13_digits") return labels.validationEanExact13Digits;
   if (code === "price_numeric") return labels.validationPriceNumeric;
   return labels.validationProductNameMin3;
 }

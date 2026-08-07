@@ -255,7 +255,9 @@ export function AddProductButton({ onCreated }: AddProductButtonProps) {
   const t = useLabels();
   const { showToast } = useToast();
   const auth = readAuth();
-  const canCreateKid = auth?.user.role === "admin" && auth.user.status === "approved";
+  const canCreateKid =
+    auth?.user.status === "approved" &&
+    (auth.user.role === "admin" || auth.user.role === "user");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CreateKidFormState>(() => createEmptyFormState());
   const [fieldErrors, setFieldErrors] = useState<CreateKidFieldErrors>({});

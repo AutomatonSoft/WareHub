@@ -1141,6 +1141,8 @@ export default function CreateProductPage() {
   const jvDraftRef = useRef<JvCreateProductFields>({
     name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "",
   });
+  const jvDraftContextKeyRef = useRef("");
+  const createDraftContextKeyRef = useRef("");
   const jvPublishingSelectionsRef = useRef<JvPublishingSelections>({
     rubricIdsBySite: {},
     mainRubricIdBySite: {},
@@ -1317,6 +1319,42 @@ export default function CreateProductPage() {
     [sourcePayload],
   );
   const sourceCategories = useMemo(() => extractSourceCategories(sourcePayload), [sourcePayload]);
+  const jvInitialSelections = useMemo<JvPublishingSelections>(() => {
+    const rubricIdsBySite: JvPublishingSelections["rubricIdsBySite"] = {};
+    const mainRubricIdBySite: JvPublishingSelections["mainRubricIdBySite"] = {};
+    const deliveryIdsBySite: JvPublishingSelections["deliveryIdsBySite"] = {};
+
+    for (const site of JV_RUBRIC_SITE_TABS) {
+      const snapshot = controller.jvSourceSnapshotsBySiteKey[site.key];
+      if (!snapshot) continue;
+
+      const payload = snapshot.rawPayload && typeof snapshot.rawPayload === "object"
+        ? snapshot.rawPayload
+        : {};
+      const categories = extractSourceCategories(payload);
+      rubricIdsBySite[site.key] = categories.map((category) => category.category_id);
+      mainRubricIdBySite[site.key] =
+        categories.find((category) => category.main_category)?.category_id ??
+        categories[0]?.category_id ??
+        null;
+
+      const jvFields = payload.jv_fields && typeof payload.jv_fields === "object"
+        ? payload.jv_fields as Record<string, unknown>
+        : {};
+      const deliveryId = asIntegerOrUndefined(jvFields.lieferzeitid);
+      deliveryIdsBySite[site.key] = deliveryId === undefined ? [] : [deliveryId];
+    }
+
+    return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
+  }, [controller.jvSourceSnapshotsBySiteKey]);
+  const jvInitialSelectionKey = useMemo(() => JSON.stringify(
+    JV_RUBRIC_SITE_TABS.map((site) => ({
+      siteKey: site.key,
+      categories: jvInitialSelections.rubricIdsBySite[site.key] ?? [],
+      mainCategory: jvInitialSelections.mainRubricIdBySite[site.key] ?? null,
+      delivery: jvInitialSelections.deliveryIdsBySite[site.key] ?? [],
+    })),
+  ), [jvInitialSelections]);
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -1481,26 +1519,19 @@ export default function CreateProductPage() {
     ? reservedMarketplaceEans[activeReservationFamily] ?? ""
     : "";
   const activeXlSeoUrl = buildUrlKeyFromName(activeXlDescriptionFields.name) || activeXlDescriptionFields.seo_url;
-  const activeXlSourceKey = [
+  const activeSourceSnapshotKey = [
     controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
     controller.sourceSnapshot?.ean || "",
     controller.sourceSnapshot?.sourceProductId || "",
   ].join(":");
-  const activeJvSourceKey = [
-    controller.sourceSnapshot?.siteKey || "",
-    controller.sourceSnapshot?.ean || "",
-    controller.sourceSnapshot?.sourceProductId || "",
-  ].join(":");
-  const activeHoodSourceKey = [
-    controller.sourceSnapshot?.siteKey || "",
-    controller.sourceSnapshot?.ean || "",
-    controller.sourceSnapshot?.sourceProductId || "",
-  ].join(":");
-  const activeKauflandSourceKey = [
-    controller.sourceSnapshot?.siteKey || "",
-    controller.sourceSnapshot?.ean || "",
-    controller.sourceSnapshot?.sourceProductId || "",
-  ].join(":");
+  const activeDraftContextKey = [
+    controller.kidContext?.kidNumber?.trim() || "",
+    controller.kidContext?.mainEan?.trim() || "",
+  ].filter(Boolean).join(":") || "new-product";
+  const activeXlSourceKey = activeDraftContextKey;
+  const activeJvSourceKey = activeDraftContextKey;
+  const activeHoodSourceKey = activeDraftContextKey;
+  const activeKauflandSourceKey = activeDraftContextKey;
   const activeKauflandDescriptionFields = useMemo(
     () => buildKauflandDescriptionFields(kauflandProduct),
     [kauflandProduct],
@@ -1512,14 +1543,23 @@ export default function CreateProductPage() {
     product: kauflandProduct,
     ...activeKauflandDescriptionFields,
   }), [activeKauflandDescriptionFields, activeReservedMarketplaceEan, kauflandProduct]);
-  const activeXlInitialDraft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
-    ? xlDraftRefByTab.current[activeTab].draft
+  const activeXlDraftSnapshot = xlDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+    ? xlDraftRefByTab.current[activeTab]
+    : undefined;
+  const activeHoodDraftSnapshot = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+    ? hoodDraftRefByTab.current[activeTab]
+    : undefined;
+  const activeKauflandDraftSnapshot = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+    ? kauflandDraftRefByTab.current[activeTab]
+    : undefined;
+  const activeXlInitialDraft = activeXlDraftSnapshot
+    ? activeXlDraftSnapshot.draft
     : activeXlDescriptionFields;
-  const activeHoodInitialDraft = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
-    ? hoodDraftRefByTab.current[activeTab].draft
+  const activeHoodInitialDraft = activeHoodDraftSnapshot
+    ? activeHoodDraftSnapshot.draft
     : { name: controller.productName, price: controller.price, ...controller.hoodFields, ean: activeReservedMarketplaceEan || controller.ean };
-  const activeKauflandInitialDraft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
-    ? kauflandDraftRefByTab.current[activeTab].draft
+  const activeKauflandInitialDraft = activeKauflandDraftSnapshot
+    ? activeKauflandDraftSnapshot.draft
     : sourceKauflandDraft;
   const activeOttoProfile: OttoProfile | null = activeTabMeta.marketplace === "OTTO"
     ? (activeTabMeta.account === "XL" ? "xl" : "jv")
@@ -1528,8 +1568,11 @@ export default function CreateProductPage() {
   const activeOttoSourceKey = activeTabMeta.sourceSite === "XL"
     ? activeXlSourceKey
     : activeJvSourceKey;
-  const activeOttoInitialDraft = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
-    ? ottoDraftRefByTab.current[activeTab].draft
+  const activeOttoDraftSnapshot = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+    ? ottoDraftRefByTab.current[activeTab]
+    : undefined;
+  const activeOttoInitialDraft = activeOttoDraftSnapshot
+    ? activeOttoDraftSnapshot.draft
     : buildOttoDraft(activeOttoProduct ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.name : jvName,
@@ -1538,6 +1581,30 @@ export default function CreateProductPage() {
       productReference: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
       category: ottoCategoryNameByTab[activeTab] ?? "",
     });
+  const activeXlDraftKey = activeXlDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeHoodDraftKey = activeHoodDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeKauflandDraftKey = activeKauflandDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+
+  useEffect(() => {
+    if (createDraftContextKeyRef.current === activeDraftContextKey) {
+      return;
+    }
+
+    createDraftContextKeyRef.current = activeDraftContextKey;
+    jvDraftContextKeyRef.current = "";
+    jvDraftRef.current = {
+      name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "",
+    };
+    xlDraftRefByTab.current = {};
+    hoodDraftRefByTab.current = {};
+    kauflandDraftRefByTab.current = {};
+    ottoDraftRefByTab.current = {};
+    hoodPublishDraftRef.current = null;
+    setReservedMarketplaceEans({});
+    setOttoCategoryByTab({});
+    setOttoCategoryNameByTab({});
+  }, [activeDraftContextKey]);
 
   useEffect(() => {
     const kidNumber = controller.kidContext?.kidNumber.trim() || "";
@@ -1593,6 +1660,13 @@ export default function CreateProductPage() {
   }, [activeReservationFamily, controller.kidContext?.kidNumber, showToast]);
 
   useEffect(() => {
+    if (activeTabMeta.sourceSite !== "JV" || !controller.sourceSnapshot?.rawPayload) {
+      return;
+    }
+    if (jvDraftContextKeyRef.current === activeDraftContextKey) {
+      return;
+    }
+
     const jvFields = controller.sourceSnapshot?.rawPayload?.jv_fields;
     const contentByLanguage = Array.isArray((jvFields as { content_by_language?: unknown })?.content_by_language)
       ? ((jvFields as { content_by_language?: unknown[] }).content_by_language as unknown[])
@@ -1611,6 +1685,7 @@ export default function CreateProductPage() {
       shortDescriptionReal: String(primaryRow?.short_description_real || ""),
       kurzbeschreibung: String(primaryRow?.kurzbeschreibung || ""),
     };
+    jvDraftContextKeyRef.current = activeDraftContextKey;
     jvDraftRef.current = { ...nextJvFields, urlKey: buildUrlKeyFromName(nextJvFields.name), evp: computeEvpFromPrice(nextJvFields.price) };
     setJvName(nextJvFields.name);
     setJvArtikelnr(nextJvFields.artikelnr);
@@ -1622,7 +1697,7 @@ export default function CreateProductPage() {
     setJvMetaKeyword(nextJvFields.metaKeyword);
     setJvShortDescriptionReal(nextJvFields.shortDescriptionReal);
     setJvKurzbeschreibung(nextJvFields.kurzbeschreibung);
-  }, [controller.sourceSnapshot?.rawPayload]);
+  }, [activeDraftContextKey, activeTabMeta.sourceSite, controller.sourceSnapshot?.rawPayload]);
 
   useEffect(() => {
     setGalleryItems((current) => {
@@ -2209,10 +2284,6 @@ export default function CreateProductPage() {
   async function handleSendToAllJvSites(targetSiteKeys = JV_RUBRIC_SITE_TABS.map((site) => site.key)) {
     const jvFields = jvDraftRef.current;
     const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
-    if (!/^\d{13}$/.test(ean)) {
-      showToast(t.validationEanExact13Digits, "error");
-      return;
-    }
     if (!jvFields.name.trim()) {
       showToast(t.createProductNameRequiredBeforeSend, "error");
       return;
@@ -2881,7 +2952,18 @@ export default function CreateProductPage() {
                 descriptionMode={jvDescriptionMode}
                 labels={{ name: t.name, urlKey: t.xljvUrlKey, artikelnr: t.createProductArtikelnr, price: t.price, bezeichnung: t.bezeichnungLabel, kurzbeschreibung: t.kurzbeschreibungLabel, shortDescriptionReal: t.createProductShortDescriptionReal, metaTitle: t.metaTitle, metaDescription: t.metaDescription, metaKeyword: t.metaKeyword, description: t.description, keywordPlaceholder: t.createProductKeywordPlaceholder, code: t.codeLabel, preview: t.previewLabel }}
                 onFieldDraftChange={(key, value) => {
-                  jvDraftRef.current = { ...jvDraftRef.current, [key]: value };
+                  const nextDraft = { ...jvDraftRef.current, [key]: value };
+                  jvDraftRef.current = nextDraft;
+                  if (key === "name") setJvName(value);
+                  if (key === "artikelnr") setJvArtikelnr(value);
+                  if (key === "price") setJvPrice(value);
+                  if (key === "description") setJvDescription(value);
+                  if (key === "bezeichnung") setJvBezeichnung(value);
+                  if (key === "metaTitle") setJvMetaTitle(value);
+                  if (key === "metaDescription") setJvMetaDescription(value);
+                  if (key === "metaKeyword") setJvMetaKeyword(value);
+                  if (key === "shortDescriptionReal") setJvShortDescriptionReal(value);
+                  if (key === "kurzbeschreibung") setJvKurzbeschreibung(value);
                 }}
                 onDescriptionModeChange={setJvDescriptionMode}
                 buildUrlKey={buildUrlKeyFromName}
@@ -2907,6 +2989,8 @@ export default function CreateProductPage() {
                   sourceSiteKey={controller.sourceSnapshot?.siteKey}
                   sourceCategories={sourceCategories}
                   sourceDeliveryId={asIntegerOrUndefined(sourceJvFields.lieferzeitid)}
+                  initialSelections={controller.jvSourceSnapshotsReady ? jvInitialSelections : undefined}
+                  initialSelectionKey={controller.jvSourceSnapshotsReady ? jvInitialSelectionKey : undefined}
                   onSelectionsChange={(selections) => {
                     jvPublishingSelectionsRef.current = selections;
                   }}
@@ -2929,7 +3013,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "HOOD" ? (
                   <HoodCreateProductPanel
                     initialDraft={activeHoodInitialDraft}
-                    draftKey={`${activeHoodSourceKey}:${activeReservedMarketplaceEan}`}
+                    draftKey={`${activeHoodDraftKey}:${activeReservedMarketplaceEan}`}
                     publishDraftRef={hoodPublishDraftRef}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
@@ -2942,7 +3026,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "KAUFLAND" ? (
                   <KauflandProductDetailsPanel
                     initialDraft={activeKauflandInitialDraft}
-                    draftKey={`${activeKauflandSourceKey}:${activeReservedMarketplaceEan}`}
+                    draftKey={`${activeKauflandDraftKey}:${activeReservedMarketplaceEan}`}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(description))}
@@ -2968,7 +3052,7 @@ export default function CreateProductPage() {
                     ) : null}
                     <OttoCreateProductPanel
                       initialDraft={activeOttoInitialDraft}
-                      draftKey={`${activeOttoSourceKey}:${activeReservedMarketplaceEan}`}
+                      draftKey={`${activeOttoDraftKey}:${activeReservedMarketplaceEan}`}
                       profile={activeOttoProfile ?? "jv"}
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
@@ -2982,7 +3066,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" ? (
                   <XlCreateProductPanel
                     initialFields={activeXlInitialDraft}
-                    draftKey={activeXlSourceKey}
+                    draftKey={activeXlDraftKey}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     onDraftChange={(draft) => {

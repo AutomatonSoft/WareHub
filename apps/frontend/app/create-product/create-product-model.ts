@@ -7,7 +7,6 @@ export type CreateProductFormInput = {
 
 export type CreateProductFieldKey = "ean" | "price" | "productName";
 export type CreateProductValidationErrorCode =
-  | "ean_exactly_13_digits"
   | "price_numeric"
   | "product_name_min_3";
 
@@ -278,13 +277,9 @@ export function parseImageUrlsFromText(imagesText: string): string[] {
 
 export function validateCreateProductInput(input: CreateProductFormInput): CreateProductValidationResult {
   const errors: Partial<Record<CreateProductFieldKey, CreateProductValidationErrorCode>> = {};
-  const ean = input.ean.trim();
   const price = input.price.trim();
   const productName = input.productName.trim();
 
-  if (!/^\d{13}$/.test(ean)) {
-    errors.ean = "ean_exactly_13_digits";
-  }
   if (!/^\d+([.,]\d{1,2})?$/.test(price)) {
     errors.price = "price_numeric";
   }
