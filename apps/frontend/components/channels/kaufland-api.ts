@@ -44,10 +44,20 @@ type KauflandDeleteBody = {
   controller: "jv" | "xl";
 };
 
-export async function uploadKauflandImages(params: { ean: string; files: File[] }): Promise<string[]> {
+export async function uploadKauflandImages(params: {
+  ean: string;
+  files?: File[];
+  sourceUrls?: string[];
+}): Promise<string[]> {
   const formData = new FormData();
-  for (const file of params.files) {
+  for (const file of params.files ?? []) {
     formData.append("images", file);
+  }
+  const sourceUrls = Array.from(new Set((params.sourceUrls ?? [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)));
+  if (sourceUrls.length > 0) {
+    formData.append("source_urls", JSON.stringify(sourceUrls));
   }
   const query = new URLSearchParams({ site: "KAUFLAND", ean: params.ean.trim() });
   const response = await apiFetch(`/api/v1/uploads/images/?${query.toString()}`, {

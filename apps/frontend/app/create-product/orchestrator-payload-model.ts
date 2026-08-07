@@ -6,6 +6,33 @@ export type BuildOrchestratorPayloadInput = {
   additionalPayload?: Record<string, unknown>;
 };
 
+export type OttoPayloadAttribute = {
+  name: string;
+  values: string[];
+};
+
+export function deduplicateOttoAttributes(attributes: OttoPayloadAttribute[]): OttoPayloadAttribute[] {
+  const indexesByNormalizedName = new Map<string, number>();
+  const deduplicated: OttoPayloadAttribute[] = [];
+
+  for (const attribute of attributes) {
+    const name = attribute.name.trim();
+    if (!name) continue;
+
+    const normalizedName = name.toLocaleLowerCase();
+    const nextAttribute = { ...attribute, name };
+    const existingIndex = indexesByNormalizedName.get(normalizedName);
+    if (existingIndex === undefined) {
+      indexesByNormalizedName.set(normalizedName, deduplicated.length);
+      deduplicated.push(nextAttribute);
+    } else {
+      deduplicated[existingIndex] = { ...nextAttribute, name: deduplicated[existingIndex].name };
+    }
+  }
+
+  return deduplicated;
+}
+
 export function buildDirectUpdatePayload(input: BuildOrchestratorPayloadInput): Record<string, unknown> {
   return {
     title: input.productName,

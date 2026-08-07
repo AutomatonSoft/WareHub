@@ -31,6 +31,7 @@ from telegram_service.service import (
 )
 from telegram_service.views import (
     TelegramAccessApproveAPIView,
+    TelegramAccessDeleteAPIView,
     TelegramAccessListAPIView,
     TelegramAccessRevokeAPIView,
     TelegramWebhookAPIView,
@@ -803,3 +804,9 @@ class TelegramServiceAsyncFlowTests(TestCase):
         self.assertEqual(binding.status, "revoked")
         self.assertFalse(binding.is_active)
         self.assertEqual(binding.revoked_by, "ravil")
+
+        delete_request = APIRequestFactory().delete(f"/api/v1/telegram/access/{binding.id}/")
+        delete_request.session = {"role": "admin", "login": "ravil"}
+        delete_response = TelegramAccessDeleteAPIView.as_view()(delete_request, binding_id=binding.id)
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(TelegramAccessBinding.objects.filter(id=binding.id).exists())

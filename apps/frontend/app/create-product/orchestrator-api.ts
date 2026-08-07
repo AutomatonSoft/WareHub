@@ -71,6 +71,7 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.kaufland,
       account,
+      ean_source: "pool",
       changed_fields: ["title", "description", "price", "picture_urls", "storefront"],
       overrides: { storefront: account === "xl" ? "xl" : "jv" }
     };
@@ -80,7 +81,8 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.otto,
       profile: account,
-      changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets"]
+      ean_source: "pool",
+      changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets", "shippingProfileId"]
     };
   }
 
@@ -209,10 +211,12 @@ export async function createMainMarketplaceProductJob(input: {
   description: string;
   price: string;
   imageUrls: string[];
+  kidNumber?: string;
   selectedSiteIds: string[];
   xljvPayload: Record<string, unknown>;
   hoodPayload: Record<string, unknown>;
   kauflandPayload: Record<string, unknown>;
+  ottoPayload: Record<string, unknown>;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const xljvChangedFields = [
     "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
@@ -222,6 +226,9 @@ export async function createMainMarketplaceProductJob(input: {
   ];
   const kauflandChangedFields = [
     "title", "short_description", "description", "picture", "price", "size", "color", "material", "delivery", "height", "length", "width", "amount", "id_offer", "storefronts",
+  ];
+  const ottoChangedFields = [
+    "productReference", "sku", "ean", "pzn", "mpn", "moin", "releaseDate", "productDescription", "mediaAssets", "delivery", "order", "pricing", "logistics", "compliance", "shippingProfileId",
   ];
   const primaryImage = input.imageUrls[0] || "";
   const payload = {
@@ -267,7 +274,17 @@ export async function createMainMarketplaceProductJob(input: {
         account: site.kind.toLowerCase(),
         changed_fields: kauflandChangedFields,
         overrides: input.kauflandPayload,
-        ...(site.kind === "XL" ? { ean_source: "pool" as const } : {}),
+        ean_source: "pool",
+      });
+      continue;
+    }
+    if (site.family === "OTTO") {
+      channels.push({
+        marketplace: Marketplace.otto,
+        profile: site.kind.toLowerCase(),
+        changed_fields: ottoChangedFields,
+        overrides: input.ottoPayload,
+        ean_source: "pool",
       });
     }
   }
@@ -280,7 +297,12 @@ export async function createMainMarketplaceProductJob(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: Operation.publish, payload, channels },
+      command: {
+        operation: Operation.publish,
+        payload,
+        channels,
+        ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+      },
     }),
   });
   const raw = (await response.json()) as Record<string, unknown>;

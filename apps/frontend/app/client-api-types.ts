@@ -28,6 +28,7 @@ export type AdminUser = {
   email: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  avatar_url?: string | null;
   role: "admin" | "user";
   status: "pending" | "approved" | "rejected";
   created_at: string;

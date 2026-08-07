@@ -68,12 +68,12 @@ Legacy compatibility:
 
 ## 5. Otto endpoints (controlled)
 
-- `POST /api/v1/otto/products/upsert/`
 - `POST /api/v1/otto/{profile}/products/upsert/`
-- `GET /api/v1/otto/products/`
 - `GET /api/v1/otto/{profile}/products/`
-- `GET /api/v1/otto/products/{pk}/`
+- `GET /api/v1/otto/{profile}/products/by-sku/{sku}/` (fetches from OTTO API and synchronizes the local cache)
 - `GET /api/v1/otto/{profile}/products/{pk}/`
+
+`{profile}` is required and accepts only `jv` or `xl`.
 
 ## 6. Notes for roadmap migration
 

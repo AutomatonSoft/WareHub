@@ -2,6 +2,7 @@
 
 import { Building2Icon, CheckCircle2Icon, Globe2Icon, StoreIcon } from "lucide-react";
 
+import { useLabels } from "../use-labels";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -10,7 +11,7 @@ import { cn } from "../../lib/utils";
 export type PublishSiteOption = {
   id: string;
   label: string;
-  family: "JVMOEBEL" | "XL" | "HOOD" | "KAUFLAND";
+  family: "JVMOEBEL" | "XL" | "HOOD" | "KAUFLAND" | "OTTO";
 };
 
 type PublishSitesDialogProps = {
@@ -28,9 +29,11 @@ const iconByFamily = {
   XL: Globe2Icon,
   HOOD: StoreIcon,
   KAUFLAND: StoreIcon,
+  OTTO: StoreIcon,
 } as const;
 
 export function PublishSitesDialog({ open, title, sites, selectedSiteIds, onOpenChange, onSelectedSiteIdsChange, onConfirm }: PublishSitesDialogProps) {
+  const t = useLabels();
   const toggleSite = (siteId: string) => {
     const next = new Set(selectedSiteIds);
     if (next.has(siteId)) next.delete(siteId);
@@ -42,7 +45,7 @@ export function PublishSitesDialog({ open, title, sites, selectedSiteIds, onOpen
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Выберите сайты для публикации</DialogTitle>
+          <DialogTitle>{t.publishSitesTitle}</DialogTitle>
           <DialogDescription>{title}</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -60,14 +63,14 @@ export function PublishSitesDialog({ open, title, sites, selectedSiteIds, onOpen
                   <span className="truncate text-sm font-semibold text-foreground">{site.label}</span>
                   <span className="text-xs text-muted-foreground">{site.family === "JVMOEBEL" ? "JV Möbel" : site.family}</span>
                 </span>
-                {isSelected ? <CheckCircle2Icon className="text-primary" aria-label="Выбрано" /> : null}
+                {isSelected ? <CheckCircle2Icon className="text-primary" aria-label={t.publishSelected} /> : null}
               </label>
             );
           })}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Отмена</Button>
-          <Button disabled={selectedSiteIds.size === 0} onClick={onConfirm}>Создать и опубликовать</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+          <Button disabled={selectedSiteIds.size === 0} onClick={onConfirm}>{t.publishCreate}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -76,6 +76,12 @@ export type CreateProductHoodSourceFields = {
 export type CreateProductSourceSiteKind = "JV" | "XL" | "HOOD" | "KAUFLAND";
 export const CREATE_PRODUCT_XL_DEFAULT_SITE_KEY = "XLMOEBEL_DE";
 
+export type XlManufacturerOption = {
+  manufacturerId: string;
+  name: string;
+  deliveryTime: string;
+};
+
 function asTrimmedString(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -154,17 +160,25 @@ function toAbsoluteImageUrl(raw: string, siteKey: string): string {
   return `${base}/${value.replace(/^\/+/, "")}`;
 }
 
+function getImageUrl(value: unknown): string {
+  if (typeof value === "string") return asTrimmedString(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+
+  const record = value as Record<string, unknown>;
+  return asTrimmedString(record.public_url) || asTrimmedString(record.image) || asTrimmedString(record.url);
+}
+
 function normalizeImageUrls(payload: Record<string, unknown>, siteKey: string): string[] {
   const urls: string[] = [];
   const mainImage = asTrimmedString(payload.image_public_url) || asTrimmedString(payload.image);
   if (mainImage) urls.push(toAbsoluteImageUrl(mainImage, siteKey));
 
-  const gallery = Array.isArray(payload.images_public_urls) ? payload.images_public_urls : [];
-  for (const row of gallery) {
-    if (!row || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    const url = asTrimmedString(record.public_url) || asTrimmedString(record.image);
-    if (url) urls.push(toAbsoluteImageUrl(url, siteKey));
+  for (const gallery of [payload.images_public_urls, payload.images]) {
+    if (!Array.isArray(gallery)) continue;
+    for (const row of gallery) {
+      const url = getImageUrl(row);
+      if (url) urls.push(toAbsoluteImageUrl(url, siteKey));
+    }
   }
 
   return Array.from(new Set(urls.filter(Boolean)));
@@ -299,6 +313,28 @@ export async function fetchCreateProductKidContext(kidId: number): Promise<Creat
     furnitureType: details.furnitureType,
     commentary: details.commentary,
   };
+}
+
+export async function fetchXlManufacturerOptions(siteKey = CREATE_PRODUCT_XL_DEFAULT_SITE_KEY): Promise<XlManufacturerOption[]> {
+  const response = await apiFetch(
+    `/api/v1/xl/manufacturers/?site_key=${encodeURIComponent(siteKey.trim() || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY)}`,
+  );
+  const payload = (await response.json()) as { detail?: unknown; items?: unknown };
+  if (!response.ok) {
+    throw new Error(asTrimmedString(payload.detail) || `xl_manufacturers_http:${response.status}`);
+  }
+  return Array.isArray(payload.items)
+    ? payload.items
+        .map((item) => {
+          const row = item as Record<string, unknown>;
+          return {
+            manufacturerId: asTrimmedString(row.manufacturer_id),
+            name: asTrimmedString(row.name),
+            deliveryTime: asTrimmedString(row.delivery_time),
+          };
+        })
+        .filter((item) => item.manufacturerId && item.name)
+    : [];
 }
 
 export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promise<CreateProductJvSourceSite[]> {

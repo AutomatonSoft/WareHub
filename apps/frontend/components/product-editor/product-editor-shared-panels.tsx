@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CheckCircle2, ClipboardCheck, PackageSearch, ScanSearch, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleAlert, CircleCheckBig, ClipboardCheck, LoaderCircle, PackageSearch, ScanLine, ScanSearch, SearchX, Sparkles } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useLabels } from "../../app/use-labels";
 
@@ -78,7 +78,8 @@ export function ProductEditorEmptyPanel({
   isEanValid,
   searching,
   onChangeEan,
-  onSearch
+  onSearch,
+  discoveryItems = []
 }: {
   title: string;
   body: string;
@@ -87,20 +88,59 @@ export function ProductEditorEmptyPanel({
   searching: boolean;
   onChangeEan: (value: string) => void;
   onSearch: () => void;
+  discoveryItems?: Array<{
+    label: string;
+    ean: string;
+    status: "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+  }>;
 }) {
   const t = useLabels();
   const reducedMotion = useReducedMotion();
   const motionState = reducedMotion ? false : "hidden";
   const steps = [
-    { icon: ScanSearch, label: t.productEditorEmptyStep1, detail: "Use an EAN, SKU, or product identifier." },
-    { icon: PackageSearch, label: t.productEditorEmptyStep2, detail: "We will resolve matching marketplace targets." },
-    { icon: ClipboardCheck, label: t.productEditorEmptyStep3, detail: "Review the form, then publish only when ready." }
+    { icon: ScanSearch, label: t.productEditorEmptyStep1, detail: t.productEditorEmptyStep1Detail },
+    { icon: PackageSearch, label: t.productEditorEmptyStep2, detail: t.productEditorEmptyStep2Detail },
+    { icon: ClipboardCheck, label: t.productEditorEmptyStep3, detail: t.productEditorEmptyStep3Detail }
   ];
   const workspacePreviews = [
-    { title: t.productEditorSummarySection, detail: "Title, images, price, and product attributes", icon: PackageSearch },
-    { title: t.productEditorMarketplaceMatrixSection, detail: "Targets and availability across marketplaces", icon: ScanSearch },
-    { title: t.productEditorEditableFieldsSection, detail: "Edit, review, and apply your changes", icon: ClipboardCheck }
+    { title: t.productEditorSummarySection, detail: t.productEditorSummarySectionDetail, icon: PackageSearch },
+    { title: t.productEditorMarketplaceMatrixSection, detail: t.productEditorMarketplaceMatrixSectionDetail, icon: ScanSearch },
+    { title: t.productEditorEditableFieldsSection, detail: t.productEditorEditableFieldsSectionDetail, icon: ClipboardCheck }
   ];
+  const visibleDiscoveryItems = discoveryItems.length > 0
+    ? discoveryItems
+    : ["JV", "XL", "HOOD", "KAUFLAND"].map((label) => ({ label, ean: "", status: "idle" as const }));
+  const getDiscoveryDetail = (item: (typeof visibleDiscoveryItems)[number]) => {
+    if (!item.ean) return t.productEditorDiscoveryNoEan;
+    if (item.status === "loading") return t.productEditorDiscoverySearching.replace("{ean}", item.ean);
+    if (item.status === "found") return t.productEditorDiscoveryFound;
+    if (item.status === "missing") return t.productEditorDiscoveryNotFound.replace("{ean}", item.ean);
+    if (item.status === "unavailable") return t.productEditorDiscoveryUnavailable;
+    if (item.status === "error") return t.productEditorDiscoveryFailed;
+    return t.productEditorDiscoveryQueued;
+  };
+  const getDiscoveryPresentation = (item: (typeof visibleDiscoveryItems)[number]) => {
+    if (!item.ean) {
+      return { title: t.productEditorDiscoveryNoEanTitle, badge: t.productEditorDiscoveryNoEanBadge, icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
+    }
+    if (item.status === "loading") {
+      return { title: t.productEditorDiscoverySearchingTitle, badge: t.productEditorDiscoverySearchingBadge, icon: LoaderCircle, iconClass: "bg-sky-100 text-sky-700", surfaceClass: "border-sky-200 bg-sky-50/60", badgeClass: "bg-sky-100 text-sky-800", dotClass: "bg-sky-500" };
+    }
+    if (item.status === "found") {
+      return { title: t.productEditorDiscoveryFoundTitle, badge: t.productEditorDiscoveryFoundBadge, icon: CircleCheckBig, iconClass: "bg-emerald-100 text-emerald-700", surfaceClass: "border-emerald-200 bg-emerald-50/60", badgeClass: "bg-emerald-100 text-emerald-800", dotClass: "bg-emerald-500" };
+    }
+    if (item.status === "missing") {
+      return { title: t.productEditorDiscoveryMissingTitle, badge: t.productEditorDiscoveryMissingBadge, icon: SearchX, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
+    }
+    if (item.status === "unavailable") {
+      return { title: t.productEditorDiscoveryUnavailableTitle, badge: t.productEditorDiscoveryUnavailableBadge, icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
+    }
+    if (item.status === "error") {
+      return { title: t.productEditorDiscoveryErrorTitle, badge: t.productEditorDiscoveryErrorBadge, icon: CircleAlert, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };
+    }
+    return { title: t.productEditorDiscoveryQueuedTitle, badge: t.productEditorDiscoveryQueuedBadge, icon: ScanLine, iconClass: "bg-slate-100 text-slate-700", surfaceClass: "border-slate-200 bg-slate-50/60", badgeClass: "bg-slate-100 text-slate-700", dotClass: "bg-slate-400" };
+  };
+  const activeDiscoveryPresentation = getDiscoveryPresentation(visibleDiscoveryItems[0]);
 
   return (
     <Card className="wh-product-editor-card min-h-full w-full overflow-hidden border-border bg-card shadow-[var(--wh-shadow-card)]">
@@ -111,29 +151,6 @@ export function ProductEditorEmptyPanel({
           initial={motionState}
           animate="visible"
         >
-          <motion.div variants={productEditorEmptyItem} className="mx-auto flex w-full max-w-2xl items-center gap-2 rounded-[var(--radius-card)] border border-border/80 bg-muted/20 p-1.5 shadow-sm">
-            <Input
-              value={eanValue}
-              onChange={(event) => onChangeEan(event.target.value)}
-              placeholder={t.productEditorSearchPlaceholder}
-              maxLength={100}
-              className="h-11 rounded-[var(--radius-control)] border-0 bg-background shadow-none focus-visible:ring-1"
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && isEanValid && !searching) {
-                  event.preventDefault();
-                  onSearch();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              onClick={onSearch}
-              disabled={!isEanValid || searching}
-              className="h-11 shrink-0 rounded-[var(--radius-control)] px-5 text-sm font-semibold shadow-sm"
-            >
-              {searching ? t.searching : t.productEditorDiscoverAction}
-            </Button>
-          </motion.div>
           <motion.section variants={productEditorEmptyHero} className="grid overflow-hidden rounded-[var(--radius-card)] border border-border/80 bg-muted/20 text-left shadow-sm lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="flex flex-col items-center justify-center px-5 py-6 text-center sm:px-8">
               <div className="relative mb-4 flex h-24 w-24 items-center justify-center">
@@ -151,32 +168,43 @@ export function ProductEditorEmptyPanel({
               </div>
               <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                Workspace ready
+                {t.productEditorWorkspaceReady}
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">{title}</p>
               <h2 className="mt-1 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{t.productEditorNoProductLoaded}</h2>
               <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t.productEditorEmptyDescription}</p>
               <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">{body}</p>
             </div>
-            <div className="relative min-h-52 overflow-hidden border-t border-border/80 bg-card p-5 lg:border-l lg:border-t-0">
+            <div className="relative flex min-h-52 flex-col overflow-hidden border-t border-border/80 bg-card p-5 lg:border-l lg:border-t-0">
               <div className="wh-editor-empty__scan pointer-events-none absolute inset-x-4 h-px bg-gradient-to-r from-transparent via-primary/80 to-transparent" />
               <div className="relative flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Discovery status</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">Ready to scan targets</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{t.productEditorDiscoveryStatus}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{activeDiscoveryPresentation.title}</p>
                 </div>
-                <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]" aria-label="Ready" />
+                <span className={cn("flex h-2.5 w-2.5 rounded-full shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]", activeDiscoveryPresentation.dotClass)} aria-label={activeDiscoveryPresentation.badge} />
               </div>
-              <div className="relative mt-5 space-y-2">
-                {["JV", "XL", "HOOD", "KAUFLAND"].map((workspace, index) => (
-                  <div key={workspace} className="flex items-center justify-between rounded-[var(--radius-control)] border border-border/70 bg-muted/20 px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">{index + 1}</span>
-                      {workspace}
+              <div className="relative mt-5 flex flex-1 flex-col gap-2">
+                {visibleDiscoveryItems.map((item) => {
+                  const presentation = getDiscoveryPresentation(item);
+                  const Icon = presentation.icon;
+                  return (
+                  <div key={item.label} className={cn("relative flex min-h-32 flex-1 items-center gap-3 overflow-hidden rounded-[var(--radius-card)] border px-4 py-4", presentation.surfaceClass)}>
+                    <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/40" aria-hidden="true" />
+                    <span className={cn("relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm", presentation.iconClass)}>
+                      <Icon className={cn("h-5 w-5", item.status === "loading" && "animate-spin")} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-foreground">{item.label}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]", presentation.badgeClass)}>{presentation.badge}</span>
+                      </div>
+                      {item.ean ? <p className="mt-1 font-mono text-[11px] tracking-wide text-muted-foreground">EAN · {item.ean}</p> : null}
+                      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{getDiscoveryDetail(item)}</p>
                     </div>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Queued</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </motion.section>
@@ -217,7 +245,7 @@ export function ProductEditorEmptyPanel({
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-foreground">
                     <Icon className="h-4.5 w-4.5" aria-hidden="true" />
                   </div>
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-300">Ready</span>
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700 dark:text-emerald-300">{t.ready}</span>
                 </div>
                 <p className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-foreground">{previewTitle}</p>
                 <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{detail}</p>
@@ -242,8 +270,8 @@ export function ProductEditorSummaryStat({ label, value }: { label: string; valu
 }
 
 export function ProductEditorPanelLayout(props: {
-  kicker: string;
-  title: string;
+  kicker?: string;
+  title?: string;
   subtitle?: string;
   changedCount: number;
   status?: string;
@@ -257,10 +285,11 @@ export function ProductEditorPanelLayout(props: {
 }) {
   const t = useLabels();
   const reducedMotion = useReducedMotion();
+  const showHeader = Boolean(props.headerLead || props.kicker || props.title || props.subtitle || props.headerActions || !props.hideHeaderBadges);
 
   return (
     <div className="rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
-      <motion.div
+      {showHeader ? <motion.div
         className="mb-4 flex flex-wrap items-end justify-between gap-3"
         initial={reducedMotion ? false : { opacity: 0, y: -8 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -269,13 +298,13 @@ export function ProductEditorPanelLayout(props: {
       >
         {props.headerLead ? (
           <div className="min-w-0 flex-1">{props.headerLead}</div>
-        ) : (
+        ) : props.kicker || props.title || props.subtitle ? (
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.kicker}</p>
             <CardTitle className="mt-1 text-base">{props.title}</CardTitle>
             {props.subtitle ? <CardDescription>{props.subtitle}</CardDescription> : null}
           </div>
-        )}
+        ) : null}
         {props.headerActions ? (
           <div className="flex flex-wrap items-center gap-1.5">{props.headerActions}</div>
         ) : !props.hideHeaderBadges ? (
@@ -284,7 +313,7 @@ export function ProductEditorPanelLayout(props: {
             {props.status ? <Badge variant="outline">{props.status}</Badge> : null}
           </div>
         ) : null}
-      </motion.div>
+      </motion.div> : null}
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
         <motion.section
@@ -423,4 +452,3 @@ export {
   ProductEditorGalleryPanel,
   ProductEditorAttributesEditor
 } from "./product-editor-content-sections";
-

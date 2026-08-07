@@ -19,12 +19,14 @@ export function ProductEditorHeaderCard(props: {
   foundCount: number;
   missingCount: number;
   totalCount: number;
+  onEdit: () => void;
+  canEdit: boolean;
   children?: ReactNode;
 }) {
   const t = useLabels();
   return (
-    <div className={cn("wh-product-editor-anchor space-y-2", props.className)}>
-      <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1fr)_184px]">
+    <div className={cn("wh-product-editor-anchor space-y-[12px]", props.className)}>
+      <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1fr)_184px_auto]">
           <label htmlFor="product-editor-ean-command" className="sr-only">
             {t.productEditorHeaderInputLabel}
           </label>
@@ -39,6 +41,9 @@ export function ProductEditorHeaderCard(props: {
           <Button type="button" className="wh-discover-button h-10 w-full text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary/35" disabled={!props.isEanValid || props.discovering} onClick={props.onSearch}>
             {props.discovering ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : null}
             {t.productEditorDiscoverProductAction}
+          </Button>
+          <Button type="button" variant="outline" className="h-10" disabled={!props.canEdit || props.discovering} onClick={props.onEdit}>
+            Edit
           </Button>
       </div>
       {props.children ? <div>{props.children}</div> : null}

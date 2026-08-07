@@ -23,6 +23,7 @@ start-dev.ps1
 start-dev-mac.sh
 stop-dev-mac.sh
 node_modules/
+.codebase-memory/
 .next/
 dist/
 coverage/
@@ -87,3 +88,4 @@ start-dev.ps1
 stop-dev-mac.sh
 start-local-apps.ps1
 .afterbuy_*.cookie
+error.md

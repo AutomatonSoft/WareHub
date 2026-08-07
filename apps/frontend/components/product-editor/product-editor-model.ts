@@ -7,6 +7,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorHoodProperty,
   ProductEditorKauflandDraft,
+  ProductEditorOttoDraft,
   ProductEditorJvDraft,
   ProductEditorPendingUpload,
   ProductEditorTarget,
@@ -71,6 +72,44 @@ export function createEmptyKauflandDraft(): ProductEditorKauflandDraft {
     product_safety_contact: [], category_detail: [], material_composition: "", abnehmbarer_bezug: "", parts_of_animal_origin: "", price: "", unit_id: "",
     picture_urls: [], size: "", color: "", delivery: ""
   };
+}
+
+export function createEmptyOttoDraft(): ProductEditorOttoDraft {
+  return {
+    target_id: "", profile: "jv", productReference: "", sku: "", ean: "", isbn: "", upc: "", pzn: "", mpn: "", moin: "", offeringStartDate: "", releaseDate: "", maxOrderQuantity: "", shippingProfileId: "",
+    productDescription: {}, mediaAssets: [], delivery: {}, order: {}, pricing: {}, logistics: {}, compliance: {},
+  };
+}
+
+export function hydrateOttoDraft(input?: Partial<ProductEditorOttoDraft>): ProductEditorOttoDraft {
+  const empty = createEmptyOttoDraft();
+  return {
+    ...empty,
+    ...input,
+    profile: input?.profile === "xl" ? "xl" : "jv",
+    productDescription: input?.productDescription && typeof input.productDescription === "object" ? input.productDescription : {},
+    mediaAssets: Array.isArray(input?.mediaAssets) ? input.mediaAssets : [],
+    delivery: input?.delivery && typeof input.delivery === "object" ? input.delivery : {},
+    order: input?.order && typeof input.order === "object" ? input.order : {},
+    pricing: input?.pricing && typeof input.pricing === "object" ? input.pricing : {},
+    logistics: input?.logistics && typeof input.logistics === "object" ? input.logistics : {},
+    compliance: input?.compliance && typeof input.compliance === "object" ? input.compliance : {},
+  };
+}
+
+export function buildOttoChangedFields(initial: ProductEditorOttoDraft, current: ProductEditorOttoDraft): string[] {
+  const keys = Object.keys(current).filter((key) => !["target_id", "profile"].includes(key)) as Array<keyof ProductEditorOttoDraft>;
+  return keys.filter((key) => JSON.stringify(initial[key]) !== JSON.stringify(current[key])).map(String);
+}
+
+export function formatPriceForInput(value: unknown): string {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) return "";
+  const normalizedValue = rawValue.replace(",", ".");
+  const numericValue = Number(normalizedValue);
+  if (!Number.isFinite(numericValue) || numericValue < 0) return rawValue;
+  if (numericValue === 0) return "0";
+  return numericValue.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function hydrateKauflandDraft(input?: Partial<ProductEditorKauflandDraft>): ProductEditorKauflandDraft {
@@ -145,7 +184,8 @@ export function hydrateJvDraft(input?: {
   categories: Array<Record<string, unknown>>;
   categories_by_site_key?: Record<string, unknown>;
   stores?: Array<Record<string, unknown>>;
-  images: Array<Record<string, unknown>>;
+  images: unknown[];
+  images_public_urls?: unknown[];
   specials?: Array<Record<string, unknown>>;
   xl_option_fields?: Array<Record<string, unknown>>;
   xl_attribute_fields?: Array<Record<string, unknown>>;
@@ -154,17 +194,43 @@ export function hydrateJvDraft(input?: {
   jv_fields_by_site_key?: Record<string, unknown>;
 }): ProductEditorJvDraft {
   if (!input) return createEmptyJvDraft();
+  const galleryRows = [
+    ...(Array.isArray(input.images) ? input.images : []),
+    ...(Array.isArray(input.images_public_urls) ? input.images_public_urls : []),
+  ];
+  const galleryImages = galleryRows
+    .map((row, index) => {
+      if (typeof row === "string") {
+        return { image: row, public_url: row, sort_order: index };
+      }
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const record = row as Record<string, unknown>;
+      const image = String(record.image ?? record.public_url ?? record.url ?? "").trim();
+      const publicUrl = String(record.public_url ?? record.url ?? image).trim();
+      return image ? { image, public_url: publicUrl, sort_order: Number(record.sort_order ?? index) } : null;
+    })
+    .filter((row): row is { image: string; public_url: string; sort_order: number } => Boolean(row));
+  const seenGalleryImages = new Set<string>();
+  const uniqueGalleryImages = galleryImages.filter((row) => {
+    const key = `${row.image}|${row.public_url}`.toLowerCase();
+    if (seenGalleryImages.has(key)) return false;
+    seenGalleryImages.add(key);
+    return true;
+  });
+  const mainImage = String(input.image || uniqueGalleryImages[0]?.image || "").trim();
+  const mainImagePublicUrl = String(input.image_public_url ?? uniqueGalleryImages[0]?.public_url ?? mainImage).trim();
+  const additionalImages = input.image ? uniqueGalleryImages : uniqueGalleryImages.slice(1);
   return {
     target_id: input.target_id || "",
     ean: input.ean || "",
     source_model: input.source_model || "",
     source_sku: input.source_sku || "",
     source_ean_field: input.source_ean_field || "",
-    price: input.price || "",
+    price: formatPriceForInput(input.price),
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
-    image: input.image || "",
-    image_public_url: String(input.image_public_url ?? input.image ?? ""),
+    image: mainImage,
+    image_public_url: mainImagePublicUrl,
     descriptions: Array.isArray(input.descriptions)
       ? input.descriptions.map((row) => ({
           language_id: Number(row.language_id ?? 1),
@@ -189,28 +255,13 @@ export function hydrateJvDraft(input?: {
           store_id: Number(row.store_id ?? 0)
         })).filter((row) => row.store_id >= 0)
       : [],
-    images: Array.isArray(input.images)
-      ? input.images.map((row) => {
-          if (typeof row === "string") {
-            return {
-              image: row,
-              public_url: row,
-              sort_order: 0
-            };
-          }
-          return {
-            image: String(row.image ?? ""),
-            public_url: String(row.public_url ?? row.image ?? ""),
-            sort_order: Number(row.sort_order ?? 0)
-          };
-        }).filter((row) => row.image.trim() !== "")
-      : [],
+    images: additionalImages,
     specials: Array.isArray(input.specials)
       ? input.specials.map((row) => ({
           id: Number(row.id ?? 0) || undefined,
           customer_group_id: Number(row.customer_group_id ?? 1),
           priority: Number(row.priority ?? 0),
-          price: String(row.price ?? ""),
+          price: formatPriceForInput(row.price),
           date_start: row.date_start == null ? null : String(row.date_start),
           date_end: row.date_end == null ? null : String(row.date_end),
           is_modified_locally: Boolean(row.is_modified_locally)

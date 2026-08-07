@@ -255,6 +255,9 @@ jobs:
           fi
 
       - name: Validate local dependency compose config
+        env:
+          DEV_MONGO_USER: ci-validation
+          DEV_MONGO_PASSWORD: ci-validation-only
         run: docker compose -f infra/local/docker-compose.dev.yml config
 
       - name: Validate database-service compose config

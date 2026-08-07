@@ -24,6 +24,7 @@ type CreateProductImageGalleryProps = {
   onFilesSelected?: (files: FileList | null) => void;
   onDeleteItem?: (itemId: string) => void;
   onMoveItem?: (sourceItemId: string, targetItemId: string) => void;
+  onImageError?: (itemId: string) => void;
   className?: string;
 };
 
@@ -40,6 +41,7 @@ export function CreateProductImageGallery({
   onFilesSelected,
   onDeleteItem,
   onMoveItem,
+  onImageError,
   className = "",
 }: CreateProductImageGalleryProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -73,6 +75,7 @@ export function CreateProductImageGallery({
             className="object-cover"
             sizes="(max-width: 1280px) 100vw, 360px"
             unoptimized
+            onError={() => onImageError?.(activeItem.id)}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -121,6 +124,7 @@ export function CreateProductImageGallery({
                       sizes="88px"
                       draggable={false}
                       unoptimized
+                      onError={() => onImageError?.(item.id)}
                     />
                   </div>
 

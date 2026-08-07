@@ -19,11 +19,13 @@ from .application.marketplace_job_worker import run_marketplace_job_worker
 from .application.product_editor_service import ProductEditorService
 from .application.job_worker import run_job_worker
 from .application.reconciliation_scheduler import run_reconciliation_scheduler
+from .application.otto_category_scheduler import run_otto_category_scheduler
 from .application.orchestrator_service import OrchestratorService
 from .domain.models import ErrorContract
 from .infra.channel_limiter import InMemoryChannelLimiter
 from .infra.circuit_breaker import InMemoryCircuitBreaker
 from .infra.ean_pool_gateway import EanPoolGateway
+from .infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from .infra.http_client import HttpClient
 from .infra.idempotency import SqliteIdempotencyStore
 from .infra.job_store import SqliteJobStore
@@ -80,11 +82,17 @@ def _build_service() -> OrchestratorService:
         http_client=http_client,
         service_auth_token=settings.service_auth_token,
     )
+    marketplace_ean_mapping_gateway = MarketplaceEanMappingGateway(
+        base_url=settings.base_url,
+        http_client=http_client,
+        service_auth_token=settings.service_auth_token,
+    )
     return OrchestratorService(
         adapters=adapters,
         circuit_breaker=circuit_breaker,
         channel_limiter=channel_limiter,
         ean_pool_gateway=ean_pool_gateway,
+        marketplace_ean_mapping_gateway=marketplace_ean_mapping_gateway,
     )
 
 
@@ -183,6 +191,7 @@ async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
     marketplace_job_worker_task: asyncio.Task | None = None
     reconciliation_scheduler_task: asyncio.Task | None = None
+    otto_category_scheduler_task: asyncio.Task | None = None
     configure_runtime_dependencies()
     if settings.enable_job_worker:
         service = Deps.service
@@ -228,6 +237,19 @@ async def lifespan(_app: FastAPI):
                 ),
             )
         )
+    if settings.enable_otto_category_scheduler:
+        if not settings.service_auth_token:
+            raise RuntimeError("OTTO category scheduler requires ORCHESTRATOR_SERVICE_AUTH_TOKEN")
+        otto_category_scheduler_task = asyncio.create_task(
+            _run_background_worker(
+                "otto_category_scheduler",
+                run_otto_category_scheduler(
+                    base_url=settings.base_url,
+                    token=settings.service_auth_token,
+                    poll_interval_seconds=settings.otto_category_scheduler_poll_interval_seconds,
+                ),
+            )
+        )
     try:
         yield
     finally:
@@ -247,6 +269,12 @@ async def lifespan(_app: FastAPI):
             reconciliation_scheduler_task.cancel()
             try:
                 await reconciliation_scheduler_task
+            except asyncio.CancelledError:
+                pass
+        if otto_category_scheduler_task is not None:
+            otto_category_scheduler_task.cancel()
+            try:
+                await otto_category_scheduler_task
             except asyncio.CancelledError:
                 pass
         close_runtime_dependencies()

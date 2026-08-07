@@ -219,6 +219,7 @@ set_env_if_missing() {
 initialize_local_runtime_env() {
   local frontend_port backend_port services_port orchestrator_port
   local postgres_db postgres_user postgres_password postgres_host postgres_port
+  local mongo_port mongo_database
   local root_dev_postgres_host backend_origin services_origin orchestrator_origin frontend_origin database_url
 
   frontend_port="$(get_env_or_default "DEV_FRONTEND_PORT" "8931")"
@@ -230,6 +231,8 @@ initialize_local_runtime_env() {
   postgres_password="warehub"
   postgres_host="127.0.0.1"
   postgres_port="$(get_env_or_default "DEV_POSTGRES_PORT" "8933")"
+  mongo_port="$(get_env_or_default "DEV_MONGO_PORT" "8938")"
+  mongo_database="$(get_env_or_default "DEV_MONGO_DATABASE" "warehub")"
   root_dev_postgres_host="${DEV_POSTGRES_HOST-}"
   backend_origin="http://127.0.0.1:$backend_port"
   services_origin="http://127.0.0.1:$services_port"
@@ -246,6 +249,8 @@ initialize_local_runtime_env() {
   export DEV_POSTGRES_PASSWORD="$postgres_password"
   export DEV_POSTGRES_HOST="$postgres_host"
   export DEV_POSTGRES_HOST_PORT="$postgres_port"
+  export DEV_MONGO_PORT="$mongo_port"
+  export DEV_MONGO_DATABASE="$mongo_database"
   export WAREHUB_LOCAL_DEV_ROOT_ENV_ACTIVE="true"
   export APP_ENV="dev"
   export APP_PORT="$backend_port"
@@ -281,6 +286,11 @@ initialize_local_runtime_env() {
   set_env_if_missing "BACKEND_AUTH_BASE_URL" "http://127.0.0.1:$backend_port/api/v1"
   set_env_if_missing "BACKEND_SESSION_BRIDGE_ALLOWED_HOSTS" "127.0.0.1,127.0.0.1"
   set_env_if_missing "NEXT_PUBLIC_APP_ENV" "dev"
+  set_env_if_missing "OTTO_CATEGORY_CACHE_MONGO_HOST" "127.0.0.1"
+  set_env_if_missing "OTTO_CATEGORY_CACHE_MONGO_PORT" "$mongo_port"
+  set_env_if_missing "OTTO_CATEGORY_CACHE_MONGO_USERNAME" "${DEV_MONGO_USER-}"
+  set_env_if_missing "OTTO_CATEGORY_CACHE_MONGO_PASSWORD" "${DEV_MONGO_PASSWORD-}"
+  set_env_if_missing "OTTO_CATEGORY_CACHE_MONGO_DATABASE" "$mongo_database"
 
   if [[ -n "$root_dev_postgres_host" && "$root_dev_postgres_host" != "127.0.0.1" && "$root_dev_postgres_host" != "127.0.0.1" ]]; then
     info "Overriding nonlocal DEV_POSTGRES_HOST for local runtime with 127.0.0.1."
@@ -547,7 +557,7 @@ get_dependency_container_state() {
 
 test_local_dependencies_healthy() {
   local service_name required_state state
-  local services=("warehub-postgres:healthy" "warehub-redis:running_or_healthy" "warehub-minio:running_or_healthy" "warehub-rabbitmq:running_or_healthy")
+  local services=("warehub-postgres:healthy" "warehub-redis:running_or_healthy" "warehub-minio:running_or_healthy" "warehub-rabbitmq:running_or_healthy" "warehub-mongodb:running_or_healthy")
 
   for service_name in "${services[@]}"; do
     required_state="${service_name##*:}"
@@ -600,6 +610,7 @@ wait_for_local_dependencies_ready() {
   wait_for_dependency_state "warehub-redis" "Redis" "false"
   wait_for_dependency_state "warehub-minio" "MinIO" "false"
   wait_for_dependency_state "warehub-rabbitmq" "RabbitMQ" "false"
+  wait_for_dependency_state "warehub-mongodb" "MongoDB" "false"
   info "Local Docker dependencies are ready."
 }
 
@@ -965,6 +976,7 @@ print_startup_summary() {
   info "  Redis:               127.0.0.1:8936"
   info "  RabbitMQ:            127.0.0.1:8937"
   info "  RabbitMQ UI:         http://127.0.0.1:15672"
+  info "  MongoDB:             127.0.0.1:8938"
   info "  MinIO API:           http://127.0.0.1:9000"
   info "  MinIO Console:       http://127.0.0.1:9001"
 

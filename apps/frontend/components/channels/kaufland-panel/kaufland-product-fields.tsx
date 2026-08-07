@@ -2,6 +2,7 @@
 
 import { Input } from "../../ui/input";
 import { Textarea } from "../../ui/textarea";
+import { useLabels } from "../../../app/use-labels";
 import type { KauflandProductPayload } from "./kaufland-panel-types";
 
 type Props = {
@@ -9,32 +10,31 @@ type Props = {
   onSetForm: (updater: (previous: KauflandProductPayload) => KauflandProductPayload) => void;
 };
 
-const JSON_FIELDS: Array<[keyof KauflandProductPayload, string]> = [
-  ["category", "Category (JSON array)"],
-  ["short_description", "Short description (JSON array)"],
-  ["picture", "Pictures (JSON array)"],
-  ["product_safety_contact", "Product safety contact (JSON array)"],
-  ["category_detail", "Category detail (JSON array)"],
-  ["picture_urls", "Picture URLs (JSON array)"],
-];
-
-const TEXT_FIELDS: Array<[keyof KauflandProductPayload, string]> = [
-  ["title", "Title"], ["mpn", "MPN"], ["manufacturer", "Manufacturer"], ["product_dimensions", "Product dimensions"],
-  ["colour", "Colour"], ["material", "Material"], ["length", "Length"], ["width", "Width"], ["height", "Height"],
-  ["storefront", "Storefront"], ["material_composition", "Material composition"], ["abnehmbarer_bezug", "Removable cover"],
-  ["parts_of_animal_origin", "Parts of animal origin"], ["price", "Price"], ["unit_id", "Unit ID"],
-  ["size", "Size"], ["color", "Color"], ["delivery", "Delivery ID"],
-];
-
 const INTEGER_FIELDS = new Set<keyof KauflandProductPayload>(["price", "unit_id", "delivery"]);
 
 export function KauflandProductFields({ form, onSetForm }: Props) {
+  const t = useLabels();
+  const jsonFields: Array<[keyof KauflandProductPayload, string]> = [
+    ["category", t.kauflandCategoryJson],
+    ["short_description", t.kauflandShortDescriptionJson],
+    ["picture", t.kauflandPicturesJson],
+    ["product_safety_contact", t.kauflandProductSafetyContactJson],
+    ["category_detail", t.kauflandCategoryDetailJson],
+    ["picture_urls", t.kauflandPictureUrlsJson],
+  ];
+  const textFields: Array<[keyof KauflandProductPayload, string]> = [
+    ["title", t.title], ["mpn", "MPN"], ["manufacturer", t.manufacturer], ["product_dimensions", t.kauflandProductDimensions],
+    ["colour", t.kauflandColour], ["material", t.material], ["length", t.length], ["width", t.width], ["height", t.height],
+    ["storefront", t.kauflandStorefront], ["material_composition", t.kauflandMaterialComposition], ["abnehmbarer_bezug", t.kauflandRemovableCover],
+    ["parts_of_animal_origin", t.kauflandAnimalOriginParts], ["price", t.price], ["unit_id", t.kauflandUnitId],
+    ["size", t.size], ["color", t.color], ["delivery", t.kauflandDeliveryId],
+  ];
   const change = (field: keyof KauflandProductPayload, value: string) => onSetForm((previous) => ({ ...previous, [field]: value }));
   return (
     <>
-      {TEXT_FIELDS.map(([field, label]) => <Input key={field} type={INTEGER_FIELDS.has(field) ? "number" : "text"} placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
-      <Textarea className="min-h-[120px] bg-muted/30 md:col-span-2" placeholder="Description" value={form.description} onChange={(event) => change("description", event.target.value)} />
-      {JSON_FIELDS.map(([field, label]) => <Textarea key={field} className="min-h-[90px] bg-muted/30 md:col-span-2" placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
+      {textFields.map(([field, label]) => <Input key={field} type={INTEGER_FIELDS.has(field) ? "number" : "text"} placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
+      <Textarea className="min-h-[120px] bg-muted/30 md:col-span-2" placeholder={t.descriptionLabel} value={form.description} onChange={(event) => change("description", event.target.value)} />
+      {jsonFields.map(([field, label]) => <Textarea key={field} className="min-h-[90px] bg-muted/30 md:col-span-2" placeholder={label} value={form[field]} onChange={(event) => change(field, event.target.value)} />)}
     </>
   );
 }

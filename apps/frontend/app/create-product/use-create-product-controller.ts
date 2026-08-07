@@ -7,6 +7,10 @@ import {
   xljvUpdateByEan,
   xljvUploadImages,
 } from "../../components/xljv/xljv-api";
+import { toXljvImageUrl } from "../../components/xljv/xljv-image-utils";
+import { patchHoodByEan } from "../../components/hood/hood-api";
+import type { HoodAccount } from "../../components/hood/hood-search-utils";
+import { uploadKauflandImages } from "../../components/channels/kaufland-api";
 import {
   createMainMarketplaceProductJob,
   createOrchestratorJob,
@@ -63,10 +67,23 @@ type Labels = Record<string, string>;
 
 type ToastTone = "success" | "info" | "error";
 
+function normalizeKauflandImageUrls(imageUrls: string[]): string[] {
+  return Array.from(new Set(imageUrls
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .map((value) => {
+      if (/^(https?:)?\/\//i.test(value)) return value;
+      return value.startsWith("cosmoshop/")
+        ? toXljvImageUrl("JV", "JV_DE", value)
+        : toXljvImageUrl("XL", CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, value);
+    })));
+}
+
 export type XlPublishDraft = {
   name: string;
   ean: string;
   price: string;
+  manufacturer_id: string;
   description: string;
   tag: string;
   meta_title: string;
@@ -605,21 +622,43 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       kauflandTitle?: string;
       kauflandEan?: string;
       kauflandPrice?: string;
+      kauflandFields?: MainKauflandCreateFields;
       kauflandOverrides?: Record<string, unknown>;
+      ottoEan?: string;
+      ottoTitle?: string;
+      ottoPrice?: string;
+      ottoImageUrls?: string[];
+      ottoPayload?: Record<string, unknown>;
     },
+    uploadedImageFiles?: File[],
   ) {
     const draftInput = publishDraft?.kauflandEan !== undefined
       ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
-      : { ean, price, productName, imagesText };
-    if (!validateCreateProductInput(draftInput).isValid) {
-      showToast(t.fixFormErrorsBeforeCreate, "error");
+      : publishDraft?.ottoEan !== undefined
+        ? {
+            ean: publishDraft.ottoEan,
+            price: publishDraft.ottoPrice ?? "",
+            productName: publishDraft.ottoTitle ?? "",
+            imagesText: (publishDraft.ottoImageUrls ?? []).join("\n"),
+          }
+        : { ean, price, productName, imagesText };
+    const baseValidation = validateCreateProductInput(draftInput);
+    if (!baseValidation.isValid) {
+      const invalidFields = [
+        baseValidation.errors.ean ? "EAN must contain exactly 13 digits" : "",
+        baseValidation.errors.price ? "Price must be a number with up to 2 decimal places" : "",
+        baseValidation.errors.productName ? "Title must contain at least 3 characters" : "",
+      ].filter(Boolean);
+      showToast(`${t.fixFormErrorsBeforeCreate}: ${invalidFields.join("; ")}`, "error");
       return;
     }
     const hasHoodSelection = selectedSiteIds.some((siteId) => siteId.startsWith("hood-"));
     const hasKauflandSelection = selectedSiteIds.some((siteId) => siteId.startsWith("kaufland-"));
+    const hasOttoSelection = selectedSiteIds.some((siteId) => siteId.startsWith("otto-"));
     const hasXljvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-") || siteId === "xlmoebel_de");
     const hoodErrors = hasHoodSelection ? validateHoodCreateFields(hoodFields) : {};
-    const kauflandErrors = hasKauflandSelection ? validateMainKauflandCreateFields(mainKauflandFields) : {};
+    const effectiveKauflandFields = publishDraft?.kauflandFields ?? mainKauflandFields;
+    const kauflandErrors = hasKauflandSelection ? validateMainKauflandCreateFields(effectiveKauflandFields) : {};
     const xljvErrors = hasXljvSelection ? validateMainXljvCreateFields(mainXljvFields) : {};
     setHoodFieldErrors(hoodErrors);
     setMainKauflandFieldErrors(kauflandErrors);
@@ -634,12 +673,89 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       showToast("Add a description before publishing to Kaufland.", "error");
       return;
     }
-
-    const normalized = normalizeCreateProductInput(draftInput);
-    if (normalized.imageUrls.length === 0) {
-      showToast("Provide at least one image URL before creating the marketplace job.", "error");
+    if ((hasHoodSelection || hasKauflandSelection) && !kidContext?.kidNumber.trim()) {
+      showToast("Open Create Product from a Kid before publishing to HOOD or Kaufland.", "error");
       return;
     }
+
+    const normalized = normalizeCreateProductInput(draftInput);
+    const effectiveImageFiles = uploadedImageFiles ?? imageFiles;
+
+    setSubmitting(true);
+    try {
+      let imageUrls = hasKauflandSelection
+        ? normalizeKauflandImageUrls(normalized.imageUrls)
+        : normalized.imageUrls;
+      if (hasKauflandSelection) {
+        const uploadedImageUrls: string[] = [];
+        if (effectiveImageFiles.length > 0) {
+          uploadedImageUrls.push(...await uploadKauflandImages({
+            ean: normalized.ean,
+            files: effectiveImageFiles,
+          }));
+        }
+        if (imageUrls.length > 0) {
+          uploadedImageUrls.push(...await uploadKauflandImages({
+            ean: normalized.ean,
+            sourceUrls: imageUrls,
+          }));
+        }
+        imageUrls = Array.from(new Set(uploadedImageUrls));
+      } else if (hasOttoSelection) {
+        const uploadedImageUrls: string[] = [];
+        if (effectiveImageFiles.length > 0) {
+          const uploadResult = await xljvUploadImages({
+            site: "OTTO",
+            ean: normalized.ean,
+            files: effectiveImageFiles,
+          });
+          if (!uploadResult.response.ok) {
+            throw new Error(String(uploadResult.payload.detail || `OTTO image upload failed: HTTP ${uploadResult.response.status}`));
+          }
+          uploadedImageUrls.push(...(Array.isArray(uploadResult.payload.uploaded_image_urls)
+            ? uploadResult.payload.uploaded_image_urls.map((value) => String(value || "").trim()).filter(Boolean)
+            : []));
+        }
+        const remoteImageUrls = imageUrls.filter((value) => /^https?:\/\//i.test(value));
+        if (remoteImageUrls.length > 0) {
+          const uploadResult = await xljvUploadImages({
+            site: "OTTO",
+            ean: normalized.ean,
+            files: [],
+            sourceUrls: remoteImageUrls,
+          });
+          if (!uploadResult.response.ok) {
+            throw new Error(String(uploadResult.payload.detail || `OTTO remote image upload failed: HTTP ${uploadResult.response.status}`));
+          }
+          uploadedImageUrls.push(...(Array.isArray(uploadResult.payload.uploaded_image_urls)
+            ? uploadResult.payload.uploaded_image_urls.map((value) => String(value || "").trim()).filter(Boolean)
+            : []));
+        }
+        imageUrls = Array.from(new Set(uploadedImageUrls));
+      } else if (effectiveImageFiles.length > 0) {
+        const uploadResult = await xljvUploadImages({
+          site: "JV",
+          siteKey: "JV_DE",
+          ean: normalized.ean,
+          files: effectiveImageFiles,
+        });
+        if (!uploadResult.response.ok) {
+          throw new Error(
+            String(uploadResult.payload.detail || `Image upload failed: HTTP ${uploadResult.response.status}`),
+          );
+        }
+        const uploadedImageUrls = Array.isArray(uploadResult.payload.uploaded_image_urls)
+          ? uploadResult.payload.uploaded_image_urls
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+          : [];
+        imageUrls = Array.from(new Set([...uploadedImageUrls, ...normalized.imageUrls]));
+      }
+      if (imageUrls.length === 0) {
+        showToast("Upload at least one image before creating the marketplace job.", "error");
+        return;
+      }
+
     const hoodPayload = buildHoodCreatePayload({ ean: normalized.ean, fields: hoodFields });
     const baseXljvPayload = buildMainXljvCreatePayload({ ean: normalized.ean, fields: mainXljvFields });
     const baseJvFields =
@@ -658,15 +774,15 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ...overrideJvFields,
       },
     };
-    const kauflandPayload = {
+      const kauflandPayload = {
+      ...publishDraft?.kauflandOverrides,
       ...buildMainKauflandCreatePayload({
         ean: normalized.ean,
-        imageUrls: normalized.imageUrls,
+        imageUrls,
         description: kauflandDescription,
-        fields: mainKauflandFields,
+        fields: effectiveKauflandFields,
       }),
-      ...publishDraft?.kauflandOverrides,
-      title: publishDraft?.kauflandTitle?.trim() || productName,
+      title: publishDraft?.kauflandTitle?.trim() || normalized.productName,
       ean: publishDraft?.kauflandEan?.trim() || normalized.ean,
       price: publishDraft?.kauflandPrice?.trim().replace(",", ".") || normalized.price,
       description: kauflandDescription.trim(),
@@ -678,20 +794,32 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
               .filter(Boolean),
           }
         : {}),
-    };
-
-    setSubmitting(true);
-    try {
+      };
+      const requestedOttoPayload = publishDraft?.ottoPayload ?? {};
+      if (hasOttoSelection && Object.keys(requestedOttoPayload).length === 0) {
+        showToast("Complete the OTTO product fields before creating the job.", "error");
+        return;
+      }
+      const ottoPayload = {
+        ...requestedOttoPayload,
+        mediaAssets: imageUrls.map((location) => ({
+          type: "IMAGE",
+          location,
+          filename: location.split("/").pop() || normalized.ean,
+        })),
+      };
       const created = await createMainMarketplaceProductJob({
         ean: normalized.ean,
         productName: normalized.productName,
         description: kauflandDescription.trim(),
         price: normalized.price,
-        imageUrls: normalized.imageUrls,
+        imageUrls,
+        kidNumber: kidContext?.kidNumber,
         selectedSiteIds,
         xljvPayload,
         hoodPayload,
         kauflandPayload,
+        ottoPayload,
       });
       setLatestJobId(created.jobId);
       showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
@@ -706,7 +834,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     await submitCreateProduct(siteIds);
   }
 
-  async function handleCreateProductForHoodSiteIds(siteIds: string[], draft?: HoodPublishDraft) {
+  async function handleCreateProductForHoodSiteIds(
+    siteIds: string[],
+    draft?: HoodPublishDraft,
+    uploadedImageFiles?: File[],
+  ) {
     const effectiveFields = draft?.fields ?? hoodFields;
     const hoodErrors = validateHoodCreateFields(effectiveFields);
     setHoodFieldErrors(hoodErrors);
@@ -722,15 +854,50 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       return;
     }
     const normalized = normalizeCreateProductInput(input);
+    let imageUrls = normalized.imageUrls;
+    if (uploadedImageFiles && uploadedImageFiles.length > 0) {
+      try {
+        const account: HoodAccount = siteIds.includes("hood-xl") ? "xl" : "jv";
+        const uploadResult = await patchHoodByEan({
+          ean: normalized.ean,
+          account,
+          payloadObject: {},
+          changedKeys: [],
+          patchFiles: uploadedImageFiles,
+          uploadOnly: true,
+        });
+        if (!uploadResult.response.ok) {
+          throw new Error(
+            `Image upload failed: HTTP ${uploadResult.response.status}`,
+          );
+        }
+        const uploadedPayload = uploadResult.payload && typeof uploadResult.payload === "object"
+          ? uploadResult.payload as Record<string, unknown>
+          : {};
+        const uploadedImageUrls = Array.isArray(uploadedPayload.uploaded_image_urls)
+          ? uploadedPayload.uploaded_image_urls
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+          : [];
+        imageUrls = Array.from(new Set([...uploadedImageUrls, ...imageUrls]));
+      } catch (error) {
+        showToast(normalizeCreateProductRuntimeError(error, "Failed to upload Hood product images."), "error");
+        return;
+      }
+    }
+    if (imageUrls.length === 0) {
+      showToast("Upload at least one image before creating the Hood job.", "error");
+      return;
+    }
     await submitCreateProduct(
       siteIds,
       Operation.publish,
       buildHoodCreatePayload({ ean: normalized.ean, fields: effectiveFields }),
-      input,
+      { ...input, imagesText: imageUrls.join("\n") },
     );
   }
 
-  async function handleCreateProductForXlDefaultSite(draft?: XlPublishDraft) {
+  async function handleCreateProductForXlDefaultSite(draft?: XlPublishDraft, uploadedImageFiles?: File[]) {
     const input = {
       ean: draft?.ean ?? ean,
       price: draft?.price ?? price,
@@ -739,23 +906,38 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     };
     const validation = validateCreateProductInput(input);
     if (!validation.isValid) {
-      showToast(t.fixFormErrorsBeforeCreate, "error");
+      const invalidFields = [
+        validation.errors.ean ? t.ean : null,
+        validation.errors.price ? t.price : null,
+        validation.errors.productName ? t.name : null,
+      ].filter(Boolean).join(", ");
+      showToast(
+        invalidFields ? `${t.fixFormErrorsBeforeCreate}: ${invalidFields}` : t.fixFormErrorsBeforeCreate,
+        "error",
+      );
+      return;
+    }
+
+    const manufacturerId = Number(draft?.manufacturer_id);
+    if (!Number.isInteger(manufacturerId) || manufacturerId <= 0) {
+      showToast("Select an XL manufacturer before creating the product.", "error");
       return;
     }
 
     const normalized = normalizeCreateProductInput(input);
     const defaultSiteKey = CREATE_PRODUCT_XL_DEFAULT_SITE_KEY;
+    const effectiveImageFiles = uploadedImageFiles ?? imageFiles;
 
     setSubmitting(true);
     try {
       let uploadedUrls: string[] = [];
-      if (imageFiles.length > 0 || normalized.imageUrls.length > 0) {
+      if (effectiveImageFiles.length > 0 || normalized.imageUrls.length > 0) {
         const uploadResult = await xljvUploadImages({
           site: "XL",
           siteKey: defaultSiteKey,
           ean: normalized.ean,
-          files: imageFiles,
-          sourceUrls: imageFiles.length === 0 ? normalized.imageUrls : [],
+          files: effectiveImageFiles,
+          sourceUrls: effectiveImageFiles.length === 0 ? normalized.imageUrls : [],
         });
         if (!uploadResult.response.ok) {
           throw new Error(
@@ -774,6 +956,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         source_model: normalized.ean,
         source_ean_field: normalized.ean,
         price: normalized.price,
+        manufacturer_id: manufacturerId,
         quantity: 0,
         status: true,
         image: uploadedUrls[0] || undefined,

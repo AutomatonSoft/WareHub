@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useLabels } from "../../app/use-labels";
 import { getXlRubricTree, type ProductEditorJvRubricNode } from "./product-editor-api";
 import { ProductEditorAttributesEditor, ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { normalizeProductAttributes, sanitizeDescriptionPreviewHtml } from "./product-editor-model";
@@ -34,6 +35,7 @@ const XL_IMAGE_HOST = "https://xlmoebel.de";
 const XL_SITE_KEY = "XLMOEBEL_DE";
 
 export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
+  const t = useLabels();
   const createdObjectUrlsRef = useRef<string[]>([]);
   const latestDraftRef = useRef(props.draft);
   const galleryState = useMemo(() => buildXlGalleryState(props.draft), [props.draft]);
@@ -241,105 +243,63 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
 
   return (
     <ProductEditorPanelLayout
-      kicker={props.draft.ean ? `EAN ${props.draft.ean}` : "EAN -"}
-      title={props.draft.ean ? `EAN: ${props.draft.ean}` : "EAN: -"}
       changedCount={changedCount}
       status={props.draft.target_id || undefined}
-      headerLead={
-        <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-            <FormField label="EAN" className="min-w-0 flex-1">
-              <Input
-                value={props.eanValue}
-                onChange={(event) => props.onChangeEan(event.target.value)}
-                placeholder="Enter EAN, SKU or product ID"
-                maxLength={100}
-                className="h-10 rounded-xl border-border bg-background text-sm"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                    event.preventDefault();
-                    props.onSearch();
-                  }
-                }}
-              />
-            </FormField>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 rounded-xl px-4 text-sm font-semibold"
-              disabled={!props.isEanValid || props.searching}
-              onClick={props.onSearch}
-            >
-              {props.searching ? "Searching..." : "Discover"}
-            </Button>
-          </div>
-          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean} · source: xl.de</p> : null}
-        </div>
-      }
       headerActions={
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {pendingUploadCount > 0 ? <span className="text-xs text-muted-foreground">Images pending {pendingUploadCount}</span> : null}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 rounded-xl text-xs font-semibold"
-            onClick={props.onApplyEditedProducts}
-            disabled={Boolean(props.batchApplyLoading)}
-          >
-            {props.batchApplyLoading ? "Updating..." : "Update Edited Products"}
-          </Button>
+          {pendingUploadCount > 0 ? <span className="text-xs text-muted-foreground">{t.productEditorImagesPending.replace("{count}", String(pendingUploadCount))}</span> : null}
         </div>
       }
       topLeft={<>
         <ProductEditorXlCreateForm draft={props.draft} onChange={props.onChange} />
         <div className="hidden flex h-full flex-col gap-4 rounded-xl border border-border bg-card p-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <ReadOnlyField label="Model" value={props.draft.source_model || "-"} />
+            <ReadOnlyField label={t.sourceModel} value={props.draft.source_model || "-"} />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Price</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.price}</p>
               <Input value={String(props.draft.price ?? "")} onChange={(event) => patchScalar("price", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
             </div>
             <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Quantity</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.quantity}</p>
               <Input value={String(props.draft.quantity ?? "")} onChange={(event) => patchScalar("quantity", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
             </div>
           </div>
 
           <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
             <div>
-              <p className="text-sm font-semibold text-foreground">Active</p>
-              <p className="text-xs text-muted-foreground">Real XL `status` from local imported product.</p>
+              <p className="text-sm font-semibold text-foreground">{t.activeLabel}</p>
+              <p className="text-xs text-muted-foreground">{t.productEditorXlStatusHint}</p>
             </div>
-            <Switch checked={Boolean(props.draft.status)} onChange={(event) => patchStatus(event.target.checked)} aria-label="Toggle XL status" />
+            <Switch checked={Boolean(props.draft.status)} onChange={(event) => patchStatus(event.target.checked)} aria-label={t.productEditorXlStatusAria} />
           </label>
 
 	          <section className="space-y-3 border-t border-border/70 pt-4">
-	            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Primary description</div>
+	            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productEditorXlPrimaryDescription}</div>
 	            {firstDescription ? (
 	              <div className="grid gap-3 sm:grid-cols-2">
-	                <FormField label="Name" className="sm:col-span-2"><Input value={firstDescription.name} onChange={(event) => patchDescription(0, "name", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
-	                <FormField label="Meta title"><Input value={firstDescription.meta_title ?? ""} onChange={(event) => patchDescription(0, "meta_title", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
-	                <FormField label="Meta description"><Input value={firstDescription.meta_description ?? ""} onChange={(event) => patchDescription(0, "meta_description", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
-	                <FormField label="Meta keywords"><Textarea value={firstDescription.meta_keyword ?? ""} onChange={(event) => patchDescription(0, "meta_keyword", event.target.value)} className="min-h-20 rounded-xl border-border bg-white text-sm" /></FormField>
-	                <FormField label="Tag"><Textarea value={firstDescription.tag ?? ""} onChange={(event) => patchDescription(0, "tag", event.target.value)} className="min-h-16 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label={t.productNameLabel} className="sm:col-span-2"><Input value={firstDescription.name} onChange={(event) => patchDescription(0, "name", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label={t.metaTitleLabel}><Input value={firstDescription.meta_title ?? ""} onChange={(event) => patchDescription(0, "meta_title", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label={t.metaDescriptionLabel}><Input value={firstDescription.meta_description ?? ""} onChange={(event) => patchDescription(0, "meta_description", event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label={t.metaKeywordLabel}><Textarea value={firstDescription.meta_keyword ?? ""} onChange={(event) => patchDescription(0, "meta_keyword", event.target.value)} className="min-h-20 rounded-xl border-border bg-white text-sm" /></FormField>
+	                <FormField label={t.tagSku}><Textarea value={firstDescription.tag ?? ""} onChange={(event) => patchDescription(0, "tag", event.target.value)} className="min-h-16 rounded-xl border-border bg-white text-sm" /></FormField>
 	              </div>
 	            ) : (
-	              <div className="rounded-xl border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">XL payload returned no description rows.</div>
+	              <div className="rounded-xl border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">{t.productEditorXlNoDescriptionRows}</div>
 	            )}
 	          </section>
 
           <ProductEditorAttributesEditor
-            title="XL source attributes"
-            subtitle="Read-only snapshot from XL source product attributes."
+            title={t.productEditorXlSourceAttributesTitle}
+            subtitle={t.productEditorXlSourceAttributesHint}
             attributes={xlAttributeFields}
             readOnly
             onChange={(attributes) => {
               props.onChange({ xl_attribute_fields: attributes.map((row) => ({ key: row.key, label: row.label, name: row.label, value: row.value })) });
             }}
-            emptyText="No XL attribute fields loaded."
+            emptyText={t.productEditorXlNoAttributeFields}
           />
         </div>
       </>}
@@ -348,12 +308,12 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
           <CreateProductImageGallery
             items={galleryItems.map((item) => ({ ...item, isLocal: false }))}
             activeItemId={galleryItems.find((item) => item.src === selectedImageUrl)?.id ?? galleryItems[0]?.id ?? ""}
-            previewAlt="Product image preview"
-            uploadLabel="Upload images"
-            emptyPreviewLabel="No image"
-            emptyGalleryLabel="No gallery images"
-            thumbnailAlt={(index) => `Product image ${index + 1}`}
-            deleteAlt={(index) => `Delete product image ${index + 1}`}
+            previewAlt={t.productEditorGalleryTitle}
+            uploadLabel={t.productEditorUploadImagesAction}
+            emptyPreviewLabel={t.productEditorNoImage}
+            emptyGalleryLabel={t.productEditorNoGalleryImages}
+            thumbnailAlt={(index) => t.productEditorImagesCount.replace("{count}", String(index + 1))}
+            deleteAlt={(index) => t.productEditorRemoveImageAria.replace("{index}", String(index + 1))}
             onActiveItemChange={(itemId) => {
               const item = galleryItems.find((entry) => entry.id === itemId);
               if (item) {
@@ -377,7 +337,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
           />
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Category</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.category}</p>
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {XL_SITE_KEY}: {categories.length}
               </span>
@@ -386,7 +346,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
               <Input
                 value={categoryQuery}
                 onChange={(event) => setCategoryQuery(event.target.value)}
-                placeholder="Search category by name or ID"
+                placeholder={t.searchCategoryByNameOrId}
                 className="h-10 rounded-xl border-border bg-white text-sm"
               />
               <Button
@@ -395,12 +355,12 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                 className="h-10 shrink-0 rounded-xl px-3 text-xs font-semibold"
                 onClick={() => setOnlyCheckedCategories((prev) => !prev)}
               >
-                Only checked
+                {t.onlyChecked}
               </Button>
             </div>
             <div className="mt-2 max-h-72 overflow-auto rounded-xl border border-border bg-white">
               {filterCategoryTree(categoryTree, categoryQuery, selectedCategoryIds, onlyCheckedCategories).length === 0 ? (
-                <p className="px-3 py-2 text-xs text-muted-foreground">No categories found</p>
+                <p className="px-3 py-2 text-xs text-muted-foreground">{t.noCategoriesFound}</p>
               ) : (
                 filterCategoryTree(categoryTree, categoryQuery, selectedCategoryIds, onlyCheckedCategories).map((node) => (
                   <CategoryTreeRow
@@ -428,8 +388,8 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                 <div className="rounded-xl border border-border bg-card p-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">XL description</p>
-                      <p className="text-sm text-muted-foreground">HTML preview and source editing for the primary XL description.</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productEditorXlDescriptionTitle}</p>
+                      <p className="text-sm text-muted-foreground">{t.productEditorXlDescriptionHint}</p>
                     </div>
                     <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
                       <button
@@ -440,7 +400,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                           descriptionMode === "code" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        Code
+                        {t.codeLabel}
                       </button>
                       <button
                         type="button"
@@ -450,7 +410,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                           descriptionMode === "preview" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                         )}
                       >
-                        Preview
+                        {t.previewLabel}
                       </button>
                     </div>
                   </div>
@@ -478,7 +438,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                           suppressContentEditableWarning
                           onBlur={(event) => patchDescription(0, "description", event.currentTarget.innerHTML)}
                         >
-                          No description
+                          {t.noDescription}
                         </div>
                       )}
                     </div>
@@ -487,8 +447,8 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
 	            </div>
 	          ) : null}
 	          <RelationCard
-	            title="Descriptions"
-	            emptyLabel="No descriptions"
+	            title={t.descriptions}
+	            emptyLabel={t.productEditorXlNoDescriptionRows}
             rows={descriptions.map((row) => ({
               title: `Lang ${row.language_id}`,
               lines: [row.name || "-", row.meta_title || "-", row.meta_description || "-"],
@@ -502,6 +462,7 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
 }
 
 function ProductEditorXlCreateForm({ draft, onChange }: { draft: ProductEditorJvDraft; onChange: (patch: Partial<ProductEditorJvDraft>) => void }) {
+  const t = useLabels();
   const firstDescription = draft.descriptions[0];
   const initialFields: XlCreateProductDraft = {
     name: firstDescription?.name ?? "",
@@ -509,16 +470,17 @@ function ProductEditorXlCreateForm({ draft, onChange }: { draft: ProductEditorJv
     ean: draft.ean,
     price: draft.price,
     uvp: String(draft.jv_fields?.uvp ?? ""),
+    manufacturer_id: String(draft.jv_fields?.manufacturer_id ?? ""),
     description: firstDescription?.description ?? "",
     tag: firstDescription?.tag ?? "",
     meta_title: firstDescription?.meta_title ?? "",
     meta_description: firstDescription?.meta_description ?? "",
     meta_keyword: firstDescription?.meta_keyword ?? "",
   };
-  return <XlCreateProductPanel initialFields={initialFields} draftKey={`${draft.target_id}:${draft.ean}`} codeLabel="Code" previewLabel="Preview" onDraftChange={(next) => onChange({
+  return <XlCreateProductPanel initialFields={initialFields} draftKey={`${draft.target_id}:${draft.ean}`} codeLabel={t.codeLabel} previewLabel={t.previewLabel} onDraftChange={(next) => onChange({
     ean: next.ean,
     price: next.price,
-    jv_fields: { ...draft.jv_fields, urlkey: next.seo_url, uvp: next.uvp },
+    jv_fields: { ...draft.jv_fields, urlkey: next.seo_url, uvp: next.uvp, manufacturer_id: next.manufacturer_id },
     descriptions: [{ ...(firstDescription ?? { language_id: 1 }), name: next.name, description: next.description, tag: next.tag, meta_title: next.meta_title, meta_description: next.meta_description, meta_keyword: next.meta_keyword }, ...draft.descriptions.slice(1)],
   })} />;
 }
@@ -657,6 +619,7 @@ type CategoryTreeRowProps = {
 };
 
 function CategoryTreeRow(props: CategoryTreeRowProps) {
+  const t = useLabels();
   const hasChildren = props.node.children.length > 0;
   const expanded = props.expandedCategoryIds.has(props.node.id);
   const selected = props.selectedCategoryIds.has(props.node.id);
@@ -690,7 +653,7 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
         <span className="flex-1 truncate">{props.node.name}</span>
         {selected && props.mainCategoryId === props.node.id ? (
           <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-700">
-            Main category
+            {t.productEditorMainCategory}
           </span>
         ) : null}
         {selected ? (
@@ -700,8 +663,8 @@ function CategoryTreeRow(props: CategoryTreeRowProps) {
             className="h-4 w-4 shrink-0 accent-emerald-600"
             checked={props.mainCategoryId === props.node.id}
             onChange={() => props.onSetMainCategory(props.node.id)}
-            title="Main category"
-            aria-label={`Set ${props.node.name} as main category`}
+            title={t.productEditorMainCategory}
+            aria-label={t.productEditorSetMainCategoryAria.replace("{name}", props.node.name)}
           />
         ) : null}
       </div>

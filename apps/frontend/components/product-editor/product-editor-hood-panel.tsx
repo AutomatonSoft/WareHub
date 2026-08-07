@@ -66,7 +66,6 @@ const HOOD_CATEGORY_OPTIONS = [
 export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
   const t = useLabels();
   const ean = props.draft.ean.trim();
-  const canApply = props.changedFields.length > 0 || props.draft.pending_uploads.length > 0;
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
   const descriptionUsesFullDocumentPreview = useMemo(
     () => requiresFullDocumentPreview(props.draft.description),
@@ -87,52 +86,8 @@ export function ProductEditorHoodPanel(props: ProductEditorHoodPanelProps) {
 
   return (
     <ProductEditorPanelLayout
-      kicker={ean ? `EAN ${ean}` : "EAN -"}
-      title={ean ? `EAN: ${ean}` : "EAN: -"}
       changedCount={0}
       hideHeaderBadges
-      headerLead={
-        <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-            <FormField label="EAN" className="min-w-0 flex-1">
-              <Input
-                value={props.eanValue}
-                onChange={(event) => props.onChangeEan(event.target.value)}
-                placeholder={t.enterEanSkuOrProductId}
-                maxLength={100}
-                className="h-10 rounded-xl border-border bg-background text-sm"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                    event.preventDefault();
-                    props.onSearch();
-                  }
-                }}
-              />
-            </FormField>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 rounded-xl px-4 text-sm font-semibold"
-              disabled={!props.isEanValid || props.searching}
-              onClick={props.onSearch}
-            >
-              {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
-            </Button>
-          </div>
-          {ean ? <p className="mt-2 text-xs text-muted-foreground">{t.loadedProduct.replace("{ean}", ean)}</p> : null}
-        </div>
-      }
-      headerActions={
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 rounded-xl text-xs font-semibold"
-          disabled={props.applyLoading || !canApply || !ean}
-          onClick={props.onApplyEditedProducts}
-        >
-          {props.applyLoading ? t.updating : t.updateEditedProducts}
-        </Button>
-      }
       topLeft={<HoodEditorCreateForm draft={props.draft} onChange={props.onChange} />}
       topRight={
         <div className="space-y-4">
@@ -182,7 +137,7 @@ function EditableHoodDescriptionPreview({
     <div className="space-y-3">
       <iframe
         ref={iframeRef}
-        title="hood-description-preview"
+        title={t.hoodDescriptionPreview}
         srcDoc={frameSrcDoc}
         sandbox="allow-same-origin allow-popups allow-forms"
         className="h-[32rem] w-full rounded-lg bg-white"

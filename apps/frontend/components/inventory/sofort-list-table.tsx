@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { useLabels } from "../../app/use-labels";
 import { PLACEHOLDER_EAN } from "./ean-utils";
@@ -70,7 +70,6 @@ function displayNullable(value: string | null): string {
 export function SofortListTable() {
   const t = useLabels();
   const { showToast } = useToast();
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const placeholderEan = PLACEHOLDER_EAN;
@@ -96,7 +95,8 @@ export function SofortListTable() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [urlHydrated, setUrlHydrated] = useState(false);
-  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<SofortListRow[]>([]);
+  const [selectionResetKey, setSelectionResetKey] = useState(0);
   const [deletingSelected, setDeletingSelected] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const fetchStartedAtRef = useRef<number | null>(null);
@@ -124,7 +124,7 @@ export function SofortListTable() {
 
   useEffect(() => {
     if (!urlHydrated) return;
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     const normalizedQuery = query.trim();
     if (normalizedQuery) params.set("q", normalizedQuery);
     else params.delete("q");
@@ -158,8 +158,8 @@ export function SofortListTable() {
     else params.delete("page_size");
     const nextQuery = params.toString();
     const next = nextQuery ? `${pathname}?${nextQuery}` : pathname;
-    const current = searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname;
-    if (next !== current) router.replace(next, { scroll: false });
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (next !== current) window.history.replaceState(window.history.state, "", next);
   }, [
     backendPage,
     backendPageSize,
@@ -174,8 +174,6 @@ export function SofortListTable() {
     query,
     quantityFilter,
     roomFilter,
-    router,
-    searchParams,
     sectionFilter,
     typeFilter,
     urlHydrated,
@@ -229,7 +227,8 @@ export function SofortListTable() {
         material: serverMaterial,
         bWare: bWareOnlyFilter,
         inTransit: inTransitOnlyFilter,
-      })
+      }),
+    placeholderData: keepPreviousData,
   });
 
   const filterOptionsQuery = useQuery({
@@ -250,7 +249,7 @@ export function SofortListTable() {
     }
   }, [backendPage, backendPageSize, sofortListQuery.isFetching]);
 
-  useEffect(() => setLoading(sofortListQuery.isPending || sofortListQuery.isFetching), [sofortListQuery.isFetching, sofortListQuery.isPending]);
+  useEffect(() => setLoading(sofortListQuery.isPending), [sofortListQuery.isPending]);
 
   useEffect(() => {
     if (!sofortListQuery.error) return setError(null);
@@ -280,8 +279,8 @@ export function SofortListTable() {
       const normalizedSiteEans = {
         jv: siteEans.jv,
         xl: siteEans.xl,
-        ottoJv: isBWare ? "B_WARE" : siteEans.ottoJv,
-        ottoXl: isBWare ? "B_WARE" : siteEans.ottoXl,
+        ottoJv: siteEans.ottoJv,
+        ottoXl: siteEans.ottoXl,
         ebayJv: siteEans.ebayJv,
         ebayXl: siteEans.ebayXl,
         kauflandJv: siteEans.kauflandJv,
@@ -345,8 +344,6 @@ export function SofortListTable() {
   }, [backendPage, placeholderEan, sofortListQuery.data]);
 
   const sortedRows = rows;
-  const rowIds = useMemo(() => new Set(sortedRows.map((row) => row.id)), [sortedRows]);
-  const selectedRows = useMemo(() => sortedRows.filter((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const selectedVisibleCount = selectedRows.length;
   const hasSelectedActiveMarketplace = useMemo(
     () => selectedRows.some((row) => row.marketplaceActive === true),
@@ -415,7 +412,6 @@ export function SofortListTable() {
     ]
   );
 
-  const allVisibleSelected = useMemo(() => sortedRows.length > 0 && sortedRows.every((row) => selectedRowIds.has(row.id)), [selectedRowIds, sortedRows]);
   const hasActiveFilters =
     query.trim().length > 0 ||
     placeFilter.trim().length > 0 ||
@@ -436,30 +432,9 @@ export function SofortListTable() {
     }
   }, [backendPage, totalPages]);
 
-  useEffect(() => {
-    setSelectedRowIds((current) => {
-      const next = new Set(Array.from(current).filter((rowId) => rowIds.has(rowId)));
-      return next.size === current.size ? current : next;
-    });
-  }, [rowIds]);
-
-  function toggleRowSelection(rowId: string) {
-    setSelectedRowIds((current) => {
-      const next = new Set(current);
-      if (next.has(rowId)) next.delete(rowId);
-      else next.add(rowId);
-      return next;
-    });
-  }
-
-  function toggleSelectVisible() {
-    setSelectedRowIds((current) => {
-      const next = new Set(current);
-      if (allVisibleSelected) for (const row of sortedRows) next.delete(row.id);
-      else for (const row of sortedRows) next.add(row.id);
-      return next;
-    });
-  }
+  const updateSelectedRows = useCallback((nextRows: SofortListRow[]) => {
+    setSelectedRows(nextRows);
+  }, []);
 
   function resetFiltersAndSearch() {
     setQuery("");
@@ -475,13 +450,14 @@ export function SofortListTable() {
     setBWareOnlyFilter(false);
     setInTransitOnlyFilter(false);
     setBackendPage(1);
-    setSelectedRowIds(new Set());
+    setSelectedRows([]);
+    setSelectionResetKey((current) => current + 1);
   }
 
-  function updateQuery(nextValue: string) {
+  const updateQuery = useCallback((nextValue: string) => {
     setQuery(nextValue);
     setBackendPage(1);
-  }
+  }, []);
 
   function updateSelectFilter(setter: (value: string) => void, value: string) {
     setter(value);
@@ -538,9 +514,47 @@ export function SofortListTable() {
     setBackendPage(1);
   }
 
-  function updateRowDraft(nextRow: SofortListRow) {
+  const updateRowDraft = useCallback((nextRow: SofortListRow) => {
     setRows((current) => current.map((row) => (row.id === nextRow.id ? nextRow : row)));
-  }
+  }, []);
+
+  const { refetch: refetchSofortList } = sofortListQuery;
+  const refreshSofortList = useCallback(() => {
+    void refetchSofortList();
+  }, [refetchSofortList]);
+
+  const shellLabels = useMemo(() => ({
+    place: t.place,
+    quantity: t.quantity,
+    room: t.room,
+    type: t.type,
+    active: t.active,
+    inactive: t.inactive,
+    activate: t.activate,
+    delete: t.delete,
+    deactivate: t.deactivate,
+    deleteFailed: t.deleteFailed,
+    deleteBlockedByMarketplace: t.deleteBlockedByMarketplace,
+    markedActive: t.markedActive,
+    markedInactive: t.markedInactive,
+    resultSuccessSites: t.resultSuccessSites,
+    resultFailedSites: t.resultFailedSites,
+    resultNoSiteData: t.resultNoSiteData,
+    resultDialogTitle: t.resultDialogTitle,
+    confirmActionTitle: t.confirmActionTitle,
+    confirmActionMessage: t.confirmActionMessage,
+    confirmActionCancel: t.cancel,
+    confirmActionConfirm: t.confirm,
+    confirmActionDetails: t.confirmActionDetails,
+    confirmActionLive: t.confirmActionLive,
+    confirmActionPending: t.confirmActionPending,
+    confirmActionCurrentPlace: t.confirmActionCurrentPlace,
+    confirmActionNewPlace: t.confirmActionNewPlace,
+    confirmActionPlacePlaceholder: t.confirmActionPlacePlaceholder,
+    confirmActionPlaceRequired: t.confirmActionPlaceRequired,
+    confirmActionFootnoteDeactivate: t.confirmActionFootnoteDeactivate,
+    confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
+  }), [t]);
 
   async function deleteSelectedRows() {
     if (deletingSelected || selectedRows.length === 0 || hasSelectedActiveMarketplace) return;
@@ -570,7 +584,8 @@ export function SofortListTable() {
         showToast(`Вы удалили товары: ${deletedPlaces}`, "success");
       }
 
-      setSelectedRowIds(new Set());
+      setSelectedRows([]);
+      setSelectionResetKey((current) => current + 1);
       await sofortListQuery.refetch();
     } finally {
       setDeletingSelected(false);
@@ -704,48 +719,15 @@ export function SofortListTable() {
               <SofortListTableShell
                 rows={sortedRows}
                 query={query}
-                selectedRowIds={selectedRowIds}
-                allVisibleSelected={allVisibleSelected}
                 placeholderEan={placeholderEan}
-                onToggleSelectVisible={toggleSelectVisible}
-                onToggleRowSelection={toggleRowSelection}
+                selectionResetKey={selectionResetKey}
+                onSelectionChange={updateSelectedRows}
                 onUpdateRow={updateRowDraft}
-                onRefresh={() => void sofortListQuery.refetch()}
+                onRefresh={refreshSofortList}
                 availablePlaces={filterOptionsQuery.data?.available_places ?? []}
                 occupiedPlaces={filterOptionsQuery.data?.places ?? []}
                 highlightText={highlightText}
-                labels={{
-                  place: t.place,
-                  quantity: t.quantity,
-                  room: t.room,
-                  type: t.type,
-                  active: t.active,
-                  inactive: t.inactive,
-                  activate: t.activate,
-                  delete: t.delete,
-                  deactivate: t.deactivate,
-                  deleteFailed: t.deleteFailed,
-                  deleteBlockedByMarketplace: t.deleteBlockedByMarketplace,
-                  markedActive: t.markedActive,
-                  markedInactive: t.markedInactive,
-                  resultSuccessSites: t.resultSuccessSites,
-                  resultFailedSites: t.resultFailedSites,
-                  resultNoSiteData: t.resultNoSiteData,
-                  resultDialogTitle: t.resultDialogTitle,
-                  confirmActionTitle: t.confirmActionTitle,
-                  confirmActionMessage: t.confirmActionMessage,
-                  confirmActionCancel: t.cancel,
-                  confirmActionConfirm: t.confirm,
-                  confirmActionDetails: t.confirmActionDetails,
-                  confirmActionLive: t.confirmActionLive,
-                  confirmActionPending: t.confirmActionPending,
-                  confirmActionCurrentPlace: t.confirmActionCurrentPlace,
-                  confirmActionNewPlace: t.confirmActionNewPlace,
-                  confirmActionPlacePlaceholder: t.confirmActionPlacePlaceholder,
-                  confirmActionPlaceRequired: t.confirmActionPlaceRequired,
-                  confirmActionFootnoteDeactivate: t.confirmActionFootnoteDeactivate,
-                  confirmActionFootnoteActivate: t.confirmActionFootnoteActivate,
-                }}
+                labels={shellLabels}
               />
             </>
             )}

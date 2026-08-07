@@ -136,7 +136,7 @@ export function AccountPanel({ apiBase, token, lang, user, onUserUpdated }: Acco
               {avatarUrl ? (
                 <Image
                   src={resolvePhotoUrl(apiBase, avatarUrl)}
-                  alt="avatar"
+                  alt={t.userAvatarAlt}
                   width={72}
                   height={72}
                   unoptimized

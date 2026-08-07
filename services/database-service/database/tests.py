@@ -69,6 +69,89 @@ class DatabaseApiTests(APITestCase):
         first.refresh_from_db()
         self.assertEqual(first.status, "used")
 
+    def test_ean_pool_reserves_one_ean_per_marketplace_family_for_kid(self):
+        ean_row = Ean.objects.create(kid=self.kid, main_ean="4012345678901")
+        jv_pool_ean = EANPool.objects.create(ean="4012345678902")
+        xl_pool_ean = EANPool.objects.create(ean="4012345678903")
+        first_job_id = "b1d878f1-7a89-4c7b-a5fb-1b3a0e310ac1"
+        second_job_id = "642088ea-6194-4db6-965e-3f2618d46bd8"
+
+        jv_claim = self.client.post(
+            "/api/v1/ean-pool/claim-for-job/",
+            {"job_id": first_job_id, "kid_number": "13234455", "reservation_family": "jv"},
+            format="json",
+        )
+        repeated_jv_claim = self.client.post(
+            "/api/v1/ean-pool/claim-for-job/",
+            {"job_id": second_job_id, "kid_number": "13234455", "reservation_family": "jv"},
+            format="json",
+        )
+        xl_claim = self.client.post(
+            "/api/v1/ean-pool/claim-for-job/",
+            {"job_id": first_job_id, "kid_number": "13234455", "reservation_family": "xl"},
+            format="json",
+        )
+
+        self.assertEqual(jv_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(repeated_jv_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(xl_claim.status_code, status.HTTP_200_OK)
+        self.assertEqual(jv_claim.data["ean"], jv_pool_ean.ean)
+        self.assertEqual(repeated_jv_claim.data["ean"], jv_pool_ean.ean)
+        self.assertEqual(xl_claim.data["ean"], xl_pool_ean.ean)
+
+        ean_row.refresh_from_db()
+        self.assertEqual(ean_row.reserved_jv, jv_pool_ean.ean)
+        self.assertEqual(ean_row.reserved_xl, xl_pool_ean.ean)
+
+        marked = self.client.post(
+            "/api/v1/ean-pool/mark-job-used/",
+            {"job_id": second_job_id, "kid_number": "13234455", "reservation_family": "jv"},
+            format="json",
+        )
+        self.assertEqual(marked.status_code, status.HTTP_200_OK)
+        jv_pool_ean.refresh_from_db()
+        self.assertEqual(jv_pool_ean.status, "used")
+
+    def test_marketplace_ean_mapping_confirmation_updates_ean_and_status(self):
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "marketplace": "kaufland",
+                "account": "jv",
+                "ean": "4012345678902",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["confirmed"])
+        ean_record = Ean.objects.get(kid=self.kid)
+        status_record = EanStatus.objects.get(ean=self.kid)
+        self.assertEqual(ean_record.kaufland_jv, "4012345678902")
+        self.assertTrue(status_record.kaufland_jv)
+
+    def test_kid_marketplace_status_update_changes_only_requested_status(self):
+        EanStatus.objects.create(ean=self.kid, jv=True, hood_xl=False)
+
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-status/",
+            {"marketplace": "hood_xl", "status": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"kid_id": self.kid.id, "marketplace": "hood_xl", "status": True})
+        ean_status = EanStatus.objects.get(ean=self.kid)
+        self.assertTrue(ean_status.jv)
+        self.assertTrue(ean_status.hood_xl)
+        self.assertTrue(
+            InventoryChangeLog.objects.filter(
+                kid=self.kid,
+                action="marketplace_status_updated",
+            ).exists()
+        )
+
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]
         self.kid.save(update_fields=["kid_number"])
@@ -2529,6 +2612,21 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["otto_jv_ean"], "B_WARE")
         self.assertEqual(response.data["otto_xl_ean"], "B_WARE")
+
+    def test_marketplace_eans_patch_allows_alphanumeric_identifiers(self):
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-eans/",
+            {
+                "main_ean": "JVM-ARTICLE-42",
+                "database_ean": "JVM-ARTICLE-42",
+                "cosmoshop_ean": "JV-SKU-42",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["main_ean"], "JVM-ARTICLE-42")
+        self.assertEqual(response.data["cosmoshop_ean"], "JV-SKU-42")
 
     def test_marketplace_eans_get_hides_placeholder_values(self):
         Ean.objects.create(

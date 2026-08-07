@@ -5,6 +5,10 @@ import 'app_theme.dart';
 import 'inventory_item_display.dart';
 import 'models.dart';
 import 'warehouse_constants.dart';
+import 'warehouse_location_utils.dart';
+
+const String _palletFallbackAsset = 'assets/images/pallet.png';
+const String _productFallbackAsset = 'assets/images/blank.png';
 
 class QrHomeItemCard extends StatelessWidget {
   const QrHomeItemCard({
@@ -255,6 +259,159 @@ class QrHomeItemCard extends StatelessWidget {
           ),
         ),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: statusBarColor,
+            ),
+          ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  displayTitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: uiText,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              if (count > 1) ...<Widget>[
+                const SizedBox(width: 8),
+                InventoryCountChip(
+                  label: strings.text('count'),
+                  count: count,
+                  backgroundColor: countChipBackground,
+                  foregroundColor: countChipForeground,
+                ),
+              ],
+              if (removed) ...<Widget>[
+                const SizedBox(width: 8),
+                Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: removedActionBackground,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: removedActionBorder,
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Text(
+                    strings.text('removed'),
+                    style: const TextStyle(
+                      color: uiOrangeDeep,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (photoUrls.isNotEmpty) ...<Widget>[
+                _buildPhotoThumbnail(context, photoUrls.first, size: 120),
+                const SizedBox(width: 12),
+              ] else ...<Widget>[
+                _buildAssetPhotoThumbnail(
+                  context,
+                  isPalletPlaceholder
+                      ? _palletFallbackAsset
+                      : _productFallbackAsset,
+                  size: 120,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('${strings.text('kid')}: $displayKidNumber',
+                        style: const TextStyle(color: uiMuted)),
+                    Text(
+                        '${strings.text('section_slot')}: ${warehouseSectionLabel(item.section)} / ${item.slotNumber}',
+                        style: const TextStyle(color: uiMuted)),
+                    Text('${strings.text('product_key')}: $displayProductKey',
+                        style: const TextStyle(color: uiMuted)),
+                    Text(
+                      '${strings.text('location')}: ${item.store ? strings.text('store_destination_store') : strings.text('store_destination_warehouse')}',
+                      style: const TextStyle(color: uiMuted),
+                    ),
+                    Text('${strings.text('count')}: $count',
+                        style: const TextStyle(color: uiMuted)),
+                    Text('${strings.text('boxes')}: $partsCount',
+                        style: const TextStyle(color: uiMuted)),
+                    Text(
+                      '${strings.text('b_ware')}: ${item.isBWare ? strings.text('yes') : strings.text('no')}',
+                      style: const TextStyle(color: uiMuted),
+                    ),
+                    Text(
+                      '${strings.text('in_transit')}: ${item.inTransit ? strings.text('yes') : strings.text('no')}',
+                      style: const TextStyle(color: uiMuted),
+                    ),
+                    if ((memo ?? '').trim().isNotEmpty)
+                      Text(
+                        '${strings.text('memo')}: ${memo!.trim()}',
+                        style: const TextStyle(color: uiMuted),
+                      ),
+                    if ((bWareComment ?? '').trim().isNotEmpty)
+                      Text(
+                        '${strings.text('b_ware_comment')}: ${bWareComment!.trim()}',
+                        style: const TextStyle(color: uiMuted),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (photoUrls.length > 1) ...<Widget>[
+            const SizedBox(height: 10),
+            _buildPhotoStrip(startIndex: 1),
+          ],
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              onPressed: onPrint == null ? null : () => onPrint!(),
+              icon: printing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+              label: Text(strings.text('print')),
+              style: FilledButton.styleFrom(
+                foregroundColor: removed ? uiOrangeDeep : uiText,
+                backgroundColor: removed ? removedActionBackground : uiCardSoft,
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: removed ? removedActionBorder : Colors.transparent,
+                    width: removed ? 1.2 : 0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -345,6 +502,49 @@ class QrHomeItemCard extends StatelessWidget {
 
 class _CardPhotoGalleryDialog extends StatefulWidget {
   const _CardPhotoGalleryDialog({required this.photoUrls});
+class InventoryCountChip extends StatelessWidget {
+  const InventoryCountChip({
+    super.key,
+    required this.label,
+    required this.count,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final int count;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 14,
+            color: foregroundColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$label: $count',
+            style: TextStyle(color: foregroundColor),
+          ),
+        ],
+      ),
+      backgroundColor: backgroundColor,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+bool _isPalletPlaceholderItem(IntakeData item) {
+  return _isPalletText(item.qrCode) ||
+      _isPalletText(item.kidNumber) ||
+      _isPalletText(item.productKey);
+}
 
   final List<String> photoUrls;
 

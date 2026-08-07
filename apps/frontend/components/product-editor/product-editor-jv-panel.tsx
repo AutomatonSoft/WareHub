@@ -490,50 +490,8 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
   return (
     <ProductEditorPanelLayout
-      kicker={props.draft.ean ? `EAN ${props.draft.ean}` : "EAN -"}
-      title={props.draft.ean ? `EAN: ${props.draft.ean}` : "EAN: -"}
       changedCount={changedFields.length}
       status={props.draft.target_id || undefined}
-      headerLead={
-        <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-            <FormField label="EAN" className="min-w-0 flex-1">
-              <Input
-                value={props.eanValue}
-                onChange={(event) => props.onChangeEan(event.target.value)}
-                placeholder={t.enterEanSkuOrProductId}
-                maxLength={100}
-                className="h-10 rounded-xl border-border bg-background text-sm"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                    event.preventDefault();
-                    props.onSearch();
-                  }
-                }}
-              />
-            </FormField>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 rounded-xl px-4 text-sm font-semibold"
-              disabled={!props.isEanValid || props.searching}
-              onClick={props.onSearch}
-            >
-              {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 shrink-0 rounded-xl px-4 text-sm font-semibold"
-              onClick={props.onApplyEditedProducts}
-              disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
-            >
-              {props.batchApplyLoading ? t.updating : t.updateEditedProducts}
-            </Button>
-          </div>
-          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">Loaded product: {props.draft.ean}{isXlMode ? " · source: xl.de" : ""}</p> : null}
-        </div>
-      }
       headerActions={
         <div className="flex flex-wrap items-center justify-end gap-2">
           {pendingUploadCount > 0 ? (
@@ -598,7 +556,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                     siteTabs={siteTabs}
                     activeSiteKey={activeSiteKey}
                     onChange={setActiveSiteKey}
-                    renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "")}
+                    renderMeta={(siteKey) => getDeliverySelectionLabel(deliveryValuesBySiteKey[siteKey] ?? "", t.notSelected)}
                   />
                   <select
                     value={deliveryIdValue}
@@ -942,6 +900,7 @@ function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvS
 }
 
 function ProductEditorJvCreateForm({ draft, onChange }: { draft: ProductEditorJvDraft; onChange: (patch: Partial<ProductEditorJvDraft>) => void }) {
+  const t = useLabels();
   const content = getJvContentByLanguage(draft.jv_fields, "de");
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
   const fields = {
@@ -950,7 +909,7 @@ function ProductEditorJvCreateForm({ draft, onChange }: { draft: ProductEditorJv
     metaTitle: String(content?.meta_title ?? ""), metaDescription: String(content?.meta_description ?? ""), metaKeyword: String(content?.meta_keyword ?? ""), description: String(content?.description ?? ""),
   };
   const patchContent = (patch: Record<string, string>) => onChange({ jv_fields: setJvContentByLanguage(draft.jv_fields, "de", patch) });
-  return <JvCreateProductPanel fields={fields} previewHtml={normalizeDescriptionHtmlForPreview(fields.description)} descriptionMode={descriptionMode} labels={{ name: "Name", urlKey: "URL key", artikelnr: "Artikel-Nr.", price: "Price", bezeichnung: "Bezeichnung", kurzbeschreibung: "Kurzbeschreibung", shortDescriptionReal: "Short description", metaTitle: "Meta title", metaDescription: "Meta description", metaKeyword: "Meta keyword", description: "Description", keywordPlaceholder: "Separate keywords with commas", code: "Code", preview: "Preview" }} onFieldDraftChange={(key, value) => {
+  return <JvCreateProductPanel fields={fields} previewHtml={normalizeDescriptionHtmlForPreview(fields.description)} descriptionMode={descriptionMode} labels={{ name: t.productNameLabel, urlKey: t.xljvUrlKey, artikelnr: t.articleNumber, price: t.priceLabel, bezeichnung: t.bezeichnungLabel, kurzbeschreibung: t.kurzbeschreibungLabel, shortDescriptionReal: t.xljvShortDescriptionDe, metaTitle: t.metaTitleLabel, metaDescription: t.metaDescriptionLabel, metaKeyword: t.metaKeywordLabel, description: t.descriptionLabel, keywordPlaceholder: t.productEditorKeywordsCommaSeparated, code: t.codeLabel, preview: t.previewLabel }} onFieldDraftChange={(key, value) => {
     if (key === "price") { onChange({ price: value }); return; }
     if (key === "artikelnr") { onChange({ source_sku: value, jv_fields: { ...draft.jv_fields, artikelnr: value } }); return; }
     if (key === "name") { patchContent({ name: value }); return; }
@@ -1002,8 +961,8 @@ function getDraftDeliveryValuesBySiteKey(
   return next;
 }
 
-function getDeliverySelectionLabel(value: string): string {
-  return value.trim() ? `ID ${value}` : "Not selected";
+function getDeliverySelectionLabel(value: string, notSelectedLabel: string): string {
+  return value.trim() ? `ID ${value}` : notSelectedLabel;
 }
 
 function filterCategoryTree(

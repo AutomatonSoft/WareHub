@@ -24,8 +24,17 @@ async def run_marketplace_job_worker(
         kid_number = claimed["kid_number"]
         inactive = bool(claimed["inactive"])
         place = str(claimed["place"]).strip() if claimed.get("place") is not None else None
+        actor_login = str(claimed.get("actor_login") or "").strip()
+        actor_name = str(claimed.get("actor_name") or "").strip()
         try:
-            result = service.execute(kid_number=kid_number, inactive=inactive, request_id=request_id, place=place)
+            result = service.execute(
+                kid_number=kid_number,
+                inactive=inactive,
+                request_id=request_id,
+                place=place,
+                actor_login=actor_login,
+                actor_name=actor_name,
+            )
             job_store.mark_completed(job_id=job_id, result=result)
         except Exception as exc:  # noqa: BLE001
             error = ErrorContract(
