@@ -176,6 +176,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [sourceSnapshot, setSourceSnapshot] = useState<CreateProductJvSourceSnapshot | null>(null);
   const [sourceSnapshotLoading, setSourceSnapshotLoading] = useState(false);
   const [sourceSnapshotError, setSourceSnapshotError] = useState<string | null>(null);
+  const [jvSourceSnapshotsBySiteKey, setJvSourceSnapshotsBySiteKey] = useState<
+    Partial<Record<string, CreateProductJvSourceSnapshot>>
+  >({});
+  const [jvSourceSnapshotsReady, setJvSourceSnapshotsReady] = useState(false);
   const [prefillSnapshot, setPrefillSnapshot] = useState<{
     ean: string;
     price: string;
@@ -243,6 +247,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setSourceSnapshot(null);
       setSourceSnapshotError(null);
       setSourceSnapshotLoading(false);
+      setJvSourceSnapshotsBySiteKey({});
+      setJvSourceSnapshotsReady(false);
       setPrefillSnapshot(null);
       setImageFiles([]);
       sourceCacheRef.current.sitesBySource.clear();
@@ -339,6 +345,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   }, [kidContext?.mainEan, preferredSourceSiteKey, showToast, sourceSite]);
 
   useEffect(() => {
+    setJvSourceSnapshotsBySiteKey({});
+    setJvSourceSnapshotsReady(false);
+  }, [kidContext?.mainEan]);
+
+  useEffect(() => {
     const mainEan = kidContext?.mainEan.trim() || "";
     if (!mainEan || prefetchedMainEansRef.current.has(mainEan)) {
       return;
@@ -367,6 +378,12 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
                   sourceCacheKey(mainEan, site, sourceSite.siteKey),
                   snapshot,
                 );
+                if (site === "JV") {
+                  setJvSourceSnapshotsBySiteKey((current) => ({
+                    ...current,
+                    [sourceSite.siteKey]: snapshot,
+                  }));
+                }
               }
             }),
           );
@@ -374,7 +391,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           // A marketplace can be unavailable without blocking the remaining tabs.
         }
       }),
-    );
+    ).finally(() => {
+      if (active) setJvSourceSnapshotsReady(true);
+    });
 
     return () => {
       active = false;
@@ -419,6 +438,12 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       .then((snapshot) => {
         if (!active) return;
         sourceCacheRef.current.snapshotsBySource.set(cacheKey, snapshot);
+        if (sourceSite === "JV") {
+          setJvSourceSnapshotsBySiteKey((current) => ({
+            ...current,
+            [selectedSourceSiteKey]: snapshot,
+          }));
+        }
         applySourceSnapshot(snapshot, kidContext.mainEan, sourceSite);
       })
       .catch((error) => {
@@ -1133,6 +1158,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     sourceSnapshot,
     sourceSnapshotLoading,
     sourceSnapshotError,
+    jvSourceSnapshotsBySiteKey,
+    jvSourceSnapshotsReady,
     visibleSites,
     setSitesQuery,
     setShowSelectedOnly,

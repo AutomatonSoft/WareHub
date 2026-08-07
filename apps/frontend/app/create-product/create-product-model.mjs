@@ -7,13 +7,9 @@ export function parseImageUrlsFromText(imagesText) {
 
 export function validateCreateProductInput(input) {
   const errors = {};
-  const ean = String(input?.ean || "").trim();
   const price = String(input?.price || "").trim();
   const productName = String(input?.productName || "").trim();
 
-  if (!/^\d{13}$/.test(ean)) {
-    errors.ean = "ean_exactly_13_digits";
-  }
   if (!/^\d+([.,]\d{1,2})?$/.test(price)) {
     errors.price = "price_numeric";
   }

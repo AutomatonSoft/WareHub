@@ -17,7 +17,6 @@ const labels = {
 };
 
 test("mapValidationErrorCodeToLabel maps known codes", () => {
-  assert.equal(mapValidationErrorCodeToLabel("ean_exactly_13_digits", labels), "ean13");
   assert.equal(mapValidationErrorCodeToLabel("price_numeric", labels), "price");
   assert.equal(mapValidationErrorCodeToLabel("product_name_min_3", labels), "name");
 });

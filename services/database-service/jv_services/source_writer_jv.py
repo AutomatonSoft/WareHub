@@ -46,6 +46,10 @@ def _jv_hersteller_artikelnr(product: ImportedProduct) -> str:
     return f"JVM{ean}" if ean else ""
 
 
+def _source_ean_for_jv_shopartikel(product: ImportedProduct) -> str:
+    return str(getattr(product, "source_ean_field", "") or "").strip() or (product.ean or "").strip()
+
+
 def _currency_for_product(product: ImportedProduct) -> str:
     # The price row currency must match the shop currency, otherwise the storefront
     # (which filters prices by currency) finds no price and shows 0 until a manual
@@ -88,7 +92,7 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
         "erfasst": now,
         "geaendert": now,
         "user": (product.update_user or "system_import"),
-        "ean": (product.ean or "").strip(),
+        "ean": _source_ean_for_jv_shopartikel(product),
         "hersteller": _JV_HERSTELLER,
         "uvp": uvp_value,
         "jfsku": (product.source_sku or "").strip(),

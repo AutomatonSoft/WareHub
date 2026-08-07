@@ -35,10 +35,10 @@ test("Hood create fields validate and build the marketplace payload", () => {
   });
 });
 
-test("validateCreateProductInput returns errors for invalid values", () => {
+test("validateCreateProductInput does not require a 13-digit EAN", () => {
   const result = validateCreateProductInput({ ean: "123", price: "abc", productName: "ab", imagesText: "" });
   assert.equal(result.isValid, false);
-  assert.equal(result.errors.ean, "ean_exactly_13_digits");
+  assert.equal(result.errors.ean, undefined);
   assert.equal(result.errors.price, "price_numeric");
   assert.equal(result.errors.productName, "product_name_min_3");
 });
