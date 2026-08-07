@@ -31,4 +31,7 @@ Current rules:
   `+` monotonically increasing in `apps/mobile/pubspec.yaml`.
 - Old repositories remain the source of truth until code migration is completed.
 - Local development recovery is documented in `docs/runbooks/local-dev.md`.
+- Stage and production runtime-env operations are documented in
+  [`infra/README.md`](infra/README.md#runtime-env-operations). Do not use the
+  local root `.env` as a production deployment source.
 - Slice 3B restores monorepo-safe local dependency startup without touching stage or production deploy flows.
