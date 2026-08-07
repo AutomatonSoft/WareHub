@@ -4,6 +4,8 @@ param(
 
   [string]$SourceEnvFile = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path '.env'),
 
+  [string]$GitHubEnvironment,
+
   [switch]$DryRun
 )
 
@@ -83,6 +85,9 @@ $repoRoot = Get-RepoRoot
 $templatePath = Join-Path $repoRoot ("infra\deploy\{0}\env.{0}.sanitized.template" -f $Environment)
 $validatorPath = Join-Path $repoRoot 'infra\scripts\verify-required-env.ps1'
 $secretName = if ($Environment -eq 'stage') { 'STAGE_ENV_FILE' } else { 'PROD_ENV_FILE' }
+if ([string]::IsNullOrWhiteSpace($GitHubEnvironment)) {
+  $GitHubEnvironment = if ($Environment -eq 'prod') { 'production' } else { 'stage' }
+}
 
 $sourceEntries = Get-EnvEntries -Path $SourceEnvFile
 $templateEntries = Get-EnvEntries -Path $templatePath
@@ -144,12 +149,12 @@ try {
     & gh auth status
   }
 
-  Get-Content -LiteralPath $overridePath | & gh secret set $secretName --env $Environment
+  Get-Content -LiteralPath $overridePath | & gh secret set $secretName --env $GitHubEnvironment
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to upload $secretName to GitHub environment '$Environment'."
+    throw "Failed to upload $secretName to GitHub environment '$GitHubEnvironment'."
   }
 
-  Write-Host ("Uploaded {0} to GitHub environment '{1}'." -f $secretName, $Environment)
+  Write-Host ("Uploaded {0} to GitHub environment '{1}'." -f $secretName, $GitHubEnvironment)
 }
 finally {
   if (Test-Path -LiteralPath $tempDir) {
