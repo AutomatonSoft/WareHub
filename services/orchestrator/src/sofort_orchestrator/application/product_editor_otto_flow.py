@@ -139,6 +139,15 @@ class ProductEditorOttoFlowError(RuntimeError):
         self.code, self.message, self.status_code, self.details = code, message, status_code, details or {}
 
 
+def _normalize_otto_media_assets(product: dict) -> list[dict]:
+    media_assets = product.get("mediaAssets")
+    if isinstance(media_assets, list) and media_assets:
+        return [item for item in media_assets if isinstance(item, dict)]
+
+    image_url = str(product.get("imageUrl") or product.get("image_url") or "").strip()
+    return [{"type": "IMAGE", "location": image_url}] if image_url else []
+
+
 def _normalize_otto_draft(body: dict, target_id: str, fallback_ean: str) -> dict:
     variations = body.get("product_variations") if isinstance(body.get("product_variations"), list) else []
     product = variations[0] if variations and isinstance(variations[0], dict) else {}
@@ -193,6 +202,13 @@ def _normalize_otto_media_assets(raw_assets: object, primary_image_url: object) 
 def _prepare_otto_payload(draft: dict) -> dict:
     optional_fields = {"isbn", "upc", "pzn", "mpn", "moin", "offeringStartDate", "releaseDate", "maxOrderQuantity"}
     payload = filtered_payload(Marketplace.OTTO, draft)
+    product_description = payload.get("productDescription")
+    if isinstance(product_description, dict):
+        payload["productDescription"] = {
+            key: value
+            for key, value in product_description.items()
+            if key not in {"categoryId", "category_id"}
+        }
     return {key: value for key, value in payload.items() if key not in optional_fields or value not in (None, "")}
 
 

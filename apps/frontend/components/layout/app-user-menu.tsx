@@ -6,7 +6,6 @@ import { BookOpen, ChevronDown, Download, LogOut, User, UserCircle2 } from "luci
 import { useEffect, useMemo, useState } from "react";
 import { clearAuth, DEFAULT_API_BASE, logout, readAuth, resolvePhotoUrl } from "../../app/client-api";
 import type { AuthUser } from "../../app/client-api-types";
-import { MOBILE_APK_DOWNLOAD_PATH } from "../../app/mobile-apk-url";
 import { useLabels } from "../../app/use-labels";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
@@ -17,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "../ui/dropdown-menu";
+import { MobileAppDownloadDialog } from "./mobile-app-download-dialog";
 
 export function AppUserMenu({
   currentUser,
@@ -32,8 +32,8 @@ export function AppUserMenu({
   const t = useLabels();
   const router = useRouter();
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE;
-  const mobileApkUrl = MOBILE_APK_DOWNLOAD_PATH;
   const [avatarLoadError, setAvatarLoadError] = useState(false);
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
 
   useEffect(() => {
     setAvatarLoadError(false);
@@ -59,6 +59,7 @@ export function AppUserMenu({
   }
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger render={
         <Button
@@ -102,7 +103,7 @@ export function AppUserMenu({
         </DropdownMenuItem>
         <DropdownMenuItem
           className="h-9 gap-2 px-3 text-sm"
-          onClick={() => window.open(mobileApkUrl, "_blank", "noopener,noreferrer")}
+          onClick={() => setDownloadDialogOpen(true)}
         >
           <Download size={15} aria-hidden="true" />
           {t.downloadApp}
@@ -118,5 +119,7 @@ export function AppUserMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <MobileAppDownloadDialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen} />
+    </>
   );
 }

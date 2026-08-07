@@ -151,29 +151,6 @@ export function ProductEditorEmptyPanel({
           initial={motionState}
           animate="visible"
         >
-          <motion.div variants={productEditorEmptyItem} className="mx-auto flex w-full max-w-2xl items-center gap-2 rounded-[var(--radius-card)] border border-border/80 bg-muted/20 p-1.5 shadow-sm">
-            <Input
-              value={eanValue}
-              onChange={(event) => onChangeEan(event.target.value)}
-              placeholder={t.productEditorSearchPlaceholder}
-              maxLength={100}
-              className="h-11 rounded-[var(--radius-control)] border-0 bg-background shadow-none focus-visible:ring-1"
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && isEanValid && !searching) {
-                  event.preventDefault();
-                  onSearch();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              onClick={onSearch}
-              disabled={!isEanValid || searching}
-              className="h-11 shrink-0 rounded-[var(--radius-control)] px-5 text-sm font-semibold shadow-sm"
-            >
-              {searching ? t.searching : t.productEditorDiscoverAction}
-            </Button>
-          </motion.div>
           <motion.section variants={productEditorEmptyHero} className="grid overflow-hidden rounded-[var(--radius-card)] border border-border/80 bg-muted/20 text-left shadow-sm lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="flex flex-col items-center justify-center px-5 py-6 text-center sm:px-8">
               <div className="relative mb-4 flex h-24 w-24 items-center justify-center">
@@ -293,8 +270,8 @@ export function ProductEditorSummaryStat({ label, value }: { label: string; valu
 }
 
 export function ProductEditorPanelLayout(props: {
-  kicker: string;
-  title: string;
+  kicker?: string;
+  title?: string;
   subtitle?: string;
   changedCount: number;
   status?: string;
@@ -308,10 +285,11 @@ export function ProductEditorPanelLayout(props: {
 }) {
   const t = useLabels();
   const reducedMotion = useReducedMotion();
+  const showHeader = Boolean(props.headerLead || props.kicker || props.title || props.subtitle || props.headerActions || !props.hideHeaderBadges);
 
   return (
     <div className="rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
-      <motion.div
+      {showHeader ? <motion.div
         className="mb-4 flex flex-wrap items-end justify-between gap-3"
         initial={reducedMotion ? false : { opacity: 0, y: -8 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -320,13 +298,13 @@ export function ProductEditorPanelLayout(props: {
       >
         {props.headerLead ? (
           <div className="min-w-0 flex-1">{props.headerLead}</div>
-        ) : (
+        ) : props.kicker || props.title || props.subtitle ? (
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.kicker}</p>
             <CardTitle className="mt-1 text-base">{props.title}</CardTitle>
             {props.subtitle ? <CardDescription>{props.subtitle}</CardDescription> : null}
           </div>
-        )}
+        ) : null}
         {props.headerActions ? (
           <div className="flex flex-wrap items-center gap-1.5">{props.headerActions}</div>
         ) : !props.hideHeaderBadges ? (
@@ -335,7 +313,7 @@ export function ProductEditorPanelLayout(props: {
             {props.status ? <Badge variant="outline">{props.status}</Badge> : null}
           </div>
         ) : null}
-      </motion.div>
+      </motion.div> : null}
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
         <motion.section

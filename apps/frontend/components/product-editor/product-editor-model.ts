@@ -184,7 +184,8 @@ export function hydrateJvDraft(input?: {
   categories: Array<Record<string, unknown>>;
   categories_by_site_key?: Record<string, unknown>;
   stores?: Array<Record<string, unknown>>;
-  images: Array<Record<string, unknown>>;
+  images: unknown[];
+  images_public_urls?: unknown[];
   specials?: Array<Record<string, unknown>>;
   xl_option_fields?: Array<Record<string, unknown>>;
   xl_attribute_fields?: Array<Record<string, unknown>>;
@@ -193,6 +194,32 @@ export function hydrateJvDraft(input?: {
   jv_fields_by_site_key?: Record<string, unknown>;
 }): ProductEditorJvDraft {
   if (!input) return createEmptyJvDraft();
+  const galleryRows = [
+    ...(Array.isArray(input.images) ? input.images : []),
+    ...(Array.isArray(input.images_public_urls) ? input.images_public_urls : []),
+  ];
+  const galleryImages = galleryRows
+    .map((row, index) => {
+      if (typeof row === "string") {
+        return { image: row, public_url: row, sort_order: index };
+      }
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const record = row as Record<string, unknown>;
+      const image = String(record.image ?? record.public_url ?? record.url ?? "").trim();
+      const publicUrl = String(record.public_url ?? record.url ?? image).trim();
+      return image ? { image, public_url: publicUrl, sort_order: Number(record.sort_order ?? index) } : null;
+    })
+    .filter((row): row is { image: string; public_url: string; sort_order: number } => Boolean(row));
+  const seenGalleryImages = new Set<string>();
+  const uniqueGalleryImages = galleryImages.filter((row) => {
+    const key = `${row.image}|${row.public_url}`.toLowerCase();
+    if (seenGalleryImages.has(key)) return false;
+    seenGalleryImages.add(key);
+    return true;
+  });
+  const mainImage = String(input.image || uniqueGalleryImages[0]?.image || "").trim();
+  const mainImagePublicUrl = String(input.image_public_url ?? uniqueGalleryImages[0]?.public_url ?? mainImage).trim();
+  const additionalImages = input.image ? uniqueGalleryImages : uniqueGalleryImages.slice(1);
   return {
     target_id: input.target_id || "",
     ean: input.ean || "",
@@ -202,8 +229,8 @@ export function hydrateJvDraft(input?: {
     price: formatPriceForInput(input.price),
     quantity: input.quantity == null ? "" : String(input.quantity),
     status: Boolean(input.status),
-    image: input.image || "",
-    image_public_url: String(input.image_public_url ?? input.image ?? ""),
+    image: mainImage,
+    image_public_url: mainImagePublicUrl,
     descriptions: Array.isArray(input.descriptions)
       ? input.descriptions.map((row) => ({
           language_id: Number(row.language_id ?? 1),
@@ -228,22 +255,7 @@ export function hydrateJvDraft(input?: {
           store_id: Number(row.store_id ?? 0)
         })).filter((row) => row.store_id >= 0)
       : [],
-    images: Array.isArray(input.images)
-      ? input.images.map((row) => {
-          if (typeof row === "string") {
-            return {
-              image: row,
-              public_url: row,
-              sort_order: 0
-            };
-          }
-          return {
-            image: String(row.image ?? ""),
-            public_url: String(row.public_url ?? row.image ?? ""),
-            sort_order: Number(row.sort_order ?? 0)
-          };
-        }).filter((row) => row.image.trim() !== "")
-      : [],
+    images: additionalImages,
     specials: Array.isArray(input.specials)
       ? input.specials.map((row) => ({
           id: Number(row.id ?? 0) || undefined,

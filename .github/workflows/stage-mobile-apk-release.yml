@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_stage_apk_release:
-        description: "Type PUBLISH_STAGE_APK to publish the APK declared in apps/mobile/pubspec.yaml"
+        description: "Type PUBLISH_STAGE_APK to publish the next automatically versioned stage APK"
         required: true
       release_notes:
         description: "Optional release notes shown to the mobile client"
@@ -62,7 +62,7 @@ jobs:
           done
           [[ "$STAGE_APK_DEPLOY_PATH" = /* ]] || { echo "STAGE_APK_DEPLOY_PATH must be absolute." >&2; exit 1; }
 
-      - name: Read and validate mobile version
+      - name: Resolve next stage mobile version
         id: version
         shell: bash
         run: |
@@ -72,9 +72,31 @@ jobs:
             echo "apps/mobile/pubspec.yaml must use X.Y.Z-stage.N+BUILD for a stage release." >&2
             exit 1
           }
-          echo "version=v${declared_version}" >> "$GITHUB_OUTPUT"
-          echo "display_version=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          echo "build_number=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          declared_name="${BASH_REMATCH[1]}"
+          declared_build="${BASH_REMATCH[2]}"
+          core_version="${declared_name%-stage.*}"
+          declared_stage="${declared_name##*-stage.}"
+
+          published_version="$(curl --fail --silent --show-error --max-time 10 "$STAGE_PUBLIC_BASE_URL/api/v1/mobile/app-update" | jq -r '.latest_version // empty' || true)"
+          if [[ "$published_version" =~ ^v?${core_version//./\.}-stage\.([1-9][0-9]*)\+([1-9][0-9]*)$ ]]; then
+            published_stage="${BASH_REMATCH[1]}"
+            published_build="${BASH_REMATCH[2]}"
+          else
+            published_stage=0
+            published_build=0
+          fi
+
+          next_stage=$(( declared_stage > published_stage ? declared_stage : published_stage ))
+          next_stage=$((next_stage + 1))
+          next_build=$(( declared_build > published_build ? declared_build : published_build ))
+          next_build=$((next_build + 1))
+          build_name="${core_version}-stage.${next_stage}"
+          version="v${build_name}+${next_build}"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "display_version=v$build_name" >> "$GITHUB_OUTPUT"
+          echo "build_name=$build_name" >> "$GITHUB_OUTPUT"
+          echo "build_number=$next_build" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -106,6 +128,8 @@ jobs:
         shell: bash
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NAME: ${{ steps.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
         run: |
           set -euo pipefail
           cd apps/mobile
@@ -114,6 +138,8 @@ jobs:
           flutter analyze
           flutter test
           flutter build apk --release --flavor stage \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER" \
             --dart-define=APP_ENV=stage \
             --dart-define=API_BASE_URL=https://stagewarehub.automatonsoft.de/api/v1 \
             --dart-define=APP_VERSION="$APP_VERSION"

@@ -490,50 +490,8 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
   return (
     <ProductEditorPanelLayout
-      kicker={props.draft.ean ? `EAN ${props.draft.ean}` : "EAN -"}
-      title={props.draft.ean ? `EAN: ${props.draft.ean}` : "EAN: -"}
       changedCount={changedFields.length}
       status={props.draft.target_id || undefined}
-      headerLead={
-        <div className="min-w-0">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-            <FormField label="EAN" className="min-w-0 flex-1">
-              <Input
-                value={props.eanValue}
-                onChange={(event) => props.onChangeEan(event.target.value)}
-                placeholder={t.enterEanSkuOrProductId}
-                maxLength={100}
-                className="h-10 rounded-xl border-border bg-background text-sm"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && props.isEanValid && !props.searching) {
-                    event.preventDefault();
-                    props.onSearch();
-                  }
-                }}
-              />
-            </FormField>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 rounded-xl px-4 text-sm font-semibold"
-              disabled={!props.isEanValid || props.searching}
-              onClick={props.onSearch}
-            >
-              {props.searching ? t.searchingShort : t.productEditorDiscoverAction}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 shrink-0 rounded-xl px-4 text-sm font-semibold"
-              onClick={props.onApplyEditedProducts}
-              disabled={Boolean(props.batchApplyLoading) || (changedFields.length === 0 && pendingUploadCount === 0)}
-            >
-              {props.batchApplyLoading ? t.updating : t.updateEditedProducts}
-            </Button>
-          </div>
-          {props.draft.ean ? <p className="mt-2 text-xs text-muted-foreground">{t.loadedProduct.replace("{ean}", props.draft.ean)}{isXlMode ? ` · ${t.productEditorXlSourceSite}` : ""}</p> : null}
-        </div>
-      }
       headerActions={
         <div className="flex flex-wrap items-center justify-end gap-2">
           {pendingUploadCount > 0 ? (
