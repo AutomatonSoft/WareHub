@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:local_auth/local_auth.dart';
 import 'app_settings.dart';
+import 'app_version_provider.dart';
 import 'auth_design_tokens.dart';
 import 'auth_widgets.dart';
 import 'mobile_auth.dart';
@@ -26,6 +27,13 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _loginHidden = true;
   bool _loginBusy = false;
+  bool _biometricAvailable = false;
+  bool _biometricBusy = false;
+  bool _autoPrompted = false;
+  bool _checkedBiometrics = false;
+  BiometricType? _preferredBiometricType;
+
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   final TextEditingController _loginController = TextEditingController();
   final TextEditingController _loginPasswordController =
@@ -43,6 +51,16 @@ class _AuthScreenState extends State<AuthScreen> {
     _loginController.dispose();
     _loginPasswordController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final AppSettings settings = AppSettingsScope.of(context);
+    if (!_checkedBiometrics) {
+      _checkedBiometrics = true;
+      unawaited(_initBiometrics(settings));
+    }
   }
 
   void _showMessage(String message) {
@@ -403,54 +421,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       onChanged: (AppLang lang) {
                         settings.setLanguage(lang);
                       },
-                  Positioned(
-                    top: AuthSpacing.sm,
-                    right: AuthSpacing.screenHorizontal,
-                    child: AuthLanguagePicker(
-                      label: strings.language,
-                      value: settings.language,
-                      onChanged: (AppLang lang) {
-                        settings.setLanguage(lang);
-                      },
-                    ),
-                  ),
-                  Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(
-                        AuthSpacing.screenHorizontal,
-                        AuthSpacing.xxl,
-                        AuthSpacing.screenHorizontal,
-                        AuthSpacing.xxl,
-                      ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 430),
-                        child: AuthGlassCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              AuthBrandHeader(
-                                title: strings.loginTitle,
-                                subtitle: strings.loginSubtitle,
-                              ),
-                              const SizedBox(height: AuthSpacing.xl),
-                              AuthLoginForm(
-                                strings: strings,
-                                loginController: _loginController,
-                                passwordController: _loginPasswordController,
-                                passwordHidden: _loginHidden,
-                                isBusy: _loginBusy,
-                                onSubmit: _onLoginSubmitted,
-                                onForgotPassword: () {
-                                  unawaited(_openForgotPassword());
-                                },
-                                onTogglePassword: () => setState(() {
-                                  _loginHidden = !_loginHidden;
-                                }),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
                   ),
                 ],

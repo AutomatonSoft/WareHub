@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sofortbot_mobile/app_settings.dart';
+import 'package:sofortbot_mobile/app_theme.dart';
+import 'package:sofortbot_mobile/models.dart';
+import 'package:sofortbot_mobile/qr_home_item_details_page.dart';
 import 'package:sofortbot_mobile/qr_home_widgets.dart';
 
 void main() {
-  testWidgets('quantity chip uses an inventory icon instead of a location pin',
   late AppSettings settings;
 
   setUp(() async {
@@ -167,14 +171,6 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: InventoryCountChip(
-            label: 'Count',
-            count: 2,
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
-          ),
       _testApp(
         settings,
         const QrHomeItemDetailsPage(
@@ -187,9 +183,6 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.location_on_outlined), findsNothing);
-    expect(find.text('Count: 2'), findsOneWidget);
     expect(find.byType(PageView), findsOneWidget);
     expect(find.text('1 / 3'), findsOneWidget);
 
@@ -198,6 +191,26 @@ void main() {
 
     expect(find.text('2 / 3'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('quantity chip uses an inventory icon instead of a location pin',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: InventoryCountChip(
+            label: 'Count',
+            count: 2,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.location_on_outlined), findsNothing);
+    expect(find.text('Count: 2'), findsOneWidget);
   });
 }
 
