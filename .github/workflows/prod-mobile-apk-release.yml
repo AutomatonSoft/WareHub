@@ -21,7 +21,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: prod-mobile-apk-release
+  # Serialize with Prod Deploy so the runtime commit check cannot race a rollout.
+  group: production-runtime-release
   cancel-in-progress: false
 
 jobs:
@@ -59,6 +60,29 @@ jobs:
             [ -n "${!key:-}" ] || { echo "Missing required production configuration: $key" >&2; exit 1; }
           done
           [[ "$PROD_APK_DEPLOY_PATH" = /* ]] || { echo "PROD_APK_DEPLOY_PATH must be absolute." >&2; exit 1; }
+
+      - name: Configure pinned SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$PROD_SSH_KEY_SECRET" > "$HOME/.ssh/prod_mobile_release_key"
+          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/prod_mobile_release_key"
+
+      - name: Verify matching production runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -p "$PROD_SSH_PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            "set -euo pipefail
+             state='$PROD_DEPLOY_PATH/.deploy-state.env'
+             [ -f \"\$state\" ] || { echo 'Production deploy state is missing.' >&2; exit 1; }
+             deployed_sha=\"\$(grep '^SOURCE_COMMIT_SHA=' \"\$state\" | cut -d= -f2-)\"
+             [ \"\$deployed_sha\" = '$GITHUB_SHA' ] || { echo \"Production runtime is at \$deployed_sha, expected $GITHUB_SHA. Run Prod Deploy first.\" >&2; exit 1; }
+             mkdir -p '$PROD_DEPLOY_PATH/mobile-release' '$PROD_DEPLOY_PATH/mobile-release-backups' '$PROD_APK_DEPLOY_PATH'
+             test -w '$PROD_DEPLOY_PATH/mobile-release'
+             test -w '$PROD_APK_DEPLOY_PATH'"
 
       - name: Resolve next production mobile version
         id: version
@@ -171,29 +195,6 @@ jobs:
           printf '%s\n' "$VERSION" > warehub.version
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
-
-      - name: Configure pinned SSH
-        shell: bash
-        run: |
-          set -euo pipefail
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          printf '%s\n' "$PROD_SSH_KEY_SECRET" > "$HOME/.ssh/prod_mobile_release_key"
-          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/prod_mobile_release_key"
-
-      - name: Verify matching production runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/prod_mobile_release_key" -p "$PROD_SSH_PORT" "$PROD_SSH_USER@$PROD_SSH_HOST" \
-            "set -euo pipefail
-             state='$PROD_DEPLOY_PATH/.deploy-state.env'
-             [ -f \"\$state\" ] || { echo 'Production deploy state is missing.' >&2; exit 1; }
-             deployed_sha=\"\$(grep '^SOURCE_COMMIT_SHA=' \"\$state\" | cut -d= -f2-)\"
-             [ \"\$deployed_sha\" = '$GITHUB_SHA' ] || { echo \"Production runtime is at \$deployed_sha, expected $GITHUB_SHA. Run Prod Deploy first.\" >&2; exit 1; }
-             mkdir -p '$PROD_DEPLOY_PATH/mobile-release' '$PROD_DEPLOY_PATH/mobile-release-backups' '$PROD_APK_DEPLOY_PATH'
-             test -w '$PROD_DEPLOY_PATH/mobile-release'
-             test -w '$PROD_APK_DEPLOY_PATH'"
 
       - name: Upload release candidate
         shell: bash

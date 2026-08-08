@@ -1,4 +1,5 @@
 use axum::{http::StatusCode, Json};
+use reqwest::cookie::CookieStore;
 use std::collections::BTreeMap;
 
 use crate::{internal_error, ErrorResponse};
@@ -105,4 +106,44 @@ pub(crate) fn merge_cookie_headers(
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<String>>()
         .join("; ")
+}
+
+pub(crate) fn cookie_header_from_jar(
+    cookie_jar: &reqwest::cookie::Jar,
+    target_url: &str,
+) -> Option<String> {
+    let url = reqwest::Url::parse(target_url).ok()?;
+    cookie_jar
+        .cookies(&url)
+        .and_then(|header| header.to_str().ok().map(str::to_string))
+        .filter(|header| !header.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cookie_header_from_jar;
+    use reqwest::{
+        cookie::{CookieStore, Jar},
+        header::HeaderValue,
+        Url,
+    };
+
+    #[test]
+    fn returns_only_cookies_applicable_to_target_url() {
+        let jar = Jar::default();
+        let login_url = Url::parse("https://farm01.afterbuy.de/afterbuy/login.aspx").unwrap();
+        let headers = [HeaderValue::from_static("session=authenticated; Path=/; Secure")];
+        let mut header_values = headers.iter();
+        jar.set_cookies(&mut header_values, &login_url);
+
+        let farm_cookie = cookie_header_from_jar(
+            &jar,
+            "https://farm01.afterbuy.de/afterbuy/auktionsliste.aspx",
+        );
+        let other_host_cookie =
+            cookie_header_from_jar(&jar, "https://farm04.afterbuy.de/afterbuy/auktionsliste.aspx");
+
+        assert_eq!(farm_cookie.as_deref(), Some("session=authenticated"));
+        assert!(other_host_cookie.is_none());
+    }
 }

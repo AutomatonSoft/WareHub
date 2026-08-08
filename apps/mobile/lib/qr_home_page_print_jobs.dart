@@ -295,8 +295,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
           throw Exception('Unable to build label image.');
         }
         final List<int> bytes = byteData.buffer.asUint8List().toList();
-        final int effectiveLabelType =
-            _printLabelType == 0 ? 1 : _printLabelType;
+        final int effectiveLabelType = _printLabelType;
         final int effectiveHeight = _printHeightPx;
         final int effectiveDensity = _printDensity;
 
@@ -387,7 +386,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     if (byteData == null) {
       throw Exception('Unable to convert selected image.');
     }
-    final int effectiveLabelType = _printLabelType == 0 ? 1 : _printLabelType;
+    final int effectiveLabelType = _printLabelType;
     final PrintData printData = PrintData(
       data: byteData.buffer.asUint8List().toList(),
       width: _printWidthPx,
@@ -517,7 +516,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
 
       final PrinterOperationResult result =
           await _printer.debugPrintTestPattern(
-        labelType: _printLabelType == 0 ? 1 : _printLabelType,
+        labelType: _printLabelType,
         density: _printDensity,
         bitOrder: bitOrder,
         invertPackedBits: invertPackedBits,
