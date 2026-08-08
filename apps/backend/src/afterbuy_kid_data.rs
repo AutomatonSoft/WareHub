@@ -1,5 +1,5 @@
 use axum::{http::StatusCode, Json};
-use std::env;
+use std::{env, sync::Arc};
 
 use crate::{
     afterbuy_auth::login_and_collect_cookie,
@@ -39,7 +39,9 @@ pub(crate) async fn fetch_afterbuy_orders_by_kid_data(
         vec!["jv", "xl"]
     };
 
+    let cookie_jar = Arc::new(reqwest::cookie::Jar::default());
     let client = reqwest::Client::builder()
+        .cookie_provider(cookie_jar.clone())
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("SofortBot/afterbuy-kid-search")
         .build()
@@ -163,7 +165,9 @@ pub(crate) async fn fetch_afterbuy_orders_by_kid_data(
 
                 let refreshed_cookie = match login_and_collect_cookie(
                     &client,
+                    cookie_jar.as_ref(),
                     login_url_for_attempt,
+                    &attempt.request_url,
                     login.trim(),
                     pass.trim(),
                 )
@@ -206,7 +210,9 @@ pub(crate) async fn fetch_afterbuy_orders_by_kid_data(
                         build_farm_kid_search_login_url(farm_host, &normalized_kid, login.trim());
                     let refreshed_cookie = match login_and_collect_cookie(
                         &client,
+                        cookie_jar.as_ref(),
                         &fallback_login_url,
+                        &attempt.request_url,
                         login.trim(),
                         pass.trim(),
                     )

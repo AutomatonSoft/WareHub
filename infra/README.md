@@ -172,6 +172,18 @@ powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-runtime-env-to-git
 gh workflow run stage-deploy.yml --ref stage -f confirm_stage_deploy=DEPLOY_STAGE_RUNTIME
 ```
 
+#### Validate or synchronize both environments
+
+Use root `.env` as the master source for stage and production. The command validates both target contracts first; it does not deploy either environment.
+
+```powershell
+# Validate only
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-all-runtime-envs.ps1
+
+# Update STAGE_ENV_FILE and PROD_ENV_FILE after changing the corresponding source files
+powershell -ExecutionPolicy Bypass -File .\infra\scripts\sync-all-runtime-envs.ps1 -Apply
+```
+
 #### Production
 
 Never point the production command at root `.env`. Validate the protected production source first, then upload. This changes the GitHub secret only; it is applied only by a separately approved Prod Deploy with an immutable release version.
