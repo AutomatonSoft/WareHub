@@ -18,7 +18,8 @@ permissions:
   packages: write
 
 concurrency:
-  group: prod-deploy
+  # Mobile APK publication must not inspect a runtime while this deployment is in progress.
+  group: production-runtime-release
   cancel-in-progress: false
 
 jobs:

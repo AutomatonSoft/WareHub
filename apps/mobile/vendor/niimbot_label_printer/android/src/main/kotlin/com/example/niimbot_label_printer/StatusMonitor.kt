@@ -1,5 +1,7 @@
 ﻿package com.example.niimbot_label_printer
 
+import kotlinx.coroutines.delay
+
 internal class StatusMonitor(
     private val session: PrinterSession,
     private val encoder: CommandEncoder,
@@ -15,21 +17,27 @@ internal class StatusMonitor(
     }
 
     suspend fun waitUntilDone(totalPages: Int) {
-        val status = currentStatus()
-        logger.debug(
-            "STATUS",
-            "page=${status.page} print=${status.pagePrintProgress} feed=${status.pageFeedProgress} error=${status.errorCode}",
-        )
-        if (status.errorCode != 0) {
-            throw PrinterException.PrintTaskFailed(
-                "Printer reported non-zero print status error.",
-                mapOf("errorCode" to status.errorCode),
+        val deadline = System.currentTimeMillis() + PrinterTimeouts.statusTimeoutMs
+        while (true) {
+            val status = currentStatus()
+            logger.debug(
+                "STATUS",
+                "page=${status.page} print=${status.pagePrintProgress} feed=${status.pageFeedProgress} error=${status.errorCode}",
             )
+            if (status.errorCode != 0) {
+                throw PrinterException.PrintTaskFailed(
+                    "Printer reported non-zero print status error.",
+                    mapOf("errorCode" to status.errorCode),
+                )
+            }
+            if (isTerminalSuccessStatus(status, totalPages)) {
+                return
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                throw PrinterException.StatusTimeout()
+            }
+            delay(PrinterTimeouts.statusPollIntervalMs)
         }
-        if (isTerminalSuccessStatus(status, totalPages)) {
-            return
-        }
-        throw PrinterException.StatusTimeout()
     }
 }
 

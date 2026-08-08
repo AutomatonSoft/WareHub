@@ -16,7 +16,7 @@ extension _QrHomePageSystem on _QrHomePageState {
     final int width = prefs.getInt('print_width_px') ?? 384;
     final int height = prefs.getInt('print_height_px') ?? 640;
     final int density = prefs.getInt('print_density') ?? 5;
-    final int labelType = prefs.getInt('print_label_type') ?? 1;
+    final int labelType = prefs.getInt('print_label_type') ?? 0;
     final int interLabelDelayMs =
         prefs.getInt('print_inter_label_delay_ms') ?? 120;
     setState(() {
