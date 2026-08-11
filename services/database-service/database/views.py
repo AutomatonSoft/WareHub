@@ -143,6 +143,55 @@ class KidMarketplaceStatusUpdateAPIView(APIView):
         )
 
 
+class KidMarkOutOfStockAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        place = normalize_place(payload.get("place"))
+        section = str(payload.get("section") or "").strip().upper()
+
+        if not place:
+            return Response({"detail": "place is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(section) != 1:
+            return Response(
+                {"detail": "section must contain exactly one character."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with workspace_atomic():
+            kid = Kid.objects.filter(place__iexact=place, section__iexact=section).first()
+            if kid is None:
+                return Response(
+                    {"detail": "Kid was not found for the specified place and section."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            was_in_stock = bool(kid.in_stock)
+            if was_in_stock:
+                kid.in_stock = False
+                kid.save(update_fields=["in_stock"])
+
+        if was_in_stock:
+            record_inventory_change(
+                kid=kid,
+                actor=request_actor(request),
+                action="in_stock_updated",
+                changes=[{"field": "in_stock", "before": True, "after": False}],
+            )
+
+        return Response(
+            {
+                "kid_id": kid.id,
+                "place": kid.place,
+                "section": kid.section,
+                "in_stock": False,
+                "updated": was_in_stock,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
     if not photo_urls:
         return
@@ -1245,17 +1294,11 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_destroy(self, instance):
-        default_connection = connections["default"]
         with workspace_atomic():
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
                 _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
-            Ean.objects.filter(kid_id=instance.id).delete()
-            EanStatus.objects.filter(ean_id=instance.id).delete()
-            Orders.objects.filter(kid_id=instance.id).delete()
-            ProductAttributes.objects.filter(kid_id=instance.id).delete()
-            with default_connection.cursor() as cursor:
-                cursor.execute(f'DELETE FROM "{Kid._meta.db_table}" WHERE id = %s', [instance.id])
+            instance.delete()
 
 
 class OrderListCreateAPIView(generics.ListCreateAPIView):

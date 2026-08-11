@@ -1618,6 +1618,37 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertEqual(kid.place, "-4")
 
+    def test_mark_kid_out_of_stock_by_place_and_section(self):
+        self.kid.place = "A-120"
+        self.kid.section = "B"
+        self.kid.in_stock = True
+        self.kid.save(update_fields=["place", "section", "in_stock"])
+
+        response = self.client.post(
+            "/api/v1/kids/mark-out-of-stock/",
+            {"place": "a-120", "section": "b"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["kid_id"], self.kid.id)
+        self.assertTrue(response.data["updated"])
+        self.kid.refresh_from_db()
+        self.assertFalse(self.kid.in_stock)
+
+    def test_mark_kid_out_of_stock_requires_matching_section(self):
+        self.kid.place = "A-121"
+        self.kid.section = "B"
+        self.kid.save(update_fields=["place", "section"])
+
+        response = self.client.post(
+            "/api/v1/kids/mark-out-of-stock/",
+            {"place": "A-121", "section": "C"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     @patch("database.marketplace_deactivate_service._apply_kaufland_active_state")
     def test_marketplace_kaufland_activate_updates_only_successful_site(self, mocked_apply):
         kid = Kid.objects.create(kid_number=["KID-KAUFLAND-ACTIVATE"], place="-4")
@@ -3369,7 +3400,8 @@ class DatabaseApiTests(APITestCase):
         self.order.delete()
         self.kid.room = "ROOM-X"
         self.kid.furniture_type = "SOFA"
-        self.kid.save(update_fields=["room", "furniture_type"])
+        self.kid.in_stock = False
+        self.kid.save(update_fields=["room", "furniture_type", "in_stock"])
         ProductAttributes.objects.create(
             kid=self.kid,
             quantity=4,
@@ -3389,6 +3421,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(rows[0]["order_id"], "-")
         self.assertEqual(rows[0]["room"], "ROOM-X")
         self.assertEqual(rows[0]["type"], "SOFA")
+        self.assertFalse(rows[0]["in_stock"])
         self.assertEqual(rows[0]["quantity"], 4)
         self.assertEqual(rows[0]["company"], "Nordic House")
 

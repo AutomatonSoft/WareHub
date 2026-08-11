@@ -324,6 +324,7 @@ export function SofortListTable({ workspace = DEFAULT_INVENTORY_WORKSPACE }: { w
         place: normalizePlaceValue(item.place),
         section: typeof rawItem.section === "string" && rawItem.section.trim().length > 0 ? rawItem.section.trim() : null,
         bWare: isBWare,
+        inStock: rawItem.in_stock !== false,
         store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
