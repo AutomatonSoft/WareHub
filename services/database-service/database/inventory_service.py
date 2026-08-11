@@ -405,6 +405,7 @@ def build_inventory_rows() -> list[dict]:
                 "place": kid.place,
                 "section": kid.section,
                 "b_ware": bool(kid.b_ware),
+                "in_stock": bool(kid.in_stock),
                 "in_transit": bool(kid.in_transit),
                 "store": bool(kid.store),
                 "photo": normalize_managed_public_photo_value(kid.photo),

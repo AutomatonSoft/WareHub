@@ -68,6 +68,7 @@ const CRITICAL_SCORE_MAX =
 type CriticalInventorySourceRow = KidDto & {
   kid_account?: string | null;
   b_ware?: boolean | null;
+  in_stock?: boolean | null;
   in_transit?: boolean | null;
   commentary?: string | null;
   company?: string | null;
@@ -214,6 +215,7 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
     place: normalizePlaceValue(row.place),
     section: typeof row.section === "string" && row.section.trim() ? row.section.trim() : null,
     bWare: row.b_ware === true,
+    inStock: row.in_stock !== false,
     store: row.store === true,
     quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
     room: typeof row.room === "string" && row.room.trim() ? row.room.trim() : null,
