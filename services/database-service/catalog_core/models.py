@@ -33,7 +33,7 @@ class ImportedProduct(models.Model):
     ean = models.CharField(max_length=64, db_index=True)
     source_model = models.CharField(max_length=64, blank=True)
     source_sku = models.CharField(max_length=64, blank=True)
-    source_ean_field = models.CharField(max_length=14, blank=True)
+    source_ean_field = models.CharField(max_length=64, blank=True)
     price = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
     quantity = models.IntegerField(null=True, blank=True)
     status = models.BooleanField(default=False)

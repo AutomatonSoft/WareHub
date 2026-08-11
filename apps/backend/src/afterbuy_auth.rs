@@ -5,14 +5,17 @@ use crate::{
         extract_form_action, extract_form_fields, extract_form_method, extract_html_redirect_target,
     },
     afterbuy_support::{
-        extract_pending_federation_url_from_cookie, merge_cookie_headers, submit_form_request,
+        cookie_header_from_jar, extract_pending_federation_url_from_cookie, merge_cookie_headers,
+        submit_form_request,
     },
     internal_error, ErrorResponse,
 };
 
 pub(crate) async fn login_and_collect_cookie(
     client: &reqwest::Client,
+    cookie_jar: &reqwest::cookie::Jar,
     login_url: &str,
+    session_url: &str,
     login: &str,
     pass: &str,
 ) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
@@ -279,6 +282,10 @@ pub(crate) async fn login_and_collect_cookie(
             }
             break;
         }
+    }
+
+    if let Some(cookie_from_jar) = cookie_header_from_jar(cookie_jar, session_url) {
+        return Ok(cookie_from_jar);
     }
 
     if cookie.trim().is_empty() {

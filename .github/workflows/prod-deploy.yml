@@ -18,7 +18,8 @@ permissions:
   packages: write
 
 concurrency:
-  group: prod-deploy
+  # Mobile APK publication must not inspect a runtime while this deployment is in progress.
+  group: production-runtime-release
   cancel-in-progress: false
 
 jobs:
@@ -245,6 +246,22 @@ jobs:
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_WEBHOOK_SECRET_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          HOOD_API_BASE_URL_SECRET: ${{ secrets.HOOD_API_BASE_URL }}
+          HOOD_API_CONNECT_TIMEOUT_SECRET: ${{ secrets.HOOD_API_CONNECT_TIMEOUT }}
+          HOOD_API_READ_TIMEOUT_SECRET: ${{ secrets.HOOD_API_READ_TIMEOUT }}
+          HOOD_API_PATCH_ENDPOINT_SECRET: ${{ secrets.HOOD_API_PATCH_ENDPOINT }}
+          HOOD_LOGIN_SECRET: ${{ secrets.HOOD_LOGIN }}
+          HOOD_PASSWORD_SECRET: ${{ secrets.HOOD_PASSWORD }}
+          HOOD_FTP_HOST_SECRET: ${{ secrets.HOOD_FTP_HOST }}
+          HOOD_FTP_PORT_SECRET: ${{ secrets.HOOD_FTP_PORT }}
+          HOOD_FTP_USER_SECRET: ${{ secrets.HOOD_FTP_USER }}
+          HOOD_FTP_PASSWORD_SECRET: ${{ secrets.HOOD_FTP_PASSWORD }}
+          HOOD_FTP_BASE_DIR_SECRET: ${{ secrets.HOOD_FTP_BASE_DIR }}
+          HOOD_FTP_PUBLIC_BASE_URL_SECRET: ${{ secrets.HOOD_FTP_PUBLIC_BASE_URL }}
+          HOOD_FTP_USE_TLS_SECRET: ${{ secrets.HOOD_FTP_USE_TLS }}
+          HOOD_FTP_PASSIVE_SECRET: ${{ secrets.HOOD_FTP_PASSIVE }}
+          HOOD_FTP_CONNECT_TIMEOUT_SECRET: ${{ secrets.HOOD_FTP_CONNECT_TIMEOUT }}
+          HOOD_VALIDATE_UPLOADED_IMAGE_URLS_SECRET: ${{ secrets.HOOD_VALIDATE_UPLOADED_IMAGE_URLS }}
           PROD_MONGO_USER_SECRET: ${{ secrets.PROD_MONGO_USER }}
           PROD_MONGO_PASSWORD_SECRET: ${{ secrets.PROD_MONGO_PASSWORD }}
           PROD_MONGO_DATABASE_SECRET: ${{ secrets.PROD_MONGO_DATABASE }}
@@ -271,6 +288,22 @@ jobs:
             printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "${TELEGRAM_WEBHOOK_SECRET_SECRET:-}"
             printf 'TELEGRAM_WEBHOOK_PATH=%s\n' "${TELEGRAM_WEBHOOK_PATH_VALUE:-}"
+            printf 'HOOD_API_BASE_URL=%s\n' "${HOOD_API_BASE_URL_SECRET:-}"
+            printf 'HOOD_API_CONNECT_TIMEOUT=%s\n' "${HOOD_API_CONNECT_TIMEOUT_SECRET:-}"
+            printf 'HOOD_API_READ_TIMEOUT=%s\n' "${HOOD_API_READ_TIMEOUT_SECRET:-}"
+            printf 'HOOD_API_PATCH_ENDPOINT=%s\n' "${HOOD_API_PATCH_ENDPOINT_SECRET:-}"
+            printf 'HOOD_LOGIN=%s\n' "${HOOD_LOGIN_SECRET:-}"
+            printf 'HOOD_PASSWORD=%s\n' "${HOOD_PASSWORD_SECRET:-}"
+            printf 'HOOD_FTP_HOST=%s\n' "${HOOD_FTP_HOST_SECRET:-}"
+            printf 'HOOD_FTP_PORT=%s\n' "${HOOD_FTP_PORT_SECRET:-}"
+            printf 'HOOD_FTP_USER=%s\n' "${HOOD_FTP_USER_SECRET:-}"
+            printf 'HOOD_FTP_PASSWORD=%s\n' "${HOOD_FTP_PASSWORD_SECRET:-}"
+            printf 'HOOD_FTP_BASE_DIR=%s\n' "${HOOD_FTP_BASE_DIR_SECRET:-}"
+            printf 'HOOD_FTP_PUBLIC_BASE_URL=%s\n' "${HOOD_FTP_PUBLIC_BASE_URL_SECRET:-}"
+            printf 'HOOD_FTP_USE_TLS=%s\n' "${HOOD_FTP_USE_TLS_SECRET:-}"
+            printf 'HOOD_FTP_PASSIVE=%s\n' "${HOOD_FTP_PASSIVE_SECRET:-}"
+            printf 'HOOD_FTP_CONNECT_TIMEOUT=%s\n' "${HOOD_FTP_CONNECT_TIMEOUT_SECRET:-}"
+            printf 'HOOD_VALIDATE_UPLOADED_IMAGE_URLS=%s\n' "${HOOD_VALIDATE_UPLOADED_IMAGE_URLS_SECRET:-}"
             printf 'PROD_MONGO_USER=%s\n' "${PROD_MONGO_USER_SECRET:-}"
             printf 'PROD_MONGO_PASSWORD=%s\n' "${PROD_MONGO_PASSWORD_SECRET:-}"
             printf 'PROD_MONGO_DATABASE=%s\n' "${PROD_MONGO_DATABASE_SECRET:-}"

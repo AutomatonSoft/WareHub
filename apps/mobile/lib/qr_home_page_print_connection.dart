@@ -281,6 +281,24 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
     }
   }
 
+  // isConnected() only reflects that connect() once succeeded and close()
+  // hasn't been called since - Android doesn't notice a silent remote
+  // disconnect until the next read/write, so it can lie and say "connected"
+  // long after the printer is gone. getPrinterStatus() sends a real command
+  // over the link, so it actually fails when the connection is dead.
+  Future<bool> _probePrinterConnectionLive() async {
+    try {
+      final bool cachedConnected = await _printer.isConnected();
+      if (!cachedConnected) {
+        return false;
+      }
+      final PrinterOperationResult status = await _printer.getPrinterStatus();
+      return status.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _refreshPrinterConnectionStatus() async {
     try {
       final bool connected = await _printer.isConnected();
@@ -304,6 +322,17 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
       _connectingPrinter = true;
     });
     try {
+      if (await _probePrinterConnectionLive()) {
+        if (!mounted) return;
+        setState(() {
+          _printerConnected = true;
+        });
+        _showMessage(_strings.text('printer_connected_message'));
+        return;
+      }
+      // Any cached session is stale/dead at this point - drop it so the
+      // reconnect flow below opens a fresh socket instead of reusing it.
+      await _printer.disconnect();
       await _ensureNimbotConnection();
       if (!mounted) return;
       setState(() {

@@ -79,6 +79,7 @@ export function KauflandSearchPanel() {
   const [site, setSite] = useState<KauflandSite>("xl");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notFoundMessage, setNotFoundMessage] = useState<string | null>(null);
   const [result, setResult] = useState<KauflandResponse | null>(null);
   const [changeLoading, setChangeLoading] = useState(false);
   const [changeStatus, setChangeStatus] = useState<string | null>(null);
@@ -132,6 +133,7 @@ export function KauflandSearchPanel() {
 
     setLoading(true);
     setError(null);
+    setNotFoundMessage(null);
     setResult(null);
     setChangeStatus(null);
     setChangeResult(null);
@@ -139,6 +141,12 @@ export function KauflandSearchPanel() {
     try {
       const { response, payload } = await searchMutation.mutateAsync({ ean: normalizedEan, site });
       if (!response.ok) {
+        if (payload.error === "kaufland_product_not_found") {
+          setNotFoundMessage(
+            t.kauflandProductNotFound.replace("{ean}", normalizedEan).replace("{controller}", site.toUpperCase())
+          );
+          return;
+        }
         throw new Error(payload.detail || buildRequestFailedStatusMessage(response.status));
       }
 
@@ -321,7 +329,8 @@ export function KauflandSearchPanel() {
       <KauflandSearchCard ean={ean} site={site} loading={loading} onSetEan={setEan} onSetSite={setSite} onSubmit={handleSearch} />
       {loading ? <KauflandLoadingState /> : null}
       {error ? <KauflandErrorState title={t.kauflandRequestFailed} description={error} /> : null}
-      {!loading && !error && !result ? <KauflandEmptyState title={t.kauflandNoResponseYet} description={t.kauflandSearchByEanHint} /> : null}
+      {notFoundMessage ? <KauflandEmptyState title={t.kauflandProductNotFoundTitle} description={notFoundMessage} /> : null}
+      {!loading && !error && !notFoundMessage && !result ? <KauflandEmptyState title={t.kauflandNoResponseYet} description={t.kauflandSearchByEanHint} /> : null}
       {result ? <KauflandResponseCard title={t.kauflandResponse} payload={result} /> : null}
       <KauflandCreateCard form={createForm} loading={createLoading} onSetForm={setCreateForm} onSubmit={handleCreateProduct} />
       <KauflandUpdateCard form={changeForm} loading={changeLoading} onSetForm={setChangeForm} onSubmit={handleChangeProduct} />

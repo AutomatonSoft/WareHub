@@ -146,7 +146,7 @@ fn default_dto() -> PrinterSetupSettingsDto {
         print_width_px: 384,
         print_height_px: 640,
         print_density: 5,
-        print_label_type: 1,
+        print_label_type: 0,
         print_inter_label_delay_ms: 120,
         print_preview_only: false,
     }
@@ -166,7 +166,12 @@ fn internal_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_payload, UpdatePrinterSetupSettingsRequest};
+    use super::{default_dto, validate_payload, UpdatePrinterSetupSettingsRequest};
+
+    #[test]
+    fn default_settings_use_rfid_label_type_auto_detection() {
+        assert_eq!(default_dto().print_label_type, 0);
+    }
 
     #[test]
     fn validate_payload_accepts_valid_values() {

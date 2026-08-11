@@ -178,6 +178,11 @@ internal class B1ProtocolAdapter(
         if (printEndFrame.payload.firstOrNull()?.toInt() != 1) {
             throw PrinterException.PrintTaskFailed("Printer did not acknowledge printEnd.")
         }
+        // An acknowledgement means the printer accepted the command, not that
+        // it completed the physical print. B1 can report media errors only
+        // after the motor starts, so wait for its terminal status before
+        // reporting success to Flutter.
+        statusMonitor.waitUntilDone(totalPages = 1)
         logger.debug(
             "PRINT",
             "raster send stats bitmapRows=$bitmapRowsSent emptyRowsAs84=$emptyRowsSentAs84 emptyRowsAs85=$emptyRowsSentAs85",

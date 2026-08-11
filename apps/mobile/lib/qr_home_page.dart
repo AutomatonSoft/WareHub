@@ -85,7 +85,7 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   int _printWidthPx = 384;
   int _printHeightPx = 640;
   int _printDensity = 5;
-  int _printLabelType = 1;
+  int _printLabelType = 0;
   int _printInterLabelDelayMs = 120;
   bool _previewOnlyMode = false;
   double _labelQrScale = 0.78;

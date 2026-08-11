@@ -90,6 +90,30 @@ if ([string]::IsNullOrWhiteSpace($GitHubEnvironment)) {
 }
 
 $sourceEntries = Get-EnvEntries -Path $SourceEnvFile
+$scopedVersionMappings = @{
+  stage = @{
+    BACKEND_STAGE_TAG = 'STAGE_BACKEND_APP_VERSION'
+    FRONTEND_STAGE_TAG = 'STAGE_FRONTEND_APP_VERSION'
+    SERVICES_STAGE_TAG = 'STAGE_SERVICES_APP_VERSION'
+    MOBILE_STAGE_TAG = 'STAGE_MOBILE_APP_VERSION'
+    ORCHESTRATOR_STAGE_TAG = 'STAGE_ORCHESTRATOR_APP_VERSION'
+  }
+  prod = @{
+    BACKEND_APP_VERSION = 'PROD_BACKEND_APP_VERSION'
+    FRONTEND_APP_VERSION = 'PROD_FRONTEND_APP_VERSION'
+    SERVICES_APP_VERSION = 'PROD_SERVICES_APP_VERSION'
+    MOBILE_APP_VERSION = 'PROD_MOBILE_APP_VERSION'
+    ORCHESTRATOR_APP_VERSION = 'PROD_ORCHESTRATOR_APP_VERSION'
+  }
+}
+
+foreach ($targetKey in $scopedVersionMappings[$Environment].Keys) {
+  $sourceKey = $scopedVersionMappings[$Environment][$targetKey]
+  if ($sourceEntries.Contains($sourceKey)) {
+    $sourceEntries[$targetKey] = $sourceEntries[$sourceKey]
+  }
+}
+
 $templateEntries = Get-EnvEntries -Path $templatePath
 $overrideEntries = [ordered]@{}
 
