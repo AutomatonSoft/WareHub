@@ -1298,6 +1298,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
                 _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
+            InventoryChangeLog.objects.filter(kid=instance).update(kid=None)
             instance.delete()
 
 
