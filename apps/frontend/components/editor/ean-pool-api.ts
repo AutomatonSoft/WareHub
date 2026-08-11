@@ -1,3 +1,5 @@
+import { DEFAULT_INVENTORY_WORKSPACE, type InventoryWorkspace } from "../inventory/inventory-api";
+
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -8,6 +10,11 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   }
 }
 
+function withInventoryWorkspace(path: string, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}workspace=${encodeURIComponent(workspace)}`;
+}
+
 function parseEanFromPayload(payload: Record<string, unknown> | null): string | null {
   if (!payload) {
     return null;
@@ -16,8 +23,8 @@ function parseEanFromPayload(payload: Record<string, unknown> | null): string | 
   return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }
 
-export async function fetchEanPoolStatsCount(): Promise<number | null> {
-  const response = await fetchWithTimeout("/api/v1/services/ean-pool/stats/", { credentials: "include", cache: "no-store" }, 6000);
+export async function fetchEanPoolStatsCount(workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<number | null> {
+  const response = await fetchWithTimeout(withInventoryWorkspace("/api/v1/services/ean-pool/stats/", workspace), { credentials: "include", cache: "no-store" }, 6000);
   if (response.ok) {
     const payload = (await response.json()) as Record<string, unknown>;
     const totalRaw =
@@ -34,13 +41,13 @@ export async function fetchEanPoolStatsCount(): Promise<number | null> {
   return null;
 }
 
-export async function importEansToPool(eans: string[]): Promise<{
+export async function importEansToPool(eans: string[], workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<{
   response: Response;
   importedCount: number;
   errorText: string;
 }> {
   const response = await fetchWithTimeout(
-    "/api/v1/services/ean-pool/import/",
+    withInventoryWorkspace("/api/v1/services/ean-pool/import/", workspace),
     {
       method: "POST",
       credentials: "include",
@@ -68,9 +75,9 @@ export async function importEansToPool(eans: string[]): Promise<{
   return { response, importedCount, errorText: "" };
 }
 
-export async function reserveEan(ean: string): Promise<{ response: Response; errorText: string }> {
+export async function reserveEan(ean: string, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<{ response: Response; errorText: string }> {
   const response = await fetchWithTimeout(
-    "/api/v1/services/ean-pool/reserve/",
+    withInventoryWorkspace("/api/v1/services/ean-pool/reserve/", workspace),
     {
       method: "POST",
       credentials: "include",
@@ -85,9 +92,9 @@ export async function reserveEan(ean: string): Promise<{ response: Response; err
   return { response, errorText: await response.text() };
 }
 
-export async function takeNextFreeEan(): Promise<{ response: Response; ean: string | null; errorText: string }> {
+export async function takeNextFreeEan(workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<{ response: Response; ean: string | null; errorText: string }> {
   const response = await fetchWithTimeout(
-    "/api/v1/services/ean-pool/take-next-free/",
+    withInventoryWorkspace("/api/v1/services/ean-pool/take-next-free/", workspace),
     {
       method: "POST",
       credentials: "include",
@@ -106,9 +113,10 @@ export async function takeNextFreeEan(): Promise<{ response: Response; ean: stri
 export async function claimEanForKid(input: {
   kidNumber: string;
   reservationFamily: "jv" | "xl";
+  workspace?: InventoryWorkspace;
 }): Promise<{ response: Response; ean: string | null; errorText: string }> {
   const response = await fetchWithTimeout(
-    "/api/v1/services/ean-pool/claim-for-job/",
+    withInventoryWorkspace("/api/v1/services/ean-pool/claim-for-job/", input.workspace),
     {
       method: "POST",
       credentials: "include",

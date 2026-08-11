@@ -36,6 +36,7 @@ class SqliteMarketplaceJobStore:
                     kid_number TEXT NOT NULL,
                     inactive INTEGER NOT NULL,
                     place TEXT NULL,
+                    workspace TEXT NOT NULL DEFAULT 'sofort',
                     actor_login TEXT NULL,
                     actor_name TEXT NULL,
                     status TEXT NOT NULL,
@@ -50,6 +51,8 @@ class SqliteMarketplaceJobStore:
             columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(marketplace_toggle_jobs)").fetchall()}
             if "place" not in columns:
                 conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN place TEXT NULL")
+            if "workspace" not in columns:
+                conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN workspace TEXT NOT NULL DEFAULT 'sofort'")
             if "actor_login" not in columns:
                 conn.execute("ALTER TABLE marketplace_toggle_jobs ADD COLUMN actor_login TEXT NULL")
             if "actor_name" not in columns:
@@ -65,6 +68,7 @@ class SqliteMarketplaceJobStore:
         kid_number: str,
         inactive: bool,
         place: str | None = None,
+        workspace: str = "sofort",
         actor_login: str | None = None,
         actor_name: str | None = None,
     ) -> None:
@@ -73,10 +77,10 @@ class SqliteMarketplaceJobStore:
             conn.execute(
                 """
                 INSERT INTO marketplace_toggle_jobs (
-                    job_id, request_id, kid_number, inactive, place, actor_login, actor_name, status, result_status, result_json, error_json, created_at_unix_ms, updated_at_unix_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                    job_id, request_id, kid_number, inactive, place, workspace, actor_login, actor_name, status, result_status, result_json, error_json, created_at_unix_ms, updated_at_unix_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
                 """,
-                (job_id, request_id, kid_number, 1 if inactive else 0, place, actor_login, actor_name, JobStatus.QUEUED.value, now, now),
+                (job_id, request_id, kid_number, 1 if inactive else 0, place, workspace, actor_login, actor_name, JobStatus.QUEUED.value, now, now),
             )
             conn.commit()
 
@@ -84,7 +88,7 @@ class SqliteMarketplaceJobStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT job_id, request_id, kid_number, inactive, place, actor_login, actor_name
+                SELECT job_id, request_id, kid_number, inactive, place, workspace, actor_login, actor_name
                 FROM marketplace_toggle_jobs
                 WHERE status = ?
                 ORDER BY created_at_unix_ms ASC
@@ -109,8 +113,9 @@ class SqliteMarketplaceJobStore:
             "kid_number": str(row[2]),
             "inactive": bool(row[3]),
             "place": str(row[4]).strip() if row[4] is not None else None,
-            "actor_login": str(row[5]).strip() if row[5] is not None else "",
-            "actor_name": str(row[6]).strip() if row[6] is not None else "",
+            "workspace": str(row[5]).strip() or "sofort",
+            "actor_login": str(row[6]).strip() if row[6] is not None else "",
+            "actor_name": str(row[7]).strip() if row[7] is not None else "",
         }
 
     def mark_completed(self, *, job_id: str, result: MarketplaceToggleExecutionResult) -> None:
@@ -149,7 +154,7 @@ class SqliteMarketplaceJobStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT job_id, request_id, kid_number, inactive, status, result_status, result_json, error_json
+                SELECT job_id, request_id, kid_number, inactive, workspace, status, result_status, result_json, error_json
                 FROM marketplace_toggle_jobs
                 WHERE job_id = ?
                 """,
@@ -159,10 +164,10 @@ class SqliteMarketplaceJobStore:
         if row is None:
             return None
 
-        result = MarketplaceToggleExecutionResult(**json.loads(row[6])) if row[6] else None
-        error = ErrorContract(**json.loads(row[7])) if row[7] else None
-        job_status = JobStatus(row[4])
-        external_status = str(row[5] or "").strip().lower()
+        result = MarketplaceToggleExecutionResult(**json.loads(row[7])) if row[7] else None
+        error = ErrorContract(**json.loads(row[8])) if row[8] else None
+        job_status = JobStatus(row[5])
+        external_status = str(row[6] or "").strip().lower()
         if job_status is JobStatus.QUEUED:
             status_value: str = "queued"
         elif job_status is JobStatus.RUNNING:
@@ -177,6 +182,7 @@ class SqliteMarketplaceJobStore:
             request_id=str(row[1]),
             kid_number=str(row[2]),
             inactive=bool(row[3]),
+            workspace=str(row[4]).strip() or "sofort",
             job_status=job_status,
             status=status_value,  # type: ignore[arg-type]
             summary=result.summary if result is not None else None,

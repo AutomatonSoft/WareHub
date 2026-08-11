@@ -50,6 +50,7 @@ class Kid(Model):
     commentary = TextField(null=True, blank=True)
     section = CharField(max_length=1, null=True, blank=True)
     in_transit = BooleanField(default=False)
+    in_stock = BooleanField(default=True)
 
     def save(self, *args, **kwargs):
         self.kid_number = normalize_kid_numbers(self.kid_number)

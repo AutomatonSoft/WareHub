@@ -12,7 +12,13 @@ import { Card, CardContent } from "../ui/card";
 import { ErrorState } from "../ui/error-state";
 import { AddProductButton } from "./add-item-button";
 import { ImportKidGreenButton } from "./import-kid-green-button";
-import { deleteInventoryEntity, fetchInventoryFilterOptions, fetchInventoryRows } from "./inventory-api";
+import {
+  DEFAULT_INVENTORY_WORKSPACE,
+  deleteInventoryEntity,
+  fetchInventoryFilterOptions,
+  fetchInventoryRows,
+  type InventoryWorkspace,
+} from "./inventory-api";
 import { getPrimaryPhoto, normalizePhotoList, normalizePlaceValue } from "./inventory-table-utils";
 import { resolveMarketplaceActive } from "./sofort-list/sofort-list-jv-status";
 import { SofortListEmptyState } from "./sofort-list/sofort-list-empty-state";
@@ -67,7 +73,7 @@ function displayNullable(value: string | null): string {
   return normalized.length > 0 ? normalized : "null";
 }
 
-export function SofortListTable() {
+export function SofortListTable({ workspace = DEFAULT_INVENTORY_WORKSPACE }: { workspace?: InventoryWorkspace }) {
   const t = useLabels();
   const { showToast } = useToast();
   const pathname = usePathname();
@@ -194,6 +200,7 @@ export function SofortListTable() {
   const sofortListQuery = useQuery({
     queryKey: [
       "sofort-list-rows",
+      workspace,
       backendPage,
       backendPageSize,
       normalizedServerQuery,
@@ -212,6 +219,7 @@ export function SofortListTable() {
     ],
     queryFn: () =>
       fetchInventoryRows({
+        workspace,
         page: backendPage,
         pageSize: backendPageSize,
         q: normalizedServerQuery || undefined,
@@ -232,8 +240,8 @@ export function SofortListTable() {
   });
 
   const filterOptionsQuery = useQuery({
-    queryKey: ["sofort-list-filter-options"],
-    queryFn: fetchInventoryFilterOptions,
+    queryKey: ["sofort-list-filter-options", workspace],
+    queryFn: () => fetchInventoryFilterOptions(workspace),
     staleTime: 60_000,
   });
 
@@ -569,7 +577,7 @@ export function SofortListTable() {
     setDeletingSelected(true);
     try {
       const results = await Promise.allSettled(
-        selectedRows.map((row) => deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId }))
+        selectedRows.map((row) => deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId, workspace }))
       );
       const failed = results.filter((result) => result.status === "rejected");
 
@@ -603,8 +611,8 @@ export function SofortListTable() {
             searchPlaceholder={t.searchSofortPlaceholder}
             primaryAction={
               <div className="flex flex-wrap items-center gap-2">
-                <ImportKidGreenButton onImported={() => sofortListQuery.refetch()} />
-                <AddProductButton onCreated={() => sofortListQuery.refetch()} />
+                <ImportKidGreenButton workspace={workspace} onImported={() => sofortListQuery.refetch()} />
+                <AddProductButton workspace={workspace} onCreated={() => sofortListQuery.refetch()} />
               </div>
             }
             trailingAction={
@@ -717,6 +725,7 @@ export function SofortListTable() {
           ) : (
             <>
               <SofortListTableShell
+                workspace={workspace}
                 rows={sortedRows}
                 query={query}
                 placeholderEan={placeholderEan}

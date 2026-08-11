@@ -53,7 +53,7 @@ test("i18n dictionaries: key parity and snapshot", async () => {
   const enSet = new Set(enKeys);
 
   assert.equal(enSet.size, enKeys.length, "EN dictionary contains duplicate keys");
-  assert.equal(enSet.size, 1962, "Unexpected EN key count: dictionary shape changed");
+  assert.equal(enSet.size, 1964, "Unexpected EN key count: dictionary shape changed");
 
   for (const lang of ["ru", "de"]) {
     const entries = byLang.get(lang);
@@ -73,7 +73,7 @@ test("i18n dictionaries: key parity and snapshot", async () => {
   const snapshot = digest(concatenated);
   assert.equal(
     snapshot,
-    "b334451e8f776147ef24b7351b1ffd1aad39efcfeb653969fafa50255ab6bbc3",
+    "a47b54a56335cd1aeb3c5250a4c2e92a6deec147cf723597b7a7ef2aa08a9eb4",
     "i18n dictionary snapshot changed; review and update expected hash intentionally"
   );
 });

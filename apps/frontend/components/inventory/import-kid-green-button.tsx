@@ -6,15 +6,16 @@ import { createPortal } from "react-dom";
 import { useLabels } from "../../app/use-labels";
 import { useToast } from "../shared/toast-provider";
 import { Button } from "../ui/button";
-import { importKidGreenFile, type KidGreenImportProgressEvent } from "./inventory-api";
+import { importKidGreenFile, type InventoryWorkspace, type KidGreenImportProgressEvent } from "./inventory-api";
 
 const DEFAULT_WORKERS = 5;
 
 type ImportKidGreenButtonProps = {
   onImported?: () => Promise<unknown> | unknown;
+  workspace?: InventoryWorkspace;
 };
 
-export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) {
+export function ImportKidGreenButton({ onImported, workspace }: ImportKidGreenButtonProps) {
   const t = useLabels();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -108,6 +109,7 @@ export function ImportKidGreenButton({ onImported }: ImportKidGreenButtonProps) 
     try {
       const result = await importKidGreenFile(file, {
         workers: DEFAULT_WORKERS,
+        workspace,
         onUploadProgress: (percent) => {
           const scaledPercent = Math.max(1, Math.min(18, Math.round((percent / 90) * 18)));
           setProgressPercent(scaledPercent);

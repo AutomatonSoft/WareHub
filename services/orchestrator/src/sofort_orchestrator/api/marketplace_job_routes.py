@@ -85,10 +85,16 @@ def create_marketplace_toggle_job(
         kid_number=kid_number,
         inactive=body.inactive,
         place=place or None,
+        workspace=body.workspace,
         actor_login=(x_warehub_actor_login or "").strip() or None,
         actor_name=(x_warehub_actor_name or "").strip() or None,
     )
-    return MarketplaceToggleCreateResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED)
+    return MarketplaceToggleCreateResponse(
+        job_id=job_id,
+        request_id=request_id,
+        status=JobStatus.QUEUED,
+        workspace=body.workspace,
+    )
 
 
 @router.get("/api/v1/orchestrator/marketplace/jobs/{job_id}")

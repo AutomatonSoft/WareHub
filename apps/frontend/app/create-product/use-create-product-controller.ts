@@ -62,6 +62,7 @@ import {
   type CreateProductJvSourceSnapshot,
   type CreateProductKidContext,
 } from "./create-product-source-api";
+import { DEFAULT_INVENTORY_WORKSPACE, type InventoryWorkspace } from "../../components/inventory/inventory-api";
 
 type Labels = Record<string, string>;
 
@@ -196,6 +197,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
   const sourceKidId = Number.parseInt(sourceKidParam, 10);
+  const inventoryWorkspace = (searchParams.get("workspace") === "benim_depom"
+    ? "benim_depom"
+    : DEFAULT_INVENTORY_WORKSPACE) as InventoryWorkspace;
 
   const applySourceSnapshot = useCallback((snapshot: CreateProductJvSourceSnapshot, mainEan: string, site: CreateProductSourceSiteKind) => {
     setSourceSnapshot(snapshot);
@@ -261,7 +265,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setKidContextLoading(true);
     setKidContextError(null);
 
-    void fetchCreateProductKidContext(sourceKidId)
+    void fetchCreateProductKidContext(sourceKidId, inventoryWorkspace)
       .then((context) => {
         if (!active) return;
         setKidContext(context);
@@ -280,7 +284,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [showToast, sourceKidId, t.failedLoadKidContext]);
+  }, [inventoryWorkspace, showToast, sourceKidId, t.failedLoadKidContext]);
 
   useEffect(() => {
     if (!kidContext?.mainEan) {
@@ -845,6 +849,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         hoodPayload,
         kauflandPayload,
         ottoPayload,
+        workspace: inventoryWorkspace,
       });
       setLatestJobId(created.jobId);
       showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");

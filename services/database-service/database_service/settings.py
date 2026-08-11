@@ -70,6 +70,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'database_service.inventory_workspace_middleware.InventoryWorkspaceMiddleware',
     'database_service.observability.RequestLogContextMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -182,6 +183,15 @@ elif _database_url_config:
     _derived_ean_map = dict(_database_url_config)
     _derived_ean_map["NAME"] = os.getenv("EAN_MAP_DATABASE_NAME", "sofortbot_ean_map")
     DATABASES["ean_map"] = _derived_ean_map
+
+
+_benim_depom_database_url = (os.getenv("BENIM_DEPOM_DATABASE_URL") or "").strip()
+_benim_depom_database_config = _db_config_from_url(_benim_depom_database_url) if _benim_depom_database_url else None
+
+if _benim_depom_database_config:
+    DATABASES["benim_depom"] = _benim_depom_database_config
+
+DATABASE_ROUTERS = ["database.db_router.InventoryWorkspaceDatabaseRouter"]
 
 
 # Password validation

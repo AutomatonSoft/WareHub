@@ -20,6 +20,7 @@ class MarketplaceJobService:
         inactive: bool,
         request_id: str,
         place: str | None = None,
+        workspace: str = "sofort",
         actor_login: str = "",
         actor_name: str = "",
     ) -> MarketplaceToggleExecutionResult:
@@ -35,6 +36,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    workspace=workspace,
                     **actor_kwargs,
                 ),
             )
@@ -49,6 +51,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    workspace=workspace,
                     **actor_kwargs,
                 ),
             )
@@ -63,6 +66,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    workspace=workspace,
                     **actor_kwargs,
                 ),
             )
@@ -77,6 +81,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    workspace=workspace,
                     **actor_kwargs,
                 ),
             )
@@ -91,6 +96,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    workspace=workspace,
                 ),
             )
         )
@@ -103,6 +109,7 @@ class MarketplaceJobService:
                     kid_number=kid_number,
                     inactive=inactive,
                     request_id=request_id,
+                    workspace=workspace,
                     **actor_kwargs,
                 ),
             )
