@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 
 import { AppShell } from "../../components/layout/app-shell";
 import { allMarketplaceSites, type SiteFamily } from "../../lib/marketplace-sites";
@@ -1117,6 +1118,8 @@ async function galleryItemToFile(item: GalleryItem, index: number, t: Record<str
 export default function CreateProductPage() {
   const t = useLabels();
   const { showToast } = useToast();
+  const searchParams = useSearchParams();
+  const inventoryWorkspace = searchParams.get("workspace") === "benim_depom" ? "benim_depom" : "sofort";
   const [activeTab, setActiveTab] = useState<CreateProductTab>("jv");
   const [isPublishSitesDialogOpen, setIsPublishSitesDialogOpen] = useState(false);
   const [selectedPublishSiteIds, setSelectedPublishSiteIds] = useState<Set<string>>(new Set());
@@ -1613,7 +1616,7 @@ export default function CreateProductPage() {
     }
 
     let active = true;
-    void claimEanForKid({ kidNumber, reservationFamily: activeReservationFamily })
+    void claimEanForKid({ kidNumber, reservationFamily: activeReservationFamily, workspace: inventoryWorkspace })
       .then(({ ean, errorText }) => {
         if (!active) return;
         if (!ean) {
@@ -1657,7 +1660,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeReservationFamily, controller.kidContext?.kidNumber, showToast]);
+  }, [activeReservationFamily, controller.kidContext?.kidNumber, inventoryWorkspace, showToast]);
 
   useEffect(() => {
     if (activeTabMeta.sourceSite !== "JV" || !controller.sourceSnapshot?.rawPayload) {
@@ -2910,7 +2913,7 @@ export default function CreateProductPage() {
           </div>
 
           <div className="flex min-h-10 items-center justify-end gap-3">
-            <CreateProductEanPoolPanel />
+            <CreateProductEanPoolPanel workspace={inventoryWorkspace} />
             <button
               type="button"
               onClick={openPublishSitesDialog}

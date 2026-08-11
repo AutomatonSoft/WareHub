@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from django.db import transaction
-
 from .models import Ean, EanStatus, Kid
+from .workspace import workspace_atomic
 
 
 class MarketplaceEanMappingError(ValueError):
@@ -39,7 +38,7 @@ def confirm_marketplace_ean_mapping(
     if field_name is None:
         raise MarketplaceEanMappingError("Unsupported marketplace/account mapping.")
 
-    with transaction.atomic():
+    with workspace_atomic():
         kid = (
             Kid.objects.select_for_update()
             .filter(kid_number__contains=[normalized_kid_number])

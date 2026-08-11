@@ -23,10 +23,13 @@ class MarketplaceEanMappingGateway:
         marketplace: str,
         account: str,
         ean: str,
+        workspace: str = "sofort",
     ) -> dict[str, Any]:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
+        if workspace == "benim_depom":
+            headers["X-WareHub-Inventory-Workspace"] = workspace
         response = self.http.request(
             "POST",
             f"{self.base_url}/api/v1/marketplace/ean-mappings/confirm/",

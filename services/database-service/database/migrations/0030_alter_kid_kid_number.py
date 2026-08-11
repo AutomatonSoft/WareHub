@@ -5,7 +5,8 @@ from django.db import migrations, models
 
 def _forward_normalize_kid_numbers(apps, schema_editor):
     Kid = apps.get_model("database", "Kid")
-    for kid in Kid.objects.all().iterator():
+    db_alias = schema_editor.connection.alias
+    for kid in Kid.objects.using(db_alias).all().iterator():
         value = kid.kid_number
         if value is None:
             normalized = []
@@ -25,12 +26,13 @@ def _forward_normalize_kid_numbers(apps, schema_editor):
             normalized = [item_str] if item_str else []
         if value != normalized:
             kid.kid_number = normalized
-            kid.save(update_fields=["kid_number"])
+            kid.save(using=db_alias, update_fields=["kid_number"])
 
 
 def _backward_normalize_kid_numbers(apps, schema_editor):
     Kid = apps.get_model("database", "Kid")
-    for kid in Kid.objects.all().iterator():
+    db_alias = schema_editor.connection.alias
+    for kid in Kid.objects.using(db_alias).all().iterator():
         value = kid.kid_number
         if isinstance(value, list):
             normalized = str(value[0]).strip() if value else ""
@@ -40,7 +42,7 @@ def _backward_normalize_kid_numbers(apps, schema_editor):
             normalized = str(value).strip()
         if value != normalized:
             kid.kid_number = normalized
-            kid.save(update_fields=["kid_number"])
+            kid.save(using=db_alias, update_fields=["kid_number"])
 
 
 class Migration(migrations.Migration):

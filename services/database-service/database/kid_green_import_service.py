@@ -12,11 +12,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Callable
 
 import requests
-from django.db import transaction
 
 from afterbuy_service.contracts import AfterbuyLookupResult
 from afterbuy_service.sync import AfterbuyKidSyncService
 from .models import Ean, EanStatus, Kid, Orders, ProductAttributes
+from .workspace import workspace_atomic
 from .place_rules import find_place_conflict, normalize_place, suggest_next_free_base_place
 from orders_pars.service import (
     collapse_items_to_orders,
@@ -356,7 +356,7 @@ def upsert_kids(payloads: dict[tuple[str, str], KidPayload]) -> tuple[dict[str, 
             if find_place_conflict(target_place) is not None:
                 skipped += 1
                 continue
-            with transaction.atomic():
+            with workspace_atomic():
                 kid = Kid.objects.create(
                     kid_number=[kid_number],
                     place=target_place or "",

@@ -19,8 +19,9 @@ EAN_FIELDS = (
 
 def nullify_placeholder_eans(apps, schema_editor):
     Ean = apps.get_model("database", "Ean")
+    db_alias = schema_editor.connection.alias
 
-    for ean_row in Ean.objects.all().iterator():
+    for ean_row in Ean.objects.using(db_alias).all().iterator():
         update_fields: list[str] = []
         for field_name in EAN_FIELDS:
             current_value = getattr(ean_row, field_name, None)
@@ -30,7 +31,7 @@ def nullify_placeholder_eans(apps, schema_editor):
                     setattr(ean_row, field_name, None)
                     update_fields.append(field_name)
         if update_fields:
-            ean_row.save(update_fields=update_fields)
+            ean_row.save(using=db_alias, update_fields=update_fields)
 
 
 class Migration(migrations.Migration):

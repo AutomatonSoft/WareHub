@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 def delete_orders_without_kid(apps, schema_editor):
     Orders = apps.get_model("database", "Orders")
-    Orders.objects.filter(kid__isnull=True).delete()
+    Orders.objects.using(schema_editor.connection.alias).filter(kid__isnull=True).delete()
 
 
 class Migration(migrations.Migration):

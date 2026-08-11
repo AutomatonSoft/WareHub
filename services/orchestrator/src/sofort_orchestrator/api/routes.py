@@ -155,8 +155,7 @@ def orchestrate_update(
     return payload
 
 
-@router.post("/api/v1/orchestrator/jobs")
-def create_orchestrator_job(
+def _queue_orchestrator_job(
     body: CreateJobRequest,
     request: Request,
     response: Response,
@@ -164,7 +163,10 @@ def create_orchestrator_job(
     idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store),
     x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    workspace: str | None = None,
 ):
+    if workspace is not None:
+        body = body.model_copy(update={"command": body.command.model_copy(update={"workspace": workspace})})
     request_id = getattr(request.state, "request_id", x_request_id or str(uuid.uuid4()))
     response.headers["X-Request-Id"] = request_id
     replay_key = _single_replay_key(idempotency_key=idempotency_key, body=body)
@@ -216,6 +218,49 @@ def create_orchestrator_job(
     if replay_key is not None:
         idempotency_store.put(replay_key, payload)
     return payload
+
+
+@router.post("/api/v1/orchestrator/jobs")
+def create_orchestrator_job(
+    body: CreateJobRequest,
+    request: Request,
+    response: Response,
+    job_store: SqliteJobStore = Depends(get_job_store),
+    idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store),
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return _queue_orchestrator_job(
+        body=body,
+        request=request,
+        response=response,
+        job_store=job_store,
+        idempotency_store=idempotency_store,
+        x_request_id=x_request_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post("/api/v1/orchestrator/benim-depom/jobs")
+def create_benim_depom_orchestrator_job(
+    body: CreateJobRequest,
+    request: Request,
+    response: Response,
+    job_store: SqliteJobStore = Depends(get_job_store),
+    idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store),
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return _queue_orchestrator_job(
+        body=body,
+        request=request,
+        response=response,
+        job_store=job_store,
+        idempotency_store=idempotency_store,
+        x_request_id=x_request_id,
+        idempotency_key=idempotency_key,
+        workspace="benim_depom",
+    )
 
 
 @router.post("/api/v1/orchestrator/jobs/batch")

@@ -22,6 +22,7 @@ class EanPoolGateway:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
+        workspace: str = "sofort",
     ) -> str:
         payload = self._post(
             path="/api/v1/ean-pool/claim-for-job/",
@@ -29,6 +30,7 @@ class EanPoolGateway:
             request_id=request_id,
             kid_number=kid_number,
             reservation_family=reservation_family,
+            workspace=workspace,
         )
         ean = str(payload.get("ean") or "").strip()
         if not ean:
@@ -42,6 +44,7 @@ class EanPoolGateway:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
+        workspace: str = "sofort",
     ) -> None:
         self._post(
             path="/api/v1/ean-pool/mark-job-used/",
@@ -49,6 +52,7 @@ class EanPoolGateway:
             request_id=request_id,
             kid_number=kid_number,
             reservation_family=reservation_family,
+            workspace=workspace,
         )
 
     def _post(
@@ -59,10 +63,13 @@ class EanPoolGateway:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
+        workspace: str = "sofort",
     ) -> dict[str, Any]:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
+        if workspace == "benim_depom":
+            headers["X-WareHub-Inventory-Workspace"] = workspace
         response = self.http.request(
             "POST",
             f"{self.base_url}{path}",

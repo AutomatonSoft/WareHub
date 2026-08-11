@@ -24,6 +24,7 @@ import {
   CreateKidRequestError,
   type PlaceSuggestionHints,
   type MarketplaceStatusRowKey,
+  type InventoryWorkspace,
 } from "../inventory-api";
 import { useToast } from "../../shared/toast-provider";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
@@ -725,6 +726,7 @@ function useSofortDesktopLayout(): boolean {
 }
 
 export const SofortListTableShell = memo(function SofortListTableShell(props: {
+  workspace: InventoryWorkspace;
   rows: SofortListRow[];
   query: string;
   availablePlaces: string[];
@@ -845,12 +847,12 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
   const updateMarketplaceStatus = useCallback(async (row: SofortListRow, marketplace: MarketplaceStatusRowKey, nextStatus: boolean) => {
     try {
-      await patchKidMarketplaceStatus({ kidId: row.kidId, marketplace, status: nextStatus });
+      await patchKidMarketplaceStatus({ kidId: row.kidId, marketplace, status: nextStatus, workspace: props.workspace });
     } catch (error) {
       showToast(error instanceof Error ? error.message : t.failedSaveChanges, "error");
       throw error;
     }
-  }, [showToast, t.failedSaveChanges]);
+  }, [props.workspace, showToast, t.failedSaveChanges]);
 
   function closeFullscreenPhoto() {
     if (!fullscreenGallery) return;
@@ -930,7 +932,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
     setEditError(null);
     setEditPlaceSuggestions(null);
 
-    void fetchKidDetailView(editingRow.kidId)
+    void fetchKidDetailView(editingRow.kidId, props.workspace)
       .then((details) => {
         if (!active) return;
         const kidDetails = details.kid;
@@ -983,7 +985,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
     return () => {
       active = false;
     };
-  }, [editingRow, t.failedLoadProductDetails]);
+  }, [editingRow, props.workspace, t.failedLoadProductDetails]);
 
   function openEditModal(row: SofortListRow) {
     setEditingRow(row);
@@ -994,7 +996,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
   function startProductCreation(row: SofortListRow) {
     setProductActionRow(null);
-    router.push(`/create-product?kid=${encodeURIComponent(String(row.kidId))}`);
+    router.push(`/create-product?kid=${encodeURIComponent(String(row.kidId))}&workspace=${encodeURIComponent(props.workspace)}`);
   }
 
   function openProductEditor(row: SofortListRow) {
@@ -1077,7 +1079,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
     try {
       const uploadedPhotoUrls =
-        editDraft.photoFiles.length > 0 ? await uploadKidImages(editDraft.photoFiles) : [];
+        editDraft.photoFiles.length > 0 ? await uploadKidImages(editDraft.photoFiles, props.workspace) : [];
       const normalizedPhotoUrls = [
         ...editDraft.photoUrls.map((value) => value.trim()).filter(Boolean),
         ...uploadedPhotoUrls.map((value) => value.trim()).filter(Boolean)
@@ -1099,6 +1101,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
       await patchKidComposite({
         kidId: editingRow.kidId,
+        workspace: props.workspace,
         kid: {
           kid_number: editDraft.kidNumber.trim(),
           account: editDraft.account || null,
@@ -1187,7 +1190,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
     setDeactivatingRowId(row.id);
     try {
-      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive, nextPlace);
+      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive, nextPlace, props.workspace);
       const result = await waitForMarketplaceJobToFinish(created.jobId);
       props.onRefresh();
       setMarketplaceResult(buildMarketplaceResultDialogState(result, row.kidNumber, props.labels));
@@ -1210,7 +1213,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
     setDeletingRowId(row.id);
     try {
-      await deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId });
+      await deleteInventoryEntity({ entity: "kid", orderDbId: null, kidId: row.kidId, workspace: props.workspace });
       if (editingRow?.kidId === row.kidId) {
         setEditingRow(null);
         setEditDraft(null);
