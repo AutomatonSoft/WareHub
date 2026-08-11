@@ -522,7 +522,8 @@ jobs:
             echo "=== BACKUP POSTGRES BEFORE MIGRATE ==="
             docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml exec -T postgres sh -lc "pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Fc" > "$BACKUP_DIR/postgres-before-migrate.dump"
             chmod 600 "$BACKUP_DIR/postgres-before-migrate.dump"
-            cat "$BACKUP_DIR/postgres-before-migrate.dump" | docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml exec -T postgres sh -lc "pg_restore --list >/tmp/prod_deploy_pg_restore_list.txt && wc -l /tmp/prod_deploy_pg_restore_list.txt"
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml exec -T postgres sh -lc "pg_restore --list >/dev/null" < "$BACKUP_DIR/postgres-before-migrate.dump"
+            echo "Postgres backup archive validated."
 
             echo "=== APPLY PROD MIGRATIONS ==="
             docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate
