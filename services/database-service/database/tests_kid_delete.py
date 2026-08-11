@@ -14,7 +14,7 @@ class KidDeleteTests(APITestCase):
         self.set_session_role("admin")
         kid = Kid.objects.create(kid_number="KID-DEL-001")
         Ean.objects.create(kid=kid, main_ean="1234567890123")
-        EanStatus.objects.create(kid=kid, jv=True)
+        EanStatus.objects.create(ean=kid, jv=True)
         Orders.objects.create(kid=kid, order_id="ORDER-DEL-001", title="Delete me")
         ProductAttributes.objects.create(kid=kid, quantity=2)
 
@@ -35,4 +35,3 @@ class KidDeleteTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(Kid.objects.filter(id=kid.id).exists())
-
