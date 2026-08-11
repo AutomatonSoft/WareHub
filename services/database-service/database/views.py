@@ -1665,12 +1665,18 @@ class KidGreenImportAPIView(APIView):
         return request.query_params.get(key)
 
     def post(self, request):
+        raw_body = bytes(request.body or b"")
         uploaded_file = (
             request.FILES.get("file")
             or request.FILES.get("json_file")
             or request.FILES.get("kid_green")
         )
-        raw_bytes = uploaded_file.read() if uploaded_file is not None else bytes(request.body or b"")
+        if uploaded_file is not None:
+            raw_bytes = uploaded_file.read()
+        elif str(request.content_type or "").startswith("multipart/"):
+            raw_bytes = b""
+        else:
+            raw_bytes = raw_body
         if not raw_bytes:
             return Response(
                 {

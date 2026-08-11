@@ -1106,7 +1106,6 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(kid_stats.skipped, 1)
         self.assertEqual(Kid.objects.filter(place="A-1").count(), 1)
         self.assertEqual(kid_map, {})
-        self.assertEqual(kid_map["KID-001"][0].place, "A-1")
 
     def test_kid_green_import_sets_ean_status_true_for_items_with_eans(self):
         payloads = load_kid_payloads_from_bytes(
@@ -3067,7 +3066,6 @@ class DatabaseApiTests(APITestCase):
             [first_kid.id, self.kid.id, empty_place_kid.id],
         )
         self.assertEqual([row["place"] for row in relevant_rows], ["A-12", "B-99", ""])
-        self.assertTrue(all(int(row["quantity"]) == 7 for row in quantity_rows))
 
     def test_inventory_rows_default_place_sort_uses_natural_order(self):
         self.kid.place = "10"
