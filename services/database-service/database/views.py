@@ -3,7 +3,7 @@ from django.core.exceptions import DisallowedHost
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
-from django.db import connections
+from django.db import transaction, connections
 from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import BooleanField, Case, F, Prefetch, When
 from django.utils import timezone
@@ -58,7 +58,6 @@ from .ftp_upload import (
     upload_public_file_for_site_payload,
 )
 from .permissions import SessionRolePermission
-from .workspace import get_active_workspace, inventory_workspace, workspace_atomic, workspace_atomic_view
 from .marketplace_ean_mapping_service import MarketplaceEanMappingError, confirm_marketplace_ean_mapping
 from .serializers import (
     EANPoolImportSerializer,
@@ -120,7 +119,7 @@ class KidMarketplaceStatusUpdateAPIView(APIView):
         marketplace = serializer.validated_data["marketplace"]
         next_status = serializer.validated_data["status"]
 
-        with workspace_atomic():
+        with transaction.atomic():
             ean_status, _ = EanStatus.objects.get_or_create(ean=kid)
             previous_status = bool(getattr(ean_status, marketplace))
             if previous_status != next_status:
@@ -1198,7 +1197,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             return Response(_place_conflict_error(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None), status=status.HTTP_400_BAD_REQUEST)
 
         if existing is None:
-            with workspace_atomic():
+            with transaction.atomic():
                 kid, sync_summary = self.perform_create(serializer)
             enrichment_summary = self._apply_kid_enrichment(
                 kid,
@@ -1282,7 +1281,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         next_photos = _normalize_photo_list(serializer.validated_data.get("photo")) if photo_was_provided else old_photos
         removed_photos = [url for url in old_photos if url not in next_photos]
 
-        with workspace_atomic():
+        with transaction.atomic():
             self.perform_update(serializer)
 
         changes = changed_fields(before_values, {field: getattr(instance, field) for field in before_values})
@@ -1294,7 +1293,7 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_destroy(self, instance):
-        with workspace_atomic():
+        with transaction.atomic():
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
                 _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
@@ -1409,7 +1408,7 @@ class KidCompositeUpdateAPIView(APIView):
         updated_orders: list[Orders] = []
         audit_changes: list[dict] = []
 
-        with workspace_atomic():
+        with transaction.atomic():
             kid_payload = payload.get("kid")
             if isinstance(kid_payload, dict):
                 kid_serializer = KidCompositePatchSerializer(kid, data=kid_payload, partial=True)
@@ -1680,7 +1679,7 @@ class KidMarketplaceEansAPIView(APIView):
             "hood_xl_ean": "hood_xl",
         }
 
-        with workspace_atomic():
+        with transaction.atomic():
             ean_row, _ = Ean.objects.get_or_create(kid=kid)
             ean_update_fields: list[str] = []
             for request_field, model_field in field_map.items():
@@ -1743,7 +1742,6 @@ class KidGreenImportAPIView(APIView):
 
         if async_job:
             job_id = uuid4().hex
-            workspace = get_active_workspace()
             _kid_green_job_update  # keep linters honest about helper use before thread closure
             with KID_GREEN_IMPORT_JOBS_LOCK:
                 KID_GREEN_IMPORT_JOBS[job_id] = {
@@ -1759,7 +1757,6 @@ class KidGreenImportAPIView(APIView):
                     "current_kid": None,
                     "result": None,
                     "error": None,
-                    "workspace": workspace,
                 }
 
             def emit_job_progress(event: dict) -> None:
@@ -1827,8 +1824,7 @@ class KidGreenImportAPIView(APIView):
 
             def async_worker() -> None:
                 try:
-                    with inventory_workspace(workspace):
-                        result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit_job_progress)
+                    result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit_job_progress)
                     _kid_green_job_update(
                         job_id,
                         status="completed",
@@ -1869,7 +1865,6 @@ class KidGreenImportAPIView(APIView):
                 {
                     "status": "accepted",
                     "job_id": job_id,
-                    "workspace": workspace,
                     "progress_percent": 15,
                     "message": "Upload accepted. Waiting to start import...",
                 },
@@ -1878,15 +1873,13 @@ class KidGreenImportAPIView(APIView):
 
         if stream_progress:
             event_queue: Queue[dict | None] = Queue()
-            workspace = get_active_workspace()
 
             def emit(event: dict) -> None:
                 event_queue.put(event)
 
             def worker() -> None:
                 try:
-                    with inventory_workspace(workspace):
-                        result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit)
+                    result = import_kid_green_json_bytes(raw_bytes, options=options, progress_callback=emit)
                     emit({"type": "complete", "status": "ok", "result": result.to_dict()})
                 except ValueError as exc:
                     emit({"type": "error", "code": "kid_green_invalid_payload", "message": str(exc)})
@@ -1942,7 +1935,7 @@ class KidGreenImportJobStatusAPIView(APIView):
 
     def get(self, request, job_id: str):
         snapshot = _kid_green_job_snapshot(job_id)
-        if snapshot is None or snapshot.get("workspace") != get_active_workspace():
+        if snapshot is None:
             return Response({"code": "kid_green_job_not_found", "message": "Import job was not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(snapshot, status=status.HTTP_200_OK)
 
@@ -2340,7 +2333,7 @@ class KidsBulkUpdateAPIView(APIView):
 
         updated_count = 0
         inventory_changes: list[tuple[Kid, list[dict]]] = []
-        with workspace_atomic():
+        with transaction.atomic():
             for patch_data in normalized_updates:
                 kid = kids[patch_data["kid_id"]]
                 audit_changes: list[dict] = []
@@ -2549,7 +2542,7 @@ class EANPoolImportAPIView(APIView):
 class EANPoolReserveAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
-    @workspace_atomic_view
+    @transaction.atomic
     def post(self, request):
         serializer = EANPoolReserveSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -2575,7 +2568,7 @@ class EANPoolReserveAPIView(APIView):
 class EANPoolTakeNextFreeAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
-    @workspace_atomic_view
+    @transaction.atomic
     def post(self, request):
         serializer = EANPoolTakeNextSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -2609,7 +2602,7 @@ class EANPoolClaimForJobAPIView(APIView):
 
     permission_classes = [SessionRolePermission]
 
-    @workspace_atomic_view
+    @transaction.atomic
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -2679,7 +2672,7 @@ class EANPoolClaimForJobAPIView(APIView):
 class EANPoolMarkJobUsedAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
-    @workspace_atomic_view
+    @transaction.atomic
     def post(self, request):
         serializer = EANPoolClaimForJobSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -2705,7 +2698,7 @@ class EANPoolMarkJobUsedAPIView(APIView):
 class EANPoolMarkUsedAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
-    @workspace_atomic_view
+    @transaction.atomic
     def post(self, request):
         serializer = EANUsageMarkSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)

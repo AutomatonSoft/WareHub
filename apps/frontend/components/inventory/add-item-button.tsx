@@ -17,7 +17,6 @@ import {
   uploadKidImages,
   CreateKidRequestError,
   type CreateKidFieldErrors,
-  type InventoryWorkspace,
   type PlaceSuggestionHints,
 } from "./inventory-api";
 import { dedupeKidUploadFiles, validateKidUploadFiles } from "./kid-upload-validation";
@@ -55,7 +54,6 @@ type CreateKidFormState = {
 
 type AddProductButtonProps = {
   onCreated?: () => Promise<unknown> | unknown;
-  workspace?: InventoryWorkspace;
 };
 
 type SubmitPhase = "creating" | "uploading" | "linking" | null;
@@ -253,7 +251,7 @@ function StatusFlagField({
   );
 }
 
-export function AddProductButton({ onCreated, workspace }: AddProductButtonProps) {
+export function AddProductButton({ onCreated }: AddProductButtonProps) {
   const t = useLabels();
   const { showToast } = useToast();
   const auth = readAuth();
@@ -346,7 +344,6 @@ export function AddProductButton({ onCreated, workspace }: AddProductButtonProps
       }
 
       const created = await createKidItem({
-        workspace,
         kidNumber: form.kidNumber.trim(),
         account: form.account || null,
         bWare: form.bWare,
@@ -372,10 +369,10 @@ export function AddProductButton({ onCreated, workspace }: AddProductButtonProps
       if (dedupedPhotos.files.length > 0) {
         try {
           setSubmitPhase("uploading");
-          const uploadedUrls = await uploadKidImages(dedupedPhotos.files, workspace);
+          const uploadedUrls = await uploadKidImages(dedupedPhotos.files);
           try {
             setSubmitPhase("linking");
-            await patchKidPhotoUrls(created.id, uploadedUrls, workspace);
+            await patchKidPhotoUrls(created.id, uploadedUrls);
           } catch (error) {
             const message = error instanceof Error ? error.message : t.createKidUnknownPhotoLinkingError;
             throw new Error(t.createKidPhotoLinkingFailed.replace("{message}", message));

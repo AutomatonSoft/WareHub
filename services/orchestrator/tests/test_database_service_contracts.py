@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from src.sofort_orchestrator.domain.models import ChannelTarget, Marketplace, Operation
-from src.sofort_orchestrator.infra.ean_pool_gateway import EanPoolGateway
 from src.sofort_orchestrator.infra.marketplace_adapters import MarketplaceAdapters
-from src.sofort_orchestrator.infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from src.sofort_orchestrator.infra.product_editor_gateway import ProductEditorGateway
 
 
@@ -47,36 +45,6 @@ def test_hood_contract_path_and_params():
     assert call["method"] == "PATCH"
     assert call["url"] == "http://database-service:8000/api/v1/hood/items/by-ean/4012345678901/"
     assert call["params"] == {"account": "jv"}
-
-
-def test_benim_depom_contracts_send_inventory_workspace_header():
-    fake_http = CapturingHttpClient()
-    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
-    pool_gateway = EanPoolGateway(base_url="http://database-service:8000", http_client=fake_http)
-    mapping_gateway = MarketplaceEanMappingGateway(base_url="http://database-service:8000", http_client=fake_http)
-
-    adapters.dispatch(
-        ean="4012345678901",
-        request_id="r-benim",
-        channel=ChannelTarget(marketplace=Marketplace.HOOD, account="jv"),
-        payload={"title": "Desk"},
-        workspace="benim_depom",
-    )
-    pool_gateway.mark_used_for_job(job_id="job-1", request_id="r-benim", workspace="benim_depom")
-    mapping_gateway.confirm(
-        request_id="r-benim",
-        kid_number="1123",
-        marketplace="hood",
-        account="jv",
-        ean="4012345678901",
-        workspace="benim_depom",
-    )
-
-    assert [call["headers"]["X-WareHub-Inventory-Workspace"] for call in fake_http.calls] == [
-        "benim_depom",
-        "benim_depom",
-        "benim_depom",
-    ]
 
 
 def test_hood_publish_contract_uses_post():

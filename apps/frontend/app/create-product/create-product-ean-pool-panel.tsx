@@ -6,13 +6,12 @@ import { BarcodeIcon, LoaderCircleIcon, PlusIcon, RefreshCwIcon } from "lucide-r
 import { useLabels } from "../use-labels";
 import { fetchEanPoolStatsCount, importEansToPool } from "../../components/editor/ean-pool-api";
 import { normalizeEanInputLines } from "../../components/editor/ean-input-model";
-import { DEFAULT_INVENTORY_WORKSPACE, type InventoryWorkspace } from "../../components/inventory/inventory-api";
 import { useToast } from "../../components/shared/toast-provider";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Textarea } from "../../components/ui/textarea";
 
-export function CreateProductEanPoolPanel({ workspace = DEFAULT_INVENTORY_WORKSPACE }: { workspace?: InventoryWorkspace }) {
+export function CreateProductEanPoolPanel() {
   const t = useLabels();
   const { showToast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -30,7 +29,7 @@ export function CreateProductEanPoolPanel({ workspace = DEFAULT_INVENTORY_WORKSP
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const count = await fetchEanPoolStatsCount(workspace);
+        const count = await fetchEanPoolStatsCount();
         if (typeof count === "number") {
           setPoolCount(count);
           setIsPoolCountLoading(false);
@@ -48,7 +47,7 @@ export function CreateProductEanPoolPanel({ workspace = DEFAULT_INVENTORY_WORKSP
     setPoolCount(null);
     setPoolCountUnavailable(true);
     setIsPoolCountLoading(false);
-  }, [workspace]);
+  }, []);
 
   useEffect(() => {
     void loadPoolCount();
@@ -63,7 +62,7 @@ export function CreateProductEanPoolPanel({ workspace = DEFAULT_INVENTORY_WORKSP
 
     setIsSubmitting(true);
     try {
-      const { response, importedCount, errorText } = await importEansToPool(eans, workspace);
+      const { response, importedCount, errorText } = await importEansToPool(eans);
       if (!response.ok) {
         showToast(`${t.importFailed}: HTTP ${response.status}${errorText ? ` — ${errorText}` : ""}`, "error");
         return;

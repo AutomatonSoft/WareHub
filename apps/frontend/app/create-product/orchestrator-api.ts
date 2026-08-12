@@ -1,5 +1,4 @@
 import { allMarketplaceSites, xlSiteKeys } from "../../lib/marketplace-sites";
-import type { InventoryWorkspace } from "../../components/inventory/inventory-api";
 import {
   buildDirectUpdatePayload,
   buildJobUpdatePayload,
@@ -218,7 +217,6 @@ export async function createMainMarketplaceProductJob(input: {
   hoodPayload: Record<string, unknown>;
   kauflandPayload: Record<string, unknown>;
   ottoPayload: Record<string, unknown>;
-  workspace?: InventoryWorkspace;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const xljvChangedFields = [
     "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
@@ -294,10 +292,7 @@ export async function createMainMarketplaceProductJob(input: {
     throw new ApiError("No supported marketplace sites selected.", 400);
   }
 
-  const jobEndpoint = input.workspace === "benim_depom"
-    ? "/api/v1/orchestrator/benim-depom/jobs"
-    : "/api/v1/orchestrator/jobs";
-  const response = await apiFetch(jobEndpoint, {
+  const response = await apiFetch("/api/v1/orchestrator/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

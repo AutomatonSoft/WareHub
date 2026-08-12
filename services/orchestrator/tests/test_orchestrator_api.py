@@ -23,7 +23,6 @@ settings.enable_job_worker = False
 class FakeAdapters:
     def __init__(self) -> None:
         self.calls = 0
-        self.workspaces: list[str] = []
 
     def dispatch(
         self,
@@ -33,10 +32,8 @@ class FakeAdapters:
         channel: ChannelTarget,
         payload: dict,
         operation: Operation = Operation.UPDATE,
-        workspace: str = "sofort",
     ):
         self.calls += 1
-        self.workspaces.append(workspace)
         if channel.marketplace is Marketplace.KAUFLAND:
             return type("R", (), {"status_code": 502, "body": {"code": "kaufland_down"}})()
         return type("R", (), {"status_code": 200, "body": {"ok": True, "ean": ean, "payload": payload}})()
@@ -51,7 +48,6 @@ class TimeoutAdapters(FakeAdapters):
         channel: ChannelTarget,
         payload: dict,
         operation: Operation = Operation.UPDATE,
-        workspace: str = "sofort",
     ):
         raise RetryExhaustedError("timed out", kind="timeout")
 
@@ -65,10 +61,8 @@ class SuccessfulAdapters(FakeAdapters):
         channel: ChannelTarget,
         payload: dict,
         operation: Operation = Operation.UPDATE,
-        workspace: str = "sofort",
     ):
         self.calls += 1
-        self.workspaces.append(workspace)
         return type("R", (), {"status_code": 200, "body": {"ok": True, "ean": ean, "payload": payload}})()
 
 
@@ -85,7 +79,6 @@ class FakeEanPoolGateway:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
-        workspace: str = "sofort",
     ) -> str:
         self.claimed_job_ids.append(job_id)
         return self.eans_by_job_id.setdefault(job_id, f"4098765432{len(self.eans_by_job_id) + 100}")
@@ -97,7 +90,6 @@ class FakeEanPoolGateway:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
-        workspace: str = "sofort",
     ) -> None:
         self.used_job_ids.append(job_id)
 
@@ -114,7 +106,6 @@ class FakeMarketplaceEanMappingGateway:
         marketplace: str,
         account: str,
         ean: str,
-        workspace: str = "sofort",
     ) -> dict[str, object]:
         self.calls.append(
             {
@@ -1009,54 +1000,6 @@ def test_orchestrator_worker_processes_main_create_publish_job(tmp_path):
             assert job["result"]["status"] == "success"
             assert len(job["result"]["results"]) == 6
             assert fake.calls == 6
-    finally:
-        settings.enable_job_worker = False
-
-
-def test_benim_depom_main_create_job_uses_benim_workspace(tmp_path):
-    settings.enable_job_worker = True
-    settings.job_worker_poll_interval_seconds = 0.05
-    try:
-        fake = SuccessfulAdapters()
-        with _client_with_fake_adapters(fake, tmp_path) as client:
-            created = client.post(
-                "/api/v1/orchestrator/benim-depom/jobs",
-                json={
-                    "ean": "4012345678901",
-                    "command": {
-                        "operation": "publish",
-                        "payload": {
-                            "title": "Desk",
-                            "description": "Oak desk",
-                            "price": "199.99",
-                            "quantity": 1,
-                            "source_model": "4012345678901",
-                        },
-                        "channels": [
-                            {
-                                "marketplace": "xljv",
-                                "site": "JV",
-                                "site_key": "JV_DE",
-                                "changed_fields": ["title", "description", "source_model", "price"],
-                            }
-                        ],
-                    },
-                },
-            )
-            assert created.status_code == 200
-            job_id = created.json()["job_id"]
-
-            deadline = time.time() + 2.0
-            job = None
-            while time.time() < deadline:
-                job = client.get(f"/api/v1/orchestrator/jobs/{job_id}").json()
-                if job["status"] == "completed":
-                    break
-                time.sleep(0.05)
-
-            assert job is not None
-            assert job["status"] == "completed"
-            assert fake.workspaces == ["benim_depom"]
     finally:
         settings.enable_job_worker = False
 

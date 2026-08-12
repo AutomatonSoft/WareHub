@@ -172,7 +172,6 @@ class OrchestratorService:
                             request_id=request_id,
                             kid_number=kid_number if reservation_family else None,
                             reservation_family=reservation_family,
-                            workspace=command.workspace,
                         )
                         pool_eans_by_reservation_id[reservation_id] = channel_ean
                 adapter_result = self.adapters.dispatch(
@@ -181,7 +180,6 @@ class OrchestratorService:
                     channel=channel,
                     payload=scoped_payload,
                     operation=command.operation,
-                    workspace=command.workspace,
                 )
             except RetryExhaustedError as exc:
                 code = "orchestrator_channel_retry_exhausted"
@@ -294,7 +292,6 @@ class OrchestratorService:
                 request_id=request_id,
                 kid_number=kid_number if reservation_family else None,
                 reservation_family=reservation_family,
-                workspace=command.workspace,
             )
 
         return OrchestrateResponse(request_id=request_id, status=_final_status(results), results=results)
@@ -314,7 +311,6 @@ class OrchestratorService:
         request_id: str,
         kid_number: str | None = None,
         reservation_family: str | None = None,
-        workspace: str = "sofort",
     ) -> None:
         if not job_id or self.ean_pool_gateway is None:
             raise RuntimeError("EAN pool gateway is not configured.")
@@ -323,7 +319,6 @@ class OrchestratorService:
             request_id=request_id,
             kid_number=kid_number,
             reservation_family=reservation_family,
-            workspace=workspace,
         )
 
     def _confirm_marketplace_ean_mapping(
@@ -347,7 +342,6 @@ class OrchestratorService:
                 marketplace=channel.marketplace.value,
                 account=reservation_family,
                 ean=ean,
-                workspace=command.workspace,
             )
         except Exception as exc:  # noqa: BLE001
             return {"status": "failed", "reason": str(exc)}

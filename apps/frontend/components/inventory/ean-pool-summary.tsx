@@ -9,7 +9,7 @@ export function EanPoolSummary() {
   const t = useLabels();
   const { data, isPending } = useQuery({
     queryKey: ["ean-pool-count"],
-    queryFn: () => fetchEanPoolCount()
+    queryFn: fetchEanPoolCount
   });
 
   return (

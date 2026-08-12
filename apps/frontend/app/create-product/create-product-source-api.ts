@@ -1,8 +1,6 @@
 import {
-  DEFAULT_INVENTORY_WORKSPACE,
   fetchKidDetails,
   getServicesApiBase,
-  type InventoryWorkspace,
 } from "../../components/inventory/inventory-api";
 import {
   xljvGetProductByEan,
@@ -103,13 +101,8 @@ function stripHtml(value: string): string {
     .trim();
 }
 
-async function fetchKidMarketplaceMainEan(
-  kidId: number,
-  workspace: InventoryWorkspace,
-): Promise<string> {
-  const response = await apiFetch(
-    `${getServicesApiBase()}/kids/${kidId}/marketplace-eans/?workspace=${encodeURIComponent(workspace)}`,
-  );
+async function fetchKidMarketplaceMainEan(kidId: number): Promise<string> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/${kidId}/marketplace-eans/`);
   if (!response.ok) {
     return "";
   }
@@ -305,13 +298,10 @@ function normalizeHoodSnapshot(payload: Record<string, unknown>, account: HoodAc
   };
 }
 
-export async function fetchCreateProductKidContext(
-  kidId: number,
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<CreateProductKidContext> {
+export async function fetchCreateProductKidContext(kidId: number): Promise<CreateProductKidContext> {
   const [details, mainEan] = await Promise.all([
-    fetchKidDetails(kidId, workspace),
-    fetchKidMarketplaceMainEan(kidId, workspace),
+    fetchKidDetails(kidId),
+    fetchKidMarketplaceMainEan(kidId),
   ]);
 
   return {

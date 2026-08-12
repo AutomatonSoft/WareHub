@@ -2,12 +2,11 @@ import logging
 import re
 
 import requests
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import status
 
 from catalog_core.models import ImportedProduct
 from database.models import EanStatus, Kid
-from database.workspace import workspace_atomic
 from hood_service.core import (
     HOOD_API_BASE_URL,
     HOOD_API_TIMEOUT,
@@ -1115,7 +1114,7 @@ def _apply_hood_patch(*, ean: str, site_key: str, account: str, payload: dict) -
 
     db_result = None
     if isinstance(downstream_payload, dict) and isinstance(downstream_payload.get("items"), list):
-        with workspace_atomic():
+        with transaction.atomic():
             db_result = upsert_response_and_items(
                 downstream_payload,
                 account=account,
@@ -1270,7 +1269,7 @@ def _store_hood_snapshot_before_delete(*, ean: str, site_key: str, account: str)
     payload = dict(external_payload)
     payload["account"] = account
     payload["ean"] = ean
-    with workspace_atomic():
+    with transaction.atomic():
         upsert_response_and_items(payload, account=account, ean=ean)
         save_hood_product_snapshot(account=account, ean=ean, payload=payload)
 
@@ -1392,7 +1391,7 @@ def _apply_hood_restore_from_snapshot(*, ean: str, site_key: str, account: str) 
         external_payload = dict(external_payload)
         external_payload["account"] = account
         external_payload["ean"] = ean
-        with workspace_atomic():
+        with transaction.atomic():
             upsert_response_and_items(external_payload, account=account, ean=ean)
     mark_hood_product_snapshot_restored(account=account, ean=ean)
     set_external_push_status(account=account, ean=ean, pushed=True)

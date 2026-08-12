@@ -3,11 +3,10 @@ import json
 import os
 from datetime import timedelta
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .models import IdempotencyRecord
-from .workspace import workspace_atomic
 
 
 DEFAULT_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "300"))
@@ -45,7 +44,7 @@ def claim_or_replay(*, scope: str, idem_key: str, request_hash: str, ttl_seconds
 
     # Fast-path: try to claim by insert first.
     try:
-        with workspace_atomic():
+        with transaction.atomic():
             record = IdempotencyRecord.objects.create(
                 scope=scope,
                 idem_key=idem_key,
@@ -59,7 +58,7 @@ def claim_or_replay(*, scope: str, idem_key: str, request_hash: str, ttl_seconds
         # Do not query in the same failed atomic block.
         pass
 
-    with workspace_atomic():
+    with transaction.atomic():
         record = (
             IdempotencyRecord.objects.select_for_update()
             .filter(scope=scope, idem_key=idem_key)

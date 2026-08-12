@@ -10,7 +10,6 @@ import {
 export const navigationItems = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/sofort-list", labelKey: "navSofortList", icon: List },
-  { href: "/benim-depom", labelKey: "navBenimDepom", icon: List },
   { href: "/product-editor", labelKey: "navProductEditor", icon: PencilRuler },
   { href: "/warehouse-map", labelKey: "navWarehouseMap", icon: Map }
 ] as const;

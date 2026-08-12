@@ -24,7 +24,6 @@ async def run_marketplace_job_worker(
         kid_number = claimed["kid_number"]
         inactive = bool(claimed["inactive"])
         place = str(claimed["place"]).strip() if claimed.get("place") is not None else None
-        workspace = str(claimed.get("workspace") or "sofort").strip() or "sofort"
         actor_login = str(claimed.get("actor_login") or "").strip()
         actor_name = str(claimed.get("actor_name") or "").strip()
         try:
@@ -33,7 +32,6 @@ async def run_marketplace_job_worker(
                 inactive=inactive,
                 request_id=request_id,
                 place=place,
-                workspace=workspace,
                 actor_login=actor_login,
                 actor_name=actor_name,
             )

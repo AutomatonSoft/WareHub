@@ -250,7 +250,6 @@ type KidGreenImportJobStatus = {
 
 type KidGreenImportRequestOptions = {
   workers?: number;
-  workspace?: InventoryWorkspace;
   onUploadProgress?: (percent: number) => void;
   onProgressEvent?: (event: KidGreenImportProgressEvent) => void;
 };
@@ -306,20 +305,6 @@ function formatInventoryRowsRequestError(
   return new Error(`${inventoryLabel("failedLoadInventory", "Failed to load inventory.")}: HTTP ${response.status}`);
 }
 
-export type InventoryWorkspace = "sofort" | "benim_depom";
-
-export const DEFAULT_INVENTORY_WORKSPACE: InventoryWorkspace = "sofort";
-
-function appendInventoryWorkspace(params: URLSearchParams, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): URLSearchParams {
-  params.set("workspace", workspace);
-  return params;
-}
-
-function withInventoryWorkspace(path: string, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): string {
-  const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}workspace=${encodeURIComponent(workspace)}`;
-}
-
 function buildServicesUrl(path: string, params: URLSearchParams): string {
   const query = params.toString();
   return `${getServicesApiBase()}${path}${query ? `?${query}` : ""}`;
@@ -344,7 +329,6 @@ async function retryWithSyncedDatabaseServiceSession<T>(requestFactory: () => Pr
 }
 
 export async function fetchInventoryRows(params: {
-  workspace?: InventoryWorkspace;
   page: number;
   pageSize: number;
   q?: string;
@@ -364,7 +348,6 @@ export async function fetchInventoryRows(params: {
   dir?: "asc" | "desc";
 }): Promise<InventoryRowsApiResponse> {
   const searchParams = new URLSearchParams();
-  appendInventoryWorkspace(searchParams, params.workspace);
   searchParams.set("page", String(params.page));
   searchParams.set("page_size", String(params.pageSize));
   if (params.q?.trim()) {
@@ -435,8 +418,8 @@ export async function fetchInventoryRows(params: {
   return (await response.json()) as InventoryRowsApiResponse & InventoryRowsFallbackResponse;
 }
 
-export async function fetchInventoryFilterOptions(workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<InventoryFilterOptions> {
-  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/filter-options/", appendInventoryWorkspace(new URLSearchParams(), workspace)));
+export async function fetchInventoryFilterOptions(): Promise<InventoryFilterOptions> {
+  const requestFactory = () => apiFetch(buildServicesUrl("/inventory/filter-options/", new URLSearchParams()));
   let response = await requestFactory();
 
   if (!response.ok && response.status === 403) {
@@ -456,13 +439,8 @@ export async function fetchInventoryFilterOptions(workspace: InventoryWorkspace 
   return (await response.json()) as InventoryFilterOptions;
 }
 
-export async function fetchInventoryRowsByKid(
-  kidId: number,
-  pageSize = 500,
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<InventoryRowsApiResponse> {
+export async function fetchInventoryRowsByKid(kidId: number, pageSize = 500): Promise<InventoryRowsApiResponse> {
   const searchParams = new URLSearchParams();
-  appendInventoryWorkspace(searchParams, workspace);
   searchParams.set("kid_id", String(kidId));
   searchParams.set("page_size", String(pageSize));
 
@@ -549,9 +527,8 @@ export async function deleteInventoryEntity(params: {
   entity: "order" | "kid";
   orderDbId: number | null;
   kidId: number;
-  workspace?: InventoryWorkspace;
 }): Promise<void> {
-  const url = withInventoryWorkspace(`${getServicesApiBase()}/kids/${params.kidId}/`, params.workspace);
+  const url = `${getServicesApiBase()}/kids/${params.kidId}/`;
 
   const response = await apiFetch(url, { method: "DELETE" });
 
@@ -593,16 +570,10 @@ async function readJsonSafe(response: Response): Promise<Record<string, unknown>
   }
 }
 
-export async function createMarketplaceToggleJob(
-  kidNumber: string,
-  inactive = true,
-  place?: string,
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<{ jobId: string }> {
+export async function createMarketplaceToggleJob(kidNumber: string, inactive = true, place?: string): Promise<{ jobId: string }> {
   const body = {
     kid_number: kidNumber.trim(),
     inactive: Boolean(inactive),
-    workspace,
     ...(place?.trim() ? { place: place.trim() } : {}),
   };
 
@@ -790,11 +761,8 @@ export type KidDetailViewModel = {
   }>;
 };
 
-export async function fetchKidDetails(
-  kidId: number,
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<KidDetailsModel> {
-  const requestFactory = () => apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${kidId}/`, workspace));
+export async function fetchKidDetails(kidId: number): Promise<KidDetailsModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/`);
   let response = await requestFactory();
 
   if (!response.ok && response.status === 403) {
@@ -831,11 +799,8 @@ export async function fetchKidDetails(
   };
 }
 
-export async function fetchKidDetailView(
-  kidId: number,
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<KidDetailViewModel> {
-  const requestFactory = () => apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${kidId}/detail-view/`, workspace));
+export async function fetchKidDetailView(kidId: number): Promise<KidDetailViewModel> {
+  const requestFactory = () => apiFetch(`${getServicesApiBase()}/kids/${kidId}/detail-view/`);
   let response = await requestFactory();
 
   if (!response.ok && response.status === 403) {
@@ -1009,7 +974,6 @@ export async function fetchKidDetailView(
 
 export async function patchKidDetails(params: {
   kidId: number;
-  workspace?: InventoryWorkspace;
   kidNumber: string;
   account: "JV" | "XL" | "CH" | "" | null;
   place: string;
@@ -1037,7 +1001,7 @@ export async function patchKidDetails(params: {
   };
 
   const requestFactory = () =>
-    apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${params.kidId}/`, params.workspace), {
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -1060,13 +1024,12 @@ export async function patchKidDetails(params: {
 
 export async function patchKidComposite(params: {
   kidId: number;
-  workspace?: InventoryWorkspace;
   kid: Record<string, unknown>;
   ean: Record<string, unknown>;
   productAttributes: Record<string, unknown>;
 }): Promise<void> {
   const requestFactory = () =>
-    apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${params.kidId}/composite-update/`, params.workspace), {
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/composite-update/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1106,12 +1069,11 @@ export type MarketplaceStatusRowKey = keyof typeof MARKETPLACE_STATUS_FIELD_BY_R
 
 export async function patchKidMarketplaceStatus(params: {
   kidId: number;
-  workspace?: InventoryWorkspace;
   marketplace: MarketplaceStatusRowKey;
   status: boolean;
 }): Promise<void> {
   const requestFactory = () =>
-    apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-status/`, params.workspace), {
+    apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-status/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1135,7 +1097,6 @@ export async function patchKidMarketplaceStatus(params: {
 
 export async function createKidItem(params: {
   kidNumber: string;
-  workspace?: InventoryWorkspace;
   account?: "JV" | "XL" | "CH" | null;
   bWare?: boolean;
   company?: string | null;
@@ -1172,7 +1133,7 @@ export async function createKidItem(params: {
   };
 
   const requestFactory = () =>
-    apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/`, params.workspace), {
+    apiFetch(`${getServicesApiBase()}/kids/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -1201,8 +1162,8 @@ export async function createKidItem(params: {
   return { id };
 }
 
-export async function fetchEanPoolCount(workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<number | null> {
-  const response = await apiFetch(withInventoryWorkspace("/api/v1/services/ean-pool/stats/", workspace));
+export async function fetchEanPoolCount(): Promise<number | null> {
+  const response = await apiFetch("/api/v1/services/ean-pool/stats/");
   if (!response.ok) {
     return null;
   }
@@ -1223,7 +1184,6 @@ export async function fetchEanPoolCount(workspace: InventoryWorkspace = DEFAULT_
 }
 
 export async function bulkUpdateKids(params: {
-  workspace?: InventoryWorkspace;
   updates: Array<{
     kidId: number;
     room?: string;
@@ -1251,7 +1211,7 @@ export async function bulkUpdateKids(params: {
       currency: item.currency
     }))
   };
-  const response = await apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/bulk-update/`, params.workspace), {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/bulk-update/`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -1263,16 +1223,13 @@ export async function bulkUpdateKids(params: {
   return Number.isFinite(data.updated) ? Number(data.updated) : 0;
 }
 
-export async function uploadKidImages(
-  files: File[],
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<string[]> {
+export async function uploadKidImages(files: File[]): Promise<string[]> {
   const formData = new FormData();
   for (const file of files) {
     formData.append("images", file);
   }
 
-  const response = await apiFetch(withInventoryWorkspace("/api/v1/uploads/images/", workspace), {
+  const response = await apiFetch("/api/v1/uploads/images/", {
     method: "POST",
     body: formData
   });
@@ -1326,12 +1283,11 @@ function normalizeKidGreenImportResult(payload: {
 function uploadKidGreenFileWithXhr(
   file: File,
   workers: number,
-  workspace: InventoryWorkspace,
   onUploadProgress?: (percent: number) => void,
 ): Promise<KidGreenImportJobAccepted> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${getServicesApiBase()}/kids/import-kid-green/?async=1&workspace=${encodeURIComponent(workspace)}`);
+    xhr.open("POST", `${getServicesApiBase()}/kids/import-kid-green/?async=1`);
     xhr.withCredentials = true;
     xhr.responseType = "text";
 
@@ -1376,13 +1332,8 @@ function uploadKidGreenFileWithXhr(
   });
 }
 
-async function fetchKidGreenImportJob(
-  jobId: string,
-  workspace: InventoryWorkspace,
-): Promise<KidGreenImportJobStatus> {
-  const response = await apiFetch(
-    `${getServicesApiBase()}/kids/import-kid-green/jobs/${jobId}/?workspace=${encodeURIComponent(workspace)}`,
-  );
+async function fetchKidGreenImportJob(jobId: string): Promise<KidGreenImportJobStatus> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/import-kid-green/jobs/${jobId}/`);
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
     const message = typeof payload?.message === "string" ? payload.message : `${inventoryLabel("kidGreenImportStatusFailed", "Failed to load Kid green import status.")}: HTTP ${response.status}`;
@@ -1414,8 +1365,7 @@ async function fetchKidGreenImportJob(
 
 export async function importKidGreenFile(file: File, options: KidGreenImportRequestOptions = {}): Promise<KidGreenImportResult> {
   const workers = options.workers ?? 5;
-  const workspace = options.workspace ?? DEFAULT_INVENTORY_WORKSPACE;
-  const requestFactory = () => uploadKidGreenFileWithXhr(file, workers, workspace, options.onUploadProgress);
+  const requestFactory = () => uploadKidGreenFileWithXhr(file, workers, options.onUploadProgress);
 
   try {
     const accepted = await requestFactory();
@@ -1423,7 +1373,7 @@ export async function importKidGreenFile(file: File, options: KidGreenImportRequ
 
     while (true) {
       await new Promise((resolve) => window.setTimeout(resolve, 900));
-      const snapshot = await fetchKidGreenImportJob(accepted.job_id, workspace);
+      const snapshot = await fetchKidGreenImportJob(accepted.job_id);
       const total = snapshot.total ?? snapshot.unique_kids ?? 0;
       const completed = snapshot.completed ?? 0;
 
@@ -1486,12 +1436,8 @@ export async function importKidGreenFile(file: File, options: KidGreenImportRequ
   }
 }
 
-export async function patchKidPhotoUrls(
-  kidId: number,
-  photoUrls: string[],
-  workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE,
-): Promise<void> {
-  const response = await apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${kidId}/`, workspace), {
+export async function patchKidPhotoUrls(kidId: number, photoUrls: string[]): Promise<void> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/${kidId}/`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ photo: photoUrls })
@@ -1515,9 +1461,8 @@ export async function patchKidMarketplaceEans(params: {
   kauflandXl: string;
   hoodJv: string;
   hoodXl: string;
-  workspace?: InventoryWorkspace;
 }): Promise<void> {
-  const response = await apiFetch(withInventoryWorkspace(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-eans/`, params.workspace), {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/${params.kidId}/marketplace-eans/`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1549,8 +1494,8 @@ function parseEanFromPayload(payload: Record<string, unknown> | null): string | 
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
-export async function reservePoolEan(ean: string, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<{ response: Response; errorText: string }> {
-  const response = await apiFetch(withInventoryWorkspace("/api/v1/services/ean-pool/reserve/", workspace), {
+export async function reservePoolEan(ean: string): Promise<{ response: Response; errorText: string }> {
+  const response = await apiFetch("/api/v1/services/ean-pool/reserve/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ean: ean.trim() })
@@ -1561,8 +1506,8 @@ export async function reservePoolEan(ean: string, workspace: InventoryWorkspace 
   return { response, errorText: await response.text() };
 }
 
-export async function takeNextPoolEan(workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<{ response: Response; ean: string | null; errorText: string }> {
-  const response = await apiFetch(withInventoryWorkspace("/api/v1/services/ean-pool/take-next-free/", workspace), {
+export async function takeNextPoolEan(): Promise<{ response: Response; ean: string | null; errorText: string }> {
+  const response = await apiFetch("/api/v1/services/ean-pool/take-next-free/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({})
@@ -1580,12 +1525,12 @@ export type EanUsagePayload = {
 };
 
 
-export async function fetchEanUsageByEan(ean: string, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<EanUsagePayload> {
+export async function fetchEanUsageByEan(ean: string): Promise<EanUsagePayload> {
   const normalized = ean.trim();
   if (!normalized) {
     return { pool: undefined, usages: [] };
   }
-  const response = await apiFetch(withInventoryWorkspace(`/api/v1/services/ean-pool/${encodeURIComponent(normalized)}/usage/`, workspace));
+  const response = await apiFetch(`/api/v1/services/ean-pool/${encodeURIComponent(normalized)}/usage/`);
   if (!response.ok) {
     throw new Error(`${inventoryLabel("failedLoadEanUsage", "Failed to load EAN usage.")}: HTTP ${response.status}`);
   }
@@ -1596,7 +1541,7 @@ export async function fetchEanUsageByEan(ean: string, workspace: InventoryWorksp
   };
 }
 
-export async function fetchKidEanSummary(kidId: number, workspace: InventoryWorkspace = DEFAULT_INVENTORY_WORKSPACE): Promise<KidEanSummaryModel> {
+export async function fetchKidEanSummary(kidId: number): Promise<KidEanSummaryModel> {
   const endpoints = [
     `${getServicesApiBase()}/kids/${kidId}/ean-summary/`,
     `${getServicesApiBase().replace(/\/v1$/, "")}/kids/${kidId}/ean-summary/`
@@ -1604,7 +1549,7 @@ export async function fetchKidEanSummary(kidId: number, workspace: InventoryWork
   let lastStatus = 0;
 
   for (const endpoint of endpoints) {
-    const response = await apiFetch(withInventoryWorkspace(endpoint, workspace));
+    const response = await apiFetch(endpoint);
     lastStatus = response.status;
     if (!response.ok) {
       continue;
