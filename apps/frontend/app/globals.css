@@ -5,6 +5,7 @@
 @tailwind utilities;
 
 :root {
+  --font-montserrat: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.148 0.004 228.8);
   --card: oklch(1 0 0);
@@ -4293,5 +4294,4 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
     animation: none;
   }
 }
-
 

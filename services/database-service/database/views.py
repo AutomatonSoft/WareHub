@@ -158,7 +158,7 @@ class KidMarkOutOfStockAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with workspace_atomic():
+        with transaction.atomic():
             kid = Kid.objects.filter(place__iexact=place, section__iexact=section).first()
             if kid is None:
                 return Response(
