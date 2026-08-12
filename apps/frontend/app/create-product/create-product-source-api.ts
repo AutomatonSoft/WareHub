@@ -202,8 +202,11 @@ function normalizeCategories(payload: Record<string, unknown>): Array<{ id: numb
 }
 
 function stringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value.map(asTrimmedString).filter(Boolean)));
+  const values = Array.isArray(value) ? value : [value];
+  return Array.from(new Set(values.map((item) => {
+    if (typeof item === "string" || typeof item === "number") return asTrimmedString(item);
+    return getImageUrl(item);
+  }).filter(Boolean)));
 }
 
 function sourceRecord(value: unknown): Record<string, unknown> {
@@ -215,6 +218,82 @@ function sourceRecord(value: unknown): Record<string, unknown> {
 function firstText(value: unknown): string {
   if (Array.isArray(value)) return asTrimmedString(value[0]);
   return asTrimmedString(value);
+}
+
+function firstAvailableText(product: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = firstText(product[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function firstKauflandProductRecord(payload: Record<string, unknown>): Record<string, unknown> {
+  const responseData = sourceRecord(payload.response_data);
+  const data = sourceRecord(responseData.data);
+  const payloadData = sourceRecord(payload.data);
+  const candidates = [
+    sourceRecord(responseData.product),
+    sourceRecord(data.product),
+    responseData,
+    sourceRecord(payloadData.product),
+    payloadData,
+    sourceRecord(payload.product),
+    payload,
+  ];
+
+  const productKeys = new Set([
+    "ean", "product_ean", "title", "name", "product_name", "product_title", "price",
+    "standard_price", "description", "picture", "picture_urls", "images", "image_urls",
+  ]);
+  return candidates.find((candidate) => Object.keys(candidate).some((key) => productKeys.has(key)))
+    ?? candidates.find((candidate) => Object.keys(candidate).length > 0)
+    ?? {};
+}
+
+function normalizeKauflandImageUrl(value: string): string {
+  const url = value.trim();
+  if (!url) return "";
+  if (url.startsWith("//")) return `https:${url}`;
+
+  try {
+    const parsed = new URL(url);
+    if (
+      (parsed.hostname === "automatonsoft.de" || parsed.hostname === "www.automatonsoft.de") &&
+      parsed.pathname.startsWith("/kaufland/")
+    ) {
+      const fileName = parsed.pathname.split("/").filter(Boolean).at(-1);
+      return fileName
+        ? `https://media.cdn.kaufland.de/product-images/1024x1024/${fileName}`
+        : url;
+    }
+  } catch {
+    return url;
+  }
+
+  return url;
+}
+
+function normalizeKauflandProduct(payload: Record<string, unknown>): Record<string, unknown> {
+  const product = firstKauflandProductRecord(payload);
+  const imageUrls = Array.from(new Set([
+    ...stringList(product.picture),
+    ...stringList(product.picture_urls),
+    ...stringList(product.images),
+    ...stringList(product.image_urls),
+    ...stringList(product.media),
+  ].map(normalizeKauflandImageUrl).filter(Boolean)));
+
+  return {
+    ...product,
+    title: firstAvailableText(product, ["title", "name", "product_name", "product_title"]),
+    ean: firstAvailableText(product, ["ean", "product_ean"]),
+    price: firstAvailableText(product, ["price", "standard_price", "sale_price"]),
+    description: firstAvailableText(product, ["description", "long_description"]),
+    short_description: product.short_description ?? product.shortDescription ?? product.short_description_text ?? [],
+    picture: imageUrls,
+    picture_urls: imageUrls,
+  };
 }
 
 function hoodProductPropertiesText(value: unknown): string {
@@ -240,11 +319,8 @@ function normalizeKauflandSnapshot(
   account: KauflandSite,
   mainEan: string,
 ): CreateProductJvSourceSnapshot {
-  const product = sourceRecord(payload.response_data);
-  const imageUrls = Array.from(new Set([
-    ...stringList(product.picture),
-    ...stringList(product.picture_urls),
-  ]));
+  const product = normalizeKauflandProduct(payload);
+  const imageUrls = stringList(product.picture_urls);
   const description = firstText(product.description);
 
   return {
@@ -258,7 +334,7 @@ function normalizeKauflandSnapshot(
     imagesText: imageUrls.join("\n"),
     imageUrls,
     categories: [],
-    rawPayload: payload,
+    rawPayload: { ...payload, response_data: product },
   };
 }
 

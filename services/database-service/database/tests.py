@@ -3178,12 +3178,14 @@ class DatabaseApiTests(APITestCase):
     def test_inventory_rows_can_filter_by_b_ware_and_in_transit(self):
         self.kid.b_ware = True
         self.kid.in_transit = True
-        self.kid.save(update_fields=["b_ware", "in_transit"])
+        self.kid.in_stock = False
+        self.kid.save(update_fields=["b_ware", "in_stock", "in_transit"])
 
         other_kid = Kid.objects.create(
             kid_number="FILTER-FLAGS-002",
             place="88",
             b_ware=False,
+            in_stock=True,
             in_transit=False,
         )
         Orders.objects.create(
@@ -3207,6 +3209,12 @@ class DatabaseApiTests(APITestCase):
         in_transit_ids = {row["kid_id"] for row in in_transit_response.data["results"]}
         self.assertIn(self.kid.id, in_transit_ids)
         self.assertNotIn(other_kid.id, in_transit_ids)
+
+        in_stock_response = self.client.get("/api/v1/inventory/rows/?in_stock=false&page_size=100")
+        self.assertEqual(in_stock_response.status_code, status.HTTP_200_OK)
+        in_stock_ids = {row["kid_id"] for row in in_stock_response.data["results"]}
+        self.assertIn(self.kid.id, in_stock_ids)
+        self.assertNotIn(other_kid.id, in_stock_ids)
 
     def test_inventory_filter_options_return_distinct_values_from_all_rows(self):
         self.kid.place = "A-12-BLUE"
