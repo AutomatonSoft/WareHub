@@ -1995,6 +1995,7 @@ class InventoryRowsAPIView(APIView):
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
         b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
+        in_stock_raw = str(request.query_params.get("in_stock") or "").strip().lower()
         in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
@@ -2026,6 +2027,10 @@ class InventoryRowsAPIView(APIView):
 
         if b_ware_raw == "true":
             rows = [row for row in rows if row.get("b_ware") is True]
+
+        if in_stock_raw in {"true", "false"}:
+            expected_in_stock = in_stock_raw == "true"
+            rows = [row for row in rows if row.get("in_stock") is expected_in_stock]
 
         if in_transit_raw == "true":
             rows = [row for row in rows if row.get("in_transit") is True]
