@@ -6,9 +6,8 @@ PLACEHOLDER_EAN = "0000000000000"
 
 def backfill_main_ean(apps, schema_editor):
     Ean = apps.get_model("database", "Ean")
-    db_alias = schema_editor.connection.alias
-    Ean.objects.using(db_alias).filter(main_ean__isnull=True).update(main_ean=PLACEHOLDER_EAN)
-    Ean.objects.using(db_alias).filter(main_ean="").update(main_ean=PLACEHOLDER_EAN)
+    Ean.objects.filter(main_ean__isnull=True).update(main_ean=PLACEHOLDER_EAN)
+    Ean.objects.filter(main_ean="").update(main_ean=PLACEHOLDER_EAN)
 
 
 class Migration(migrations.Migration):

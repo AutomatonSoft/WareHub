@@ -27,7 +27,7 @@ use crate::{
     list_service_logs, login_user, logout_user, mobile_app_update, openapi_json, readyz,
     refresh_user, register_user, request_authenticated_password_change_code,
     request_password_reset, scalar_ui, service_logs_page,
-    suggest_placement, update_database_inventory_kid_photo, update_intake_photo,
+    mark_database_inventory_out_of_stock, suggest_placement, update_database_inventory_kid_photo, update_intake_photo,
     update_label_layout_settings, update_printer_setup_settings, upload_photo, AppState,
 };
 
@@ -54,6 +54,14 @@ pub(crate) fn build_app(state: AppState) -> Router {
             get(list_database_inventory_filter_options),
         )
         .route("/inventory/kids", post(create_database_inventory_kid))
+        .route(
+            "/inventory/mark-out-of-stock",
+            post(mark_database_inventory_out_of_stock),
+        )
+        .route(
+            "/services/kids/mark-out-of-stock/",
+            post(mark_database_inventory_out_of_stock),
+        )
         .route(
             "/inventory/kids/:kid_ref/photo",
             patch(update_database_inventory_kid_photo),

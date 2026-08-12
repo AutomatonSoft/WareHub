@@ -28,7 +28,7 @@ pub(crate) use crate::auth::{
 pub(crate) use crate::bootstrap::ensure_admin_account;
 pub(crate) use crate::database_inventory::{
     create_database_inventory_kid, list_database_inventory_filter_options,
-    list_database_inventory_rows,
+    list_database_inventory_rows, mark_database_inventory_out_of_stock,
     update_database_inventory_kid_photo,
 };
 pub(crate) use crate::database_kid_sync::{

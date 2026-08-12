@@ -62,7 +62,6 @@ import {
   type CreateProductJvSourceSnapshot,
   type CreateProductKidContext,
 } from "./create-product-source-api";
-import { DEFAULT_INVENTORY_WORKSPACE, type InventoryWorkspace } from "../../components/inventory/inventory-api";
 
 type Labels = Record<string, string>;
 
@@ -99,6 +98,13 @@ export type HoodPublishDraft = {
   fields: HoodCreateFields;
 };
 
+export type CreateProductSourceDiscoveryStatus = "loading" | "found" | "missing" | "error";
+
+export type CreateProductSourceDiscovery = {
+  status: CreateProductSourceDiscoveryStatus;
+  message?: string;
+};
+
 type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
@@ -114,6 +120,13 @@ type SourceCache = {
 
 const JOB_STATUS_POLL_INTERVAL_MS = 500;
 const JOB_STATUS_MAX_POLLS = 20;
+
+const SOURCE_SITE_KEYS_BY_KIND: Record<CreateProductSourceSiteKind, string[]> = {
+  JV: ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"],
+  XL: [CREATE_PRODUCT_XL_DEFAULT_SITE_KEY],
+  HOOD: ["HOOD_JV", "HOOD_XL"],
+  KAUFLAND: ["KAUFLAND_JV", "KAUFLAND_XL"],
+};
 
 function getCompletedJobResult(job: Record<string, unknown>): OrchestratorResponse | null {
   const result = job.result;
@@ -181,6 +194,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     Partial<Record<string, CreateProductJvSourceSnapshot>>
   >({});
   const [jvSourceSnapshotsReady, setJvSourceSnapshotsReady] = useState(false);
+  const [sourceDiscoveryBySiteKey, setSourceDiscoveryBySiteKey] = useState<
+    Partial<Record<string, CreateProductSourceDiscovery>>
+  >({});
   const [prefillSnapshot, setPrefillSnapshot] = useState<{
     ean: string;
     price: string;
@@ -197,9 +213,6 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
   const sourceKidId = Number.parseInt(sourceKidParam, 10);
-  const inventoryWorkspace = (searchParams.get("workspace") === "benim_depom"
-    ? "benim_depom"
-    : DEFAULT_INVENTORY_WORKSPACE) as InventoryWorkspace;
 
   const applySourceSnapshot = useCallback((snapshot: CreateProductJvSourceSnapshot, mainEan: string, site: CreateProductSourceSiteKind) => {
     setSourceSnapshot(snapshot);
@@ -253,6 +266,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setSourceSnapshotLoading(false);
       setJvSourceSnapshotsBySiteKey({});
       setJvSourceSnapshotsReady(false);
+      setSourceDiscoveryBySiteKey({});
       setPrefillSnapshot(null);
       setImageFiles([]);
       sourceCacheRef.current.sitesBySource.clear();
@@ -265,7 +279,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setKidContextLoading(true);
     setKidContextError(null);
 
-    void fetchCreateProductKidContext(sourceKidId, inventoryWorkspace)
+    void fetchCreateProductKidContext(sourceKidId)
       .then((context) => {
         if (!active) return;
         setKidContext(context);
@@ -284,7 +298,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [inventoryWorkspace, showToast, sourceKidId, t.failedLoadKidContext]);
+  }, [showToast, sourceKidId, t.failedLoadKidContext]);
 
   useEffect(() => {
     if (!kidContext?.mainEan) {
@@ -351,6 +365,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   useEffect(() => {
     setJvSourceSnapshotsBySiteKey({});
     setJvSourceSnapshotsReady(false);
+    setSourceDiscoveryBySiteKey({});
   }, [kidContext?.mainEan]);
 
   useEffect(() => {
@@ -363,6 +378,12 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     let active = true;
     const sourceKinds: CreateProductSourceSiteKind[] = ["JV", "XL", "HOOD", "KAUFLAND"];
 
+    setSourceDiscoveryBySiteKey(
+      Object.fromEntries(
+        sourceKinds.flatMap((site) => SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "loading" }])),
+      ),
+    );
+
     void Promise.allSettled(
       sourceKinds.map(async (site) => {
         try {
@@ -370,29 +391,57 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           if (!active) return;
 
           sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site), sites);
+          const foundSiteKeys = new Set(sites.map((sourceSite) => sourceSite.siteKey));
+          setSourceDiscoveryBySiteKey((current) => {
+            const next = { ...current };
+            for (const siteKey of SOURCE_SITE_KEYS_BY_KIND[site]) {
+              next[siteKey] = foundSiteKeys.has(siteKey) ? { status: "loading" } : { status: "missing" };
+            }
+            return next;
+          });
           await Promise.allSettled(
             sites.map(async (sourceSite) => {
-              const snapshot = await fetchCreateProductSourceSnapshot({
-                mainEan,
-                site,
-                siteKey: sourceSite.siteKey,
-              });
-              if (active) {
-                sourceCacheRef.current.snapshotsBySource.set(
-                  sourceCacheKey(mainEan, site, sourceSite.siteKey),
-                  snapshot,
-                );
-                if (site === "JV") {
-                  setJvSourceSnapshotsBySiteKey((current) => ({
+              try {
+                const snapshot = await fetchCreateProductSourceSnapshot({
+                  mainEan,
+                  site,
+                  siteKey: sourceSite.siteKey,
+                });
+                if (active) {
+                  sourceCacheRef.current.snapshotsBySource.set(
+                    sourceCacheKey(mainEan, site, sourceSite.siteKey),
+                    snapshot,
+                  );
+                  if (site === "JV") {
+                    setJvSourceSnapshotsBySiteKey((current) => ({
+                      ...current,
+                      [sourceSite.siteKey]: snapshot,
+                    }));
+                  }
+                  setSourceDiscoveryBySiteKey((current) => ({
                     ...current,
-                    [sourceSite.siteKey]: snapshot,
+                    [sourceSite.siteKey]: { status: "found" },
                   }));
                 }
+              } catch (error) {
+                if (!active) return;
+                const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite.siteKey}.`);
+                setSourceDiscoveryBySiteKey((current) => ({
+                  ...current,
+                  [sourceSite.siteKey]: { status: "error", message },
+                }));
               }
             }),
           );
-        } catch {
-          // A marketplace can be unavailable without blocking the remaining tabs.
+        } catch (error) {
+          if (!active) return;
+          const message = normalizeCreateProductRuntimeError(error, `Failed to load ${site} source sites.`);
+          setSourceDiscoveryBySiteKey((current) => ({
+            ...current,
+            ...Object.fromEntries(
+              SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "error", message }]),
+            ),
+          }));
         }
       }),
     ).finally(() => {
@@ -849,7 +898,6 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         hoodPayload,
         kauflandPayload,
         ottoPayload,
-        workspace: inventoryWorkspace,
       });
       setLatestJobId(created.jobId);
       showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
@@ -1165,6 +1213,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     sourceSnapshotError,
     jvSourceSnapshotsBySiteKey,
     jvSourceSnapshotsReady,
+    sourceDiscoveryBySiteKey,
     visibleSites,
     setSitesQuery,
     setShowSelectedOnly,

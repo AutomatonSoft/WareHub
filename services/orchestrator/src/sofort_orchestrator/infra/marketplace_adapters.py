@@ -26,13 +26,10 @@ class MarketplaceAdapters:
         channel: ChannelTarget,
         payload: dict,
         operation: Operation = Operation.UPDATE,
-        workspace: str = "sofort",
     ) -> AdapterResult:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
-        if workspace == "benim_depom":
-            headers["X-WareHub-Inventory-Workspace"] = workspace
 
         if channel.marketplace is Marketplace.HOOD:
             account = (channel.account or "jv").strip().lower()

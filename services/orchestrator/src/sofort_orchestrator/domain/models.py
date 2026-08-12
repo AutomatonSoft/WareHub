@@ -95,7 +95,6 @@ class OrchestrateRequest(BaseModel):
     payload: CanonicalPayload
     channels: list[ChannelTarget]
     kid_number: str | None = None
-    workspace: Literal["sofort", "benim_depom"] = "sofort"
 
 
 class ErrorContract(BaseModel):

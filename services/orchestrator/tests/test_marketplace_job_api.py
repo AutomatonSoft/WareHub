@@ -28,7 +28,7 @@ class NoopProductEditorGateway:
 
 
 class FakeMarketplaceGateway:
-    def toggle_all_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_all_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -57,7 +57,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -86,7 +86,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_xl_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_xl_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -108,7 +108,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_local_statuses_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, workspace: str = "sofort"):
+    def toggle_local_statuses_by_kid(self, *, kid_number: str, inactive: bool, request_id: str):
         return type(
             "R",
             (),
@@ -137,7 +137,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_hood_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_hood_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -159,7 +159,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_kaufland_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_kaufland_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -181,7 +181,7 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_otto_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_otto_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
             (),
@@ -212,7 +212,7 @@ class FakeMarketplaceGateway:
 
 
 class TimeoutMarketplaceGateway(FakeMarketplaceGateway):
-    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None, workspace: str = "sofort"):
+    def toggle_jv_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         raise RetryExhaustedError("timed out", kind="timeout")
 
 
@@ -311,25 +311,6 @@ def test_marketplace_toggle_job_create_accepts_place(tmp_path):
         ).fetchone()
     assert row is not None
     assert row[0] == "18"
-
-
-def test_marketplace_toggle_job_persists_benim_depom_workspace(tmp_path):
-    client = _client(tmp_path)
-    created = client.post(
-        "/api/v1/orchestrator/marketplace/toggle-by-kid",
-        json={"kid_number": "566725168", "inactive": True, "workspace": "benim_depom"},
-    )
-    assert created.status_code == 200
-    assert created.json()["workspace"] == "benim_depom"
-
-    job_id = created.json()["job_id"]
-    fetched = client.get(f"/api/v1/orchestrator/marketplace/jobs/{job_id}")
-    assert fetched.status_code == 200
-    assert fetched.json()["workspace"] == "benim_depom"
-
-    claimed = MarketplaceJobDeps.store.claim_next_queued_job()
-    assert claimed is not None
-    assert claimed["workspace"] == "benim_depom"
 
 
 def test_marketplace_toggle_job_persists_verified_actor_for_worker(tmp_path):

@@ -105,6 +105,10 @@ server {
     proxy_request_buffering off;
   }
 
+  location = /api/v1/services/kids/mark-out-of-stock/ {
+    proxy_pass http://backend_upstream/api/v1/services/kids/mark-out-of-stock/;
+  }
+
   location = /api/v1/services {
     proxy_pass http://services_upstream/api/v1;
   }
@@ -250,6 +254,10 @@ server {
     error_page 503 = @api_503;
     error_page 504 = @api_504;
     proxy_pass http://services_upstream/api/v1;
+  }
+
+  location = /services/kids/mark-out-of-stock/ {
+    proxy_pass http://backend_upstream/api/v1/services/kids/mark-out-of-stock/;
   }
 
   location /services/ {

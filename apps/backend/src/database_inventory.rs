@@ -64,6 +64,12 @@ struct DatabaseInventoryRowsRequest {
     in_transit: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct MarkDatabaseInventoryOutOfStockRequest {
+    place: String,
+    section: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub(crate) struct MobileInventoryFilterOptionsDto {
     pub(crate) places: Vec<String>,
@@ -214,6 +220,77 @@ pub(crate) async fn update_database_inventory_kid_photo(
     update_database_inventory_kid_photo_service(&state, &kid_ref, payload)
         .await
         .map(Json)
+}
+
+pub(crate) async fn mark_database_inventory_out_of_stock(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MarkDatabaseInventoryOutOfStockRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let _user = require_approved_user(&state, &headers).await?;
+    let place = payload.place.trim();
+    let section = payload.section.trim().to_ascii_uppercase();
+    if place.is_empty() {
+        return Err(database_inventory_error(
+            StatusCode::BAD_REQUEST,
+            "database_inventory_place_required",
+            "place is required",
+        ));
+    }
+    if section.chars().count() != 1 {
+        return Err(database_inventory_error(
+            StatusCode::BAD_REQUEST,
+            "database_inventory_section_invalid",
+            "section must contain exactly one character",
+        ));
+    }
+
+    let Some(config) = state.database_kid_sync.clone() else {
+        return Err(database_inventory_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "database_inventory_not_configured",
+            "database-service integration is not configured",
+        ));
+    };
+    let url = format!("{}/api/v1/kids/mark-out-of-stock/", config.base_url);
+    let response = state
+        .http_client
+        .post(url)
+        .header("x-warehub-service-token", &config.service_token)
+        .json(&serde_json::json!({ "place": place, "section": section }))
+        .timeout(Duration::from_secs(DATABASE_INVENTORY_TIMEOUT_SECONDS))
+        .send()
+        .await
+        .map_err(|error| {
+            database_inventory_error(
+                StatusCode::BAD_GATEWAY,
+                "database_inventory_mark_out_of_stock_request_failed",
+                format!("failed to request database-service: {error}"),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        let upstream_status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let status = match upstream_status {
+            StatusCode::BAD_REQUEST => StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND => StatusCode::NOT_FOUND,
+            _ => StatusCode::BAD_GATEWAY,
+        };
+        return Err(database_inventory_error(
+            status,
+            "database_inventory_mark_out_of_stock_upstream_failed",
+            format!("database-service returned HTTP {upstream_status}: {body}"),
+        ));
+    }
+
+    response.json::<Value>().await.map(Json).map_err(|error| {
+        database_inventory_error(
+            StatusCode::BAD_GATEWAY,
+            "database_inventory_mark_out_of_stock_response_invalid",
+            format!("database-service response is invalid: {error}"),
+        )
+    })
 }
 
 async fn list_database_inventory_rows_service(
