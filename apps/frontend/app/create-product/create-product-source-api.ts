@@ -104,7 +104,8 @@ function stripHtml(value: string): string {
 async function fetchKidMarketplaceMainEan(kidId: number): Promise<string> {
   const response = await apiFetch(`${getServicesApiBase()}/kids/${kidId}/marketplace-eans/`);
   if (!response.ok) {
-    return "";
+    const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
+    throw new Error(asTrimmedString(payload.detail) || `create_product_main_ean_http:${response.status}`);
   }
   const payload = (await response.json()) as KidMarketplaceEansResponse;
   return normalizeEanOrEmpty(asTrimmedString(payload.main_ean));
@@ -304,6 +305,10 @@ export async function fetchCreateProductKidContext(kidId: number): Promise<Creat
     fetchKidMarketplaceMainEan(kidId),
   ]);
 
+  if (!mainEan) {
+    throw new Error("create_product_main_ean_missing");
+  }
+
   return {
     kidId,
     kidNumber: details.kidNumber,
@@ -369,7 +374,10 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   if (input.site === "HOOD") {
     const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
       const { response, payload } = await fetchHoodByEan(normalizedMainEan, account as HoodAccount);
-      if (!response.ok) return null;
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        throw new Error(asTrimmedString((payload as { detail?: unknown }).detail) || `create_product_hood_source_sites_http:${response.status}`);
+      }
       const snapshot = normalizeHoodSnapshot(payload as Record<string, unknown>, account as HoodAccount, normalizedMainEan);
       return {
         siteKey: snapshot.siteKey,
@@ -386,7 +394,10 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   if (input.site === "KAUFLAND") {
     const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
       const { response, payload } = await fetchKauflandByEan({ ean: normalizedMainEan, site: account as KauflandSite });
-      if (!response.ok) return null;
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        throw new Error(asTrimmedString((payload as { detail?: unknown }).detail) || `create_product_kaufland_source_sites_http:${response.status}`);
+      }
       const snapshot = normalizeKauflandSnapshot(payload as Record<string, unknown>, account as KauflandSite, normalizedMainEan);
       return {
         siteKey: snapshot.siteKey,
