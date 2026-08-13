@@ -712,14 +712,15 @@ extension _QrHomePageScanForms on _QrHomePageState {
               child: Text(dismissLabel, style: _scanActionTextStyle),
             ),
             TextButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_PhotoPickSource.gallery),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_PhotoPickSource.gallery),
               child: Text(strings.text('gallery'), style: _scanActionTextStyle),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(_PhotoPickSource.camera),
-              child: Text(strings.text('take_photos'), style: _scanActionTextStyle),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_PhotoPickSource.camera),
+              child: Text(strings.text('take_photos'),
+                  style: _scanActionTextStyle),
             ),
           ],
         );

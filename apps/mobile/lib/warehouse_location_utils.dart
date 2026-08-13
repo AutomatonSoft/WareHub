@@ -135,7 +135,7 @@ String? parseWarehouseLocationFromQrPayload(String rawValue) {
 }
 
 MapEntry<String, int>? parseWarehouseSectionAndSlot(String warehouseLocation) {
-  final RegExpMatch? match = RegExp(r'^([A-Z]?)([0-9]+[A-Z]*)$').firstMatch(
+  final RegExpMatch? match = RegExp(r'^([A-Z])([0-9]+[A-Z]*)$').firstMatch(
       normalizeWarehouseLocation(warehouseLocation)
           .replaceAll(RegExp(r'\s+'), ''));
   if (match == null) {

@@ -227,7 +227,7 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
         if (slot == null ||
             slot < kWarehouseMinSlot ||
             slot > kWarehouseMaxSlot) {
-          return _strings.text('format_place')  + ' 4';
+          return _strings.text('format_place') + ' 4';
         }
         return null;
       },

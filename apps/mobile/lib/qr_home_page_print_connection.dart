@@ -206,7 +206,9 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
   }
 
   Future<void> _preparePrinterInBackground() async {
-    if (_preparingPrinter || _connectPrinterFuture != null || _printerConnected) {
+    if (_preparingPrinter ||
+        _connectPrinterFuture != null ||
+        _printerConnected) {
       return;
     }
     _preparingPrinter = true;
@@ -318,6 +320,7 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
       return;
     }
 
-    throw Exception('Printer failed to print. Check the connection and try again.');
+    throw Exception(
+        'Printer failed to print. Check the connection and try again.');
   }
 }

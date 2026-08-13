@@ -304,9 +304,11 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     try {
       final AppStrings strings = _strings;
       final String basePayload = _buildLabelQrPayload(warehouseLocation);
-      final String normalizedSection = normalizeWarehouseSection(sectionCode ?? '');
-      final String payload =
-          normalizedSection.isEmpty ? basePayload : '$normalizedSection$basePayload';
+      final String normalizedSection =
+          normalizeWarehouseSection(sectionCode ?? '');
+      final String payload = normalizedSection.isEmpty
+          ? basePayload
+          : '$normalizedSection$basePayload';
       final String mainCaption = payload;
       final int partsTotal = totalParts ?? quantity;
       final List<ui.Image> images = <ui.Image>[];

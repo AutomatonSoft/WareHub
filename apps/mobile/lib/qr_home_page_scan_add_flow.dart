@@ -185,9 +185,8 @@ extension _QrHomePageAddFlow on _QrHomePageState {
       }
 
       final String existingRaw = item.photoUrl.trim();
-      final String combined = existingRaw.isEmpty
-          ? normalizedNew
-          : '$existingRaw,$normalizedNew';
+      final String combined =
+          existingRaw.isEmpty ? normalizedNew : '$existingRaw,$normalizedNew';
       final String kidPhotoRef =
           item.databaseKidId > 0 ? '${item.databaseKidId}' : item.id;
       final IntakeData updated = await _updateIntakePhoto(
