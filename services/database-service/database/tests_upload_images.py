@@ -1,3 +1,4 @@
+import json
 import os
 from unittest.mock import patch
 
@@ -30,6 +31,19 @@ class UploadImagesToFtpTests(SimpleTestCase):
             )
 
         self.assertEqual(normalized, "https://mediawarehub.veloxdesk.com/warehub/prod/images/example.png")
+
+    def test_normalize_managed_public_photo_value_flattens_nested_json_photo_urls(self):
+        photo_url = "https://mediawarehub.veloxdesk.com/warehub/stage/images/example.png"
+        malformed_value = json.dumps([json.dumps([json.dumps([photo_url])])])
+
+        with (
+            patch.object(ftp_upload, "UPLOAD_FTP_PUBLIC_BASE_URL", "https://mediawarehub.veloxdesk.com/warehub/stage"),
+            patch.object(ftp_upload, "UPLOAD_FTP_ROOT_DIR", "warehub/stage"),
+            patch.object(ftp_upload, "UPLOAD_FTP_STORAGE_ROOT_DIR", ""),
+        ):
+            normalized = ftp_upload.normalize_managed_public_photo_value(malformed_value)
+
+        self.assertEqual(normalized, [photo_url])
 
     @override_settings(DEBUG=True)
     @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)

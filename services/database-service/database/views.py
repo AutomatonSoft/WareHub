@@ -271,14 +271,11 @@ def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
 
 
 def _normalize_photo_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [
-            str(normalize_managed_public_photo_value(str(item or "").strip()) or "").strip()
-            for item in value
-            if str(item or "").strip()
-        ]
-    if isinstance(value, str):
-        text = str(normalize_managed_public_photo_value(value) or "").strip()
+    normalized = normalize_managed_public_photo_value(value)
+    if isinstance(normalized, list):
+        return [str(item or "").strip() for item in normalized if str(item or "").strip()]
+    if isinstance(normalized, str):
+        text = normalized.strip()
         return [text] if text else []
     return []
 

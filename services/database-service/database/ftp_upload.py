@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import unicodedata
@@ -355,12 +356,38 @@ def normalize_managed_public_photo_url(photo_url: str) -> str:
     return urlunparse((current.scheme, current.netloc, normalized_path, current.params, current.query, current.fragment))
 
 
-def normalize_managed_public_photo_value(value: object) -> object:
+def _flatten_photo_urls(value: object, *, depth: int = 0) -> list[str]:
+    if depth >= 8:
+        text = str(value or "").strip()
+        return [text] if text else []
+
     if isinstance(value, list):
-        return [normalize_managed_public_photo_url(str(item or "").strip()) for item in value if str(item or "").strip()]
-    if isinstance(value, str):
-        return normalize_managed_public_photo_url(value)
-    return value
+        return [url for item in value for url in _flatten_photo_urls(item, depth=depth + 1)]
+
+    if not isinstance(value, str):
+        return []
+
+    text = value.strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+        except (TypeError, ValueError):
+            return [text]
+        if isinstance(decoded, list):
+            return _flatten_photo_urls(decoded, depth=depth + 1)
+    return [text]
+
+
+def normalize_managed_public_photo_value(value: object) -> object:
+    if not isinstance(value, (list, str)):
+        return value
+
+    normalized = [normalize_managed_public_photo_url(url) for url in _flatten_photo_urls(value)]
+    if isinstance(value, list) or (isinstance(value, str) and value.lstrip().startswith("[")):
+        return normalized
+    return normalized[0] if normalized else ""
 
 
 def _build_open_cart_image_path(leaf_dir: str, filename: str) -> str:
