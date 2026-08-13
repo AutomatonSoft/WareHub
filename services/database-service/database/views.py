@@ -142,6 +142,55 @@ class KidMarketplaceStatusUpdateAPIView(APIView):
         )
 
 
+class KidMarkOutOfStockAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        place = normalize_place(payload.get("place"))
+        section = str(payload.get("section") or "").strip().upper()
+
+        if not place:
+            return Response({"detail": "place is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(section) != 1:
+            return Response(
+                {"detail": "section must contain exactly one character."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            kid = Kid.objects.filter(place__iexact=place, section__iexact=section).first()
+            if kid is None:
+                return Response(
+                    {"detail": "Kid was not found for the specified place and section."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            was_in_stock = bool(kid.in_stock)
+            if was_in_stock:
+                kid.in_stock = False
+                kid.save(update_fields=["in_stock"])
+
+        if was_in_stock:
+            record_inventory_change(
+                kid=kid,
+                actor=request_actor(request),
+                action="in_stock_updated",
+                changes=[{"field": "in_stock", "before": True, "after": False}],
+            )
+
+        return Response(
+            {
+                "kid_id": kid.id,
+                "place": kid.place,
+                "section": kid.section,
+                "in_stock": False,
+                "updated": was_in_stock,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 def _delete_uploaded_photo_urls_safe(photo_urls: list[str], *, context: str, kid_id: int | None = None) -> None:
     if not photo_urls:
         return
@@ -222,14 +271,11 @@ def _classify_afterbuy_sync_exception(exc: Exception) -> tuple[str, str]:
 
 
 def _normalize_photo_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [
-            str(normalize_managed_public_photo_value(str(item or "").strip()) or "").strip()
-            for item in value
-            if str(item or "").strip()
-        ]
-    if isinstance(value, str):
-        text = str(normalize_managed_public_photo_value(value) or "").strip()
+    normalized = normalize_managed_public_photo_value(value)
+    if isinstance(normalized, list):
+        return [str(item or "").strip() for item in normalized if str(item or "").strip()]
+    if isinstance(normalized, str):
+        text = normalized.strip()
         return [text] if text else []
     return []
 
@@ -1244,17 +1290,12 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_destroy(self, instance):
-        default_connection = connections["default"]
         with transaction.atomic():
             photo_urls = _normalize_photo_list(instance.photo)
             if photo_urls:
                 _delete_uploaded_photo_urls_safe(photo_urls, context="kid_destroy", kid_id=instance.id)
-            Ean.objects.filter(kid_id=instance.id).delete()
-            EanStatus.objects.filter(ean_id=instance.id).delete()
-            Orders.objects.filter(kid_id=instance.id).delete()
-            ProductAttributes.objects.filter(kid_id=instance.id).delete()
-            with default_connection.cursor() as cursor:
-                cursor.execute(f'DELETE FROM "{Kid._meta.db_table}" WHERE id = %s', [instance.id])
+            InventoryChangeLog.objects.filter(kid=instance).update(kid=None)
+            instance.delete()
 
 
 class OrderListCreateAPIView(generics.ListCreateAPIView):
@@ -1664,12 +1705,18 @@ class KidGreenImportAPIView(APIView):
         return request.query_params.get(key)
 
     def post(self, request):
+        raw_body = bytes(request.body or b"")
         uploaded_file = (
             request.FILES.get("file")
             or request.FILES.get("json_file")
             or request.FILES.get("kid_green")
         )
-        raw_bytes = uploaded_file.read() if uploaded_file is not None else bytes(request.body or b"")
+        if uploaded_file is not None:
+            raw_bytes = uploaded_file.read()
+        elif str(request.content_type or "").startswith("multipart/"):
+            raw_bytes = b""
+        else:
+            raw_bytes = raw_body
         if not raw_bytes:
             return Response(
                 {
@@ -1945,6 +1992,7 @@ class InventoryRowsAPIView(APIView):
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
         b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
+        in_stock_raw = str(request.query_params.get("in_stock") or "").strip().lower()
         in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
@@ -1976,6 +2024,10 @@ class InventoryRowsAPIView(APIView):
 
         if b_ware_raw == "true":
             rows = [row for row in rows if row.get("b_ware") is True]
+
+        if in_stock_raw in {"true", "false"}:
+            expected_in_stock = in_stock_raw == "true"
+            rows = [row for row in rows if row.get("in_stock") is expected_in_stock]
 
         if in_transit_raw == "true":
             rows = [row for row in rows if row.get("in_transit") is True]

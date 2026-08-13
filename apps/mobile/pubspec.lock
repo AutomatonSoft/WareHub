@@ -480,9 +480,10 @@ packages:
   niimbot_label_printer:
     dependency: "direct main"
     description:
-      path: "vendor/niimbot_label_printer"
-      relative: true
-    source: path
+      name: niimbot_label_printer
+      sha256: "60219463ad4f62b05439265b48b9a72ae19def17eb0293e6e5fb3910aff182f0"
+      url: "https://pub.dev"
+    source: hosted
     version: "0.0.2"
   objective_c:
     dependency: transitive

@@ -311,10 +311,10 @@ extension _QrHomePageCore on _QrHomePageState {
         return;
       }
 
-      final List<IntakeData> loaded = rawItems
-          .whereType<Map<String, dynamic>>()
-          .map(IntakeData.fromJson)
-          .toList();
+      final List<Map<String, dynamic>> rawItemMaps =
+          rawItems.whereType<Map<String, dynamic>>().toList();
+      final List<IntakeData> loaded =
+          rawItemMaps.map(IntakeData.fromJson).toList();
       final int? totalCount = _jsonInt(decoded['count']);
       final int? nextOffset = _jsonInt(decoded['next_offset']);
       final bool hasMore = decoded['has_more'] as bool? ?? false;

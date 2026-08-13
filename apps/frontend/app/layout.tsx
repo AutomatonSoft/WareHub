@@ -2,20 +2,12 @@ import "./globals.css";
 import "react-image-crop/dist/ReactCrop.css";
 import type { Metadata } from "next";
 import React from "react";
-import { Montserrat } from "next/font/google";
 import { ThemeProvider } from "../components/theme/theme-provider";
 import { ToastProvider } from "../components/shared/toast-provider";
 import { QueryProvider } from "../components/providers/query-provider";
 import { AuthBootstrap } from "../components/providers/auth-bootstrap";
 import { LanguageSync } from "../components/providers/language-sync";
 import { TooltipProvider } from "../components/ui/tooltip";
-
-const montserrat = Montserrat({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-montserrat",
-  display: "swap"
-});
 
 export const metadata: Metadata = {
   title: "WareHub",
@@ -72,7 +64,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${montserrat.variable} relative min-h-screen bg-background font-sans text-foreground antialiased`}>
+      <body className="relative min-h-screen bg-background font-sans text-foreground antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: languageBootstrapScript }} />

@@ -13,6 +13,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
         migrations.CreateModel(
             name="ImportedProduct",
             fields=[
@@ -139,5 +142,7 @@ class Migration(migrations.Migration):
                 "db_table": "imported_product_stores",
                 "unique_together": {("product", "store_id")},
             },
+        ),
+            ],
         ),
     ]

@@ -80,14 +80,21 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
 
   Future<int> _deleteOldestIntakeByLocation({
     required String section,
-    required int slotNumber,
+    required int place,
   }) async {
     final Uri url = Uri.parse(
-      '${_effectiveApiBase()}/intakes/by-location?section=${normalizeWarehouseSection(section)}&slot_number=$slotNumber',
+      '${_effectiveApiBase()}/services/kids/mark-out-of-stock/',
     );
+    final Map<String, dynamic> body = {
+      'place': '$place',
+      'section': section,
+    };
+    String jsonString = jsonEncode(body);
     final http.Response response = await _authorizedRequest(
-      'DELETE',
+      'POST',
       url,
+      headers: _authHeaders(json: true),
+      body: jsonString,
     );
     if (response.statusCode == 401) {
       final MobileAuthRefreshStatus status =
@@ -152,12 +159,14 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       final String? targetLocation =
           parseWarehouseLocationFromQrPayload(scanned);
       if (targetLocation == null) {
-        _showMessage(_strings.text('format_place'), error: true);
+        _showMessage('${_strings.text('format_place')} 1', error: true);
         return;
       }
 
+      String number = targetLocation.substring(1);
+
       final List<IntakeData> targets =
-          _findActiveTargetsByWarehouseLocation(targetLocation);
+          _findActiveTargetsByWarehouseLocation(number);
       if (targets.isEmpty) {
         _showMessage(
           _strings.format(
@@ -179,12 +188,12 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       final MapEntry<String, int>? parsed =
           parseWarehouseSectionAndSlot(targetLocation);
       if (parsed == null) {
-        _showMessage(_strings.text('format_place'), error: true);
+        _showMessage('${_strings.text('format_place')} 2', error: true);
         return;
       }
       final int partsCount = await _deleteOldestIntakeByLocation(
         section: parsed.key,
-        slotNumber: parsed.value,
+        place: parsed.value,
       );
       await _reloadList();
       _showMessage(
@@ -274,16 +283,16 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       if (!confirmed) {
         return;
       }
-      final int? slotNumber = parseWarehouseSlotNumber(slotCode);
-      if (slotNumber == null ||
-          slotNumber < kWarehouseMinSlot ||
-          slotNumber > kWarehouseMaxSlot) {
+      final int? place = parseWarehouseSlotNumber(slotCode);
+      if (place == null ||
+          place < kWarehouseMinSlot ||
+          place > kWarehouseMaxSlot) {
         _showMessage(_strings.text('format_place'), error: true);
         return;
       }
       final int removedCount = await _deleteOldestIntakeByLocation(
         section: section,
-        slotNumber: slotNumber,
+        place: place,
       );
       await _reloadList();
 

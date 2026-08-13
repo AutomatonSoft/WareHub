@@ -1,5 +1,7 @@
 part of 'qr_home_page.dart';
 
+enum _PhotoPickSource { camera, gallery }
+
 const TextStyle _scanDialogTitleStyle = TextStyle(
   color: uiText,
   fontSize: 24,
@@ -692,25 +694,55 @@ extension _QrHomePageScanForms on _QrHomePageState {
     return value ?? false;
   }
 
-  Future<List<XFile>> _capturePhotosUpTo10({
-    int step = 4,
-    int total = 4,
+  Future<_PhotoPickSource?> _askPhotoSourceChoice({
+    required String title,
+    required String message,
+    required String dismissLabel,
   }) async {
+    final AppStrings strings = _strings;
+    return showDialog<_PhotoPickSource>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(title, style: _scanDialogTitleStyle),
+          content: Text(message, style: _scanDialogBodyStyle),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(dismissLabel, style: _scanActionTextStyle),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_PhotoPickSource.gallery),
+              child: Text(strings.text('gallery'), style: _scanActionTextStyle),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_PhotoPickSource.camera),
+              child: Text(strings.text('take_photos'),
+                  style: _scanActionTextStyle),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<List<XFile>> _pickGalleryPhotosUpTo(int maxCount) async {
+    if (maxCount <= 0) {
+      return <XFile>[];
+    }
+    final List<XFile> picked = await _imagePicker.pickMultiImage(
+      imageQuality: 88,
+      limit: maxCount,
+    );
+    return picked.take(maxCount).toList();
+  }
+
+  Future<List<XFile>> _captureCameraPhotosUpTo(int maxCount) async {
     final List<XFile> photos = <XFile>[];
     final AppStrings strings = _strings;
-    final bool startCapture = await _askYesNo(
-      title: strings.format(
-        'step_title',
-        <String, String>{'step': '$step', 'total': '$total'},
-      ),
-      message: strings.text('take_photos_question'),
-      yes: strings.text('take_photos'),
-      no: strings.text('skip_photos'),
-    );
-    if (!startCapture) {
-      return photos;
-    }
-    while (photos.length < 10) {
+    while (photos.length < maxCount) {
       final XFile? shot = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 88,
@@ -718,13 +750,13 @@ extension _QrHomePageScanForms on _QrHomePageState {
       if (shot != null) {
         photos.add(shot);
       }
-      if (photos.length >= 10) {
+      if (photos.length >= maxCount) {
         break;
       }
       final bool addMore = await _askYesNo(
         title: strings.format('photo_title', <String, String>{
           'current': '${photos.length}',
-          'total': '10',
+          'total': '$maxCount',
         }),
         message: strings.text('add_one_more_photo'),
         yes: strings.text('add_photo'),
@@ -735,6 +767,32 @@ extension _QrHomePageScanForms on _QrHomePageState {
       }
     }
     return photos;
+  }
+
+  Future<List<XFile>> _capturePhotosUpTo10({
+    int step = 4,
+    int total = 4,
+    bool askToStart = true,
+    int maxCount = 10,
+  }) async {
+    final AppStrings strings = _strings;
+    final _PhotoPickSource? source = await _askPhotoSourceChoice(
+      title: askToStart
+          ? strings.format(
+              'step_title',
+              <String, String>{'step': '$step', 'total': '$total'},
+            )
+          : strings.text('add_photos'),
+      message: strings.text('take_photos_question'),
+      dismissLabel:
+          askToStart ? strings.text('skip_photos') : strings.text('cancel'),
+    );
+    if (source == null) {
+      return <XFile>[];
+    }
+    return source == _PhotoPickSource.gallery
+        ? _pickGalleryPhotosUpTo(maxCount)
+        : _captureCameraPhotosUpTo(maxCount);
   }
 }
 

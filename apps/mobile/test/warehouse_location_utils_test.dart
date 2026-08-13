@@ -26,6 +26,7 @@ IntakeData _item({
     isBWare: false,
     store: false,
     inTransit: false,
+    inStock: false,
     bWareComment: null,
     createdAt: '2026-01-01T00:00:00Z',
     isRemoved: isRemoved,

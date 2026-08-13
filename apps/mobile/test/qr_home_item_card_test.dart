@@ -258,6 +258,7 @@ const IntakeData _item = IntakeData(
   isBWare: false,
   store: false,
   inTransit: false,
+  inStock: false,
   createdAt: '2026-07-24T00:00:00Z',
   isRemoved: false,
   isActive: true,

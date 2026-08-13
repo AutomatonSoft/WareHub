@@ -25,7 +25,7 @@ import { useLabels } from "../use-labels";
 import { CreateProductEanPoolPanel } from "./create-product-ean-pool-panel";
 import type { CreateProductGalleryItem } from "./create-product-image-gallery";
 import { CREATE_PRODUCT_XL_DEFAULT_SITE_KEY } from "./create-product-source-api";
-import { useCreateProductController } from "./use-create-product-controller";
+import { useCreateProductController, type CreateProductSourceDiscovery } from "./use-create-product-controller";
 import { PublishSitesDialog, type PublishSiteOption } from "./publish-sites-dialog";
 import type { JvCreateProductFields } from "./jv-create-product-panel";
 import { JvPublishingOptionsPanel, type JvPublishingSelections } from "./jv-publishing-options-panel";
@@ -416,6 +416,58 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
         targetSiteIds: [],
       };
   }
+}
+
+function getSourceDiscoveryForTab(
+  tab: CreateProductTab,
+  sourceDiscoveryBySiteKey: Partial<Record<string, CreateProductSourceDiscovery>>,
+  ottoProductsByProfile: Partial<Record<OttoProfile, Record<string, unknown>>>,
+  ottoSearchErrors: Partial<Record<OttoProfile, string>>,
+  ottoSearchLoading: boolean,
+): CreateProductSourceDiscovery | null {
+  if (tab === "otto_jv" || tab === "otto_xl") {
+    const profile: OttoProfile = tab === "otto_xl" ? "xl" : "jv";
+    if (ottoSearchLoading) return { status: "loading" };
+    if (ottoProductsByProfile[profile]) return { status: "found" };
+    const message = ottoSearchErrors[profile];
+    return message ? { status: "error", message } : { status: "missing" };
+  }
+  if (tab === "ebay_jv" || tab === "ebay_xl") return null;
+  if (tab === "jv") {
+    const jvStatuses = ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"]
+      .map((siteKey) => sourceDiscoveryBySiteKey[siteKey])
+      .filter((status): status is CreateProductSourceDiscovery => Boolean(status));
+    if (jvStatuses.some((status) => status.status === "found")) return { status: "found" };
+    if (jvStatuses.some((status) => status.status === "loading")) return { status: "loading" };
+    if (jvStatuses.every((status) => status.status === "missing")) return { status: "missing" };
+    return jvStatuses.find((status) => status.status === "error") ?? null;
+  }
+  const siteKeyByTab: Partial<Record<CreateProductTab, string>> = {
+    jv: "JV_DE",
+    xl: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+    hood_jv: "HOOD_JV",
+    hood_xl: "HOOD_XL",
+    kaufland_jv: "KAUFLAND_JV",
+    kaufland_xl: "KAUFLAND_XL",
+  };
+  const siteKey = siteKeyByTab[tab];
+  return siteKey ? sourceDiscoveryBySiteKey[siteKey] ?? null : null;
+}
+
+function getDiscoveryTabClass(status: CreateProductSourceDiscovery | null): string {
+  if (status?.status === "found") return "border-emerald-400/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (status?.status === "missing") return "border-rose-400/70 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+  if (status?.status === "error") return "border-amber-400/70 bg-amber-500/10 text-amber-800 dark:text-amber-300";
+  if (status?.status === "loading") return "border-sky-400/70 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  return "border-border/70 bg-card text-foreground";
+}
+
+function getDiscoveryTabMarker(status: CreateProductSourceDiscovery | null): string {
+  if (status?.status === "found") return "✓";
+  if (status?.status === "missing") return "×";
+  if (status?.status === "error") return "!";
+  if (status?.status === "loading") return "…";
+  return "";
 }
 
 function pickPrimaryJvContentRow(rows: unknown[]): JvContentRow | null {
@@ -1660,7 +1712,7 @@ export default function CreateProductPage() {
   }, [activeReservationFamily, controller.kidContext?.kidNumber, showToast]);
 
   useEffect(() => {
-    if (activeTabMeta.sourceSite !== "JV" || !controller.sourceSnapshot?.rawPayload) {
+    if (activeTab !== "jv" || !controller.sourceSnapshot?.rawPayload) {
       return;
     }
     if (jvDraftContextKeyRef.current === activeDraftContextKey) {
@@ -1674,10 +1726,10 @@ export default function CreateProductPage() {
 
     const primaryRow = pickPrimaryJvContentRow(contentByLanguage);
     const nextJvFields = {
-      name: String(primaryRow?.name || ""),
-      artikelnr: String((jvFields as { artikelnr?: unknown })?.artikelnr || ""),
-      price: String(controller.sourceSnapshot?.rawPayload?.price || ""),
-      description: String(primaryRow?.description || ""),
+      name: String(primaryRow?.name || controller.sourceSnapshot.productName || ""),
+      artikelnr: String((jvFields as { artikelnr?: unknown })?.artikelnr || controller.sourceSnapshot.ean || ""),
+      price: String(controller.sourceSnapshot?.rawPayload?.price || controller.sourceSnapshot.price || ""),
+      description: String(primaryRow?.description || controller.sourceSnapshot.description || ""),
       bezeichnung: String(primaryRow?.bezeichnung || ""),
       metaTitle: String(primaryRow?.meta_title || ""),
       metaDescription: String(primaryRow?.meta_description || ""),
@@ -1697,7 +1749,7 @@ export default function CreateProductPage() {
     setJvMetaKeyword(nextJvFields.metaKeyword);
     setJvShortDescriptionReal(nextJvFields.shortDescriptionReal);
     setJvKurzbeschreibung(nextJvFields.kurzbeschreibung);
-  }, [activeDraftContextKey, activeTabMeta.sourceSite, controller.sourceSnapshot?.rawPayload]);
+  }, [activeDraftContextKey, activeTab, controller.sourceSnapshot]);
 
   useEffect(() => {
     setGalleryItems((current) => {
@@ -2890,6 +2942,14 @@ export default function CreateProductPage() {
           <div className="flex flex-wrap gap-2">
             {PAGE_TABS.map((tab) => {
               const isActive = tab === activeTab;
+              const discovery = getSourceDiscoveryForTab(
+                tab,
+                controller.sourceDiscoveryBySiteKey,
+                ottoProductsByProfile,
+                ottoSearchErrors,
+                ottoSearchLoading,
+              );
+              const marker = getDiscoveryTabMarker(discovery);
 
               return (
                 <button
@@ -2897,13 +2957,12 @@ export default function CreateProductPage() {
                   type="button"
                   onClick={() => setActiveTab(tab)}
                   className={[
-                    "h-10 min-w-[110px] rounded-[var(--radius-control)] border border-border/70 bg-card px-4 text-xs font-semibold uppercase tracking-normal shadow-sm transition-colors hover:border-primary/35 hover:bg-primary/5",
-                    isActive
-                      ? "border-primary/35 bg-primary/10 text-primary"
-                      : "text-foreground",
+                    "h-10 min-w-[110px] rounded-[var(--radius-control)] border px-4 text-xs font-semibold uppercase tracking-normal shadow-sm transition-colors hover:border-primary/35 hover:bg-primary/5",
+                    getDiscoveryTabClass(discovery),
+                    isActive ? "ring-2 ring-primary/30" : "",
                   ].join(" ")}
                 >
-                  {getCreateProductTabLabel(tab, t)}
+                  {getCreateProductTabLabel(tab, t)}{marker ? ` ${marker}` : ""}
                 </button>
               );
             })}

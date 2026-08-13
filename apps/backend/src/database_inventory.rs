@@ -37,6 +37,7 @@ pub(crate) struct DatabaseInventoryRowsQuery {
     pub(crate) location: Option<String>,
     pub(crate) store: Option<bool>,
     pub(crate) b_ware: Option<bool>,
+    pub(crate) in_stock: Option<bool>,
     pub(crate) in_transit: Option<bool>,
 }
 
@@ -61,7 +62,14 @@ struct DatabaseInventoryRowsRequest {
     material: Option<String>,
     location: Option<String>,
     b_ware: Option<bool>,
+    in_stock: Option<bool>,
     in_transit: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MarkDatabaseInventoryOutOfStockRequest {
+    place: String,
+    section: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -116,6 +124,7 @@ pub(crate) struct MobileInventoryRowDto {
     pub(crate) unit_index: i32,
     pub(crate) is_b_ware: bool,
     pub(crate) store: bool,
+    pub(crate) in_stock: bool,
     pub(crate) in_transit: bool,
     pub(crate) b_ware_comment: Option<String>,
     pub(crate) created_at: String,
@@ -216,6 +225,77 @@ pub(crate) async fn update_database_inventory_kid_photo(
         .map(Json)
 }
 
+pub(crate) async fn mark_database_inventory_out_of_stock(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MarkDatabaseInventoryOutOfStockRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    let _user = require_approved_user(&state, &headers).await?;
+    let place = payload.place.trim();
+    let section = payload.section.trim().to_ascii_uppercase();
+    if place.is_empty() {
+        return Err(database_inventory_error(
+            StatusCode::BAD_REQUEST,
+            "database_inventory_place_required",
+            "place is required",
+        ));
+    }
+    if section.chars().count() != 1 {
+        return Err(database_inventory_error(
+            StatusCode::BAD_REQUEST,
+            "database_inventory_section_invalid",
+            "section must contain exactly one character",
+        ));
+    }
+
+    let Some(config) = state.database_kid_sync.clone() else {
+        return Err(database_inventory_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "database_inventory_not_configured",
+            "database-service integration is not configured",
+        ));
+    };
+    let url = format!("{}/api/v1/kids/mark-out-of-stock/", config.base_url);
+    let response = state
+        .http_client
+        .post(url)
+        .header("x-warehub-service-token", &config.service_token)
+        .json(&serde_json::json!({ "place": place, "section": section }))
+        .timeout(Duration::from_secs(DATABASE_INVENTORY_TIMEOUT_SECONDS))
+        .send()
+        .await
+        .map_err(|error| {
+            database_inventory_error(
+                StatusCode::BAD_GATEWAY,
+                "database_inventory_mark_out_of_stock_request_failed",
+                format!("failed to request database-service: {error}"),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        let upstream_status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let status = match upstream_status {
+            StatusCode::BAD_REQUEST => StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND => StatusCode::NOT_FOUND,
+            _ => StatusCode::BAD_GATEWAY,
+        };
+        return Err(database_inventory_error(
+            status,
+            "database_inventory_mark_out_of_stock_upstream_failed",
+            format!("database-service returned HTTP {upstream_status}: {body}"),
+        ));
+    }
+
+    response.json::<Value>().await.map(Json).map_err(|error| {
+        database_inventory_error(
+            StatusCode::BAD_GATEWAY,
+            "database_inventory_mark_out_of_stock_response_invalid",
+            format!("database-service response is invalid: {error}"),
+        )
+    })
+}
+
 async fn list_database_inventory_rows_service(
     state: &AppState,
     query: DatabaseInventoryRowsQuery,
@@ -253,6 +333,7 @@ async fn list_database_inventory_rows_service(
             material: query.material,
             location,
             b_ware: query.b_ware,
+            in_stock: query.in_stock,
             in_transit: query.in_transit,
         },
     )
@@ -487,6 +568,9 @@ async fn fetch_database_inventory_rows_page(
         if let Some(b_ware) = request.b_ware {
             pairs.append_pair("b_ware", if b_ware { "true" } else { "false" });
         }
+        if let Some(in_stock) = request.in_stock {
+            pairs.append_pair("in_stock", if in_stock { "true" } else { "false" });
+        }
         if let Some(in_transit) = request.in_transit {
             pairs.append_pair("in_transit", if in_transit { "true" } else { "false" });
         }
@@ -589,6 +673,7 @@ fn map_kid_response_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
         unit_index: int_field(row, "id").unwrap_or(1).max(1),
         is_b_ware: bool_field(row, "b_ware").unwrap_or(false),
         store: bool_field(row, "store").unwrap_or(false),
+        in_stock: bool_field(row, "in_stock").unwrap_or(true),
         in_transit: bool_field(row, "in_transit").unwrap_or(false),
         b_ware_comment: text_field(row, "commentary"),
         created_at: Utc::now().to_rfc3339(),
@@ -629,6 +714,7 @@ fn map_inventory_row_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
         unit_index: int_field(row, "kid_id").unwrap_or(1).max(1),
         is_b_ware: bool_field(row, "b_ware").unwrap_or(false),
         store: bool_field(row, "store").unwrap_or(false),
+        in_stock: bool_field(row, "in_stock").unwrap_or(true),
         in_transit: bool_field(row, "in_transit").unwrap_or(false),
         b_ware_comment: text_field(row, "commentary").filter(|value| value != "-"),
         created_at: text_field(row, "date").unwrap_or_else(|| Utc::now().to_rfc3339()),
@@ -786,6 +872,7 @@ mod tests {
             "sku": "SKU-1",
             "quantity": 3,
             "store": true,
+            "in_stock": false,
             "in_transit": true,
             "commentary": "Box damaged",
             "date": "2026-07-08T10:00:00Z"
@@ -802,6 +889,7 @@ mod tests {
         assert_eq!(mapped.box_total, 3);
         assert_eq!(mapped.product_key.as_deref(), Some("SKU-1"));
         assert!(mapped.store);
+        assert!(!mapped.in_stock);
         assert!(mapped.in_transit);
         assert_eq!(mapped.b_ware_comment.as_deref(), Some("Box damaged"));
         assert_eq!(

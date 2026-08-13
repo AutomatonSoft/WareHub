@@ -23,9 +23,10 @@ internal class DiagnosticsLogger(private val tag: String = "NiimbotB1") {
     }
 
     private fun shouldLogDebug(stage: String, message: String): Boolean {
-        if (stage != "PRINT") {
-            return false
-        }
-        return message.startsWith("start ") || message == "completed"
+        // TX/RX dump the full hex payload of every single command - for a
+        // multi-hundred-row print that floods logcat, so keep those out.
+        // Everything else is one line per call and is exactly what's needed
+        // to tell where a print actually stalls or fails.
+        return stage != "TX" && stage != "RX"
     }
 }
