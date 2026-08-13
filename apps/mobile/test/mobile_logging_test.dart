@@ -27,7 +27,6 @@ void main() {
   });
 
   group('defaultApiBaseForEnv', () {
-
     test('does not force lan backend for stage', () {
       expect(
         defaultApiBaseForEnv('stage'),
