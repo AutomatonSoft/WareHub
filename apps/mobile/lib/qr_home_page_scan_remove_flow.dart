@@ -159,11 +159,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       final String? targetLocation =
           parseWarehouseLocationFromQrPayload(scanned);
       if (targetLocation == null) {
-        _showMessage(_strings.text('format_place') + ' 1', error: true);
+        _showMessage('${_strings.text('format_place')} 1', error: true);
         return;
       }
 
-      String letter = targetLocation.substring(0, 1).toLowerCase();
       String number = targetLocation.substring(1);
 
       final List<IntakeData> targets =
@@ -189,7 +188,7 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       final MapEntry<String, int>? parsed =
           parseWarehouseSectionAndSlot(targetLocation);
       if (parsed == null) {
-        _showMessage(_strings.text('format_place') + ' 2', error: true);
+        _showMessage('${_strings.text('format_place')} 2', error: true);
         return;
       }
       final int partsCount = await _deleteOldestIntakeByLocation(

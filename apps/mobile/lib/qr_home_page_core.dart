@@ -19,7 +19,6 @@ extension _QrHomePageCore on _QrHomePageState {
       headers['Content-Type'] = 'application/json';
     }
     final String token = _authToken();
-    print('TOKEN==============>>>>>>>>>> $token');
     if (token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -87,7 +86,6 @@ extension _QrHomePageCore on _QrHomePageState {
     String? body,
   }) {
     final AppSettings settings = AppSettingsScope.of(context);
-    print('URL =====>>>>>>>>>> $url');
     return mobileAuthorizedRequest(
       settings,
       method,
@@ -303,7 +301,6 @@ extension _QrHomePageCore on _QrHomePageState {
       }
 
       final dynamic decoded = jsonDecode(response.body);
-      print("=================>>>>>>>> $decoded");
       if (decoded is! Map<String, dynamic>) {
         _showMessage(_strings.text('load_list_invalid'), error: true);
         return;
@@ -318,13 +315,6 @@ extension _QrHomePageCore on _QrHomePageState {
           rawItems.whereType<Map<String, dynamic>>().toList();
       final List<IntakeData> loaded =
           rawItemMaps.map(IntakeData.fromJson).toList();
-      for (var i = 0; i < loaded.length; i++) {
-        print(
-          'in_stock raw=${rawItemMaps[i]['in_stock']} '
-          '(${rawItemMaps[i]['in_stock'].runtimeType}) '
-          'parsed=${loaded[i].inStock} id=${loaded[i].id}',
-        );
-      }
       final int? totalCount = _jsonInt(decoded['count']);
       final int? nextOffset = _jsonInt(decoded['next_offset']);
       final bool hasMore = decoded['has_more'] as bool? ?? false;
