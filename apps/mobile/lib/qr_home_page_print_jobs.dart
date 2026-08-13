@@ -348,7 +348,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
       for (int i = 0; i < images.length; i++) {
         final ui.Image image = images[i];
         final List<int> bytes = await _buildPrintBytes(image);
-        final int effectiveLabelType = _printLabelType;
+        final int effectiveLabelType = nativeNiimbotLabelType(_printLabelType);
         final int effectiveHeight = _printHeightPx;
         final int effectiveDensity = _printDensity;
 
@@ -435,7 +435,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     }
     await _ensureNimbotConnection();
     final List<int> bytes = await _buildPrintBytes(image);
-    final int effectiveLabelType = _printLabelType;
+    final int effectiveLabelType = nativeNiimbotLabelType(_printLabelType);
     final PrintData printData = PrintData(
       data: bytes,
       width: _printWidthPx,
