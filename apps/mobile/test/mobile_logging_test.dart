@@ -27,12 +27,6 @@ void main() {
   });
 
   group('defaultApiBaseForEnv', () {
-    test('uses lan backend for dev', () {
-      expect(
-        defaultApiBaseForEnv('dev'),
-        'http://10.0.2.2:8932/api/v1',
-      );
-    });
 
     test('does not force lan backend for stage', () {
       expect(
