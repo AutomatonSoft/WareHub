@@ -5,7 +5,6 @@ part of 'qr_home_page.dart';
 enum _ImagePrintSource {
   gallery,
   manual,
-  serializerTest,
 }
 
 class _PrintPreviewActionButton extends StatelessWidget {
@@ -58,7 +57,69 @@ class _ImageSourceActionButton extends StatelessWidget {
   }
 }
 
+// The niimbot_label_printer plugin only marks a pixel black when it is
+// exactly opaque black (0xFF000000); it does no thresholding of its own. Any
+// image with anti-aliased or continuous-tone pixels (photos, scaled bitmaps)
+// must be dithered down to strict black/white first or it prints blank.
+Uint8List _ditherToBlackWhite(Uint8List rgba, int width, int height) {
+  final Uint8List out = Uint8List.fromList(rgba);
+  final Float32List luminance = Float32List(width * height);
+  for (int i = 0; i < width * height; i++) {
+    final int o = i * 4;
+    final double alpha = rgba[o + 3] / 255.0;
+    final double r = rgba[o] * alpha + 255 * (1 - alpha);
+    final double g = rgba[o + 1] * alpha + 255 * (1 - alpha);
+    final double b = rgba[o + 2] * alpha + 255 * (1 - alpha);
+    luminance[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final int i = y * width + x;
+      final double oldValue = luminance[i];
+      final bool isBlack = oldValue < 128;
+      final double newValue = isBlack ? 0 : 255;
+      final double error = oldValue - newValue;
+      final int o = i * 4;
+      out[o] = newValue.toInt();
+      out[o + 1] = newValue.toInt();
+      out[o + 2] = newValue.toInt();
+      out[o + 3] = 255;
+
+      void spread(int dx, int dy, double factor) {
+        final int nx = x + dx;
+        final int ny = y + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+          return;
+        }
+        luminance[ny * width + nx] += error * factor;
+      }
+
+      spread(1, 0, 7 / 16);
+      spread(-1, 1, 3 / 16);
+      spread(0, 1, 5 / 16);
+      spread(1, 1, 1 / 16);
+    }
+  }
+  return out;
+}
+
 extension _QrHomePagePrintJobs on _QrHomePageState {
+  Future<List<int>> _buildPrintBytes(ui.Image image) async {
+    final ByteData? byteData =
+        await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) {
+      throw Exception('Unable to convert image to raw pixels.');
+    }
+    final Uint8List rgba = byteData.buffer.asUint8List();
+    // PrintData.toMap() only unwraps Uint8List when its runtimeType is
+    // exactly Uint8List, which the concrete native type never matches - a
+    // Uint8List crosses the platform channel as a byte-array blob instead
+    // of a List<Int>, and the native `as? List<Int>` cast then silently
+    // yields null. Return a genuine growable List<int> to avoid that.
+    return _ditherToBlackWhite(rgba, image.width, image.height).toList();
+  }
+
   Future<_ImagePrintSource?> _showImageSourceDialog() async {
     return showDialog<_ImagePrintSource>(
       context: context,
@@ -92,14 +153,6 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
                         label: strings.text('manual'),
                         onPressed: () =>
                             Navigator.of(context).pop(_ImagePrintSource.manual),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _ImageSourceActionButton(
-                        label: 'Serializer x4',
-                        onPressed: () => Navigator.of(context)
-                            .pop(_ImagePrintSource.serializerTest),
                       ),
                     ),
                   ],
@@ -250,7 +303,10 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
   }) async {
     try {
       final AppStrings strings = _strings;
-      final String payload = _buildLabelQrPayload(warehouseLocation);
+      final String basePayload = _buildLabelQrPayload(warehouseLocation);
+      final String normalizedSection = normalizeWarehouseSection(sectionCode ?? '');
+      final String payload =
+          normalizedSection.isEmpty ? basePayload : '$normalizedSection$basePayload';
       final String mainCaption = payload;
       final int partsTotal = totalParts ?? quantity;
       final List<ui.Image> images = <ui.Image>[];
@@ -289,12 +345,7 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
       await _ensureNimbotConnection();
       for (int i = 0; i < images.length; i++) {
         final ui.Image image = images[i];
-        final ByteData? byteData =
-            await image.toByteData(format: ui.ImageByteFormat.png);
-        if (byteData == null) {
-          throw Exception('Unable to build label image.');
-        }
-        final List<int> bytes = byteData.buffer.asUint8List().toList();
+        final List<int> bytes = await _buildPrintBytes(image);
         final int effectiveLabelType = _printLabelType;
         final int effectiveHeight = _printHeightPx;
         final int effectiveDensity = _printDensity;
@@ -381,14 +432,10 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
       return;
     }
     await _ensureNimbotConnection();
-    final ByteData? byteData =
-        await image.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) {
-      throw Exception('Unable to convert selected image.');
-    }
+    final List<int> bytes = await _buildPrintBytes(image);
     final int effectiveLabelType = _printLabelType;
     final PrintData printData = PrintData(
-      data: byteData.buffer.asUint8List().toList(),
+      data: bytes,
       width: _printWidthPx,
       height: _printHeightPx,
       rotate: false,
@@ -409,10 +456,6 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     try {
       final _ImagePrintSource? source = await _showImageSourceDialog();
       if (source == null) {
-        return;
-      }
-      if (source == _ImagePrintSource.serializerTest) {
-        await _runSerializerPackingModeTest();
         return;
       }
 
@@ -495,43 +538,5 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
         });
       }
     }
-  }
-
-  Future<void> _runSerializerPackingModeTest() async {
-    await _ensureNimbotConnection();
-    final List<Map<String, dynamic>> modes = <Map<String, dynamic>>[
-      <String, dynamic>{'bitOrder': 'MSB', 'invertPackedBits': false},
-      <String, dynamic>{'bitOrder': 'MSB', 'invertPackedBits': true},
-      <String, dynamic>{'bitOrder': 'LSB', 'invertPackedBits': false},
-      <String, dynamic>{'bitOrder': 'LSB', 'invertPackedBits': true},
-    ];
-
-    for (int i = 0; i < modes.length; i++) {
-      final Map<String, dynamic> mode = modes[i];
-      final String bitOrder = mode['bitOrder'] as String;
-      final bool invertPackedBits = mode['invertPackedBits'] as bool;
-      _showMessage(
-        'Serializer test ${i + 1}/4: bitOrder=$bitOrder invertPackedBits=$invertPackedBits',
-      );
-
-      final PrinterOperationResult result =
-          await _printer.debugPrintTestPattern(
-        labelType: _printLabelType,
-        density: _printDensity,
-        bitOrder: bitOrder,
-        invertPackedBits: invertPackedBits,
-      );
-      if (!result.ok) {
-        throw Exception(
-          'Serializer test failed for $bitOrder/$invertPackedBits: ${result.code} ${result.message}',
-        );
-      }
-      if (i < modes.length - 1) {
-        await Future<void>.delayed(const Duration(seconds: 2));
-      }
-    }
-    _showMessage(
-      'Serializer test done: check paper + logs (rasterDebug, roundtripMismatchCount).',
-    );
   }
 }

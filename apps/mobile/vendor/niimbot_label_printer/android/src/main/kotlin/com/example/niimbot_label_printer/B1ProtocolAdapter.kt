@@ -262,7 +262,22 @@ internal class B1ProtocolAdapter(
 
     private suspend fun startWithMediaProfile(task: PrintTask): Pair<Int, Int> {
         cachedMediaProfile?.let { (cachedLabelType, cachedDensity) ->
-            if (tryApplyMediaProfile(cachedLabelType, cachedDensity, withClear = false)) {
+            val cacheHit = try {
+                tryApplyMediaProfile(cachedLabelType, cachedDensity, withClear = false)
+            } catch (error: PrinterException.PrintTaskFailed) {
+                logger.warn(
+                    "PRINT",
+                    "cached media profile threw, falling back to probe path labelType=$cachedLabelType density=$cachedDensity: ${error.message}",
+                )
+                false
+            } catch (error: PrinterException.ProtocolError) {
+                logger.warn(
+                    "PRINT",
+                    "cached media profile threw, falling back to probe path labelType=$cachedLabelType density=$cachedDensity: ${error.message}",
+                )
+                false
+            }
+            if (cacheHit) {
                 logger.debug(
                     "PRINT",
                     "media profile cache hit labelType=$cachedLabelType density=$cachedDensity",
@@ -306,7 +321,7 @@ internal class B1ProtocolAdapter(
             }
         }
 
-        var lastError: PrinterException.PrintTaskFailed? = null
+        var lastError: PrinterException? = null
         val clearModes = clearModesForLabelTypeCandidates(labelTypeCandidates)
         for ((labelType, density) in candidates) {
             for (withClear in clearModes) {
@@ -324,13 +339,24 @@ internal class B1ProtocolAdapter(
                         "media profile rejected labelType=$labelType density=$density withClear=$withClear code=0x${"%02X".format(code)}",
                     )
                 } catch (error: PrinterException.ProtocolError) {
-                    if (!isUnsupportedCommandResponse(error)) {
-                        throw error
+                    // Firmware often ignores an incompatible label type/density
+                    // combination instead of replying with an explicit reject,
+                    // which surfaces here as a plain read timeout rather than
+                    // an 0x00 response. Treat it the same as a rejected
+                    // candidate and keep probing instead of aborting the whole
+                    // search on the first timeout.
+                    lastError = error
+                    if (isUnsupportedCommandResponse(error)) {
+                        logger.warn(
+                            "PRINT",
+                            "media profile unsupported by firmware labelType=$labelType density=$density withClear=$withClear",
+                        )
+                    } else {
+                        logger.warn(
+                            "PRINT",
+                            "media profile probe timed out labelType=$labelType density=$density withClear=$withClear: ${error.message}",
+                        )
                     }
-                    logger.warn(
-                        "PRINT",
-                        "media profile unsupported by firmware labelType=$labelType density=$density withClear=$withClear",
-                    )
                 }
             }
         }

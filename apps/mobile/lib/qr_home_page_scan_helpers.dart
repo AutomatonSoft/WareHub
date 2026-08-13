@@ -221,13 +221,13 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
           return null;
         }
         if (!RegExp(r'^[0-9]+[A-Za-z]*$').hasMatch(value)) {
-          return _strings.text('format_place');
+          return _strings.text('format_place') + ' 3';
         }
         final int? slot = parseWarehouseSlotNumber(value);
         if (slot == null ||
             slot < kWarehouseMinSlot ||
             slot > kWarehouseMaxSlot) {
-          return _strings.text('format_place');
+          return _strings.text('format_place')  + ' 4';
         }
         return null;
       },

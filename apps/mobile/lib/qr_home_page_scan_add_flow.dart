@@ -152,4 +152,62 @@ extension _QrHomePageAddFlow on _QrHomePageState {
     );
     return result;
   }
+
+  Future<List<String>?> _addPhotosToItem(IntakeData item) async {
+    final int existingCount = _photoUrlsFromField(item.photoUrl).length;
+    final int remaining = 10 - existingCount;
+    if (remaining <= 0) {
+      _showMessage(_strings.text('photos_limit_reached'), error: true);
+      return null;
+    }
+
+    try {
+      final List<XFile> photos = await _capturePhotosUpTo10(
+        askToStart: false,
+        maxCount: remaining,
+      );
+      if (photos.isEmpty) {
+        return null;
+      }
+
+      final String photoPrefix =
+          item.databaseKidId > 0 ? '${item.databaseKidId}' : item.id;
+      final String photoFolder =
+          buildIntakePhotoFolder(item.section, item.warehouseLocation);
+      final String? newlyUploaded = await _uploadPhotosAndBuildField(
+        photos,
+        filePrefix: photoPrefix,
+        folder: photoFolder,
+      );
+      final String normalizedNew = (newlyUploaded ?? '').trim();
+      if (normalizedNew.isEmpty) {
+        return null;
+      }
+
+      final String existingRaw = item.photoUrl.trim();
+      final String combined = existingRaw.isEmpty
+          ? normalizedNew
+          : '$existingRaw,$normalizedNew';
+      final String kidPhotoRef =
+          item.databaseKidId > 0 ? '${item.databaseKidId}' : item.id;
+      final IntakeData updated = await _updateIntakePhoto(
+        intakeId: kidPhotoRef,
+        photoUrl: combined,
+      );
+      _upsertItem(updated);
+      _showMessage(
+        _strings.format(
+          'photos_added',
+          <String, String>{'count': '${photos.length}'},
+        ),
+      );
+      return _photoUrlsFromField(updated.photoUrl);
+    } catch (error) {
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
+      return null;
+    }
+  }
 }
