@@ -906,9 +906,27 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         return summary
 
-    def perform_create(self, serializer):
+    @staticmethod
+    def _skipped_order_sync_summary(kid):
+        return {
+            "kid_number": primary_kid_number(kid.kid_number),
+            "fetched_items": 0,
+            "collapsed_items": 0,
+            "created": 0,
+            "updated": 0,
+            "skipped_without_order_id": 0,
+            "error": None,
+            "error_detail": None,
+            "skipped": True,
+        }
+
+    def perform_create(self, serializer, *, skip_order_sync=False):
         kid = serializer.save()
-        sync_summary = self._sync_orders_for_kid(kid)
+        sync_summary = (
+            self._skipped_order_sync_summary(kid)
+            if skip_order_sync
+            else self._sync_orders_for_kid(kid)
+        )
         return kid, sync_summary
 
     @staticmethod
@@ -1111,6 +1129,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data or {})
         query = request.query_params
+        skip_order_sync = payload.pop("skip_order_sync", False) is True
 
         payload["kid_number"] = (
             self._coalesce_value(payload, query, "kid_number")
@@ -1195,7 +1214,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
 
         if existing is None:
             with transaction.atomic():
-                kid, sync_summary = self.perform_create(serializer)
+                kid, sync_summary = self.perform_create(serializer, skip_order_sync=skip_order_sync)
             enrichment_summary = self._apply_kid_enrichment(
                 kid,
                 product_attrs=product_attrs,
@@ -1238,7 +1257,11 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             product_attrs=product_attrs,
             main_ean=main_ean,
         )
-        sync_summary = self._sync_orders_for_kid(existing)
+        sync_summary = (
+            self._skipped_order_sync_summary(existing)
+            if skip_order_sync
+            else self._sync_orders_for_kid(existing)
+        )
         output = self.get_serializer(existing)
         response_data = dict(output.data)
         response_data["sync"] = sync_summary

@@ -517,6 +517,19 @@ class DatabaseApiTests(APITestCase):
         self.assertIsNone(response.data["sync"]["error_detail"])
         self.assertEqual(kid.place, "1")
 
+    @patch("database.views.search_items_auktionsliste")
+    def test_create_kid_skips_afterbuy_sync_when_requested(self, mocked_search):
+        response = self.client.post(
+            "/api/v1/kids/",
+            {"kid_number": "900901", "skip_order_sync": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["sync"]["skipped"])
+        self.assertIsNone(response.data["sync"]["error"])
+        mocked_search.assert_not_called()
+
     @patch("database.views.search_items_auktionsliste", side_effect=RuntimeError("Missing Afterbuy login credentials in .env for JV, XL or CH."))
     def test_create_kid_reports_missing_afterbuy_credentials(self, mocked_search):
         response = self.client.post("/api/v1/kids/", {"kid_number": "900903"}, format="json")
