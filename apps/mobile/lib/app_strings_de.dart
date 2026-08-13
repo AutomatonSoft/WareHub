@@ -272,6 +272,10 @@ const Map<String, String> appLabelsDe = <String, String>{
   'photo_title': 'Foto {current}/{total}',
   'add_one_more_photo': 'Noch ein Foto hinzufügen?',
   'add_photo': 'Foto hinzufügen',
+  'add_photos': 'Fotos hinzufügen',
+  'photos_added': '{count} Foto(s) hinzugefügt.',
+  'photos_limit_reached':
+      'Dieses Produkt hat bereits die maximale Anzahl von 10 Fotos.',
   'continue': 'Weiter',
   'ordered_items': 'Bestellte Artikel (Afterbuy):',
   'no_structured_items': 'Keine strukturierten Artikel aus Afterbuy erkannt.',

@@ -42,7 +42,11 @@ class QrHomeItemCard extends StatelessWidget {
       strings: strings,
     );
     final bool hasMultipleLocations = warehouseLocations.length > 1;
-    final Color background = removed ? uiCardSoft : uiCard;
+    final Color background = removed
+        ? uiCardSoft
+        : item.inStock
+            ? uiCard
+            : const Color(0xFFFEF3C7);
     final Color countChipBackground = removed
         ? uiOrangeDeep.withValues(alpha: 0.20)
         : hasMultipleLocations

@@ -56,10 +56,14 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
 
   Future<void> _ensureNimbotConnectionInternal() async {
     final AppStrings strings = _strings;
-    // Fast path: if session is still alive, skip permission/helper checks.
-    final bool alreadyConnected = await _printer.isConnected();
-    if (alreadyConnected) {
-      _printerConnected = true;
+    // Trust our own tracked state instead of pinging the plugin's
+    // isConnected(), which writes a stray byte into the live protocol
+    // stream (see niimbot_label_printer's isConnected handler). Some
+    // Niimbot firmwares drop the connection when they see a byte outside
+    // the 0x55 0x55 packet framing, so probing right before a print can
+    // itself cause the disconnect. A real failure still self-heals via the
+    // retry path in _sendPrintData, which explicitly disconnects first.
+    if (_printerConnected) {
       return;
     }
 
@@ -91,47 +95,26 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
 
     final String? savedMac = await _loadSavedPrinterMac();
     if ((savedMac ?? '').isNotEmpty) {
-      final PrinterOperationResult savedResult = await _printer.connectDetailed(
+      final bool savedConnected = await _printer.connect(
         BluetoothDevice(name: 'Saved Printer', address: savedMac!),
-        allowClassicFallback: false,
       );
-      if (savedResult.ok) {
+      if (savedConnected) {
         _printerConnected = true;
         return;
       }
     }
 
+    // _connectPrinterWithPicker throws on failure, so reaching this point
+    // means connect() already reported success.
     await _connectPrinterWithPicker();
-    final bool connected = await _printer.isConnected();
-    if (!connected) {
-      throw Exception(strings
-          .text('printer_connect_failed')
-          .replaceAll(
-            '{name}',
-            'Niimbot',
-          )
-          .replaceAll('{address}', 'unknown'));
-    }
     _printerConnected = true;
   }
 
   Future<void> _connectToDevice(BluetoothDevice selected) async {
-    final List<BluetoothDevice> paired = await _printer.getPairedDevices();
-    final bool shouldPairFirst = !paired
-        .map((BluetoothDevice d) => d.address.toUpperCase())
-        .contains(selected.address.toUpperCase());
-    final PrinterOperationResult result = shouldPairFirst
-        ? await _printer.pairAndConnectDetailed(
-            selected,
-            allowClassicFallback: false,
-          )
-        : await _printer.connectDetailed(
-            selected,
-            allowClassicFallback: false,
-          );
-    if (!result.ok) {
+    final bool connected = await _printer.connect(selected);
+    if (!connected) {
       throw Exception(
-        'Printer returned error code=${result.code} message=${result.message}',
+        'Failed to connect to printer ${selected.name} (${selected.address}).',
       );
     }
     await _saveSavedPrinterMac(selected.address);
@@ -139,22 +122,16 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
 
   Future<void> _connectPrinterWithPicker() async {
     final List<BluetoothDevice> paired = await _printer.getPairedDevices();
-    final Set<String> pairedAddresses =
-        paired.map((BluetoothDevice d) => d.address.toUpperCase()).toSet();
-    final List<BluetoothDevice> available =
-        await _printer.getAvailableDevices(scanSeconds: 8);
-    if (available.isEmpty) {
+    if (paired.isEmpty) {
       throw Exception(_strings.text('no_printers_found'));
     }
     final List<BluetoothDevice> candidates =
-        available.where(_isLikelyNiimbotDevice).toList();
+        paired.where(_isLikelyNiimbotDevice).toList();
     final List<BluetoothDevice> pickerDevices =
-        candidates.isNotEmpty ? candidates : available;
+        candidates.isNotEmpty ? candidates : paired;
 
-    final BluetoothDevice? selected = await _showPrinterDevicePicker(
-      pickerDevices,
-      pairedAddresses: pairedAddresses,
-    );
+    final BluetoothDevice? selected =
+        await _showPrinterDevicePicker(pickerDevices);
     if (selected == null) {
       throw Exception(_strings.text('printer_selection_cancelled'));
     }
@@ -162,9 +139,8 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
   }
 
   Future<BluetoothDevice?> _showPrinterDevicePicker(
-    List<BluetoothDevice> devices, {
-    Set<String>? pairedAddresses,
-  }) async {
+    List<BluetoothDevice> devices,
+  ) async {
     if (!mounted) {
       return null;
     }
@@ -185,29 +161,17 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: devices.map((BluetoothDevice device) {
-                      final bool isPaired = pairedAddresses?.contains(
-                            device.address.toUpperCase(),
-                          ) ??
-                          false;
                       final bool isSelected =
                           selectedDevice?.address == device.address;
                       return ListTile(
                         dense: true,
-                        leading: Icon(
-                          isPaired
-                              ? Icons.bluetooth_connected
-                              : Icons.bluetooth_searching,
-                        ),
+                        leading: const Icon(Icons.bluetooth_connected),
                         title: Text(
                           device.name.trim().isEmpty
                               ? strings.text('unknown_device')
                               : device.name,
                         ),
-                        subtitle: Text(
-                          isPaired
-                              ? '${device.address} - ${strings.text('paired')}'
-                              : '${device.address} - ${strings.text('not_paired')}',
-                        ),
+                        subtitle: Text(device.address),
                         trailing: isSelected
                             ? const Icon(Icons.check_circle,
                                 color: Colors.green)
@@ -242,7 +206,9 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
   }
 
   Future<void> _preparePrinterInBackground() async {
-    if (_preparingPrinter || _connectPrinterFuture != null) {
+    if (_preparingPrinter ||
+        _connectPrinterFuture != null ||
+        _printerConnected) {
       return;
     }
     _preparingPrinter = true;
@@ -260,16 +226,10 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
       if (!bluetoothEnabled) {
         return;
       }
-      final bool alreadyConnected = await _printer.isConnected();
-      if (alreadyConnected) {
-        _printerConnected = true;
-        return;
-      }
-      final PrinterOperationResult result = await _printer.connectDetailed(
+      final bool connected = await _printer.connect(
         BluetoothDevice(name: 'Saved Printer', address: savedMac!),
-        allowClassicFallback: false,
       );
-      _printerConnected = result.ok;
+      _printerConnected = connected;
     } catch (_) {
       // Keep silent: startup auto-connect is best-effort.
       _printerConnected = false;
@@ -281,25 +241,12 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
     }
   }
 
-  // isConnected() only reflects that connect() once succeeded and close()
-  // hasn't been called since - Android doesn't notice a silent remote
-  // disconnect until the next read/write, so it can lie and say "connected"
-  // long after the printer is gone. getPrinterStatus() sends a real command
-  // over the link, so it actually fails when the connection is dead.
-  Future<bool> _probePrinterConnectionLive() async {
-    try {
-      final bool cachedConnected = await _printer.isConnected();
-      if (!cachedConnected) {
-        return false;
-      }
-      final PrinterOperationResult status = await _printer.getPrinterStatus();
-      return status.ok;
-    } catch (_) {
-      return false;
-    }
-  }
-
   Future<void> _refreshPrinterConnectionStatus() async {
+    if (_printerConnected) {
+      // Already believed connected - skip the native ping so we don't risk
+      // tripping the printer's connection with a stray non-protocol byte.
+      return;
+    }
     try {
       final bool connected = await _printer.isConnected();
       if (!mounted) return;
@@ -322,17 +269,10 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
       _connectingPrinter = true;
     });
     try {
-      if (await _probePrinterConnectionLive()) {
-        if (!mounted) return;
-        setState(() {
-          _printerConnected = true;
-        });
+      if (_printerConnected) {
         _showMessage(_strings.text('printer_connected_message'));
         return;
       }
-      // Any cached session is stale/dead at this point - drop it so the
-      // reconnect flow below opens a fresh socket instead of reusing it.
-      await _printer.disconnect();
       await _ensureNimbotConnection();
       if (!mounted) return;
       setState(() {
@@ -364,35 +304,23 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
 
   Future<void> _sendPrintData(PrintData printData) async {
     await _ensureNimbotConnection();
-    PrinterOperationResult printed = await _printer.sendDetailed(printData);
-    if (printed.ok) {
+    bool printed = await _printer.send(printData);
+    if (printed) {
       _printerConnected = true;
       return;
     }
 
-    if (isRecoverablePrintBusyError(
-      code: printed.code,
-      message: printed.message,
-      details: printed.details,
-    )) {
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      await _printer.disconnect();
-      _printerConnected = false;
-      await _ensureNimbotConnection();
-      printed = await _printer.sendDetailed(printData);
-      if (printed.ok) {
-        _printerConnected = true;
-        return;
-      }
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await _printer.disconnect();
+    _printerConnected = false;
+    await _ensureNimbotConnection();
+    printed = await _printer.send(printData);
+    if (printed) {
+      _printerConnected = true;
+      return;
     }
 
-    final String? hint = buildPrinterRecoveryHint(
-      code: printed.code,
-      message: printed.message,
-      details: printed.details,
-    );
     throw Exception(
-      'Printer returned error code=${printed.code} message=${printed.message}${hint == null ? '' : ' Hint: $hint'}',
-    );
+        'Printer failed to print. Check the connection and try again.');
   }
 }

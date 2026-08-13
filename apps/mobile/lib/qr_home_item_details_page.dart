@@ -18,6 +18,7 @@ class QrHomeItemDetailsPage extends StatefulWidget {
     this.memo,
     this.bWareComment,
     this.onPrint,
+    this.onAddPhotos,
   });
 
   final IntakeData item;
@@ -28,6 +29,7 @@ class QrHomeItemDetailsPage extends StatefulWidget {
   final String? memo;
   final String? bWareComment;
   final Future<void> Function()? onPrint;
+  final Future<List<String>?> Function()? onAddPhotos;
 
   @override
   State<QrHomeItemDetailsPage> createState() => _QrHomeItemDetailsPageState();
@@ -35,6 +37,8 @@ class QrHomeItemDetailsPage extends StatefulWidget {
 
 class _QrHomeItemDetailsPageState extends State<QrHomeItemDetailsPage> {
   bool _printing = false;
+  bool _addingPhotos = false;
+  late List<String> _photoUrls = widget.photoUrls;
 
   Future<void> _print() async {
     final Future<void> Function()? onPrint = widget.onPrint;
@@ -47,6 +51,24 @@ class _QrHomeItemDetailsPageState extends State<QrHomeItemDetailsPage> {
     } finally {
       if (mounted) {
         setState(() => _printing = false);
+      }
+    }
+  }
+
+  Future<void> _addPhotos() async {
+    final Future<List<String>?> Function()? onAddPhotos = widget.onAddPhotos;
+    if (onAddPhotos == null || _addingPhotos) {
+      return;
+    }
+    setState(() => _addingPhotos = true);
+    try {
+      final List<String>? updated = await onAddPhotos();
+      if (updated != null && mounted) {
+        setState(() => _photoUrls = updated);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _addingPhotos = false);
       }
     }
   }
@@ -103,9 +125,30 @@ class _QrHomeItemDetailsPageState extends State<QrHomeItemDetailsPage> {
                     ),
                     const SizedBox(height: 14),
                     _PhotoGallery(
-                      photoUrls: widget.photoUrls,
+                      photoUrls: _photoUrls,
                       fallbackAssetPath: display.fallbackAssetPath,
                     ),
+                    if (widget.onAddPhotos != null) ...<Widget>[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _addingPhotos || _photoUrls.length >= 10
+                              ? null
+                              : _addPhotos,
+                          icon: _addingPhotos
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.add_photo_alternate_outlined),
+                          label: Text(strings.text('add_photos')),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,

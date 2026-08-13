@@ -103,7 +103,7 @@ String? parseWarehouseLocationFromQrPayload(String rawValue) {
     final String normalizedCandidate =
         normalizeWarehouseLocation(candidate).replaceAll(RegExp(r'\s+'), '');
     final RegExpMatch? match =
-        RegExp(r'^([A-Z])([0-9]+[A-Z]*)$').firstMatch(normalizedCandidate);
+        RegExp(r'^([A-Z]?)([0-9]+[A-Z]*)$').firstMatch(normalizedCandidate);
     if (match == null) {
       return null;
     }

@@ -15,8 +15,8 @@ dependencies:
   http: ^1.2.2
   image_picker: ^1.1.2
   mobile_scanner: ^6.0.2
-  niimbot_label_printer:
-    path: vendor/niimbot_label_printer
+#  niimbot_label_printer:
+#    path: vendor/niimbot_label_printer
   permission_handler: ^11.3.1
   package_info_plus: ^8.1.2
   qr_flutter: ^4.1.0
@@ -26,6 +26,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   url_launcher: ^6.3.1
   web_socket_channel: ^3.0.1
+  niimbot_label_printer: ^0.0.2
 
 dev_dependencies:
   flutter_test:

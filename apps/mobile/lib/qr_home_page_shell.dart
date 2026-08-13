@@ -285,6 +285,11 @@ extension _QrHomePageShell on _QrHomePageState {
                                                     _printingItemId != null)
                                                 ? null
                                                 : () => _onPrintItem(item),
+                                            onAddPhotos: (_adding ||
+                                                    _removing ||
+                                                    _printingItemId != null)
+                                                ? null
+                                                : () => _addPhotosToItem(item),
                                           ),
                                         ),
                                       );

@@ -83,6 +83,7 @@ class IntakeData {
     required this.isBWare,
     required this.store,
     required this.inTransit,
+    required this.inStock,
     this.bWareComment,
     required this.createdAt,
     required this.isRemoved,
@@ -105,6 +106,7 @@ class IntakeData {
   final bool isBWare;
   final bool store;
   final bool inTransit;
+  final bool inStock;
   final String? bWareComment;
   final String createdAt;
   final bool isRemoved;
@@ -129,6 +131,7 @@ class IntakeData {
     bool? isBWare,
     bool? store,
     bool? inTransit,
+    bool? inStock,
     String? bWareComment,
     String? createdAt,
     bool? isRemoved,
@@ -154,6 +157,7 @@ class IntakeData {
       isBWare: isBWare ?? this.isBWare,
       store: store ?? this.store,
       inTransit: inTransit ?? this.inTransit,
+      inStock: inStock ?? this.inStock,
       bWareComment: bWareComment ?? this.bWareComment,
       createdAt: createdAt ?? this.createdAt,
       isRemoved: isRemoved ?? this.isRemoved,
@@ -180,6 +184,7 @@ class IntakeData {
       isBWare: json['is_b_ware'] as bool? ?? false,
       store: json['store'] as bool? ?? false,
       inTransit: json['in_transit'] as bool? ?? false,
+      inStock: json['in_stock'] as bool? ?? true,
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty
