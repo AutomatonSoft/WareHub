@@ -68,7 +68,7 @@ const CRITICAL_SCORE_MAX =
 type CriticalInventorySourceRow = KidDto & {
   kid_account?: string | null;
   b_ware?: boolean | null;
-  in_stock?: boolean | null;
+  stock_status?: "in_stock" | "returned" | "out" | boolean | null;
   in_transit?: boolean | null;
   commentary?: string | null;
   company?: string | null;
@@ -188,6 +188,12 @@ function firstText(...values: Array<unknown>): string {
 }
 
 function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): SofortListRow {
+  const stockStatus = row.stock_status === "returned" || row.stock_status === "out" || row.stock_status === "in_stock"
+    ? row.stock_status
+    : row.stock_status === false
+      ? "out"
+      : "in_stock";
+
   return {
     id: String(row.id ?? `critical-${row.kid_id}-${row.kid_number}`),
     kidId: Number(row.kid_id),
@@ -215,7 +221,8 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
     place: normalizePlaceValue(row.place),
     section: typeof row.section === "string" && row.section.trim() ? row.section.trim() : null,
     bWare: row.b_ware === true,
-    inStock: row.in_stock !== false,
+    stockStatus,
+    inStock: stockStatus === "in_stock",
     store: row.store === true,
     quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
     room: typeof row.room === "string" && row.room.trim() ? row.room.trim() : null,

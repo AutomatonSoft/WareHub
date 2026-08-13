@@ -37,7 +37,8 @@ pub(crate) struct DatabaseInventoryRowsQuery {
     pub(crate) location: Option<String>,
     pub(crate) store: Option<bool>,
     pub(crate) b_ware: Option<bool>,
-    pub(crate) in_stock: Option<bool>,
+    #[serde(alias = "in_stock")]
+    pub(crate) stock_status: Option<String>,
     pub(crate) in_transit: Option<bool>,
 }
 
@@ -62,7 +63,7 @@ struct DatabaseInventoryRowsRequest {
     material: Option<String>,
     location: Option<String>,
     b_ware: Option<bool>,
-    in_stock: Option<bool>,
+    stock_status: Option<String>,
     in_transit: Option<bool>,
 }
 
@@ -124,7 +125,7 @@ pub(crate) struct MobileInventoryRowDto {
     pub(crate) unit_index: i32,
     pub(crate) is_b_ware: bool,
     pub(crate) store: bool,
-    pub(crate) in_stock: bool,
+    pub(crate) stock_status: String,
     pub(crate) in_transit: bool,
     pub(crate) b_ware_comment: Option<String>,
     pub(crate) created_at: String,
@@ -333,7 +334,7 @@ async fn list_database_inventory_rows_service(
             material: query.material,
             location,
             b_ware: query.b_ware,
-            in_stock: query.in_stock,
+            stock_status: query.stock_status,
             in_transit: query.in_transit,
         },
     )
@@ -568,8 +569,8 @@ async fn fetch_database_inventory_rows_page(
         if let Some(b_ware) = request.b_ware {
             pairs.append_pair("b_ware", if b_ware { "true" } else { "false" });
         }
-        if let Some(in_stock) = request.in_stock {
-            pairs.append_pair("in_stock", if in_stock { "true" } else { "false" });
+        if let Some(stock_status) = normalized_optional_text(request.stock_status.as_deref()) {
+            pairs.append_pair("stock_status", &stock_status);
         }
         if let Some(in_transit) = request.in_transit {
             pairs.append_pair("in_transit", if in_transit { "true" } else { "false" });
@@ -673,7 +674,7 @@ fn map_kid_response_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
         unit_index: int_field(row, "id").unwrap_or(1).max(1),
         is_b_ware: bool_field(row, "b_ware").unwrap_or(false),
         store: bool_field(row, "store").unwrap_or(false),
-        in_stock: bool_field(row, "in_stock").unwrap_or(true),
+        stock_status: stock_status_field(row),
         in_transit: bool_field(row, "in_transit").unwrap_or(false),
         b_ware_comment: text_field(row, "commentary"),
         created_at: Utc::now().to_rfc3339(),
@@ -714,7 +715,7 @@ fn map_inventory_row_to_mobile_row(row: &Value) -> MobileInventoryRowDto {
         unit_index: int_field(row, "kid_id").unwrap_or(1).max(1),
         is_b_ware: bool_field(row, "b_ware").unwrap_or(false),
         store: bool_field(row, "store").unwrap_or(false),
-        in_stock: bool_field(row, "in_stock").unwrap_or(true),
+        stock_status: stock_status_field(row),
         in_transit: bool_field(row, "in_transit").unwrap_or(false),
         b_ware_comment: text_field(row, "commentary").filter(|value| value != "-"),
         created_at: text_field(row, "date").unwrap_or_else(|| Utc::now().to_rfc3339()),
@@ -830,6 +831,15 @@ fn bool_field(row: &Value, field: &str) -> Option<bool> {
     }
 }
 
+fn stock_status_field(row: &Value) -> String {
+    match row.get("stock_status").or_else(|| row.get("in_stock")) {
+        Some(Value::String(value)) if matches!(value.as_str(), "in_stock" | "returned" | "out") => value.clone(),
+        Some(Value::Bool(true)) => "in_stock".to_string(),
+        Some(Value::Bool(false)) => "out".to_string(),
+        _ => "in_stock".to_string(),
+    }
+}
+
 fn normalized_optional_text(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -872,7 +882,7 @@ mod tests {
             "sku": "SKU-1",
             "quantity": 3,
             "store": true,
-            "in_stock": false,
+            "stock_status": "out",
             "in_transit": true,
             "commentary": "Box damaged",
             "date": "2026-07-08T10:00:00Z"
@@ -889,7 +899,7 @@ mod tests {
         assert_eq!(mapped.box_total, 3);
         assert_eq!(mapped.product_key.as_deref(), Some("SKU-1"));
         assert!(mapped.store);
-        assert!(!mapped.in_stock);
+        assert_eq!(mapped.stock_status, "out");
         assert!(mapped.in_transit);
         assert_eq!(mapped.b_ware_comment.as_deref(), Some("Box damaged"));
         assert_eq!(

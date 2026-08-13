@@ -17,3 +17,10 @@ List<String?> buildPrintPartsCaptions({
   }
   return captions;
 }
+
+/// Converts the global label setting to the range accepted by the bundled
+/// Android Niimbot plugin. The product settings retain their full 0..5 range,
+/// but the plugin throws a native exception for every value outside 1..3.
+int nativeNiimbotLabelType(int configuredType) {
+  return configuredType >= 1 && configuredType <= 3 ? configuredType : 1;
+}

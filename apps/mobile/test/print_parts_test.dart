@@ -43,4 +43,17 @@ void main() {
 
     expect(result, <String?>[null]);
   });
+
+  test('nativeNiimbotLabelType keeps values accepted by the Android plugin',
+      () {
+    expect(nativeNiimbotLabelType(1), 1);
+    expect(nativeNiimbotLabelType(2), 2);
+    expect(nativeNiimbotLabelType(3), 3);
+  });
+
+  test('nativeNiimbotLabelType safely falls back for unsupported settings', () {
+    expect(nativeNiimbotLabelType(0), 1);
+    expect(nativeNiimbotLabelType(4), 1);
+    expect(nativeNiimbotLabelType(5), 1);
+  });
 }
