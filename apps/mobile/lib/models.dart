@@ -184,7 +184,9 @@ class IntakeData {
       isBWare: json['is_b_ware'] as bool? ?? false,
       store: json['store'] as bool? ?? false,
       inTransit: json['in_transit'] as bool? ?? false,
-      inStock: json['in_stock'] as bool? ?? true,
+      inStock: json['stock_status'] is String
+          ? json['stock_status'] == 'in_stock'
+          : json['in_stock'] as bool? ?? true,
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty

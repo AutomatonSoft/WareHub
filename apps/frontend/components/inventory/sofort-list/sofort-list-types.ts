@@ -36,6 +36,7 @@ export type SofortListRow = {
   place: string;
   section: string | null;
   bWare: boolean;
+  stockStatus: "in_stock" | "returned" | "out";
   inStock: boolean;
   store: boolean;
   quantity: number;
