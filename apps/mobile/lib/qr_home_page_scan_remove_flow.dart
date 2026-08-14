@@ -78,9 +78,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
     return confirmed ?? false;
   }
 
-  Future<int> _deleteOldestIntakeByLocation({
+  Future<int> _markOldestIntakeByLocation({
     required String section,
     required int place,
+    required String stockStatus,
   }) async {
     final Uri url = Uri.parse(
       '${_effectiveApiBase()}/services/kids/mark-out-of-stock/',
@@ -88,6 +89,7 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
     final Map<String, dynamic> body = {
       'place': '$place',
       'section': section,
+      'stock_status': stockStatus,
     };
     String jsonString = jsonEncode(body);
     final http.Response response = await _authorizedRequest(
@@ -191,9 +193,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         _showMessage('${_strings.text('format_place')} 2', error: true);
         return;
       }
-      final int partsCount = await _deleteOldestIntakeByLocation(
+      final int partsCount = await _markOldestIntakeByLocation(
         section: parsed.key,
         place: parsed.value,
+        stockStatus: kStockStatusOut,
       );
       await _reloadList();
       _showMessage(
@@ -290,9 +293,10 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         _showMessage(_strings.text('format_place'), error: true);
         return;
       }
-      final int removedCount = await _deleteOldestIntakeByLocation(
+      final int removedCount = await _markOldestIntakeByLocation(
         section: section,
         place: place,
+        stockStatus: kStockStatusOut,
       );
       await _reloadList();
 
@@ -310,6 +314,75 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       if (mounted) {
         setState(() {
           _removing = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _confirmReturnToStock(IntakeData item) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final AppStrings strings = AppStrings.of(dialogContext);
+        return AlertDialog(
+          title: Text(
+            '${strings.text('return_to_stock')}: ${item.warehouseLocation}',
+          ),
+          content: Text(strings.format(
+            'confirm_return_to_stock',
+            <String, String>{'location': item.warehouseLocation},
+          )),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(strings.text('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(strings.text('return_to_stock')),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _onReturnItem(IntakeData item) async {
+    if (_adding || _removing || _returningItemId != null) {
+      return;
+    }
+
+    final bool confirmed = await _confirmReturnToStock(item);
+    if (!confirmed) {
+      return;
+    }
+
+    setState(() {
+      _returningItemId = item.id;
+    });
+
+    try {
+      final int returnedCount = await _markOldestIntakeByLocation(
+        section: item.section,
+        place: item.slotNumber,
+        stockStatus: kStockStatusReturned,
+      );
+      await _reloadList();
+      _showMessage(
+        _strings.format('return_marked', <String, String>{
+          'count': '$returnedCount',
+        }),
+      );
+    } catch (error) {
+      _showMessage(
+        _messageForError(error, fallbackKey: 'action_failed_error'),
+        error: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _returningItemId = null;
         });
       }
     }

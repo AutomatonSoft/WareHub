@@ -6,6 +6,18 @@ import 'inventory_item_display.dart';
 import 'models.dart';
 import 'warehouse_constants.dart';
 
+Color _stockStatusBackground(String stockStatus) {
+  switch (stockStatus) {
+    case kStockStatusReturned:
+      return const Color(0xFFFEF3C7);
+    case kStockStatusOut:
+      return const Color(0xFFFEF2F2);
+    case kStockStatusInStock:
+    default:
+      return uiCard;
+  }
+}
+
 class QrHomeItemCard extends StatelessWidget {
   const QrHomeItemCard({
     super.key,
@@ -18,6 +30,8 @@ class QrHomeItemCard extends StatelessWidget {
     this.bWareComment,
     required this.printing,
     required this.onPrint,
+    this.returning = false,
+    this.onReturn,
     required this.onOpenDetails,
   });
 
@@ -30,6 +44,8 @@ class QrHomeItemCard extends StatelessWidget {
   final String? bWareComment;
   final bool printing;
   final Future<void> Function()? onPrint;
+  final bool returning;
+  final Future<void> Function()? onReturn;
   final VoidCallback onOpenDetails;
 
   @override
@@ -42,11 +58,8 @@ class QrHomeItemCard extends StatelessWidget {
       strings: strings,
     );
     final bool hasMultipleLocations = warehouseLocations.length > 1;
-    final Color background = removed
-        ? uiCardSoft
-        : item.inStock
-            ? uiCard
-            : const Color(0xFFFEF3C7);
+    final Color background =
+        removed ? uiCardSoft : _stockStatusBackground(item.stockStatus);
     final Color countChipBackground = removed
         ? uiOrangeDeep.withValues(alpha: 0.20)
         : hasMultipleLocations
@@ -59,6 +72,7 @@ class QrHomeItemCard extends StatelessWidget {
         removed ? uiOrangeDeep.withValues(alpha: 0.72) : uiBrandGreen;
     final Color removedActionBackground = uiOrangeDeep.withValues(alpha: 0.10);
     final Color removedActionBorder = uiOrangeDeep.withValues(alpha: 0.72);
+    final bool showReturn = !removed && item.stockStatus == kStockStatusOut;
 
     return Semantics(
       button: true,
@@ -206,38 +220,67 @@ class QrHomeItemCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    onPressed: onPrint == null ? null : () => onPrint!(),
-                    icon: printing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.print_outlined),
-                    label: Text(strings.text('print')),
-                    style: FilledButton.styleFrom(
-                      foregroundColor: removed ? uiOrangeDeep : uiText,
-                      backgroundColor:
-                          removed ? removedActionBackground : uiCardSoft,
-                      minimumSize: const Size(0, 40),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w700,
+                Row(
+                  mainAxisAlignment: showReturn
+                      ? MainAxisAlignment.spaceBetween
+                      : MainAxisAlignment.end,
+                  children: <Widget>[
+                    if (showReturn)
+                      FilledButton.tonalIcon(
+                        onPressed: onReturn == null ? null : () => onReturn!(),
+                        icon: returning
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.assignment_return_outlined),
+                        label: Text(strings.text('return_to_stock')),
+                        style: FilledButton.styleFrom(
+                          foregroundColor: uiText,
+                          backgroundColor: uiCardSoft,
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: removed
-                              ? removedActionBorder
-                              : Colors.transparent,
-                          width: removed ? 1.2 : 0,
+                    FilledButton.tonalIcon(
+                      onPressed: onPrint == null ? null : () => onPrint!(),
+                      icon: printing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.print_outlined),
+                      label: Text(strings.text('print')),
+                      style: FilledButton.styleFrom(
+                        foregroundColor: removed ? uiOrangeDeep : uiText,
+                        backgroundColor:
+                            removed ? removedActionBackground : uiCardSoft,
+                        minimumSize: const Size(0, 40),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: removed
+                                ? removedActionBorder
+                                : Colors.transparent,
+                            width: removed ? 1.2 : 0,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),

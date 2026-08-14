@@ -1,3 +1,7 @@
+const String kStockStatusInStock = 'in_stock';
+const String kStockStatusReturned = 'returned';
+const String kStockStatusOut = 'out';
+
 const List<String> kWarehouseSections = <String>[
   'A',
   'B',

@@ -76,11 +76,13 @@ class _QrHomePageState extends State<QrHomePage> with WidgetsBindingObserver {
   bool _removing = false;
   bool _printingImage = false;
   String? _printingItemId;
+  String? _returningItemId;
   HomeTab _selectedHomeTab = HomeTab.feed;
   SettingsTab _selectedSettingsTab = SettingsTab.printer;
   bool _connectingPrinter = false;
   Future<void>? _connectPrinterFuture;
   bool _printerConnected = false;
+  bool _printerWarmedUp = false;
   bool _preparingPrinter = false;
   int _printWidthPx = 384;
   int _printHeightPx = 640;
