@@ -1284,7 +1284,8 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                   className={cn(
                     "ui-table-row wh-sofort-table-row",
                     index % 2 === 0 ? "ui-table-row-even" : "ui-table-row-odd",
-                    !row.inStock && "wh-sofort-table-row--out-of-stock",
+                    row.stockStatus === "out" && "wh-sofort-table-row--out-of-stock",
+                    row.stockStatus === "returned" && "wh-sofort-table-row--returned",
                   )}
                 >
                   <td className="wh-sofort-cell wh-sofort-cell--narrow py-3 text-center align-middle">
@@ -1426,7 +1427,11 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
             {props.rows.map((row) => (
               <article
                 key={`mobile-${row.id}`}
-                className={cn("wh-sofort-mobile-card", !row.inStock && "wh-sofort-mobile-card--out-of-stock")}
+                className={cn(
+                  "wh-sofort-mobile-card",
+                  row.stockStatus === "out" && "wh-sofort-mobile-card--out-of-stock",
+                  row.stockStatus === "returned" && "wh-sofort-mobile-card--returned",
+                )}
               >
                 <div className="wh-sofort-mobile-card__top">
                   <label className="wh-sofort-mobile-card__checkbox">

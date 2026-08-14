@@ -100,6 +100,8 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
       );
       if (savedConnected) {
         _printerConnected = true;
+        _printerWarmedUp = false;
+        await _ensurePrinterWarmedUp();
         return;
       }
     }
@@ -108,6 +110,8 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
     // means connect() already reported success.
     await _connectPrinterWithPicker();
     _printerConnected = true;
+    _printerWarmedUp = false;
+    await _ensurePrinterWarmedUp();
   }
 
   Future<void> _connectToDevice(BluetoothDevice selected) async {
@@ -230,6 +234,10 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
         BluetoothDevice(name: 'Saved Printer', address: savedMac!),
       );
       _printerConnected = connected;
+      if (connected) {
+        _printerWarmedUp = false;
+        await _ensurePrinterWarmedUp();
+      }
     } catch (_) {
       // Keep silent: startup auto-connect is best-effort.
       _printerConnected = false;
@@ -299,6 +307,38 @@ extension _QrHomePagePrintConnection on _QrHomePageState {
           _connectingPrinter = false;
         });
       }
+    }
+  }
+
+  // Niimbot printers feed the first one or two labels blank after the roll
+  // is loaded/idle so the firmware can calibrate its label-gap sensor - this
+  // happens regardless of what commands the app sends. A blank buffer wasn't
+  // enough to trigger reliable calibration, so burn that feed with an actual
+  // test-pattern print (real black content) right after connecting, once per
+  // connection, so the user's real label prints clean on the first try.
+  Future<void> _ensurePrinterWarmedUp() async {
+    if (_printerWarmedUp) {
+      return;
+    }
+    // Mark warmed up unconditionally (even on failure) so a bad warmup print
+    // can't block or repeat on every subsequent real print.
+    _printerWarmedUp = true;
+    try {
+      final ui.Image testImage = await _buildManualTestPatternImage();
+      final List<int> bytes = await _buildPrintBytes(testImage);
+      final PrintData warmupData = PrintData(
+        data: bytes,
+        width: testImage.width,
+        height: testImage.height,
+        rotate: false,
+        invertColor: false,
+        density: _printDensity,
+        labelType: nativeNiimbotLabelType(_printLabelType),
+      );
+      await _printer.send(warmupData);
+    } catch (_) {
+      // Best-effort: the real print that follows still self-heals via its
+      // own retry path if the connection is actually broken.
     }
   }
 

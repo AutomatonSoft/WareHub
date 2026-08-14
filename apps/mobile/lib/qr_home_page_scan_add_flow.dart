@@ -78,6 +78,11 @@ extension _QrHomePageAddFlow on _QrHomePageState {
       ),
     );
 
+    await _stabilizeUiAfterRouteTransition();
+    if (!mounted) {
+      return null;
+    }
+
     final bool isBWare = await _askBWareSelection(
       title: strings.format(
         'step_title',
@@ -85,12 +90,23 @@ extension _QrHomePageAddFlow on _QrHomePageState {
       ),
     );
 
+    await _stabilizeUiAfterRouteTransition();
+    if (!mounted) {
+      return null;
+    }
+
     final String? bWareComment = await _askOptionalComment(
       title: strings.format(
         'step_title',
         <String, String>{'step': '9', 'total': '10'},
       ),
     );
+
+    await _stabilizeUiAfterRouteTransition();
+    if (!mounted) {
+      return null;
+    }
+
     final List<XFile> photos = await _capturePhotosUpTo10(step: 10, total: 10);
 
     return _AddFlowData(

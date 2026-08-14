@@ -13,6 +13,7 @@ from django.db.models import (
     DecimalField,
     OneToOneField,
     BooleanField,
+    TextChoices,
     SET_NULL,
 )
 from django.db.models import Q
@@ -30,6 +31,10 @@ class KidAccount:
         ("XL", "XL"),
         ("CH", "CH"),
     ]
+class StatusProductInStock(TextChoices):
+    IN_STOCK = "in_stock", "In stock"
+    RETURNED = "returned", "Returned"
+    OUT = "out", "Out"
 
 class Kid(Model):
     kid_number = JSONField(default=list)
@@ -49,7 +54,7 @@ class Kid(Model):
     store = BooleanField(default=False)
     commentary = TextField(null=True, blank=True)
     section = CharField(max_length=1, null=True, blank=True)
-    in_stock = BooleanField(default=True)
+    stock_status = CharField(max_length=16, choices=StatusProductInStock.choices, default=StatusProductInStock.IN_STOCK)
     in_transit = BooleanField(default=False)
 
     def save(self, *args, **kwargs):

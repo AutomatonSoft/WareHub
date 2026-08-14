@@ -10,7 +10,7 @@ from catalog_core.models import ImportedProduct
 
 from .kid_number_utils import primary_kid_number
 from .ftp_upload import normalize_managed_public_photo_value
-from .models import EanStatus, Kid, Orders
+from .models import EanStatus, Kid, Orders, StatusProductInStock
 from .order_amounts import parse_order_amount
 
 logger = logging.getLogger(__name__)
@@ -328,7 +328,7 @@ def build_inventory_rows() -> list[dict]:
 
     for kid in kids:
         ean_row = getattr(kid, "ean", None)
-        status_row = getattr(kid, "status", None)
+        ean_status_row = getattr(kid, "status", None)
         attrs = getattr(kid, "product_attributes", None)
         primary_kid = primary_kid_number(kid.kid_number)
         main_ean = _norm_ean(getattr(ean_row, "main_ean", None))
@@ -405,7 +405,7 @@ def build_inventory_rows() -> list[dict]:
                 "place": kid.place,
                 "section": kid.section,
                 "b_ware": bool(kid.b_ware),
-                "in_stock": bool(kid.in_stock),
+                "stock_status": str(kid.stock_status or StatusProductInStock.IN_STOCK),
                 "in_transit": bool(kid.in_transit),
                 "store": bool(kid.store),
                 "photo": normalize_managed_public_photo_value(kid.photo),
@@ -431,7 +431,7 @@ def build_inventory_rows() -> list[dict]:
                 "hood_jv_ean": hood_jv_ean,
                 "hood_xl_ean": hood_xl_ean,
                 "ean_status": {
-                    field_name: getattr(status_row, field_name, False)
+                    field_name: getattr(ean_status_row, field_name, False)
                     for field_name in MARKETPLACE_STATUS_FIELDS
                 },
                 "linked_products_by_ean": {

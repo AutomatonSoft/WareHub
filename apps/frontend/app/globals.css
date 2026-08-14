@@ -2859,7 +2859,8 @@ html[data-density="compact"] .ui-table-data-meta {
   padding: 14px;
   box-shadow: 0 12px 28px -28px rgba(15, 23, 42, 0.28);
 }
-.wh-sofort-mobile-card--out-of-stock { background: #fef3c7; }
+.wh-sofort-mobile-card--out-of-stock { background: #fef2f2; }
+.wh-sofort-mobile-card--returned { background: #fef3c7; }
 .wh-sofort-mobile-card__top {
   display: flex;
   align-items: flex-start;
@@ -3028,6 +3029,10 @@ html[data-density="compact"] .ui-table-data-meta {
 .wh-sofort-data-table .ui-table-row:hover { background: #f8fcfa; }
 .wh-sofort-data-table .wh-sofort-table-row--out-of-stock,
 .wh-sofort-data-table .wh-sofort-table-row--out-of-stock:hover {
+  background: #fef2f2;
+}
+.wh-sofort-data-table .wh-sofort-table-row--returned,
+.wh-sofort-data-table .wh-sofort-table-row--returned:hover {
   background: #fef3c7;
 }
 .wh-sofort-table-row { min-height: 208px; }
@@ -4294,4 +4299,3 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
     animation: none;
   }
 }
-

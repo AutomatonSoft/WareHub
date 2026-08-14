@@ -27,7 +27,7 @@ import urllib.request
 from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
-from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes
+from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes, StatusProductInStock
 from .order_amounts import parse_order_amount
 from .inventory_audit_service import changed_fields, list_inventory_change_history, list_inventory_change_history_actors, purge_expired_inventory_change_history, record_inventory_change, request_actor, retained_inventory_history_photo_urls
 from .kid_number_utils import primary_kid_number
@@ -149,12 +149,21 @@ class KidMarkOutOfStockAPIView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         place = normalize_place(payload.get("place"))
         section = str(payload.get("section") or "").strip().upper()
+        requested_stock_status = str(payload.get("stock_status") or StatusProductInStock.OUT).strip().lower()
 
         if not place:
             return Response({"detail": "place is required."}, status=status.HTTP_400_BAD_REQUEST)
         if len(section) != 1:
             return Response(
                 {"detail": "section must contain exactly one character."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if requested_stock_status not in StatusProductInStock.values:
+            return Response(
+                {
+                    "detail": "stock_status must be one of: in_stock, returned, out.",
+                    "allowed_stock_statuses": list(StatusProductInStock.values),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -166,17 +175,18 @@ class KidMarkOutOfStockAPIView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-            was_in_stock = bool(kid.in_stock)
-            if was_in_stock:
-                kid.in_stock = False
-                kid.save(update_fields=["in_stock"])
+            previous_stock_status = kid.stock_status or StatusProductInStock.IN_STOCK
+            status_changed = previous_stock_status != requested_stock_status
+            if status_changed:
+                kid.stock_status = requested_stock_status
+                kid.save(update_fields=["stock_status"])
 
-        if was_in_stock:
+        if status_changed:
             record_inventory_change(
                 kid=kid,
                 actor=request_actor(request),
-                action="in_stock_updated",
-                changes=[{"field": "in_stock", "before": True, "after": False}],
+                action="inventory_status_updated",
+                changes=[{"field": "stock_status", "before": previous_stock_status, "after": requested_stock_status}],
             )
 
         return Response(
@@ -184,8 +194,8 @@ class KidMarkOutOfStockAPIView(APIView):
                 "kid_id": kid.id,
                 "place": kid.place,
                 "section": kid.section,
-                "in_stock": False,
-                "updated": was_in_stock,
+                "stock_status": requested_stock_status,
+                "updated": status_changed,
             },
             status=status.HTTP_200_OK,
         )
@@ -2015,7 +2025,9 @@ class InventoryRowsAPIView(APIView):
         color_raw = str(request.query_params.get("color") or "").strip()
         material_raw = str(request.query_params.get("material") or "").strip()
         b_ware_raw = str(request.query_params.get("b_ware") or "").strip().lower()
-        in_stock_raw = str(request.query_params.get("in_stock") or "").strip().lower()
+        stock_status_raw = str(
+            request.query_params.get("stock_status") or request.query_params.get("in_stock") or ""
+        ).strip().lower()
         in_transit_raw = str(request.query_params.get("in_transit") or "").strip().lower()
 
         if place_raw:
@@ -2048,9 +2060,10 @@ class InventoryRowsAPIView(APIView):
         if b_ware_raw == "true":
             rows = [row for row in rows if row.get("b_ware") is True]
 
-        if in_stock_raw in {"true", "false"}:
-            expected_in_stock = in_stock_raw == "true"
-            rows = [row for row in rows if row.get("in_stock") is expected_in_stock]
+        legacy_stock_statuses = {"true": StatusProductInStock.IN_STOCK, "false": StatusProductInStock.OUT}
+        requested_stock_status = legacy_stock_statuses.get(stock_status_raw, stock_status_raw)
+        if requested_stock_status in StatusProductInStock.values:
+            rows = [row for row in rows if row.get("stock_status") == requested_stock_status]
 
         if in_transit_raw == "true":
             rows = [row for row in rows if row.get("in_transit") is True]
