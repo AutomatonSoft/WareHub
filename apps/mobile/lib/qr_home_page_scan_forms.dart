@@ -138,11 +138,15 @@ extension _QrHomePageScanForms on _QrHomePageState {
     required String title,
     required String label,
     String initialValue = '',
+    List<String> suggestedValues = const <String>[],
     String Function(String value)? normalizer,
     String? Function(String value)? validator,
   }) async {
     final AppStrings strings = _strings;
     String currentValue = initialValue;
+    final TextEditingController controller = TextEditingController(
+      text: initialValue,
+    );
     final String? decision = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -152,17 +156,44 @@ extension _QrHomePageScanForms on _QrHomePageState {
           builder: (BuildContext context, StateSetter setStateDialog) {
             return AlertDialog(
               title: Text(title, style: _scanDialogTitleStyle),
-              content: TextFormField(
-                initialValue: initialValue,
-                style: _scanFieldTextStyle,
-                autofocus: false,
-                onChanged: (String value) {
-                  currentValue = value;
-                },
-                decoration: _scanInputDecoration(
-                  label: label,
-                  errorText: errorText,
-                ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (suggestedValues.isNotEmpty) ...<Widget>[
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: suggestedValues.map((String value) {
+                        return ChoiceChip(
+                          label: Text(value),
+                          selected: currentValue.trim().toUpperCase() ==
+                              value.trim().toUpperCase(),
+                          onSelected: (_) {
+                            setStateDialog(() {
+                              currentValue = value;
+                              controller.text = value;
+                              errorText = null;
+                            });
+                          },
+                        );
+                      }).toList(growable: false),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextFormField(
+                    controller: controller,
+                    style: _scanFieldTextStyle,
+                    autofocus: false,
+                    onChanged: (String value) {
+                      currentValue = value;
+                    },
+                    decoration: _scanInputDecoration(
+                      label: label,
+                      errorText: errorText,
+                    ),
+                  ),
+                ],
               ),
               actions: <Widget>[
                 TextButton(
@@ -194,6 +225,7 @@ extension _QrHomePageScanForms on _QrHomePageState {
         );
       },
     );
+    controller.dispose();
     return decision;
   }
 

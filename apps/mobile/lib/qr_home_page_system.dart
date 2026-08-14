@@ -23,7 +23,7 @@ extension _QrHomePageSystem on _QrHomePageState {
       _printWidthPx = (width >= 300 && width <= 600) ? width : 384;
       _printHeightPx = (height >= 500 && height <= 900) ? height : 640;
       _printDensity = density.clamp(1, 5);
-      _printLabelType = labelType.clamp(0, 5);
+      _printLabelType = labelType.clamp(0, 3);
       _printInterLabelDelayMs = interLabelDelayMs.clamp(0, 2000);
       _previewOnlyMode = prefs.getBool('print_preview_only') ?? false;
       _labelQrScale = prefs.getDouble('label_qr_scale') ?? 0.78;

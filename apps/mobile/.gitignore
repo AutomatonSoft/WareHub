@@ -17,7 +17,8 @@ android/app/profile/
 android/app/release/
 ios/Pods/
 ios/Runner.xcworkspace/
-
+.idea/caches/deviceStreaming.xml
+.idea/workspace.xml
 # IDE
 .idea/
 .vscode/

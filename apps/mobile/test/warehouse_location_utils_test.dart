@@ -26,7 +26,7 @@ IntakeData _item({
     isBWare: false,
     store: false,
     inTransit: false,
-    inStock: false,
+    stockStatus: kStockStatusInStock,
     bWareComment: null,
     createdAt: '2026-01-01T00:00:00Z',
     isRemoved: isRemoved,
@@ -147,6 +147,20 @@ void main() {
     expect(
       findNextFreeWarehouseSlotCode(items),
       '3',
+    );
+  });
+
+  test('findFreeWarehouseSlotCodes returns five available slots in order', () {
+    final List<IntakeData> items = <IntakeData>[
+      _item(id: '1', location: 'A1', slotNumber: 1),
+      _item(id: '2', location: 'B3', slotNumber: 3),
+      _item(id: '3', location: 'C4', slotNumber: 4),
+      _item(id: '4', location: 'D2', slotNumber: 2, isRemoved: true),
+    ];
+
+    expect(
+      findFreeWarehouseSlotCodes(items),
+      <String>['2', '5', '6', '7', '8'],
     );
   });
 

@@ -261,6 +261,12 @@ extension _QrHomePageShell on _QrHomePageState {
                                             _printingItemId != null)
                                         ? null
                                         : () => _onPrintItem(item),
+                                    returning: _returningItemId == item.id,
+                                    onReturn: (_adding ||
+                                            _removing ||
+                                            _returningItemId != null)
+                                        ? null
+                                        : () => _onReturnItem(item),
                                     onOpenDetails: () {
                                       Navigator.of(context).push<void>(
                                         MaterialPageRoute<void>(
