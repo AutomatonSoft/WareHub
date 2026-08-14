@@ -86,6 +86,7 @@ const PAGE_TABS = [
   "ebay_xl",
 ] as const;
 type CreateProductTab = "main" | (typeof PAGE_TABS)[number];
+type OttoCreateProductTab = "otto_jv" | "otto_xl";
 type MarketplaceAccount = "JV" | "XL";
 type MarketplaceReservationFamily = "jv" | "xl";
 type CreateProductTabMeta = {
@@ -1190,8 +1191,10 @@ export default function CreateProductPage() {
   const [jvMetaKeyword, setJvMetaKeyword] = useState("");
   const [jvShortDescriptionReal, setJvShortDescriptionReal] = useState("");
   const [jvKurzbeschreibung, setJvKurzbeschreibung] = useState("");
+  const [jvIsActive, setJvIsActive] = useState(true);
+  const [jvIsSofort, setJvIsSofort] = useState(true);
   const jvDraftRef = useRef<JvCreateProductFields>({
-    name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "",
+    name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "", isActive: true, isSofort: true,
   });
   const jvDraftContextKeyRef = useRef("");
   const createDraftContextKeyRef = useRef("");
@@ -1736,6 +1739,8 @@ export default function CreateProductPage() {
       metaKeyword: String(primaryRow?.meta_keyword || ""),
       shortDescriptionReal: String(primaryRow?.short_description_real || ""),
       kurzbeschreibung: String(primaryRow?.kurzbeschreibung || ""),
+      isActive: Number((jvFields as { inaktiv?: unknown })?.inaktiv ?? 0) !== 1,
+      isSofort: Number((jvFields as { is_sofort?: unknown })?.is_sofort ?? 1) === 1,
     };
     jvDraftContextKeyRef.current = activeDraftContextKey;
     jvDraftRef.current = { ...nextJvFields, urlKey: buildUrlKeyFromName(nextJvFields.name), evp: computeEvpFromPrice(nextJvFields.price) };
@@ -1749,6 +1754,8 @@ export default function CreateProductPage() {
     setJvMetaKeyword(nextJvFields.metaKeyword);
     setJvShortDescriptionReal(nextJvFields.shortDescriptionReal);
     setJvKurzbeschreibung(nextJvFields.kurzbeschreibung);
+    setJvIsActive(nextJvFields.isActive);
+    setJvIsSofort(nextJvFields.isSofort);
   }, [activeDraftContextKey, activeTab, controller.sourceSnapshot]);
 
   useEffect(() => {
@@ -2032,12 +2039,16 @@ export default function CreateProductPage() {
   }
 
   function getActiveTabLocalImageFiles(): File[] {
-    if (activeTab === "main") {
+    return getLocalImageFilesForTab(activeTab);
+  }
+
+  function getLocalImageFilesForTab(tab: CreateProductTab): File[] {
+    if (tab === "main") {
       return mainLocalImageFilesRef.current;
     }
-    const items = activeTab === "jv"
+    const items = tab === "jv"
       ? galleryItems
-      : tabGalleryItemsByTab[activeTab] ?? [];
+      : tabGalleryItemsByTab[tab] ?? [];
     return getLocalImageFiles(items);
   }
 
@@ -2279,7 +2290,7 @@ export default function CreateProductPage() {
       source_ean_field: asTrimmedString(sourcePayload.source_ean_field ?? sourceJvFields.ean ?? ean),
       price,
       quantity: 1,
-      status: true,
+      status: jvFields.isActive ?? true,
       manufacturer_id: asIntegerOrUndefined(sourcePayload.manufacturer_id),
       stock_status_id: asIntegerOrUndefined(sourcePayload.stock_status_id),
       tax_class_id: asIntegerOrUndefined(sourcePayload.tax_class_id),
@@ -2302,7 +2313,7 @@ export default function CreateProductPage() {
       jv_fields: {
         artikelnr: (jvFields.artikelnr || ean).trim(),
         jfsku: asTrimmedString(sourceJvFields.jfsku),
-        inaktiv: 0,
+        inaktiv: (jvFields.isActive ?? true) ? 0 : 1,
         ean,
         urlkey: buildUrlKeyFromName(jvFields.name) || undefined,
         mwstid: asTrimmedString(sourceJvFields.mwstid) || "3",
@@ -2312,7 +2323,7 @@ export default function CreateProductPage() {
         einheitid: asTrimmedString(sourceJvFields.einheitid) || "6",
         grundeinheit: asTrimmedString(sourceJvFields.grundeinheit) || "6",
         vpe: "1",
-        is_sofort: 1,
+        is_sofort: (jvFields.isSofort ?? true) ? 1 : 0,
         preisbasis: asTrimmedString(sourceJvFields.preisbasis) || "brutto",
         preisfilter: asTrimmedString(sourceJvFields.preisfilter) || "default",
         content_by_language: [
@@ -2706,11 +2717,32 @@ export default function CreateProductPage() {
     }, getActiveTabLocalImageFiles());
   }
 
-  function submitOttoCreate(siteIds: string[]) {
-    const draft = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
-      ? ottoDraftRefByTab.current[activeTab].draft
-      : activeOttoInitialDraft;
-    const imageUrls = tabGalleryItems.map((item) => item.src.trim()).filter(Boolean);
+  function submitOttoCreate(
+    siteIds: string[],
+    ottoTab: OttoCreateProductTab = activeTabMeta.account === "XL" ? "otto_xl" : "otto_jv",
+  ) {
+    const profile: OttoProfile = ottoTab === "otto_xl" ? "xl" : "jv";
+    const draftSnapshot = ottoDraftRefByTab.current[ottoTab]?.sourceKey === activeDraftContextKey
+      ? ottoDraftRefByTab.current[ottoTab]
+      : undefined;
+    const reservedEan = reservedMarketplaceEans[profile] ?? "";
+    const fallbackEan = reservedEan || (
+      profile === "xl"
+        ? activeXlDescriptionFields.ean
+        : String(controller.sourceSnapshot?.ean || "")
+    );
+    const draft = draftSnapshot?.draft ?? buildOttoDraft(ottoProductsByProfile[profile] ?? {}, {
+      ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
+      productLine: profile === "xl" ? activeXlDescriptionFields.name : jvName,
+      ean: fallbackEan,
+      sku: fallbackEan,
+      productReference: fallbackEan,
+      category: ottoCategoryNameByTab[ottoTab] ?? "",
+    });
+    const ottoGalleryItems = tabGalleryItemsByTab[ottoTab]?.length
+      ? tabGalleryItemsByTab[ottoTab]
+      : galleryItems;
+    const imageUrls = ottoGalleryItems.map((item) => item.src.trim()).filter(Boolean);
     const productReference = draft.productReference.trim() || draft.sku.trim() || draft.ean.trim();
     const ean = draft.ean.trim() || controller.ean.trim();
     const deliveryTime = Number(draft.deliveryTime);
@@ -2763,7 +2795,7 @@ export default function CreateProductPage() {
         order: { maxOrderQuantity: 1 },
         compliance: { productSafety: {} },
       },
-    }, getActiveTabLocalImageFiles());
+    }, getLocalImageFilesForTab(ottoTab));
   }
 
   function handlePrimaryCreateAction() {
@@ -2834,6 +2866,10 @@ export default function CreateProductPage() {
     const selectedNonJvSiteIds = Array.from(selectedPublishSiteIds).filter(
       (siteId) => !(siteId in JV_SITE_KEY_BY_MARKETPLACE_SITE_ID),
     );
+    const selectedOttoSiteIds = selectedNonJvSiteIds.filter((siteId) =>
+      allMarketplaceSites.some((site) => site.id === siteId && site.family === "OTTO"),
+    );
+    const selectedOtherSiteIds = selectedNonJvSiteIds.filter((siteId) => !selectedOttoSiteIds.includes(siteId));
 
     if (selectedJvSiteKeys.length === 0 && selectedNonJvSiteIds.length === 0) {
       showToast("Выберите хотя бы один сайт для публикации.", "error");
@@ -2844,7 +2880,22 @@ export default function CreateProductPage() {
     if (selectedJvSiteKeys.length > 0) {
       void handleSendToAllJvSites(selectedJvSiteKeys);
     }
-    if (selectedNonJvSiteIds.length > 0) {
+    if (selectedOttoSiteIds.length > 0) {
+      const selectedOttoJvSiteIds = selectedOttoSiteIds.filter((siteId) =>
+        allMarketplaceSites.some((site) => site.id === siteId && site.kind === "JV"),
+      );
+      const selectedOttoXlSiteIds = selectedOttoSiteIds.filter((siteId) =>
+        allMarketplaceSites.some((site) => site.id === siteId && site.kind === "XL"),
+      );
+
+      if (selectedOttoJvSiteIds.length > 0) {
+        void submitOttoCreate(selectedOttoJvSiteIds, "otto_jv");
+      }
+      if (selectedOttoXlSiteIds.length > 0) {
+        void submitOttoCreate(selectedOttoXlSiteIds, "otto_xl");
+      }
+    }
+    if (selectedOtherSiteIds.length > 0) {
       if (activeTab === "xl") {
         const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
           ? xlDraftRefByTab.current[activeTab].draft
@@ -2859,7 +2910,7 @@ export default function CreateProductPage() {
           : hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
             ? hoodDraftRefByTab.current[activeTab].draft
             : activeHoodInitialDraft;
-        void controller.handleCreateProductForHoodSiteIds(selectedNonJvSiteIds, {
+        void controller.handleCreateProductForHoodSiteIds(selectedOtherSiteIds, {
           name: draft.name,
           ean: draft.ean,
           price: draft.price,
@@ -2876,16 +2927,11 @@ export default function CreateProductPage() {
       }
 
       if (activeTabMeta.marketplace === "KAUFLAND") {
-        void submitKauflandCreate(selectedNonJvSiteIds);
+        void submitKauflandCreate(selectedOtherSiteIds);
         return;
       }
 
-      if (activeTabMeta.marketplace === "OTTO") {
-        void submitOttoCreate(selectedNonJvSiteIds);
-        return;
-      }
-
-      void controller.handleCreateProduct({}, selectedNonJvSiteIds, undefined, getActiveTabLocalImageFiles());
+      void controller.handleCreateProduct({}, selectedOtherSiteIds, undefined, getActiveTabLocalImageFiles());
     }
   }
 
@@ -3006,10 +3052,10 @@ export default function CreateProductPage() {
           <div className="mt-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
               <JvCreateProductPanel
-                fields={{ name: jvName, urlKey: jvUrlKey, artikelnr: jvArtikelnr, price: jvPrice, evp: jvEvp, bezeichnung: jvBezeichnung, kurzbeschreibung: jvKurzbeschreibung, shortDescriptionReal: jvShortDescriptionReal, metaTitle: jvMetaTitle, metaDescription: jvMetaDescription, metaKeyword: jvMetaKeyword, description: jvDescription }}
+                fields={{ name: jvName, urlKey: jvUrlKey, artikelnr: jvArtikelnr, price: jvPrice, evp: jvEvp, bezeichnung: jvBezeichnung, kurzbeschreibung: jvKurzbeschreibung, shortDescriptionReal: jvShortDescriptionReal, metaTitle: jvMetaTitle, metaDescription: jvMetaDescription, metaKeyword: jvMetaKeyword, description: jvDescription, isActive: jvIsActive, isSofort: jvIsSofort }}
                 previewHtml={normalizedDescriptionPreviewHtml}
                 descriptionMode={jvDescriptionMode}
-                labels={{ name: t.name, urlKey: t.xljvUrlKey, artikelnr: t.createProductArtikelnr, price: t.price, bezeichnung: t.bezeichnungLabel, kurzbeschreibung: t.kurzbeschreibungLabel, shortDescriptionReal: t.createProductShortDescriptionReal, metaTitle: t.metaTitle, metaDescription: t.metaDescription, metaKeyword: t.metaKeyword, description: t.description, keywordPlaceholder: t.createProductKeywordPlaceholder, code: t.codeLabel, preview: t.previewLabel }}
+                labels={{ name: t.name, urlKey: t.xljvUrlKey, artikelnr: t.createProductArtikelnr, price: t.price, bezeichnung: t.bezeichnungLabel, kurzbeschreibung: t.kurzbeschreibungLabel, shortDescriptionReal: t.createProductShortDescriptionReal, metaTitle: t.metaTitle, metaDescription: t.metaDescription, metaKeyword: t.metaKeyword, description: t.description, keywordPlaceholder: t.createProductKeywordPlaceholder, code: t.codeLabel, preview: t.previewLabel, active: t.active, isSofort: t.xljvIsSofort }}
                 onFieldDraftChange={(key, value) => {
                   const nextDraft = { ...jvDraftRef.current, [key]: value };
                   jvDraftRef.current = nextDraft;
@@ -3023,6 +3069,14 @@ export default function CreateProductPage() {
                   if (key === "metaKeyword") setJvMetaKeyword(value);
                   if (key === "shortDescriptionReal") setJvShortDescriptionReal(value);
                   if (key === "kurzbeschreibung") setJvKurzbeschreibung(value);
+                }}
+                onActiveChange={(isActive) => {
+                  jvDraftRef.current = { ...jvDraftRef.current, isActive };
+                  setJvIsActive(isActive);
+                }}
+                onIsSofortChange={(isSofort) => {
+                  jvDraftRef.current = { ...jvDraftRef.current, isSofort };
+                  setJvIsSofort(isSofort);
                 }}
                 onDescriptionModeChange={setJvDescriptionMode}
                 buildUrlKey={buildUrlKeyFromName}
