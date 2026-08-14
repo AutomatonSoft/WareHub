@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "../../components/ui/input";
+import { Switch } from "../../components/ui/switch";
 import { memo, useEffect, useState } from "react";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { JvDescriptionEditor } from "./jv-description-editor";
@@ -18,8 +19,10 @@ type JvFields = {
   metaDescription: string;
   metaKeyword: string;
   description: string;
+  isActive?: boolean;
+  isSofort?: boolean;
 };
-type EditableJvField = Exclude<keyof JvFields, "urlKey" | "evp">;
+type EditableJvField = Exclude<keyof JvFields, "urlKey" | "evp" | "isActive" | "isSofort">;
 export type JvCreateProductFields = JvFields;
 type Props = {
   fields: JvFields;
@@ -40,8 +43,12 @@ type Props = {
     keywordPlaceholder: string;
     code: string;
     preview: string;
+    active?: string;
+    isSofort?: string;
   };
   onFieldDraftChange: (key: EditableJvField, value: string) => void;
+  onActiveChange?: (value: boolean) => void;
+  onIsSofortChange?: (value: boolean) => void;
   onDescriptionModeChange: (mode: "code" | "preview") => void;
   buildUrlKey: (value: string) => string;
   computeEvp: (value: string) => string;
@@ -55,6 +62,8 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
   descriptionMode,
   labels,
   onFieldDraftChange,
+  onActiveChange,
+  onIsSofortChange,
   onDescriptionModeChange,
   buildUrlKey,
   computeEvp,
@@ -96,6 +105,18 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
           <Input value={computeEvp(liveDerivedFields.price)} readOnly />
         </div>
       </div>
+      {onActiveChange && onIsSofortChange && labels.active && labels.isSofort ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex items-center justify-between rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground">
+            <span>{labels.active}</span>
+            <Switch checked={fields.isActive ?? true} onChange={(event) => onActiveChange(event.target.checked)} />
+          </label>
+          <label className="flex items-center justify-between rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground">
+            <span>{labels.isSofort}</span>
+            <Switch checked={fields.isSofort ?? true} onChange={(event) => onIsSofortChange(event.target.checked)} />
+          </label>
+        </div>
+      ) : null}
       <div className="grid gap-4">
         {([
           ["bezeichnung", labels.bezeichnung],
@@ -154,6 +175,8 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
   && previous.fields.metaDescription === next.fields.metaDescription
   && previous.fields.metaKeyword === next.fields.metaKeyword
   && previous.fields.description === next.fields.description
+  && previous.fields.isActive === next.fields.isActive
+  && previous.fields.isSofort === next.fields.isSofort
   && previous.previewHtml === next.previewHtml
   && previous.descriptionMode === next.descriptionMode
   && previous.labels.name === next.labels.name
@@ -170,4 +193,6 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
   && previous.labels.keywordPlaceholder === next.labels.keywordPlaceholder
   && previous.labels.code === next.labels.code
   && previous.labels.preview === next.labels.preview
+  && previous.labels.active === next.labels.active
+  && previous.labels.isSofort === next.labels.isSofort
 ));
