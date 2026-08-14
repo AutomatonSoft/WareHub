@@ -86,39 +86,72 @@ void configureGlobalErrorHandlers() {
   };
 }
 
-class QrOnlyApp extends StatelessWidget {
+class QrOnlyApp extends StatefulWidget {
   const QrOnlyApp({super.key, required this.settings});
 
   final AppSettings settings;
 
   @override
+  State<QrOnlyApp> createState() => _QrOnlyAppState();
+}
+
+class _QrOnlyAppState extends State<QrOnlyApp> {
+  late AppLang _language = widget.settings.language;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(_handleSettingsChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant QrOnlyApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings != widget.settings) {
+      oldWidget.settings.removeListener(_handleSettingsChanged);
+      widget.settings.addListener(_handleSettingsChanged);
+      _language = widget.settings.language;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.settings.removeListener(_handleSettingsChanged);
+    super.dispose();
+  }
+
+  void _handleSettingsChanged() {
+    final AppLang next = widget.settings.language;
+    if (next != _language) {
+      setState(() {
+        _language = next;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: settings,
-      builder: (BuildContext context, _) {
-        return MaterialApp(
-          title: 'SofortBot Mobile',
-          debugShowCheckedModeBanner: false,
-          theme: buildAppTheme(),
-          themeMode: ThemeMode.dark,
-          locale: Locale(settings.language.code),
-          localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: const <Locale>[
-            Locale('en'),
-            Locale('ru'),
-            Locale('de'),
-          ],
-          routes: <String, WidgetBuilder>{
-            '/login': (_) => const AuthScreen(),
-            '/home': (_) => const QrHomePage(),
-          },
-          home: const AppBootstrapScreen(),
-        );
+    return MaterialApp(
+      title: 'SofortBot Mobile',
+      debugShowCheckedModeBanner: false,
+      theme: buildAppTheme(),
+      themeMode: ThemeMode.dark,
+      locale: Locale(_language.code),
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const <Locale>[
+        Locale('en'),
+        Locale('ru'),
+        Locale('de'),
+      ],
+      routes: <String, WidgetBuilder>{
+        '/login': (_) => const AuthScreen(),
+        '/home': (_) => const QrHomePage(),
       },
+      home: const AppBootstrapScreen(),
     );
   }
 }
