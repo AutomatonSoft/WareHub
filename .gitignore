@@ -77,6 +77,9 @@ venv
 .DS_Store
 **/.DS_Store
 
+# JetBrains IDE
+.idea/
+
 # Local root runtime data
 data/*.sqlite3
 data/*.sqlite3-*
