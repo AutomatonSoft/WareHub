@@ -184,9 +184,7 @@ class IntakeData {
       isBWare: json['is_b_ware'] as bool? ?? false,
       store: json['store'] as bool? ?? false,
       inTransit: json['in_transit'] as bool? ?? false,
-      inStock: json['stock_status'] is String
-          ? json['stock_status'] == 'in_stock'
-          : json['in_stock'] as bool? ?? true,
+      stockStatus: _stockStatusFromJson(json),
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty
@@ -198,6 +196,21 @@ class IntakeData {
           json['is_active'] as bool? ?? !(json['is_removed'] as bool? ?? false),
       removedAt: json['removed_at'] == null ? null : '${json['removed_at']}',
     );
+  }
+
+  static String _stockStatusFromJson(Map<String, dynamic> json) {
+    final dynamic rawStatus = json['stock_status'];
+    if (rawStatus is String) {
+      switch (rawStatus) {
+        case kStockStatusInStock:
+        case kStockStatusReturned:
+        case kStockStatusOut:
+          return rawStatus;
+      }
+    }
+
+    final bool legacyInStock = json['in_stock'] as bool? ?? true;
+    return legacyInStock ? kStockStatusInStock : kStockStatusOut;
   }
 }
 
