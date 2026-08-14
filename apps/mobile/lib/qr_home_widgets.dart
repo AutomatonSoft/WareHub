@@ -58,7 +58,8 @@ class QrHomeItemCard extends StatelessWidget {
       strings: strings,
     );
     final bool hasMultipleLocations = warehouseLocations.length > 1;
-    final Color background = removed ? uiCardSoft : _stockStatusBackground(item.stockStatus);
+    final Color background =
+        removed ? uiCardSoft : _stockStatusBackground(item.stockStatus);
     final Color countChipBackground = removed
         ? uiOrangeDeep.withValues(alpha: 0.20)
         : hasMultipleLocations
@@ -226,8 +227,7 @@ class QrHomeItemCard extends StatelessWidget {
                   children: <Widget>[
                     if (showReturn)
                       FilledButton.tonalIcon(
-                        onPressed:
-                            onReturn == null ? null : () => onReturn!(),
+                        onPressed: onReturn == null ? null : () => onReturn!(),
                         icon: returning
                             ? const SizedBox(
                                 width: 16,
