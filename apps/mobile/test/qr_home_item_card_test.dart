@@ -6,6 +6,7 @@ import 'package:sofortbot_mobile/app_theme.dart';
 import 'package:sofortbot_mobile/models.dart';
 import 'package:sofortbot_mobile/qr_home_item_details_page.dart';
 import 'package:sofortbot_mobile/qr_home_widgets.dart';
+import 'package:sofortbot_mobile/warehouse_constants.dart';
 
 void main() {
   late AppSettings settings;
@@ -258,7 +259,7 @@ const IntakeData _item = IntakeData(
   isBWare: false,
   store: false,
   inTransit: false,
-  inStock: false,
+  stockStatus: kStockStatusInStock,
   createdAt: '2026-07-24T00:00:00Z',
   isRemoved: false,
   isActive: true,
