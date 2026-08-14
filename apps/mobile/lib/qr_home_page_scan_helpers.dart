@@ -210,12 +210,27 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
     required int step,
     required int total,
   }) async {
+    final List<String> suggestedSlots = findFreeWarehouseSlotCodes(
+      _items,
+      minSlot: kWarehouseMinSlot,
+      maxSlot: kWarehouseMaxSlot,
+      limit: 5,
+    );
+    if (suggestedSlots.isEmpty) {
+      _showMessage(
+        'No free warehouse slots in pool ($kWarehouseMinSlot..$kWarehouseMaxSlot).',
+        error: true,
+      );
+      return null;
+    }
     final String? slotCode = await _askRequiredText(
       title: _strings.format(
         'step_title',
         <String, String>{'step': '$step', 'total': '$total'},
       ),
       label: _strings.text('warehouse_place'),
+      initialValue: suggestedSlots.first,
+      suggestedValues: suggestedSlots,
       validator: (String value) {
         if (value.isEmpty) {
           return null;

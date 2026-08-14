@@ -174,10 +174,26 @@ String? findNextFreeWarehouseSlotCode(
   int minSlot = kWarehouseMinSlot,
   int maxSlot = kWarehouseMaxSlot,
 }) {
+  final List<String> candidates = findFreeWarehouseSlotCodes(
+    items,
+    minSlot: minSlot,
+    maxSlot: maxSlot,
+    limit: 1,
+  );
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+List<String> findFreeWarehouseSlotCodes(
+  List<IntakeData> items, {
+  int minSlot = kWarehouseMinSlot,
+  int maxSlot = kWarehouseMaxSlot,
+  int limit = 5,
+}) {
   if (minSlot < kWarehouseMinSlot ||
       maxSlot > kWarehouseMaxSlot ||
-      minSlot > maxSlot) {
-    return null;
+      minSlot > maxSlot ||
+      limit < 1) {
+    return const <String>[];
   }
   final Set<int> occupied = items
       .where((IntakeData item) {
@@ -187,10 +203,14 @@ String? findNextFreeWarehouseSlotCode(
       .where((int slot) => slot >= minSlot && slot <= maxSlot)
       .toSet();
 
+  final List<String> freeSlots = <String>[];
   for (int slot = minSlot; slot <= maxSlot; slot++) {
     if (!occupied.contains(slot)) {
-      return '$slot';
+      freeSlots.add('$slot');
+      if (freeSlots.length == limit) {
+        break;
+      }
     }
   }
-  return null;
+  return freeSlots;
 }

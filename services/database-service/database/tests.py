@@ -1634,12 +1634,12 @@ class DatabaseApiTests(APITestCase):
     def test_mark_kid_out_of_stock_by_place_and_section(self):
         self.kid.place = "A-120"
         self.kid.section = "B"
-        self.kid.in_stock = True
-        self.kid.save(update_fields=["place", "section", "in_stock"])
+        self.kid.stock_status = "in_stock"
+        self.kid.save(update_fields=["place", "section", "stock_status"])
 
         response = self.client.post(
             "/api/v1/kids/mark-out-of-stock/",
-            {"place": "a-120", "section": "b"},
+            {"place": "a-120", "section": "b", "stock_status": "out"},
             format="json",
         )
 
@@ -1647,7 +1647,35 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kid_id"], self.kid.id)
         self.assertTrue(response.data["updated"])
         self.kid.refresh_from_db()
-        self.assertFalse(self.kid.in_stock)
+        self.assertEqual(self.kid.stock_status, "out")
+
+    def test_mark_kid_out_of_stock_can_set_returned_status(self):
+        self.kid.place = "A-122"
+        self.kid.section = "B"
+        self.kid.stock_status = "in_stock"
+        self.kid.save(update_fields=["place", "section", "stock_status"])
+
+        response = self.client.post(
+            "/api/v1/kids/mark-out-of-stock/",
+            {"place": "A-122", "section": "B", "stock_status": "returned"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["stock_status"], "returned")
+        self.assertTrue(response.data["updated"])
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.stock_status, "returned")
+
+    def test_mark_kid_out_of_stock_rejects_unknown_status(self):
+        response = self.client.post(
+            "/api/v1/kids/mark-out-of-stock/",
+            {"place": "A-120", "section": "B", "stock_status": "missing"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["allowed_stock_statuses"], ["in_stock", "returned", "out"])
 
     def test_mark_kid_out_of_stock_requires_matching_section(self):
         self.kid.place = "A-121"
@@ -3191,14 +3219,14 @@ class DatabaseApiTests(APITestCase):
     def test_inventory_rows_can_filter_by_b_ware_and_in_transit(self):
         self.kid.b_ware = True
         self.kid.in_transit = True
-        self.kid.in_stock = False
-        self.kid.save(update_fields=["b_ware", "in_stock", "in_transit"])
+        self.kid.stock_status = "out"
+        self.kid.save(update_fields=["b_ware", "stock_status", "in_transit"])
 
         other_kid = Kid.objects.create(
             kid_number="FILTER-FLAGS-002",
             place="88",
             b_ware=False,
-            in_stock=True,
+            stock_status="in_stock",
             in_transit=False,
         )
         Orders.objects.create(
@@ -3223,7 +3251,7 @@ class DatabaseApiTests(APITestCase):
         self.assertIn(self.kid.id, in_transit_ids)
         self.assertNotIn(other_kid.id, in_transit_ids)
 
-        in_stock_response = self.client.get("/api/v1/inventory/rows/?in_stock=false&page_size=100")
+        in_stock_response = self.client.get("/api/v1/inventory/rows/?stock_status=out&page_size=100")
         self.assertEqual(in_stock_response.status_code, status.HTTP_200_OK)
         in_stock_ids = {row["kid_id"] for row in in_stock_response.data["results"]}
         self.assertIn(self.kid.id, in_stock_ids)
@@ -3421,8 +3449,8 @@ class DatabaseApiTests(APITestCase):
         self.order.delete()
         self.kid.room = "ROOM-X"
         self.kid.furniture_type = "SOFA"
-        self.kid.in_stock = False
-        self.kid.save(update_fields=["room", "furniture_type", "in_stock"])
+        self.kid.stock_status = "out"
+        self.kid.save(update_fields=["room", "furniture_type", "stock_status"])
         ProductAttributes.objects.create(
             kid=self.kid,
             quantity=4,
@@ -3442,7 +3470,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(rows[0]["order_id"], "-")
         self.assertEqual(rows[0]["room"], "ROOM-X")
         self.assertEqual(rows[0]["type"], "SOFA")
-        self.assertFalse(rows[0]["in_stock"])
+        self.assertEqual(rows[0]["stock_status"], "out")
         self.assertEqual(rows[0]["quantity"], 4)
         self.assertEqual(rows[0]["company"], "Nordic House")
 

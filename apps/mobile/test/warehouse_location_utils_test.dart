@@ -150,6 +150,20 @@ void main() {
     );
   });
 
+  test('findFreeWarehouseSlotCodes returns five available slots in order', () {
+    final List<IntakeData> items = <IntakeData>[
+      _item(id: '1', location: 'A1', slotNumber: 1),
+      _item(id: '2', location: 'B3', slotNumber: 3),
+      _item(id: '3', location: 'C4', slotNumber: 4),
+      _item(id: '4', location: 'D2', slotNumber: 2, isRemoved: true),
+    ];
+
+    expect(
+      findFreeWarehouseSlotCodes(items),
+      <String>['2', '5', '6', '7', '8'],
+    );
+  });
+
   test('findNextFreeWarehouseSlotCode returns null for invalid boundaries', () {
     expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], minSlot: 0),
         isNull);

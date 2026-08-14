@@ -269,6 +269,11 @@ export function SofortListTable() {
       const photos = normalizePhotoList(item.photo);
       const siteEans = extractSiteEans(rawItem, "");
       const isBWare = rawItem.b_ware === true;
+      const stockStatus = rawItem.stock_status === "returned" || rawItem.stock_status === "out" || rawItem.stock_status === "in_stock"
+        ? rawItem.stock_status
+        : rawItem.stock_status === false
+          ? "out"
+          : "in_stock";
       const normalizedRowEan =
         typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
           ? (item as { database_ean?: string }).database_ean!.trim()
@@ -316,7 +321,8 @@ export function SofortListTable() {
         place: normalizePlaceValue(item.place),
         section: typeof rawItem.section === "string" && rawItem.section.trim().length > 0 ? rawItem.section.trim() : null,
         bWare: isBWare,
-        inStock: rawItem.in_stock !== false,
+        stockStatus,
+        inStock: stockStatus === "in_stock",
         store: rawItem.store === true,
         quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
         room: typeof item.room === "string" && item.room.trim().length > 0 ? item.room.trim() : null,
