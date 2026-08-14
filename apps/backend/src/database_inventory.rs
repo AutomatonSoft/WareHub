@@ -71,6 +71,7 @@ struct DatabaseInventoryRowsRequest {
 pub(crate) struct MarkDatabaseInventoryOutOfStockRequest {
     place: String,
     section: String,
+    stock_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -234,6 +235,13 @@ pub(crate) async fn mark_database_inventory_out_of_stock(
     let _user = require_approved_user(&state, &headers).await?;
     let place = payload.place.trim();
     let section = payload.section.trim().to_ascii_uppercase();
+    let stock_status = normalize_inventory_stock_status(payload.stock_status.as_deref()).ok_or_else(|| {
+        database_inventory_error(
+            StatusCode::BAD_REQUEST,
+            "database_inventory_stock_status_invalid",
+            "stock_status must be one of: in_stock, returned, out",
+        )
+    })?;
     if place.is_empty() {
         return Err(database_inventory_error(
             StatusCode::BAD_REQUEST,
@@ -261,7 +269,11 @@ pub(crate) async fn mark_database_inventory_out_of_stock(
         .http_client
         .post(url)
         .header("x-warehub-service-token", &config.service_token)
-        .json(&serde_json::json!({ "place": place, "section": section }))
+        .json(&serde_json::json!({
+            "place": place,
+            "section": section,
+            "stock_status": stock_status,
+        }))
         .timeout(Duration::from_secs(DATABASE_INVENTORY_TIMEOUT_SECONDS))
         .send()
         .await
@@ -847,6 +859,18 @@ fn normalized_optional_text(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn normalize_inventory_stock_status(value: Option<&str>) -> Option<String> {
+    let normalized = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| "out".to_string());
+    match normalized.as_str() {
+        "in_stock" | "returned" | "out" => Some(normalized),
+        _ => None,
+    }
+}
+
 fn database_inventory_error(
     status: StatusCode,
     code: &'static str,
@@ -906,6 +930,14 @@ mod tests {
             mapped.photo_url.as_deref(),
             Some("[\"https://cdn.example.com/1.jpg\"]")
         );
+    }
+
+    #[test]
+    fn normalizes_inventory_stock_status_for_mobile_requests() {
+        assert_eq!(normalize_inventory_stock_status(Some(" returned ")).as_deref(), Some("returned"));
+        assert_eq!(normalize_inventory_stock_status(Some("IN_STOCK")).as_deref(), Some("in_stock"));
+        assert_eq!(normalize_inventory_stock_status(None).as_deref(), Some("out"));
+        assert_eq!(normalize_inventory_stock_status(Some("unknown")), None);
     }
 
     #[test]
