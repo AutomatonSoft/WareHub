@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sofortbot_mobile/models.dart';
+import 'package:sofortbot_mobile/warehouse_constants.dart';
 
 void main() {
   test('InventoryFilterOptions maps all web filter option groups', () {
@@ -44,5 +45,30 @@ void main() {
     expect(item.warehouseLocation, 'A12');
     expect(placement.section, 'A');
     expect(placement.warehouseLocation, 'A14');
+  });
+
+  test('IntakeData preserves supported stock_status values', () {
+    for (final String status in <String>[
+      kStockStatusInStock,
+      kStockStatusReturned,
+      kStockStatusOut,
+    ]) {
+      final IntakeData item = IntakeData.fromJson(<String, dynamic>{
+        'stock_status': status,
+      });
+
+      expect(item.stockStatus, status);
+    }
+  });
+
+  test('IntakeData maps legacy in_stock values to stock_status', () {
+    expect(
+      IntakeData.fromJson(<String, dynamic>{'in_stock': true}).stockStatus,
+      kStockStatusInStock,
+    );
+    expect(
+      IntakeData.fromJson(<String, dynamic>{'in_stock': false}).stockStatus,
+      kStockStatusOut,
+    );
   });
 }
