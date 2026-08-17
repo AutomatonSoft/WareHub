@@ -1220,7 +1220,13 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         target_place = validated.get("place")
         conflict = find_place_conflict(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None)
         if conflict is not None:
-            return Response(_place_conflict_error(target_place, exclude_kid_id=getattr(existing, "id", None) if existing is not None else None), status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                _place_conflict_error(
+                    target_place,
+                    exclude_kid_id=getattr(existing, "id", None) if existing is not None else None,
+                ),
+                status=status.HTTP_409_CONFLICT,
+            )
 
         if existing is None:
             with transaction.atomic():
@@ -1247,7 +1253,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         if existing_kid_number != kid_number:
             return Response(
                 _place_conflict_error(target_place, exclude_kid_id=None),
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_409_CONFLICT,
             )
 
         before_values = {field: getattr(existing, field) for field in ("account", "place", "photo", "room", "furniture_type", "commentary", "b_ware", "store", "in_transit")}
@@ -1305,7 +1311,10 @@ class KidRetrieveUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
             target_place = serializer.validated_data.get("place")
             conflict = find_place_conflict(target_place, exclude_kid_id=instance.id)
             if conflict is not None:
-                return Response(_place_conflict_error(target_place, exclude_kid_id=instance.id), status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    _place_conflict_error(target_place, exclude_kid_id=instance.id),
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         photo_was_provided = "photo" in serializer.validated_data
         next_photos = _normalize_photo_list(serializer.validated_data.get("photo")) if photo_was_provided else old_photos

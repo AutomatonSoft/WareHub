@@ -145,6 +145,19 @@ services:
       retries: 12
       start_period: 15s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${PROD_REDIS_PASSWORD:?PROD_REDIS_PASSWORD is required}
+    command: ["sh", "-c", "exec redis-server --appendonly no --save '' --requirepass \"$$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   services:
     image: ${SERVICES_IMAGE}:${SERVICES_APP_VERSION}
     restart: unless-stopped
@@ -155,6 +168,8 @@ services:
       postgres:
         condition: service_healthy
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       SECRET_KEY: ${SERVICES_SECRET_KEY:-prod-change-me}
@@ -231,6 +246,11 @@ services:
       POSTGRES_PASSWORD: ${PROD_POSTGRES_PASSWORD}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      FTP_UPLOAD_REDIS_URL: redis://:${PROD_REDIS_PASSWORD:?PROD_REDIS_PASSWORD is required}@redis:6379/0
+      UPLOAD_FTP_MAX_CONCURRENT_UPLOADS: "3"
+      FTP_UPLOAD_REDIS_MAX_CONCURRENT_UPLOADS: "3"
+      UPLOAD_FTP_REDIS_LOCK_TIMEOUT_SECONDS: "600"
+      UPLOAD_FTP_REDIS_LOCK_WAIT_SECONDS: "60"
       OTTO_CATEGORY_CACHE_MONGO_HOST: mongodb
       OTTO_CATEGORY_CACHE_MONGO_PORT: "27017"
       OTTO_CATEGORY_CACHE_MONGO_USERNAME: ${PROD_MONGO_USER:?PROD_MONGO_USER is required}
