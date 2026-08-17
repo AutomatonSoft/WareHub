@@ -23,6 +23,19 @@ def json_safe(value):
     return value
 
 
+def _get_with_retries(*, url: str, params: dict, timeout: tuple[int, int], request_retries: int):
+    attempts_total = max(1, int(request_retries) + 1)
+    last_error: requests.RequestException | None = None
+    for _ in range(attempts_total):
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+    raise RuntimeError(f"request failed after {attempts_total} attempts: {last_error}") from last_error
+
+
 def fetch_max_rate_last_period(
     *,
     from_code: str,
@@ -31,6 +44,7 @@ def fetch_max_rate_last_period(
     timeout: tuple[int, int],
     end_date: date,
     api_url: str,
+    request_retries: int = 1,
 ) -> Decimal:
     start_date = end_date - timedelta(days=max(1, int(lookback_days)))
     errors: list[str] = []
@@ -38,8 +52,8 @@ def fetch_max_rate_last_period(
 
     if endpoint:
         try:
-            resp = requests.get(
-                endpoint,
+            resp = _get_with_retries(
+                url=endpoint,
                 params={
                     "from": from_code,
                     "to": to_code,
@@ -49,8 +63,8 @@ def fetch_max_rate_last_period(
                     "end_date": end_date.isoformat(),
                 },
                 timeout=timeout,
+                request_retries=request_retries,
             )
-            resp.raise_for_status()
             payload = resp.json() or {}
             value = payload.get("max_rate")
             if value in (None, ""):
@@ -64,12 +78,12 @@ def fetch_max_rate_last_period(
             errors.append(f"custom_fx_failed: {exc}")
 
     try:
-        resp = requests.get(
-            f"https://api.frankfurter.app/{start_date.isoformat()}..{end_date.isoformat()}",
+        resp = _get_with_retries(
+            url=f"https://api.frankfurter.app/{start_date.isoformat()}..{end_date.isoformat()}",
             params={"from": from_code, "to": to_code},
             timeout=timeout,
+            request_retries=request_retries,
         )
-        resp.raise_for_status()
         payload = resp.json() or {}
         rates_by_day = payload.get("rates") or {}
         max_rate = None
@@ -89,8 +103,8 @@ def fetch_max_rate_last_period(
         errors.append(f"frankfurter_range_failed: {exc}")
 
     try:
-        resp = requests.get(
-            "https://api.exchangerate.host/timeseries",
+        resp = _get_with_retries(
+            url="https://api.exchangerate.host/timeseries",
             params={
                 "base": from_code,
                 "symbols": to_code,
@@ -98,8 +112,8 @@ def fetch_max_rate_last_period(
                 "end_date": end_date.isoformat(),
             },
             timeout=timeout,
+            request_retries=request_retries,
         )
-        resp.raise_for_status()
         payload = resp.json() or {}
         rates_by_day = payload.get("rates") or {}
         max_rate = None
@@ -137,6 +151,7 @@ def convert_amount(*, amount, from_currency: str, to_currency: str, env_prefix: 
         raise RuntimeError("Invalid currency code for conversion.")
 
     lookback_days = int(os.getenv(f"{env_prefix}_FX_LOOKBACK_DAYS", "365"))
+    request_retries = int(os.getenv(f"{env_prefix}_FX_REQUEST_RETRIES", "1"))
     end_date = timezone.now().date()
     cache_key = (from_code, to_code, lookback_days, end_date.isoformat())
     max_rate = cache.get(cache_key)
@@ -148,6 +163,7 @@ def convert_amount(*, amount, from_currency: str, to_currency: str, env_prefix: 
             timeout=timeout,
             end_date=end_date,
             api_url=os.getenv(f"{env_prefix}_FX_API_URL", "").strip(),
+            request_retries=request_retries,
         )
         cache[cache_key] = max_rate
 

@@ -104,6 +104,7 @@ class ProductEditorLoadRequest(BaseModel):
     ean: str
     active_group: ProductEditorGroupId
     baseline_target_id: str | None = None
+    publishing_target_id: str | None = None
 
 
 class ProductEditorLoadResponse(BaseModel):
@@ -152,8 +153,19 @@ class ProductEditorApplyResponse(BaseModel):
 class ProductEditorJobResponse(BaseModel):
     request_id: str
     job_id: str
+    ean: str | None = None
     status: JobStatus | str
     active_group: ProductEditorGroupId | None = None
     summary: dict = Field(default_factory=dict)
     targets: list[dict] = Field(default_factory=list)
     error: ErrorContract | None = None
+    created_at_unix_ms: int | None = None
+    updated_at_unix_ms: int | None = None
+
+
+class ProductEditorJobListResponse(BaseModel):
+    request_id: str
+    total: int
+    limit: int
+    offset: int
+    jobs: list[ProductEditorJobResponse] = Field(default_factory=list)

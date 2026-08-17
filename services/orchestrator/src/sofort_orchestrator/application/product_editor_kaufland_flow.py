@@ -141,7 +141,16 @@ class ProductEditorKauflandFlow:
             raise ProductEditorKauflandFlowError("product_editor_plan_not_found", "Product Editor plan was not found.", 404, {"plan_id": plan_id})
         job_id = str(uuid.uuid4())
         self.store.create_job(job_id=job_id, request_id=request_id, plan_id=plan_id, ean=plan["ean"], active_group=ProductEditorGroupId.KAUFLAND)
-        self.store.mark_running(job_id=job_id)
+        return ProductEditorApplyResponse(request_id=request_id, job_id=job_id, status=JobStatus.QUEUED, active_group=ProductEditorGroupId.KAUFLAND, accepted=True)
+
+    def execute_job(self, *, job_id: str) -> None:
+        job = self.store.get_job(job_id=job_id)
+        if job is None:
+            raise ProductEditorKauflandFlowError("product_editor_job_not_found", "Kaufland Product Editor job was not found.", 404, {"job_id": job_id})
+        plan = self.store.get_plan(plan_id=job["plan_id"])
+        if plan is None:
+            raise ProductEditorKauflandFlowError("product_editor_plan_not_found", "Product Editor plan was not found.", 404, {"plan_id": job["plan_id"]})
+        request_id = job["request_id"]
         targets: list[dict] = []
         operations = plan["summary"].get("operations", {}) if isinstance(plan["summary"], dict) else {}
         try:
@@ -156,24 +165,23 @@ class ProductEditorKauflandFlow:
                     result = self.gateway.create_kaufland_by_ean(ean=plan["ean"], controller=controller, request_id=request_id, payload=payload)
                 targets.append(_target_result(target_id=target_id, operation=operation, result=result, request_id=request_id))
         except Exception as exc:  # noqa: BLE001
-            error = ErrorContract(code="product_editor_kaufland_apply_failed", message="Kaufland apply failed before downstream completion.", request_id=request_id, details={"plan_id": plan_id, "reason": str(exc)})
+            error = ErrorContract(code="product_editor_kaufland_apply_failed", message="Kaufland apply failed before downstream completion.", request_id=request_id, details={"plan_id": plan["plan_id"], "reason": str(exc)})
             self.store.mark_failed(job_id=job_id, summary={"supported": True, "success": 0, "failed": len(targets) or 1}, targets=targets, error=error)
-            return ProductEditorApplyResponse(request_id=request_id, job_id=job_id, status=JobStatus.FAILED, active_group=ProductEditorGroupId.KAUFLAND, accepted=False)
+            return
         success = sum(1 for target in targets if target["status"] == "success")
         failed = len(targets) - success
         summary = {"supported": True, "success": success, "failed": failed, "final_status": "success" if failed == 0 else ("partial_success" if success else "failed")}
         if failed == 0:
             self.store.mark_completed(job_id=job_id, summary=summary, targets=targets)
-            return ProductEditorApplyResponse(request_id=request_id, job_id=job_id, status=JobStatus.COMPLETED, active_group=ProductEditorGroupId.KAUFLAND, accepted=True)
+            return
         error = ErrorContract(code="product_editor_kaufland_apply_partial_failure", message="One or more Kaufland targets failed during apply.", request_id=request_id, details={"job_id": job_id, "failed_targets": failed})
         self.store.mark_failed(job_id=job_id, summary=summary, targets=targets, error=error)
-        return ProductEditorApplyResponse(request_id=request_id, job_id=job_id, status=JobStatus.FAILED, active_group=ProductEditorGroupId.KAUFLAND, accepted=False)
 
     def get_job(self, *, job_id: str, request_id: str) -> ProductEditorJobResponse:
         job = self.store.get_job(job_id=job_id)
         if job is None or job["active_group"] is not ProductEditorGroupId.KAUFLAND:
             raise ProductEditorKauflandFlowError("product_editor_job_not_found", "Kaufland Product Editor job was not found.", 404, {"job_id": job_id})
-        return ProductEditorJobResponse(request_id=request_id, job_id=job_id, status=job["status"], active_group=job["active_group"], summary=job["summary"], targets=job["targets"], error=job["error"])
+        return ProductEditorJobResponse(request_id=request_id, job_id=job_id, ean=job["ean"], status=job["status"], active_group=job["active_group"], summary=job["summary"], targets=job["targets"], error=job["error"], created_at_unix_ms=job["created_at_unix_ms"], updated_at_unix_ms=job["updated_at_unix_ms"])
 
     def _resolve_baseline_target_id(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
         states = self.discover_targets(ean=ean, request_id=request_id)

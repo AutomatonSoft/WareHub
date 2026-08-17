@@ -172,6 +172,57 @@ class SqliteProductEditorStore:
     def mark_failed(self, *, job_id: str, summary: dict, targets: list[dict], error: ErrorContract | None) -> None:
         self._update_terminal_status(job_id=job_id, status=JobStatus.FAILED, summary=summary, targets=targets, error=error)
 
+    def claim_next_queued_job(self) -> dict | None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT job_id, request_id, plan_id, ean, active_group, status, summary_json, targets_json, error_json,
+                       created_at_unix_ms, updated_at_unix_ms
+                FROM product_editor_jobs
+                WHERE status = ? AND active_group IN (?, ?)
+                ORDER BY created_at_unix_ms ASC
+                LIMIT 1
+                """,
+                (JobStatus.QUEUED.value, ProductEditorGroupId.HOOD.value, ProductEditorGroupId.KAUFLAND.value),
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+            now = _now_ms()
+            conn.execute(
+                "UPDATE product_editor_jobs SET status = ?, updated_at_unix_ms = ? WHERE job_id = ?",
+                (JobStatus.RUNNING.value, now, row[0]),
+            )
+            conn.commit()
+        return self._job_from_row(row, status=JobStatus.RUNNING, updated_at_unix_ms=now)
+
+    def count_jobs(self, *, query: str) -> int:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM product_editor_jobs WHERE ean LIKE ? ESCAPE '\\'",
+                (pattern,),
+            ).fetchone()
+            conn.commit()
+        return int(row[0]) if row is not None else 0
+
+    def list_jobs(self, *, limit: int, offset: int = 0, query: str = "") -> list[dict]:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT job_id, request_id, plan_id, ean, active_group, status, summary_json, targets_json, error_json,
+                       created_at_unix_ms, updated_at_unix_ms
+                FROM product_editor_jobs
+                WHERE ean LIKE ? ESCAPE '\\'
+                ORDER BY created_at_unix_ms DESC
+                LIMIT ? OFFSET ?
+                """,
+                (pattern, limit, offset),
+            ).fetchall()
+            conn.commit()
+        return [self._job_from_row(row) for row in rows]
     def get_job(self, *, job_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -186,18 +237,22 @@ class SqliteProductEditorStore:
             conn.commit()
         if row is None:
             return None
+        return self._job_from_row(row)
+
+    @staticmethod
+    def _job_from_row(row, *, status: JobStatus | None = None, updated_at_unix_ms: int | None = None) -> dict:
         return {
             "job_id": row[0],
             "request_id": row[1],
             "plan_id": row[2],
             "ean": row[3],
             "active_group": ProductEditorGroupId(row[4]),
-            "status": JobStatus(row[5]),
+            "status": status or JobStatus(row[5]),
             "summary": json.loads(row[6]),
             "targets": json.loads(row[7]),
             "error": ErrorContract(**json.loads(row[8])) if row[8] else None,
             "created_at_unix_ms": int(row[9]),
-            "updated_at_unix_ms": int(row[10]),
+            "updated_at_unix_ms": updated_at_unix_ms if updated_at_unix_ms is not None else int(row[10]),
         }
 
     def _update_status(self, *, job_id: str, status: JobStatus) -> None:
@@ -240,3 +295,8 @@ class SqliteProductEditorStore:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _search_pattern(query: str) -> str:
+    escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

@@ -17,6 +17,7 @@ from .api.routes import Deps, router
 from .application.marketplace_job_service import MarketplaceJobService
 from .application.marketplace_job_worker import run_marketplace_job_worker
 from .application.product_editor_service import ProductEditorService
+from .application.product_editor_job_worker import run_product_editor_job_worker
 from .application.job_worker import run_job_worker
 from .application.reconciliation_scheduler import run_reconciliation_scheduler
 from .application.otto_category_scheduler import run_otto_category_scheduler
@@ -190,6 +191,7 @@ async def _run_background_worker(worker_name: str, worker_coro):
 async def lifespan(_app: FastAPI):
     job_worker_task: asyncio.Task | None = None
     marketplace_job_worker_task: asyncio.Task | None = None
+    product_editor_job_worker_task: asyncio.Task | None = None
     reconciliation_scheduler_task: asyncio.Task | None = None
     otto_category_scheduler_task: asyncio.Task | None = None
     configure_runtime_dependencies()
@@ -218,6 +220,19 @@ async def lifespan(_app: FastAPI):
                 run_marketplace_job_worker(
                     service=marketplace_service,
                     job_store=marketplace_store,
+                    poll_interval_seconds=settings.job_worker_poll_interval_seconds,
+                ),
+            )
+        )
+        product_editor_service = ProductEditorDeps.service
+        if product_editor_service is None:
+            raise RuntimeError("Product Editor worker dependencies are not configured")
+        product_editor_job_worker_task = asyncio.create_task(
+            _run_background_worker(
+                "product_editor_job_worker",
+                run_product_editor_job_worker(
+                    service=product_editor_service,
+                    job_store=product_editor_service.store,
                     poll_interval_seconds=settings.job_worker_poll_interval_seconds,
                 ),
             )
@@ -263,6 +278,12 @@ async def lifespan(_app: FastAPI):
             marketplace_job_worker_task.cancel()
             try:
                 await marketplace_job_worker_task
+            except asyncio.CancelledError:
+                pass
+        if product_editor_job_worker_task is not None:
+            product_editor_job_worker_task.cancel()
+            try:
+                await product_editor_job_worker_task
             except asyncio.CancelledError:
                 pass
         if reconciliation_scheduler_task is not None:

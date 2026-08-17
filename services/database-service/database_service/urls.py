@@ -104,6 +104,7 @@ from jv_services.split_views import (
     JVSitesByArtikelnrAPIView,
     JVSitesByEANAPIView,
 )
+from jv_services.views_batch import JVBatchJobListAPIView
 from xl_services.views import (
     XLBatchApplyByEANAPIView,
     XLBatchPlanByEANAPIView,
@@ -406,6 +407,11 @@ api_v1_patterns = [
         "api/v1/jv/batch/update-by-artikelnr/<str:ean>/plan/",
         JVBatchPlanByArtikelnrAPIView.as_view(),
         name="jv-batch-plan-by-artikelnr-v1",
+    ),
+    path(
+        "api/v1/jv/batch/jobs/",
+        JVBatchJobListAPIView.as_view(),
+        name="jv-batch-jobs-list-v1",
     ),
     path(
         "api/v1/jv/batch/jobs/<int:job_id>/",

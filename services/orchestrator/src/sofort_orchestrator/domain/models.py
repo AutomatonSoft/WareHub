@@ -220,6 +220,27 @@ class JobDetailsResponse(BaseModel):
     error: ErrorContract | None = None
 
 
+class JobListItem(BaseModel):
+    job_id: str
+    request_id: str
+    ean: str
+    operation: Operation
+    status: JobStatus
+    created_at_unix_ms: int
+    updated_at_unix_ms: int
+    priority: JobPriority = JobPriority.NORMAL
+    result: OrchestrateResponse | None = None
+    error: ErrorContract | None = None
+
+
+class JobListResponse(BaseModel):
+    request_id: str
+    total: int
+    limit: int
+    offset: int
+    jobs: list[JobListItem]
+
+
 class ReconciliationChannelState(BaseModel):
     target: ChannelTarget
     payload: dict = Field(default_factory=dict)
