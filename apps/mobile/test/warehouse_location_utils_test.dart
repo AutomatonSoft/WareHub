@@ -164,6 +164,15 @@ void main() {
     );
   });
 
+  test('selectAvailableWarehouseSlotCodes uses server-provided places', () {
+    expect(
+      selectAvailableWarehouseSlotCodes(
+        <String>['90', '91', '91', '92A', '0', '10001', '93', '94'],
+      ),
+      <String>['90', '91', '92A', '93', '94'],
+    );
+  });
+
   test('findNextFreeWarehouseSlotCode returns null for invalid boundaries', () {
     expect(findNextFreeWarehouseSlotCode(const <IntakeData>[], minSlot: 0),
         isNull);

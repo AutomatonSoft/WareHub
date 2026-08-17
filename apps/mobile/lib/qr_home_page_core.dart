@@ -408,7 +408,7 @@ extension _QrHomePageCore on _QrHomePageState {
         _inventoryInTransit,
       ].whereType<Object>().length;
 
-  Future<void> _loadInventoryFilterOptions() async {
+  Future<bool> _loadInventoryFilterOptions() async {
     final http.Response response = await _authorizedRequest(
       'GET',
       Uri.parse('${_effectiveApiBase()}/inventory/filter-options'),
@@ -416,7 +416,7 @@ extension _QrHomePageCore on _QrHomePageState {
     );
     if (response.statusCode == 401 || response.statusCode == 403) {
       await _handleUnauthorizedAfterRefresh();
-      return;
+      return false;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('HTTP ${response.statusCode}');
@@ -425,10 +425,11 @@ extension _QrHomePageCore on _QrHomePageState {
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Invalid inventory filter options');
     }
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() {
       _inventoryFilterOptions = InventoryFilterOptions.fromJson(decoded);
     });
+    return true;
   }
 
   Future<void> _submitInventorySearch(String value) async {

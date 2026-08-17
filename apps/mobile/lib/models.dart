@@ -19,6 +19,7 @@ enum ScanFlowAction { receive, unload }
 class InventoryFilterOptions {
   const InventoryFilterOptions({
     this.places = const <String>[],
+    this.availablePlaces = const <String>[],
     this.sections = const <String>[],
     this.locations = const <String>[],
     this.quantities = const <String>[],
@@ -30,6 +31,7 @@ class InventoryFilterOptions {
   });
 
   final List<String> places;
+  final List<String> availablePlaces;
   final List<String> sections;
   final List<String> locations;
   final List<String> quantities;
@@ -54,6 +56,7 @@ class InventoryFilterOptions {
 
     return InventoryFilterOptions(
       places: values('places'),
+      availablePlaces: values('available_places'),
       sections: sections,
       locations: values('locations'),
       quantities: values('quantities'),
