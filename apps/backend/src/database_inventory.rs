@@ -77,6 +77,8 @@ pub(crate) struct MarkDatabaseInventoryOutOfStockRequest {
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub(crate) struct MobileInventoryFilterOptionsDto {
     pub(crate) places: Vec<String>,
+    #[serde(default)]
+    pub(crate) available_places: Vec<String>,
     pub(crate) sections: Vec<String>,
     pub(crate) locations: Vec<String>,
     pub(crate) quantities: Vec<String>,
@@ -404,12 +406,13 @@ async fn create_database_inventory_kid_service(
         })?;
 
     if !response.status().is_success() {
-        let status = response.status();
+        let upstream_status = response.status();
         let body = response.text().await.unwrap_or_default();
+        let (status, code) = database_kid_create_error_status(upstream_status);
         return Err(database_inventory_error(
-            StatusCode::BAD_GATEWAY,
-            "database_kid_create_upstream_failed",
-            format!("database-service returned HTTP {status}: {body}"),
+            status,
+            code,
+            format!("database-service returned HTTP {upstream_status}: {body}"),
         ));
     }
 
@@ -871,6 +874,16 @@ fn normalize_inventory_stock_status(value: Option<&str>) -> Option<String> {
     }
 }
 
+fn database_kid_create_error_status(upstream_status: StatusCode) -> (StatusCode, &'static str) {
+    match upstream_status {
+        StatusCode::BAD_REQUEST | StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY => (
+            upstream_status,
+            "database_kid_create_validation_failed",
+        ),
+        _ => (StatusCode::BAD_GATEWAY, "database_kid_create_upstream_failed"),
+    }
+}
+
 fn database_inventory_error(
     status: StatusCode,
     code: &'static str,
@@ -941,6 +954,26 @@ mod tests {
     }
 
     #[test]
+    fn preserves_database_kid_validation_statuses_for_mobile_clients() {
+        assert_eq!(
+            database_kid_create_error_status(StatusCode::BAD_REQUEST),
+            (StatusCode::BAD_REQUEST, "database_kid_create_validation_failed"),
+        );
+        assert_eq!(
+            database_kid_create_error_status(StatusCode::CONFLICT),
+            (StatusCode::CONFLICT, "database_kid_create_validation_failed"),
+        );
+        assert_eq!(
+            database_kid_create_error_status(StatusCode::UNPROCESSABLE_ENTITY),
+            (StatusCode::UNPROCESSABLE_ENTITY, "database_kid_create_validation_failed"),
+        );
+        assert_eq!(
+            database_kid_create_error_status(StatusCode::INTERNAL_SERVER_ERROR),
+            (StatusCode::BAD_GATEWAY, "database_kid_create_upstream_failed"),
+        );
+    }
+
+    #[test]
     fn build_create_payload_preserves_store_and_photo_urls() {
         let payload = CreateIntakeRequest {
             qr_code: "QR-1".to_string(),
@@ -990,6 +1023,7 @@ mod tests {
     fn decodes_inventory_filter_options_contract() {
         let options: MobileInventoryFilterOptionsDto = serde_json::from_value(json!({
             "places": ["1A", "1B"],
+            "available_places": ["2", "3", "4"],
             "sections": ["A"],
             "locations": ["warehouse"],
             "quantities": ["1", "2"],
@@ -1002,6 +1036,7 @@ mod tests {
         .expect("filter options");
 
         assert_eq!(options.places, vec!["1A", "1B"]);
+        assert_eq!(options.available_places, vec!["2", "3", "4"]);
         assert_eq!(options.sections, vec!["A"]);
         assert_eq!(options.quantities, vec!["1", "2"]);
         assert_eq!(options.materials, vec!["Velvet"]);

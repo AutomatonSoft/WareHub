@@ -37,7 +37,7 @@ jobs:
       PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
       PROD_PROJECT_NAME: warehub-prod
       PROD_EXPECTED_GATEWAY_PORT: "8950"
-      PROD_EXPECTED_SERVICE_COUNT: "9"
+      PROD_EXPECTED_SERVICE_COUNT: "10"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
       MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
@@ -265,6 +265,7 @@ jobs:
           PROD_MONGO_USER_SECRET: ${{ secrets.PROD_MONGO_USER }}
           PROD_MONGO_PASSWORD_SECRET: ${{ secrets.PROD_MONGO_PASSWORD }}
           PROD_MONGO_DATABASE_SECRET: ${{ secrets.PROD_MONGO_DATABASE }}
+          PROD_REDIS_PASSWORD_SECRET: ${{ secrets.PROD_REDIS_PASSWORD }}
           TELEGRAM_WEBHOOK_PATH_VALUE: ${{ vars.TELEGRAM_WEBHOOK_PATH }}
         run: |
           set -euo pipefail
@@ -307,6 +308,7 @@ jobs:
             printf 'PROD_MONGO_USER=%s\n' "${PROD_MONGO_USER_SECRET:-}"
             printf 'PROD_MONGO_PASSWORD=%s\n' "${PROD_MONGO_PASSWORD_SECRET:-}"
             printf 'PROD_MONGO_DATABASE=%s\n' "${PROD_MONGO_DATABASE_SECRET:-}"
+            printf 'PROD_REDIS_PASSWORD=%s\n' "${PROD_REDIS_PASSWORD_SECRET:-}"
           } > "$candidate_dir/.env.override"
           python3 infra/scripts/build-runtime-env.py \
             --template infra/deploy/prod/env.prod.sanitized.template \
@@ -424,7 +426,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/prod"
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
-          EXPECTED_SERVICE_COUNT="9"
+          EXPECTED_SERVICE_COUNT="10"
           MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           candidate_dir="$(mktemp -d /tmp/warehub-prod-deploy.XXXXXXXX)"
@@ -504,7 +506,7 @@ jobs:
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --quiet
 
           echo "=== PULL IMAGES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull mongodb backend frontend gateway mobile services telegram_notifier orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml pull mongodb backend frontend gateway mobile services telegram_notifier orchestrator redis
 
           echo "=== VERIFY PROD MIGRATION PLAN ==="
           plan_output="$(docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml run --rm --no-deps services python manage.py migrate --plan)"
@@ -557,6 +559,10 @@ jobs:
           echo "=== UP MONGODB ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps mongodb
           wait_health mongodb healthy
+
+          echo "=== UP REDIS ==="
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps redis
+          wait_health redis healthy
 
           echo "=== UP APP SERVICES ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services telegram_notifier orchestrator
