@@ -7,6 +7,7 @@ void main() {
     final InventoryFilterOptions options = InventoryFilterOptions.fromJson(
       <String, dynamic>{
         'places': <String>['1A', '1B'],
+        'available_places': <String>['2', '3', '4', '5', '6'],
         'sections': <String>['Showroom', 'A', 'B'],
         'locations': <String>['warehouse'],
         'quantities': <String>['1', '2'],
@@ -19,6 +20,7 @@ void main() {
     );
 
     expect(options.places, <String>['1A', '1B']);
+    expect(options.availablePlaces, <String>['2', '3', '4', '5', '6']);
     expect(options.sections, <String>['A', 'B']);
     expect(options.quantities, <String>['1', '2']);
     expect(options.rooms, <String>['Wohnzimmer']);

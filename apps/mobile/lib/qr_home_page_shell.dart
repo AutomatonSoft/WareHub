@@ -318,7 +318,7 @@ extension _QrHomePageShell on _QrHomePageState {
 
   Future<void> _openInventoryFilters() async {
     if (!mounted) return;
-    final Future<void> filterOptionsFuture = _loadInventoryFilterOptions();
+    final Future<bool> filterOptionsFuture = _loadInventoryFilterOptions();
     String? place = _inventoryPlace;
     String? section = _inventorySection;
     String? quantity = _inventoryQuantity;
