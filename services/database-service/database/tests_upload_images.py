@@ -1,6 +1,7 @@
 import json
 import os
-from unittest.mock import patch
+from ftplib import error_perm
+from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
@@ -11,6 +12,91 @@ from .ftp_upload import _ensure_config_for_site_key
 
 
 class UploadImagesToFtpTests(SimpleTestCase):
+    def test_connection_limit_error_is_recognized(self):
+        self.assertTrue(
+            ftp_upload._is_ftp_connection_limit_error(
+                error_perm("530 Sorry, the maximum number of connections (10) for your host are already connected.")
+            )
+        )
+        self.assertFalse(ftp_upload._is_ftp_connection_limit_error(error_perm("530 Login incorrect.")))
+
+    def test_connection_limit_retries_upload_operation(self):
+        attempts = 0
+
+        def operation():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise error_perm("530 Sorry, the maximum number of connections (10) for your host are already connected.")
+            return "uploaded"
+
+        with (
+            patch.object(ftp_upload, "UPLOAD_FTP_CONNECTION_RETRIES", 2),
+            patch.object(ftp_upload, "sleep") as sleep_mock,
+        ):
+            result = ftp_upload._limit_ftp_upload_connections(operation)()
+
+        self.assertEqual(result, "uploaded")
+        self.assertEqual(attempts, 2)
+        sleep_mock.assert_called_once()
+
+    def test_distributed_ftp_lock_uses_the_endpoint_specific_key(self):
+        lock = Mock()
+        lock.acquire.return_value = True
+        client = Mock()
+        client.lock.return_value = lock
+
+        with (
+            patch.object(ftp_upload, "FTP_UPLOAD_REDIS_URL", "redis://example.test:6379/0"),
+            patch("redis.Redis.from_url", return_value=client),
+        ):
+            with ftp_upload._distributed_ftp_upload_lock(host="ftp.example.test", user="warehouse"):
+                pass
+
+        client.lock.assert_called_once_with(
+            f"{ftp_upload._ftp_upload_lock_name(host='ftp.example.test', user='warehouse')}:0",
+            timeout=ftp_upload.FTP_UPLOAD_REDIS_LOCK_TIMEOUT_SECONDS,
+        )
+        lock.acquire.assert_called_once_with(blocking=False)
+        lock.release.assert_called_once()
+        client.close.assert_called_once()
+
+    def test_jv_upload_reuses_one_ftp_connection_for_all_main_image_paths(self):
+        ftp = Mock()
+        ftp.sock = object()
+        config = (
+            "ftp.example.test",
+            21,
+            "warehouse",
+            "password",
+            ["site-root", "images"],
+            "https://www.example.test",
+            "images",
+            False,
+            True,
+            15,
+        )
+
+        with (
+            patch.object(ftp_upload, "_ensure_config_for_site_key", return_value=config),
+            patch.object(ftp_upload, "_read_uploaded_bytes", return_value=b"image"),
+            patch.object(ftp_upload, "_repair_known_image_header_corruption", return_value=b"image"),
+            patch.object(ftp_upload, "_validate_uploaded_image_bytes", return_value=".jpg"),
+            patch.object(ftp_upload, "_compress_image_bytes_if_needed", return_value=(b"image", ".jpg")),
+            patch.object(ftp_upload, "_run_ftp_upload", side_effect=lambda operation, **_kwargs: operation()),
+            patch.object(ftp_upload, "FTP", return_value=ftp),
+        ):
+            ftp_upload.upload_jv_product_file_for_site(
+                SimpleUploadedFile("main.jpg", b"image", content_type="image/jpeg"),
+                site_key="JV_DE",
+                ean="4069943341201",
+                kind="main",
+            )
+
+        ftp.connect.assert_called_once_with(host="ftp.example.test", port=21, timeout=15)
+        self.assertEqual(ftp.storbinary.call_count, 4)
+        ftp.quit.assert_called_once()
+
     def test_normalize_managed_public_base_url_prefers_prod_root_dir(self):
         normalized = ftp_upload._normalize_managed_public_base_url(
             "https://mediawarehub.veloxdesk.com/warehub/dev",

@@ -1,11 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sofortbot_mobile/models.dart';
+import 'package:sofortbot_mobile/warehouse_constants.dart';
 
 void main() {
   test('InventoryFilterOptions maps all web filter option groups', () {
     final InventoryFilterOptions options = InventoryFilterOptions.fromJson(
       <String, dynamic>{
         'places': <String>['1A', '1B'],
+        'available_places': <String>['2', '3', '4', '5', '6'],
         'sections': <String>['Showroom', 'A', 'B'],
         'locations': <String>['warehouse'],
         'quantities': <String>['1', '2'],
@@ -18,6 +20,7 @@ void main() {
     );
 
     expect(options.places, <String>['1A', '1B']);
+    expect(options.availablePlaces, <String>['2', '3', '4', '5', '6']);
     expect(options.sections, <String>['A', 'B']);
     expect(options.quantities, <String>['1', '2']);
     expect(options.rooms, <String>['Wohnzimmer']);
@@ -44,5 +47,30 @@ void main() {
     expect(item.warehouseLocation, 'A12');
     expect(placement.section, 'A');
     expect(placement.warehouseLocation, 'A14');
+  });
+
+  test('IntakeData preserves supported stock_status values', () {
+    for (final String status in <String>[
+      kStockStatusInStock,
+      kStockStatusReturned,
+      kStockStatusOut,
+    ]) {
+      final IntakeData item = IntakeData.fromJson(<String, dynamic>{
+        'stock_status': status,
+      });
+
+      expect(item.stockStatus, status);
+    }
+  });
+
+  test('IntakeData maps legacy in_stock values to stock_status', () {
+    expect(
+      IntakeData.fromJson(<String, dynamic>{'in_stock': true}).stockStatus,
+      kStockStatusInStock,
+    );
+    expect(
+      IntakeData.fromJson(<String, dynamic>{'in_stock': false}).stockStatus,
+      kStockStatusOut,
+    );
   });
 }

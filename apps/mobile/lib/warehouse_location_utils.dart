@@ -214,3 +214,30 @@ List<String> findFreeWarehouseSlotCodes(
   }
   return freeSlots;
 }
+
+List<String> selectAvailableWarehouseSlotCodes(
+  Iterable<String> availablePlaces, {
+  int limit = 5,
+}) {
+  if (limit < 1) {
+    return const <String>[];
+  }
+
+  final Set<String> seen = <String>{};
+  final List<String> suggestions = <String>[];
+  for (final String rawPlace in availablePlaces) {
+    final String place = normalizeWarehousePlace(rawPlace);
+    final int? slotNumber = parseWarehouseSlotNumber(place);
+    if (slotNumber == null ||
+        slotNumber < kWarehouseMinSlot ||
+        slotNumber > kWarehouseMaxSlot ||
+        !seen.add(place)) {
+      continue;
+    }
+    suggestions.add(place);
+    if (suggestions.length == limit) {
+      break;
+    }
+  }
+  return suggestions;
+}

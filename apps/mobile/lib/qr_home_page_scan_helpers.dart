@@ -210,11 +210,20 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
     required int step,
     required int total,
   }) async {
-    final List<String> suggestedSlots = findFreeWarehouseSlotCodes(
-      _items,
-      minSlot: kWarehouseMinSlot,
-      maxSlot: kWarehouseMaxSlot,
-      limit: 5,
+    try {
+      final bool didRefresh = await _loadInventoryFilterOptions();
+      if (!didRefresh) {
+        return null;
+      }
+    } catch (_) {
+      _showMessage('Unable to refresh free warehouse slots. Try again.',
+          error: true);
+      return null;
+    }
+    if (!mounted) return null;
+
+    final List<String> suggestedSlots = selectAvailableWarehouseSlotCodes(
+      _inventoryFilterOptions.availablePlaces,
     );
     if (suggestedSlots.isEmpty) {
       _showMessage(
@@ -252,20 +261,9 @@ extension _QrHomePageScanHelpers on _QrHomePageState {
       return null;
     }
     if (slotCode.isEmpty) {
-      final String? nextSlotCode = findNextFreeWarehouseSlotCode(
-        _items,
-        minSlot: kWarehouseMinSlot,
-        maxSlot: kWarehouseMaxSlot,
-      );
-      if (nextSlotCode == null) {
-        _showMessage(
-            'No free warehouse slots in pool ($kWarehouseMinSlot..$kWarehouseMaxSlot).',
-            error: true);
-        return null;
-      }
       return _PlacementInput(
         placementStrategy: 'manual',
-        warehouseLocation: normalizeWarehousePlace(nextSlotCode),
+        warehouseLocation: suggestedSlots.first,
       );
     }
 

@@ -2,10 +2,15 @@ import json
 import os
 import re
 import unicodedata
+from contextlib import contextmanager
+from functools import wraps
+from hashlib import sha256
 from io import BytesIO
 from datetime import datetime
 from ftplib import FTP, FTP_TLS, all_errors as FTP_ERRORS
 from pathlib import Path
+from threading import BoundedSemaphore
+from time import monotonic, sleep
 from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
@@ -22,6 +27,27 @@ class FtpUploadConfigError(RuntimeError):
 
 class FtpUploadCorruptedFileError(ValueError):
     pass
+
+
+class FtpUploadConcurrencyError(RuntimeError):
+    pass
+
+
+def _is_ftp_connection_limit_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "530" in message and "maximum number of connections" in message
+
+
+def _limit_ftp_upload_connections(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        return _run_ftp_upload(
+            lambda: func(*args, **kwargs),
+            host=str(kwargs.get("host") or UPLOAD_FTP_HOST),
+            user=str(kwargs.get("user") or UPLOAD_FTP_USER),
+        )
+
+    return wrapped
 
 
 def _is_true(value: str) -> bool:
@@ -46,6 +72,98 @@ UPLOAD_IMAGE_MAX_BYTES = int((os.getenv("UPLOAD_IMAGE_MAX_BYTES") or "700000").s
 UPLOAD_IMAGE_MAX_DIMENSION = int((os.getenv("UPLOAD_IMAGE_MAX_DIMENSION") or "2200").strip())
 UPLOAD_IMAGE_JPEG_QUALITY = int((os.getenv("UPLOAD_IMAGE_JPEG_QUALITY") or "82").strip())
 UPLOAD_IMAGE_WEBP_QUALITY = int((os.getenv("UPLOAD_IMAGE_WEBP_QUALITY") or "80").strip())
+UPLOAD_FTP_MAX_CONCURRENT_UPLOADS = max(
+    1,
+    int((os.getenv("UPLOAD_FTP_MAX_CONCURRENT_UPLOADS") or "2").strip()),
+)
+UPLOAD_FTP_CONNECTION_RETRIES = max(
+    1,
+    int((os.getenv("UPLOAD_FTP_CONNECTION_RETRIES") or "3").strip()),
+)
+UPLOAD_FTP_CONNECTION_RETRY_DELAY_SECONDS = max(
+    0.0,
+    float((os.getenv("UPLOAD_FTP_CONNECTION_RETRY_DELAY_SECONDS") or "1.0").strip()),
+)
+FTP_UPLOAD_REDIS_URL = (os.getenv("FTP_UPLOAD_REDIS_URL") or "").strip()
+FTP_UPLOAD_REDIS_LOCK_TIMEOUT_SECONDS = max(
+    1,
+    int((os.getenv("FTP_UPLOAD_REDIS_LOCK_TIMEOUT_SECONDS") or "600").strip()),
+)
+FTP_UPLOAD_REDIS_LOCK_WAIT_SECONDS = max(
+    0.0,
+    float((os.getenv("FTP_UPLOAD_REDIS_LOCK_WAIT_SECONDS") or "60").strip()),
+)
+FTP_UPLOAD_REDIS_MAX_CONCURRENT_UPLOADS = max(
+    1,
+    int((os.getenv("FTP_UPLOAD_REDIS_MAX_CONCURRENT_UPLOADS") or "3").strip()),
+)
+_ftp_upload_slots = BoundedSemaphore(UPLOAD_FTP_MAX_CONCURRENT_UPLOADS)
+
+
+def _ftp_upload_lock_name(*, host: str, user: str) -> str:
+    endpoint = f"{host}:{user}".encode("utf-8")
+    return f"warehub:ftp-upload:{sha256(endpoint).hexdigest()}"
+
+
+@contextmanager
+def _distributed_ftp_upload_lock(*, host: str, user: str):
+    if not FTP_UPLOAD_REDIS_URL:
+        yield
+        return
+
+    try:
+        from redis import Redis
+        from redis.exceptions import LockError, RedisError
+    except ImportError as error:
+        raise FtpUploadConcurrencyError("FTP upload concurrency guard is unavailable.") from error
+
+    client = Redis.from_url(
+        FTP_UPLOAD_REDIS_URL,
+        socket_connect_timeout=3,
+        socket_timeout=3,
+    )
+    lock = None
+    deadline = monotonic() + FTP_UPLOAD_REDIS_LOCK_WAIT_SECONDS
+    try:
+        while lock is None:
+            for slot_number in range(FTP_UPLOAD_REDIS_MAX_CONCURRENT_UPLOADS):
+                candidate = client.lock(
+                    f"{_ftp_upload_lock_name(host=host, user=user)}:{slot_number}",
+                    timeout=FTP_UPLOAD_REDIS_LOCK_TIMEOUT_SECONDS,
+                )
+                if candidate.acquire(blocking=False):
+                    lock = candidate
+                    break
+            if lock is None:
+                if monotonic() >= deadline:
+                    raise FtpUploadConcurrencyError("FTP upload queue is busy. Please retry shortly.")
+                sleep(min(0.2, max(0.0, deadline - monotonic())))
+    except RedisError as error:
+        raise FtpUploadConcurrencyError("FTP upload concurrency guard is unavailable.") from error
+
+    try:
+        yield
+    finally:
+        try:
+            lock.release()
+        except (LockError, RedisError):
+            pass
+        finally:
+            client.close()
+
+
+def _run_ftp_upload(operation, *, host: str, user: str):
+    with _distributed_ftp_upload_lock(host=host, user=user), _ftp_upload_slots:
+        for attempt in range(1, UPLOAD_FTP_CONNECTION_RETRIES + 1):
+            try:
+                return operation()
+            except FTP_ERRORS as error:
+                if (
+                    not _is_ftp_connection_limit_error(error)
+                    or attempt >= UPLOAD_FTP_CONNECTION_RETRIES
+                ):
+                    raise
+                sleep(UPLOAD_FTP_CONNECTION_RETRY_DELAY_SECONDS * attempt)
 
 XL_SITE_PUBLIC_DOMAINS = {
     "XLMOEBEL_DE": "xlmoebel.de",
@@ -516,6 +634,7 @@ def collect_uploaded_files(request, field_names: tuple[str, ...] = ("photo_files
     return [f for f in files if hasattr(f, "read")]
 
 
+@_limit_ftp_upload_connections
 def upload_kid_photo_file(uploaded_file, *, kid_number: str) -> str:
     host, port, user, password, remote_parts, public_base, image_dir = _ensure_config(
         leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images"
@@ -570,6 +689,7 @@ def upload_kid_photo_file(uploaded_file, *, kid_number: str) -> str:
     return _build_public_url(public_base, image_dir, filename)
 
 
+@_limit_ftp_upload_connections
 def upload_public_file(uploaded_file, *, prefix: str = "jv") -> str:
     host, port, user, password, remote_parts, public_base, image_dir = _ensure_config(
         leaf_dir=UPLOAD_FTP_IMAGE_DIR or "images"
@@ -623,6 +743,7 @@ def upload_public_file(uploaded_file, *, prefix: str = "jv") -> str:
     return _build_public_url(public_base, image_dir, filename)
 
 
+@_limit_ftp_upload_connections
 def upload_public_file_for_site_payload(uploaded_file, *, site_key: str, prefix: str = "jv") -> dict:
     host, port, user, password, remote_parts, public_base, image_dir, use_tls, passive, timeout = _ensure_config_for_site_key(
         site_key,
@@ -685,6 +806,7 @@ def upload_public_file_for_site(uploaded_file, *, site_key: str, prefix: str = "
     return str(upload_public_file_for_site_payload(uploaded_file, site_key=site_key, prefix=prefix).get("public_url") or "")
 
 
+@_limit_ftp_upload_connections
 def _ftp_store_file(
     *,
     host: str,
@@ -744,6 +866,51 @@ def _ftp_store_file(
                 pass
 
 
+@contextmanager
+def _ftp_connection(*, host: str, port: int, user: str, password: str, use_tls: bool, passive: bool, timeout: int):
+    ftp_class = FTP_TLS if use_tls else FTP
+    ftp = ftp_class()
+    try:
+        ftp.connect(host=host, port=port, timeout=timeout)
+        ftp.login(user=user, passwd=password)
+        ftp.set_pasv(passive)
+        if isinstance(ftp, FTP_TLS):
+            ftp.prot_p()
+        yield ftp
+    finally:
+        try:
+            if getattr(ftp, "sock", None):
+                ftp.quit()
+            else:
+                ftp.close()
+        except FTP_ERRORS:
+            try:
+                ftp.close()
+            except FTP_ERRORS:
+                pass
+
+
+def _ftp_store_file_with_connection(ftp, *, remote_parts: list[str], filename: str, upload_bytes: bytes) -> None:
+    try:
+        ftp.cwd("/")
+    except FTP_ERRORS:
+        pass
+
+    for part in remote_parts:
+        if not part:
+            continue
+        try:
+            ftp.cwd(part)
+        except FTP_ERRORS:
+            try:
+                ftp.mkd(part)
+            except FTP_ERRORS:
+                pass
+            ftp.cwd(part)
+
+    ftp.storbinary(f"STOR {filename}", BytesIO(upload_bytes))
+
+
 def _safe_jv_folder_name(value: str) -> str:
     # cosmoshop serves the gallery from a folder named after the article media key
     # (the artikelnr). Keep it filesystem-safe but otherwise verbatim so it matches
@@ -784,6 +951,7 @@ def upload_jv_product_file_for_site(
         original_name=getattr(uploaded_file, "name", ""),
     )
     filename = _replace_filename_ext(filename, detected_ext)
+    upload_bytes, _ = _compress_image_bytes_if_needed(upload_bytes, detected_ext)
 
     base_parts = [p for p in remote_parts if p]
     # _ensure_config_for_site_key appends the generic image dir, but JV needs cosmoshop root.
@@ -806,10 +974,9 @@ def upload_jv_product_file_for_site(
         ]
         db_nested_suffix = [ean_folder, "g"]
 
-    public_urls = []
-    for leaf, nested_suffix in upload_targets:
-        parts = base_parts + [leaf] + nested_suffix
-        _ftp_store_file(
+    def upload_all_targets() -> list[str]:
+        public_urls = []
+        with _ftp_connection(
             host=host,
             port=port,
             user=user,
@@ -817,16 +984,23 @@ def upload_jv_product_file_for_site(
             use_tls=use_tls,
             passive=passive,
             timeout=timeout,
-            remote_parts=parts,
-            filename=filename,
-            uploaded_file=uploaded_file,
-            uploaded_bytes=upload_bytes,
-        )
-        # Public JV URL must be relative to site root:
-        # /cosmoshop/default/pix/a/<leaf>/...
-        public_parts = ["cosmoshop", "default", "pix", "a", leaf] + nested_suffix
-        full_url = _build_public_url(public_base, "/".join(public_parts), filename)
-        public_urls.append(full_url)
+        ) as ftp:
+            for leaf, nested_suffix in upload_targets:
+                parts = base_parts + [leaf] + nested_suffix
+                _ftp_store_file_with_connection(
+                    ftp,
+                    remote_parts=parts,
+                    filename=filename,
+                    upload_bytes=upload_bytes,
+                )
+                # Public JV URL must be relative to site root:
+                # /cosmoshop/default/pix/a/<leaf>/...
+                public_parts = ["cosmoshop", "default", "pix", "a", leaf] + nested_suffix
+                full_url = _build_public_url(public_base, "/".join(public_parts), filename)
+                public_urls.append(full_url)
+        return public_urls
+
+    public_urls = _run_ftp_upload(upload_all_targets, host=host, user=user)
 
     # DB must store path relative to site root (without FTP domain/root prefix),
     # e.g. "cosmoshop/default/pix/a/v/<file>".

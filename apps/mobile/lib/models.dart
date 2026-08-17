@@ -19,6 +19,7 @@ enum ScanFlowAction { receive, unload }
 class InventoryFilterOptions {
   const InventoryFilterOptions({
     this.places = const <String>[],
+    this.availablePlaces = const <String>[],
     this.sections = const <String>[],
     this.locations = const <String>[],
     this.quantities = const <String>[],
@@ -30,6 +31,7 @@ class InventoryFilterOptions {
   });
 
   final List<String> places;
+  final List<String> availablePlaces;
   final List<String> sections;
   final List<String> locations;
   final List<String> quantities;
@@ -54,6 +56,7 @@ class InventoryFilterOptions {
 
     return InventoryFilterOptions(
       places: values('places'),
+      availablePlaces: values('available_places'),
       sections: sections,
       locations: values('locations'),
       quantities: values('quantities'),
@@ -184,7 +187,7 @@ class IntakeData {
       isBWare: json['is_b_ware'] as bool? ?? false,
       store: json['store'] as bool? ?? false,
       inTransit: json['in_transit'] as bool? ?? false,
-      stockStatus: '${json['stock_status'] ?? kStockStatusInStock}',
+      stockStatus: _stockStatusFromJson(json),
       bWareComment: json['b_ware_comment'] == null
           ? null
           : '${json['b_ware_comment']}'.trim().isEmpty
@@ -196,6 +199,21 @@ class IntakeData {
           json['is_active'] as bool? ?? !(json['is_removed'] as bool? ?? false),
       removedAt: json['removed_at'] == null ? null : '${json['removed_at']}',
     );
+  }
+
+  static String _stockStatusFromJson(Map<String, dynamic> json) {
+    final dynamic rawStatus = json['stock_status'];
+    if (rawStatus is String) {
+      switch (rawStatus) {
+        case kStockStatusInStock:
+        case kStockStatusReturned:
+        case kStockStatusOut:
+          return rawStatus;
+      }
+    }
+
+    final bool legacyInStock = json['in_stock'] as bool? ?? true;
+    return legacyInStock ? kStockStatusInStock : kStockStatusOut;
   }
 }
 
