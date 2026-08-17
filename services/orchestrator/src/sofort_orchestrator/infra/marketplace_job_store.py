@@ -149,16 +149,44 @@ class SqliteMarketplaceJobStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT job_id, request_id, kid_number, inactive, status, result_status, result_json, error_json
+                SELECT job_id, request_id, kid_number, inactive, status, result_status, result_json, error_json,
+                       created_at_unix_ms, updated_at_unix_ms
                 FROM marketplace_toggle_jobs
                 WHERE job_id = ?
                 """,
                 (job_id,),
             ).fetchone()
             conn.commit()
-        if row is None:
-            return None
+        return self._job_response_from_row(row) if row is not None else None
 
+    def count_jobs(self, *, query: str) -> int:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM marketplace_toggle_jobs WHERE kid_number LIKE ? ESCAPE '\\'",
+                (pattern,),
+            ).fetchone()
+            conn.commit()
+        return int(row[0]) if row is not None else 0
+
+    def list_jobs(self, *, limit: int, offset: int = 0, query: str = "") -> list[MarketplaceToggleJobResponse]:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT job_id, request_id, kid_number, inactive, status, result_status, result_json, error_json,
+                       created_at_unix_ms, updated_at_unix_ms
+                FROM marketplace_toggle_jobs
+                WHERE kid_number LIKE ? ESCAPE '\\'
+                ORDER BY created_at_unix_ms DESC
+                LIMIT ? OFFSET ?
+                """,
+                (pattern, limit, offset),
+            ).fetchall()
+            conn.commit()
+        return [self._job_response_from_row(row) for row in rows]
+    @staticmethod
+    def _job_response_from_row(row) -> MarketplaceToggleJobResponse:
         result = MarketplaceToggleExecutionResult(**json.loads(row[6])) if row[6] else None
         error = ErrorContract(**json.loads(row[7])) if row[7] else None
         job_status = JobStatus(row[4])
@@ -182,8 +210,15 @@ class SqliteMarketplaceJobStore:
             summary=result.summary if result is not None else None,
             results=result.results if result is not None else [],
             error=error,
+            created_at_unix_ms=int(row[8]),
+            updated_at_unix_ms=int(row[9]),
         )
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _search_pattern(query: str) -> str:
+    escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

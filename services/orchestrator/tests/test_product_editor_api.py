@@ -82,6 +82,7 @@ class FakeProductEditorGateway:
         }
         self.jv_local = {
             "JV_DE": {"detail": "not found"},
+            "JV_CH": {"ean": "4012345678901", "source_model": "JV-CH-BASE", "price": "30.99", "quantity": 4, "status": True, "image": "catalog/ch.jpg", "image_public_url": "https://www.jvmoebel.ch/catalog/ch.jpg", "descriptions": [{"language_id": 1, "name": "CH Desk", "description": "<p>CH</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 13, "main_category": True}], "images": [{"image": "catalog/ch-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/ch-1.jpg", "sort_order": 0, "public_url": "https://www.jvmoebel.ch/catalog/ch-1.jpg"}], "jv_fields": {"artikelnr": "JV-CH-BASE", "lieferzeitid": "9"}},
             "JV_AT": {"ean": "4012345678901", "source_model": "JV-AT-BASE", "price": "31.99", "quantity": 4, "status": True, "image": "catalog/at.jpg", "image_public_url": "https://www.jvmoebel.at/catalog/at.jpg", "descriptions": [{"language_id": 1, "name": "AT Desk", "description": "<p>AT</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 11, "main_category": True}], "images": [{"image": "catalog/at-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/at-1.jpg", "sort_order": 0, "public_url": "https://www.jvmoebel.at/catalog/at-1.jpg"}], "jv_fields": {"artikelnr": "JV-AT-BASE", "lieferzeitid": "7"}},
             "JV_CO_UK": {"ean": "4012345678901", "source_model": "JV-UK-BASE", "price": "32.99", "quantity": 2, "status": True, "image": "catalog/uk.jpg", "image_public_url": "https://www.jvfurniture.co.uk/catalog/uk.jpg", "descriptions": [{"language_id": 1, "name": "UK Desk", "description": "<p>UK</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 21, "main_category": True}], "images": [{"image": "catalog/uk-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/uk-1.jpg", "sort_order": 0, "public_url": "https://www.jvfurniture.co.uk/catalog/uk-1.jpg"}], "jv_fields": {"artikelnr": "JV-UK-BASE", "lieferzeitid": "5"}},
             "JV_DE_synced": {"ean": "4012345678901", "source_model": "JV-DE-BASE", "price": "29.99", "quantity": 3, "status": True, "image": "catalog/de.jpg", "image_public_url": "https://www.jvmoebel.de/catalog/de.jpg", "descriptions": [{"language_id": 1, "name": "DE Desk", "description": "<p>DE</p>", "tag": "", "meta_title": "", "meta_description": "", "meta_keyword": ""}], "categories": [{"category_id": 10, "main_category": True}, {"category_id": 12, "main_category": False}], "images": [{"image": "catalog/de-1.jpg", "sort_order": 0}], "images_public_urls": [{"image": "catalog/de-1.jpg", "sort_order": 0, "public_url": "https://www.jvmoebel.de/catalog/de-1.jpg"}], "jv_fields": {"artikelnr": "JV-DE-BASE", "lieferzeitid": "11"}},
@@ -271,8 +272,17 @@ def _client(tmp_path) -> tuple[TestClient, FakeProductEditorGateway]:
     return TestClient(app), fake_gateway
 
 
+def _execute_next_product_editor_job() -> str:
+    service = ProductEditorDeps.service
+    assert service is not None
+    claimed = service.store.claim_next_queued_job()
+    assert claimed is not None
+    service.execute_queued_job(job_id=claimed["job_id"])
+    return claimed["job_id"]
+
+
 def test_product_editor_discover_returns_hood_found_and_excludes_jv_main(tmp_path):
-    client, _ = _client(tmp_path)
+    client, gateway = _client(tmp_path)
     response = client.post("/api/v1/orchestrator/product-editor/discover", json={"ean": "4012345678901"})
     assert response.status_code == 200
     payload = response.json()
@@ -286,6 +296,15 @@ def test_product_editor_discover_returns_hood_found_and_excludes_jv_main(tmp_pat
     assert targets["HOOD_XL"]["status"] == "missing"
     assert jv_targets["JV_DE"]["status"] == "found"
     assert jv_targets["JV_CH"]["status"] == "missing"
+    kaufland_group = next(group for group in payload["groups"] if group["id"] == "KAUFLAND")
+    otto_group = next(group for group in payload["groups"] if group["id"] == "OTTO")
+    xl_group = next(group for group in payload["groups"] if group["id"] == "XL")
+    assert next(target for target in kaufland_group["targets"] if target["id"] == "KAUFLAND_JV")["status"] == "found"
+    assert next(target for target in otto_group["targets"] if target["id"] == "OTTO_JV")["status"] == "found"
+    assert next(target for target in xl_group["targets"] if target["id"] == "XLMOEBEL_DE")["status"] == "found"
+    assert gateway.kaufland_fetch_calls == ["jv", "xl"]
+    assert gateway.jv_sites_calls == 1
+    assert gateway.xl_sites_calls == 1
     all_target_ids = [target["id"] for group in payload["groups"] for target in group["targets"]]
     assert "JV_MAIN" not in all_target_ids
 
@@ -519,7 +538,8 @@ def test_product_editor_kaufland_load_plan_and_apply_updates_found_and_creates_m
 
     apply_response = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": plan_response.json()["plan_id"], "confirmation": True})
     assert apply_response.status_code == 200
-    assert apply_response.json()["status"] == "completed"
+    assert apply_response.json()["status"] == "queued"
+    assert _execute_next_product_editor_job() == apply_response.json()["job_id"]
     assert gateway.kaufland_change_calls[0]["controller"] == "jv"
     assert gateway.kaufland_change_calls[0]["payload"]["changed_fields"] == ["title"]
     assert gateway.kaufland_create_calls[0]["controller"] == "xl"
@@ -550,6 +570,7 @@ def test_product_editor_kaufland_update_omits_blank_unit_id(tmp_path):
     )
 
     assert apply_response.status_code == 200
+    _execute_next_product_editor_job()
     assert "unit_id" not in gateway.kaufland_change_calls[0]["payload"]
 
 
@@ -577,6 +598,7 @@ def test_product_editor_kaufland_update_converts_unit_id_to_integer(tmp_path):
     )
 
     assert apply_response.status_code == 200
+    _execute_next_product_editor_job()
     assert gateway.kaufland_change_calls[0]["payload"]["unit_id"] == 17
 
 
@@ -604,10 +626,11 @@ def test_product_editor_kaufland_update_converts_delivery_to_integer(tmp_path):
     )
 
     assert apply_response.status_code == 200
+    _execute_next_product_editor_job()
     assert gateway.kaufland_change_calls[0]["payload"]["delivery"] == 14
 
 
-def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local(tmp_path):
+def test_product_editor_load_returns_only_requested_jv_baseline_draft(tmp_path):
     client, gateway = _client(tmp_path)
     response = client.post(
         "/api/v1/orchestrator/product-editor/load",
@@ -623,15 +646,47 @@ def test_product_editor_load_returns_normalized_jv_draft_and_syncs_missing_local
     assert payload["draft"]["images"][0]["public_url"] == "https://www.jvmoebel.de/catalog/de-1.jpg"
     assert payload["draft"]["categories_by_site_key"] == {
         "JV_DE": [{"category_id": 10, "main_category": True}, {"category_id": 12, "main_category": False}],
-        "JV_AT": [{"category_id": 11, "main_category": True}],
-        "JV_CO_UK": [{"category_id": 21, "main_category": True}],
     }
     assert payload["draft"]["jv_fields_by_site_key"]["JV_DE"]["lieferzeitid"] == "11"
-    assert payload["draft"]["jv_fields_by_site_key"]["JV_AT"]["lieferzeitid"] == "7"
-    assert payload["draft"]["jv_fields_by_site_key"]["JV_CO_UK"]["lieferzeitid"] == "5"
-    assert "JV_DE" in gateway.synced_site_keys
-    assert gateway.jv_sites_calls == 1
+    assert gateway.synced_site_keys == {"JV_DE"}
+    assert gateway.jv_sites_calls == 0
     assert gateway.jv_local_calls == []
+
+
+def test_product_editor_jv_load_forces_jv_de_as_baseline(tmp_path):
+    client, gateway = _client(tmp_path)
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "JV", "baseline_target_id": "JV_AT"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["baseline_target_id"] == "JV_DE"
+    assert response.json()["draft"]["source_model"] == "JV-DE-BASE"
+    assert gateway.synced_site_keys == {"JV_DE"}
+
+
+def test_product_editor_jv_publishing_load_returns_site_specific_categories_and_delivery(tmp_path):
+    client, gateway = _client(tmp_path)
+
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "baseline_target_id": "JV_DE",
+            "publishing_target_id": "JV_CH",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["baseline_target_id"] == "JV_DE"
+    assert payload["draft"] == {
+        "categories_by_site_key": {"JV_CH": [{"category_id": 13, "main_category": True}]},
+        "jv_fields_by_site_key": {"JV_CH": {"artikelnr": "JV-CH-BASE", "lieferzeitid": "9"}},
+    }
+    assert gateway.synced_site_keys == {"JV_CH"}
 
 
 def test_product_editor_plan_returns_found_hood_target_and_warnings(tmp_path):
@@ -735,7 +790,8 @@ def test_product_editor_apply_executes_hood_patch_and_keeps_ftp_untouched(tmp_pa
     )
     assert apply_response.status_code == 200
     apply_payload = apply_response.json()
-    assert apply_payload["status"] == "completed"
+    assert apply_payload["status"] == "queued"
+    assert _execute_next_product_editor_job() == apply_payload["job_id"]
     assert gateway.patch_calls[0]["account"] == "jv"
     assert gateway.patch_calls[0]["payload"] == {
         "title": "Desk JV",
@@ -755,6 +811,39 @@ def test_product_editor_apply_executes_hood_patch_and_keeps_ftp_untouched(tmp_pa
     job_payload = job_response.json()
     assert job_payload["summary"]["success"] == 1
     assert job_payload["targets"][0]["status"] == "success"
+
+
+def test_product_editor_jobs_list_includes_queued_hood_apply(tmp_path):
+    client, _ = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "HOOD",
+            "changed_fields": ["title"],
+            "draft": {"title": "Updated title"},
+            "selected_target_ids": ["HOOD_JV"],
+        },
+    )
+    applied = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+
+    response = client.get("/api/v1/orchestrator/product-editor/jobs?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert payload["jobs"][0]["job_id"] == applied.json()["job_id"]
+    assert payload["jobs"][0]["status"] == "queued"
+    assert payload["jobs"][0]["ean"] == "4012345678901"
+
+    searched = client.get("/api/v1/orchestrator/product-editor/jobs?limit=1&query=4012345678901")
+    assert searched.status_code == 200
+    assert searched.json()["total"] == 1
 
 
 def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path):

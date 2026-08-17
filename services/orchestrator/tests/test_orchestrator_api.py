@@ -857,6 +857,42 @@ def test_orchestrator_jobs_status_batch_returns_mixed_found_and_not_found(tmp_pa
     assert payload["results"][1]["status"] == "not_found"
 
 
+def test_orchestrator_jobs_list_returns_newest_queued_jobs(tmp_path):
+    fake = FakeAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+
+    for ean in ("4012345678901", "4012345678902"):
+        response = client.post(
+            "/api/v1/orchestrator/jobs",
+            json={
+                "ean": ean,
+                "command": {
+                    "operation": "publish",
+                    "payload": {"title": "Desk", "price": "199.99"},
+                    "channels": [{"marketplace": "hood", "account": "jv", "changed_fields": ["title", "price"]}],
+                },
+            },
+        )
+        assert response.status_code == 200
+
+    response = client.get("/api/v1/orchestrator/jobs?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert len(payload["jobs"]) == 1
+    assert payload["jobs"][0]["ean"] == "4012345678902"
+    assert payload["jobs"][0]["status"] == "queued"
+    assert payload["jobs"][0]["operation"] == "publish"
+
+    searched = client.get("/api/v1/orchestrator/jobs?limit=1&query=4012345678901")
+    assert searched.status_code == 200
+    assert searched.json()["total"] == 1
+    assert searched.json()["jobs"][0]["ean"] == "4012345678901"
+
+
 def test_orchestrator_jobs_status_batch_rejects_too_large_payload(tmp_path):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)

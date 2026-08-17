@@ -178,7 +178,22 @@ class ProductEditorHoodFlow:
             ean=plan["ean"],
             active_group=plan["active_group"],
         )
-        self.store.mark_running(job_id=job_id)
+        return ProductEditorApplyResponse(
+            request_id=request_id,
+            job_id=job_id,
+            status=JobStatus.QUEUED,
+            active_group=ProductEditorGroupId.HOOD,
+            accepted=True,
+        )
+
+    def execute_job(self, *, job_id: str) -> None:
+        job = self.store.get_job(job_id=job_id)
+        if job is None:
+            raise ProductEditorHoodFlowError("product_editor_job_not_found", "Product Editor job was not found.", 404, details={"job_id": job_id})
+        plan = self.store.get_plan(plan_id=job["plan_id"])
+        if plan is None:
+            raise ProductEditorHoodFlowError("product_editor_plan_not_found", "Product Editor plan was not found.", 404, details={"plan_id": job["plan_id"]})
+        request_id = job["request_id"]
 
         targets: list[dict] = []
         try:
@@ -207,17 +222,11 @@ class ProductEditorHoodFlow:
                 code="product_editor_apply_failed",
                 message="Product Editor apply failed before downstream completion.",
                 request_id=request_id,
-                details={"plan_id": plan_id, "reason": str(exc)},
+                details={"plan_id": plan["plan_id"], "reason": str(exc)},
             )
             summary = {"supported": True, "success": 0, "failed": len(targets) or 1}
             self.store.mark_failed(job_id=job_id, summary=summary, targets=targets, error=error)
-            return ProductEditorApplyResponse(
-                request_id=request_id,
-                job_id=job_id,
-                status=JobStatus.FAILED,
-                active_group=ProductEditorGroupId.HOOD,
-                accepted=False,
-            )
+            return
 
         success_count = sum(1 for target in targets if target["status"] == "success")
         failed_count = len(targets) - success_count
@@ -229,13 +238,7 @@ class ProductEditorHoodFlow:
         }
         if failed_count == 0:
             self.store.mark_completed(job_id=job_id, summary=summary, targets=targets)
-            return ProductEditorApplyResponse(
-                request_id=request_id,
-                job_id=job_id,
-                status=JobStatus.COMPLETED,
-                active_group=ProductEditorGroupId.HOOD,
-                accepted=True,
-            )
+            return
 
         error = ErrorContract(
             code="product_editor_apply_partial_failure",
@@ -244,13 +247,6 @@ class ProductEditorHoodFlow:
             details={"job_id": job_id, "failed_targets": failed_count},
         )
         self.store.mark_failed(job_id=job_id, summary=summary, targets=targets, error=error)
-        return ProductEditorApplyResponse(
-            request_id=request_id,
-            job_id=job_id,
-            status=JobStatus.FAILED,
-            active_group=ProductEditorGroupId.HOOD,
-            accepted=False,
-        )
 
     def get_job(self, *, job_id: str, request_id: str) -> ProductEditorJobResponse:
         job = self.store.get_job(job_id=job_id)
@@ -259,11 +255,14 @@ class ProductEditorHoodFlow:
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,
+            ean=job["ean"],
             status=job["status"],
             active_group=job["active_group"],
             summary=job["summary"],
             targets=job["targets"],
             error=job["error"],
+            created_at_unix_ms=job["created_at_unix_ms"],
+            updated_at_unix_ms=job["updated_at_unix_ms"],
         )
 
     def _resolve_target_id(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:

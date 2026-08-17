@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..application.marketplace_job_service import MarketplaceJobService
 from ..domain.marketplace_job_models import (
     MarketplaceToggleCreateResponse,
     MarketplaceToggleJobResponse,
+    MarketplaceToggleJobListResponse,
     MarketplaceToggleRequest,
 )
 from ..domain.models import ErrorContract, JobStatus
@@ -89,6 +90,23 @@ def create_marketplace_toggle_job(
         actor_name=(x_warehub_actor_name or "").strip() or None,
     )
     return MarketplaceToggleCreateResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED)
+
+
+@router.get("/api/v1/orchestrator/marketplace/jobs")
+def list_marketplace_toggle_jobs(
+    request: Request,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    query: str = Query(default="", max_length=100),
+    store: SqliteMarketplaceJobStore = Depends(get_marketplace_job_store),
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> MarketplaceToggleJobListResponse:
+    request_id = _request_id(request, x_request_id)
+    response.headers["X-Request-Id"] = request_id
+    total = store.count_jobs(query=query)
+    jobs = store.list_jobs(limit=limit, offset=offset, query=query)
+    return MarketplaceToggleJobListResponse(request_id=request_id, total=total, limit=limit, offset=offset, jobs=jobs)
 
 
 @router.get("/api/v1/orchestrator/marketplace/jobs/{job_id}")

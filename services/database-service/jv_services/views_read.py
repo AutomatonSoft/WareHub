@@ -1,7 +1,8 @@
 import logging
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 
-import mysql.connector
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,7 +23,12 @@ from .sync_utils import (
     effective_ean_from_source,
     resolve_local_product_for_source,
 )
-from .source_connection import mysql_connect
+from .source_connection import (
+    is_transient_jv_source_error,
+    jv_source_read_retries,
+    jv_source_read_retry_delay,
+    mysql_connect,
+)
 from .source_values import fetch_jv_lieferzeit_options, jv_urlkey, process_uvp
 from .view_helpers import (
     normalize_site as _normalize_site,
@@ -52,6 +58,35 @@ def _brief_row_from_snapshot(snapshot: dict) -> dict | None:
         "title": title,
     }
 
+
+def _read_jv_site_snapshot(site_info: dict, artikelnr: str) -> dict:
+    site = ImportedProduct.Site.JV
+    site_key = site_info["site_key"]
+    domain = site_info["domain"]
+    db_config = source_db_config_for_site(site, site_key=site_key)
+    if not db_config:
+        return {"site_key": site_key, "domain": domain, "snapshot": None, "reason": "not_configured"}
+
+    try:
+        snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, artikelnr)
+    except Exception as exc:
+        logger.warning(
+            "JV_ALL_SITES_QUERY_ERROR code=jv_all_sites_query_error site=%s site_key=%s domain=%s error=%s",
+            site,
+            site_key,
+            domain,
+            str(exc),
+        )
+        return {
+            "site_key": site_key,
+            "domain": domain,
+            "snapshot": None,
+            "reason": "query_error",
+            "error": str(exc),
+        }
+
+    return {"site_key": site_key, "domain": domain, "snapshot": snapshot, "reason": "not_found"}
+
 class JVProductByEANAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -80,6 +115,20 @@ class JVProductByEANAPIView(APIView):
         try:
             snapshot = fetch_source_product_snapshot_by_artikelnr(db_config, ean.strip())
         except Exception as exc:
+            retry_attempt = int(getattr(request, "_jv_source_read_retry_attempt", 0))
+            if is_transient_jv_source_error(exc) and retry_attempt + 1 < jv_source_read_retries():
+                setattr(request, "_jv_source_read_retry_attempt", retry_attempt + 1)
+                retry_delay = jv_source_read_retry_delay(retry_attempt + 1)
+                logger.warning(
+                    "JV_SOURCE_FETCH_RETRY code=jv_source_fetch_retry site=%s site_key=%s attempt=%s delay_seconds=%s error=%s",
+                    site,
+                    site_key,
+                    retry_attempt + 1,
+                    retry_delay,
+                    str(exc),
+                )
+                time.sleep(retry_delay)
+                return self.get(request)
             logger.exception(
                 "JV_SOURCE_FETCH_FAILED code=jv_source_fetch_failed ean=%s site=%s site_key=%s",
                 ean,
@@ -117,40 +166,22 @@ class JVSitesByEANAPIView(APIView):
         missing = []
         catalog = jv_site_catalog(_normalize_site_key)
 
-        for site_info in catalog:
-            site_key = site_info["site_key"]
-            domain = site_info["domain"]
-            db_config = source_db_config_for_site(site, site_key=site_key)
-            if not db_config:
-                missing.append({"site_key": site_key, "domain": domain, "reason": "not_configured"})
-                continue
+        if catalog:
+            with ThreadPoolExecutor(max_workers=min(4, len(catalog))) as executor:
+                site_results = list(executor.map(lambda site_info: _read_jv_site_snapshot(site_info, normalized_ean), catalog))
+        else:
+            site_results = []
 
-            try:
-                snapshot = fetch_source_product_snapshot_by_artikelnr(
-                    db_config,
-                    normalized_ean,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "JV_ALL_SITES_QUERY_ERROR code=jv_all_sites_query_error site=%s site_key=%s domain=%s error=%s",
-                    site,
-                    site_key,
-                    domain,
-                    str(exc),
-                )
-                missing.append(
-                    {
-                        "site_key": site_key,
-                        "domain": domain,
-                        "reason": "query_error",
-                        "error": str(exc),
-                    }
-                )
-                continue
-
+        for site_result in site_results:
+            site_key = site_result["site_key"]
+            domain = site_result["domain"]
+            snapshot = site_result["snapshot"]
             row = _brief_row_from_snapshot(snapshot)
             if not row:
-                missing.append({"site_key": site_key, "domain": domain, "reason": "not_found"})
+                missing_item = {"site_key": site_key, "domain": domain, "reason": site_result["reason"]}
+                if site_result.get("error"):
+                    missing_item["error"] = site_result["error"]
+                missing.append(missing_item)
                 continue
 
             effective_ean = effective_ean_from_source(row, fallback=normalized_ean)
@@ -410,14 +441,7 @@ class JVRubricsTreeAPIView(APIView):
         conn = None
         cur = None
         try:
-            conn = mysql.connector.connect(
-                host=db_config["host"],
-                user=db_config["user"],
-                password=db_config["password"],
-                database=db_config["database"],
-                port=db_config["port"],
-                use_pure=True,
-            )
+            conn = mysql_connect(db_config)
             cur = conn.cursor(dictionary=True)
             cur.execute("SHOW TABLES LIKE 'shoprubriken'")
             if cur.fetchone() is None:
@@ -509,6 +533,20 @@ class JVRubricsTreeAPIView(APIView):
                 status=status.HTTP_200_OK,
             )
         except Exception as exc:
+            retry_attempt = int(getattr(request, "_jv_source_read_retry_attempt", 0))
+            if is_transient_jv_source_error(exc) and retry_attempt + 1 < jv_source_read_retries():
+                setattr(request, "_jv_source_read_retry_attempt", retry_attempt + 1)
+                retry_delay = jv_source_read_retry_delay(retry_attempt + 1)
+                logger.warning(
+                    "JV_RUBRICS_TREE_RETRY code=jv_rubrics_tree_retry site=%s site_key=%s attempt=%s delay_seconds=%s error=%s",
+                    site,
+                    site_key,
+                    retry_attempt + 1,
+                    retry_delay,
+                    str(exc),
+                )
+                time.sleep(retry_delay)
+                return self.get(request)
             logger.exception(
                 "JV_RUBRICS_TREE_FAILED code=jv_rubrics_tree_failed site=%s site_key=%s",
                 site,
@@ -571,18 +609,36 @@ class JVDeliveryOptionsAPIView(APIView):
                 status=status.HTTP_200_OK,
             )
         except Exception as exc:
+            retry_attempt = int(getattr(request, "_jv_source_read_retry_attempt", 0))
+            if is_transient_jv_source_error(exc) and retry_attempt + 1 < jv_source_read_retries():
+                setattr(request, "_jv_source_read_retry_attempt", retry_attempt + 1)
+                retry_delay = jv_source_read_retry_delay(retry_attempt + 1)
+                logger.warning(
+                    "JV_DELIVERY_OPTIONS_RETRY code=jv_delivery_options_retry site=%s site_key=%s attempt=%s delay_seconds=%s error=%s",
+                    site,
+                    site_key,
+                    retry_attempt + 1,
+                    retry_delay,
+                    str(exc),
+                )
+                time.sleep(retry_delay)
+                return self.get(request)
             logger.exception(
                 "JV_DELIVERY_OPTIONS_FAILED code=jv_delivery_options_failed site=%s site_key=%s",
                 site,
                 site_key,
             )
+            fallback_options = fetch_jv_lieferzeit_options(None, site_key=site_key)
             return Response(
                 {
-                    "code": "jv_delivery_options_failed",
-                    "detail": "Failed to load JV delivery options from source DB.",
-                    "error": str(exc),
+                    "site": site,
+                    "site_key": site_key or "",
+                    "count": len(fallback_options),
+                    "items": fallback_options,
+                    "source": "fallback",
+                    "warning": "JV source DB is temporarily unavailable; static delivery options are shown.",
                 },
-                status=status.HTTP_502_BAD_GATEWAY,
+                status=status.HTTP_200_OK,
             )
         finally:
             try:
