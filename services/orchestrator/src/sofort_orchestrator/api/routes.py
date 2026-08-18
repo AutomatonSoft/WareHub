@@ -7,7 +7,7 @@ import time
 import uuid
 from collections import deque
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..application.orchestrator_service import OrchestratorService
@@ -24,6 +24,7 @@ from ..domain.models import (
     CreateJobResponse,
     ErrorContract,
     JobPriority,
+    JobListResponse,
     JobStatus,
     Operation,
     OrchestrateRequest,
@@ -351,6 +352,23 @@ def get_orchestrator_jobs_status_batch(
         not_found=len(results) - found_total,
         results=results,
     ).model_dump()
+
+
+@router.get("/api/v1/orchestrator/jobs")
+def list_orchestrator_jobs(
+    request: Request,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    query: str = Query(default="", max_length=100),
+    job_store: SqliteJobStore = Depends(get_job_store),
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+):
+    request_id = getattr(request.state, "request_id", x_request_id or str(uuid.uuid4()))
+    response.headers["X-Request-Id"] = request_id
+    total = job_store.count_jobs(query=query)
+    jobs = job_store.list_jobs(limit=limit, offset=offset, query=query)
+    return JobListResponse(request_id=request_id, total=total, limit=limit, offset=offset, jobs=jobs).model_dump()
 
 
 @router.get("/api/v1/orchestrator/jobs/{job_id}")

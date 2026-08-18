@@ -247,6 +247,26 @@ def test_marketplace_toggle_job_create_and_fetch_queued(tmp_path):
     assert fetched_payload["results"] == []
 
 
+def test_marketplace_toggle_jobs_list_includes_queued_job(tmp_path):
+    client = _client(tmp_path)
+    created = client.post("/api/v1/orchestrator/marketplace/toggle-by-kid", json={"kid_number": "566725168", "inactive": True})
+
+    response = client.get("/api/v1/orchestrator/marketplace/jobs?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert payload["jobs"][0]["job_id"] == created.json()["job_id"]
+    assert payload["jobs"][0]["status"] == "queued"
+    assert payload["jobs"][0]["created_at_unix_ms"] > 0
+
+    searched = client.get("/api/v1/orchestrator/marketplace/jobs?limit=1&query=566725168")
+    assert searched.status_code == 200
+    assert searched.json()["total"] == 1
+
+
 def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)

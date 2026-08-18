@@ -8,7 +8,6 @@ import { AppShell } from "../../components/layout/app-shell";
 import { allMarketplaceSites, type SiteFamily } from "../../lib/marketplace-sites";
 import {
   xljvEnqueueCreateJob,
-  xljvGetBatchJob,
   xljvGetDeliveryOptions,
   xljvGetRubricsTree,
   xljvUploadImages,
@@ -278,7 +277,6 @@ type JvCreateAndPushPayload = {
   jv_fields: Record<string, unknown>;
 };
 
-const JV_CREATE_JOB_STORAGE_KEY = "wh:jv-create-active-job";
 
 type RubricTreeCache = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], RubricTreeNode[]>>;
 type ExpandedRubricIdsBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], Set<number>>>;
@@ -1248,7 +1246,6 @@ export default function CreateProductPage() {
   const [selectedDeliveryIdsBySite, setSelectedDeliveryIdsBySite] = useState<SelectedDeliveryIdsBySite>({});
   const [sendAllSitesLoading, setSendAllSitesLoading] = useState(false);
   const [, setSendAllSitesStatus] = useState("");
-  const [, setSendAllSitesLog] = useState("");
   const localObjectUrlsRef = useRef<string[]>([]);
   // Tracks mount state so the background JV send can safely skip component state
   // updates after the user navigates away (the completion toast still fires via
@@ -1259,33 +1256,6 @@ export default function CreateProductPage() {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
-  // Holds the id of the create-job currently being polled so we never start
-  // two concurrent polling loops for the same job.
-  const pollingJobRef = useRef<number | null>(null);
-  // Resume polling an in-flight create-job after a full page reload: the job
-  // runs server-side, so we just need to reattach and surface the toast.
-  useEffect(() => {
-    let raw: string | null = null;
-    try {
-      raw = window.localStorage.getItem(JV_CREATE_JOB_STORAGE_KEY);
-    } catch {
-      raw = null;
-    }
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as { jobId?: number; ean?: string };
-      const jobId = Number(parsed?.jobId);
-      if (Number.isFinite(jobId)) {
-        setSendAllSitesLoading(true);
-        setSendAllSitesStatus(t.createProductResumeJvJob.replace("{jobId}", String(jobId)));
-        void pollCreateJob(jobId);
-      }
-    } catch {
-      /* ignore malformed storage */
-    }
-    // pollCreateJob is a stable component-scoped declaration; run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const isLoading =
     controller.kidContextLoading || controller.sourceSitesLoading || controller.sourceSnapshotLoading;
@@ -1402,14 +1372,28 @@ export default function CreateProductPage() {
 
     return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
   }, [controller.jvSourceSnapshotsBySiteKey]);
-  const jvInitialSelectionKey = useMemo(() => JSON.stringify(
-    JV_RUBRIC_SITE_TABS.map((site) => ({
-      siteKey: site.key,
-      categories: jvInitialSelections.rubricIdsBySite[site.key] ?? [],
-      mainCategory: jvInitialSelections.mainRubricIdBySite[site.key] ?? null,
-      delivery: jvInitialSelections.deliveryIdsBySite[site.key] ?? [],
-    })),
-  ), [jvInitialSelections]);
+  const jvInitialSelectionKey = controller.kidContext?.mainEan ?? "";
+
+  function getEffectiveJvPublishingSelections(
+    siteKey: (typeof JV_RUBRIC_SITE_TABS)[number]["key"],
+  ) {
+    const currentSelections = jvPublishingSelectionsRef.current;
+    const hasSelectedRubrics = Object.hasOwn(currentSelections.rubricIdsBySite, siteKey);
+    const hasSelectedMainRubric = Object.hasOwn(currentSelections.mainRubricIdBySite, siteKey);
+    const hasSelectedDelivery = Object.hasOwn(currentSelections.deliveryIdsBySite, siteKey);
+    const draftRubrics = jvInitialSelections.rubricIdsBySite[siteKey] ?? [];
+    const rubricIds = hasSelectedRubrics
+      ? currentSelections.rubricIdsBySite[siteKey] ?? []
+      : draftRubrics;
+    const mainRubricId = hasSelectedMainRubric
+      ? currentSelections.mainRubricIdBySite[siteKey] ?? null
+      : jvInitialSelections.mainRubricIdBySite[siteKey] ?? draftRubrics[0] ?? null;
+    const deliveryIds = hasSelectedDelivery
+      ? currentSelections.deliveryIdsBySite[siteKey] ?? []
+      : jvInitialSelections.deliveryIdsBySite[siteKey] ?? [];
+
+    return { rubricIds, mainRubricId, deliveryIds };
+  }
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -2274,9 +2258,9 @@ export default function CreateProductPage() {
   ): JvCreateAndPushPayload {
     const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
     const price = normalizeDecimalPrice(jvFields.price || asTrimmedString(sourcePayload.price));
-    const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[siteKey] ?? [];
-    const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[siteKey] ?? null;
-    const selectedDeliveryId = jvPublishingSelectionsRef.current.deliveryIdsBySite[siteKey]?.[0];
+    const { rubricIds: selectedRubrics, mainRubricId: mainRubric, deliveryIds } =
+      getEffectiveJvPublishingSelections(siteKey);
+    const selectedDeliveryId = deliveryIds[0];
     const orderedRubrics = selectedRubrics.slice().sort((left, right) => {
       if (left === mainRubric) return -1;
       if (right === mainRubric) return 1;
@@ -2359,9 +2343,11 @@ export default function CreateProductPage() {
     const validationErrors: string[] = [];
     const targetSites = JV_RUBRIC_SITE_TABS.filter((site) => targetSiteKeys.includes(site.key));
     for (const site of targetSites) {
-      const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[site.key] ?? [];
-      const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[site.key] ?? null;
-      const selectedDelivery = jvPublishingSelectionsRef.current.deliveryIdsBySite[site.key] ?? [];
+      const {
+        rubricIds: selectedRubrics,
+        mainRubricId: mainRubric,
+        deliveryIds: selectedDelivery,
+      } = getEffectiveJvPublishingSelections(site.key);
 
       if (selectedRubrics.length === 0) {
         validationErrors.push(t.createProductSelectAtLeastOneRubric.replace("{site}", site.label));
@@ -2387,7 +2373,6 @@ export default function CreateProductPage() {
 
     setSendAllSitesLoading(true);
     setSendAllSitesStatus(t.createProductQueueingJvJob);
-    setSendAllSitesLog("");
     showToast(
       t.createProductJvQueuedToast,
       "info"
@@ -2453,7 +2438,6 @@ export default function CreateProductPage() {
           return;
         }
 
-        persistActiveCreateJob(jobId, ean);
         if (isMountedRef.current) {
           setSendAllSitesStatus(
             t.createProductJvJobQueuedBackground
@@ -2461,7 +2445,9 @@ export default function CreateProductPage() {
               .replace("{count}", String(targetSites.length))
           );
         }
-        await pollCreateJob(jobId);
+        if (isMountedRef.current) {
+          setSendAllSitesLoading(false);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : t.createProductJvBackgroundFailed;
         if (isMountedRef.current) {
@@ -2471,86 +2457,6 @@ export default function CreateProductPage() {
         showToast(message, "error");
       }
     })();
-  }
-
-  function persistActiveCreateJob(jobId: number, jobEan: string): void {
-    try {
-      window.localStorage.setItem(
-        JV_CREATE_JOB_STORAGE_KEY,
-        JSON.stringify({ jobId, ean: jobEan, startedAt: Date.now() })
-      );
-    } catch {
-      /* ignore storage failures */
-    }
-  }
-
-  function clearActiveCreateJob(): void {
-    try {
-      window.localStorage.removeItem(JV_CREATE_JOB_STORAGE_KEY);
-    } catch {
-      /* ignore storage failures */
-    }
-  }
-
-  async function pollCreateJob(jobId: number): Promise<void> {
-    if (pollingJobRef.current === jobId) return;
-    pollingJobRef.current = jobId;
-    const deadline = Date.now() + 15 * 60 * 1000;
-    try {
-      while (Date.now() < deadline) {
-        let payload: Record<string, unknown> = {};
-        let httpStatus = 0;
-        try {
-          const res = await xljvGetBatchJob(jobId);
-          payload = res.payload;
-          httpStatus = res.response.status;
-        } catch {
-          // transient network error — keep retrying until the deadline
-        }
-        if (httpStatus === 404) {
-          clearActiveCreateJob();
-          if (isMountedRef.current) setSendAllSitesLoading(false);
-          showToast(t.createProductJvJobNotFound.replace("{jobId}", String(jobId)), "error");
-          return;
-        }
-
-        const job = (payload.job ?? payload) as JvBatchJobStatus | undefined;
-        const statusValue = String(job?.status ?? "").toLowerCase();
-        const items = Array.isArray(job?.items) ? job!.items! : [];
-        const total = items.length || JV_RUBRIC_SITE_TABS.length;
-        const appliedCount = items.filter((item) => String(item.status).toLowerCase() === "applied").length;
-
-        if (statusValue === "applied" || statusValue === "failed") {
-          clearActiveCreateJob();
-          const summary = t.createProductJvCreateFinished
-            .replace("{applied}", String(appliedCount))
-            .replace("{total}", String(total));
-          if (isMountedRef.current) {
-            setSendAllSitesStatus(summary);
-            setSendAllSitesLoading(false);
-            setSendAllSitesLog(JSON.stringify(job, null, 2));
-          }
-          showToast(summary, statusValue === "applied" ? "success" : "error");
-          return;
-        }
-
-        if (isMountedRef.current) {
-          setSendAllSitesStatus(
-            t.createProductJvCreateProgress
-              .replace("{applied}", String(appliedCount))
-              .replace("{total}", String(total))
-              .replace("{jobId}", String(jobId))
-          );
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-      }
-      if (isMountedRef.current) {
-        setSendAllSitesStatus(t.createProductJvJobStillRunning.replace("{jobId}", String(jobId)));
-        setSendAllSitesLoading(false);
-      }
-    } finally {
-      if (pollingJobRef.current === jobId) pollingJobRef.current = null;
-    }
   }
 
   function renderRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {

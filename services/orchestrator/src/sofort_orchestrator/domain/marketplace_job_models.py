@@ -50,3 +50,13 @@ class MarketplaceToggleJobResponse(BaseModel):
     summary: MarketplaceToggleSummary | None = None
     results: list[MarketplaceToggleResultItem] = Field(default_factory=list)
     error: ErrorContract | None = None
+    created_at_unix_ms: int | None = None
+    updated_at_unix_ms: int | None = None
+
+
+class MarketplaceToggleJobListResponse(BaseModel):
+    request_id: str
+    total: int
+    limit: int
+    offset: int
+    jobs: list[MarketplaceToggleJobResponse] = Field(default_factory=list)

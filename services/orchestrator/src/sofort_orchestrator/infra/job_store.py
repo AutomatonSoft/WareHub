@@ -9,6 +9,7 @@ from ..domain.models import (
     ErrorContract,
     JobAttempt,
     JobDetailsResponse,
+    JobListItem,
     JobEvent,
     JobPriority,
     JobStatus,
@@ -291,6 +292,47 @@ class SqliteJobStore:
             error=error,
         )
 
+    def count_jobs(self, *, query: str) -> int:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM orchestrator_jobs WHERE ean LIKE ? ESCAPE '\\'",
+                (pattern,),
+            ).fetchone()
+            conn.commit()
+        return int(row[0]) if row is not None else 0
+
+    def list_jobs(self, *, limit: int, offset: int = 0, query: str = "") -> list[JobListItem]:
+        pattern = _search_pattern(query)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    job_id, request_id, ean, operation, status, priority,
+                    created_at_unix_ms, updated_at_unix_ms, result_json, error_json
+                FROM orchestrator_jobs
+                WHERE ean LIKE ? ESCAPE '\\'
+                ORDER BY created_at_unix_ms DESC
+                LIMIT ? OFFSET ?
+                """,
+                (pattern, limit, offset),
+            ).fetchall()
+            conn.commit()
+        return [
+            JobListItem(
+                job_id=row[0],
+                request_id=row[1],
+                ean=row[2],
+                operation=Operation(row[3]),
+                status=JobStatus(row[4]),
+                priority=JobPriority(row[5]),
+                created_at_unix_ms=int(row[6]),
+                updated_at_unix_ms=int(row[7]),
+                result=OrchestrateResponse(**json.loads(row[8])) if row[8] else None,
+                error=ErrorContract(**json.loads(row[9])) if row[9] else None,
+            )
+            for row in rows
+        ]
     def get_job_command(self, *, job_id: str) -> OrchestrateRequest | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -596,3 +638,8 @@ class SqliteJobStore:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _search_pattern(query: str) -> str:
+    escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

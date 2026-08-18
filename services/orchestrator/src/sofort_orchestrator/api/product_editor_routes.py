@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..application.product_editor_service import ProductEditorService, ProductEditorServiceError
@@ -14,6 +14,7 @@ from ..domain.product_editor_models import (
     ProductEditorDiscoverResponse,
     ProductEditorGroupId,
     ProductEditorJobResponse,
+    ProductEditorJobListResponse,
     ProductEditorLoadRequest,
     ProductEditorLoadResponse,
     ProductEditorPlanRequest,
@@ -109,6 +110,7 @@ def product_editor_load(
             request_id=request_id,
             active_group=body.active_group,
             baseline_target_id=body.baseline_target_id,
+            publishing_target_id=body.publishing_target_id,
         )
     except ProductEditorServiceError as exc:
         return _error_response(status_code=exc.status_code, request_id=request_id, code=exc.code, message=exc.message, details=exc.details)
@@ -180,6 +182,23 @@ def product_editor_apply(
         return service.apply(plan_id=body.plan_id.strip(), request_id=request_id)
     except ProductEditorServiceError as exc:
         return _error_response(status_code=exc.status_code, request_id=request_id, code=exc.code, message=exc.message, details=exc.details)
+
+
+@router.get("/api/v1/orchestrator/product-editor/jobs")
+def product_editor_jobs_list(
+    request: Request,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    query: str = Query(default="", max_length=100),
+    service: ProductEditorService = Depends(get_product_editor_service),
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> ProductEditorJobListResponse:
+    request_id = _request_id(request, x_request_id)
+    response.headers["X-Request-Id"] = request_id
+    total = service.store.count_jobs(query=query)
+    jobs = service.list_jobs(request_id=request_id, limit=limit, offset=offset, query=query)
+    return ProductEditorJobListResponse(request_id=request_id, total=total, limit=limit, offset=offset, jobs=jobs)
 
 
 @router.get("/api/v1/orchestrator/product-editor/jobs/{job_id}")
