@@ -75,16 +75,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
   const t = useLabels();
-  const draft = initialDraft;
+  const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const onDraftChangeRef = useRef(onDraftChange);
 
   useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => {
+    setDraft(initialDraft);
+  }, [draftKey, initialDraft]);
+  useEffect(() => {
     if (!categoryName || draft.category === categoryName) return;
     const next = { ...draft, category: categoryName };
+    setDraft(next);
     onDraftChangeRef.current(next);
   }, [categoryName, draft]);
   useEffect(() => {
@@ -107,12 +111,14 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
     );
     if (Object.keys(missingNames).length === 0) return;
     const next = { ...draft, attributeNames: { ...draft.attributeNames, ...missingNames } };
+    setDraft(next);
     onDraftChangeRef.current(next);
   }, [draft, productAttributes]);
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     const next = { ...draft, [key]: value };
-    onDraftChange(next);
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const updateBullet = (index: number, value: string) => {
     const next = Array.from({ length: Math.max(5, draft.bulletPoints.length) }, (_, itemIndex) => draft.bulletPoints[itemIndex] ?? "");
@@ -136,7 +142,8 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
       additionalAttributes: { ...draft.additionalAttributes, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.name },
     };
-    onDraftChange(next);
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const updateProductAttribute = (attribute: OttoProductAttribute, value: string) => {
     const next = {
@@ -144,7 +151,8 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
       attributeOverrides: { ...draft.attributeOverrides, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.label },
     };
-    onDraftChange(next);
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const removeProductAttribute = (attributeId: string) => {
     update("removedAttributeIds", [...draft.removedAttributeIds, attributeId]);
