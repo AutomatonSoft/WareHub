@@ -1373,6 +1373,27 @@ export default function CreateProductPage() {
     return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
   }, [controller.jvSourceSnapshotsBySiteKey]);
   const jvInitialSelectionKey = controller.kidContext?.mainEan ?? "";
+
+  function getEffectiveJvPublishingSelections(
+    siteKey: (typeof JV_RUBRIC_SITE_TABS)[number]["key"],
+  ) {
+    const currentSelections = jvPublishingSelectionsRef.current;
+    const hasSelectedRubrics = Object.hasOwn(currentSelections.rubricIdsBySite, siteKey);
+    const hasSelectedMainRubric = Object.hasOwn(currentSelections.mainRubricIdBySite, siteKey);
+    const hasSelectedDelivery = Object.hasOwn(currentSelections.deliveryIdsBySite, siteKey);
+    const draftRubrics = jvInitialSelections.rubricIdsBySite[siteKey] ?? [];
+    const rubricIds = hasSelectedRubrics
+      ? currentSelections.rubricIdsBySite[siteKey] ?? []
+      : draftRubrics;
+    const mainRubricId = hasSelectedMainRubric
+      ? currentSelections.mainRubricIdBySite[siteKey] ?? null
+      : jvInitialSelections.mainRubricIdBySite[siteKey] ?? draftRubrics[0] ?? null;
+    const deliveryIds = hasSelectedDelivery
+      ? currentSelections.deliveryIdsBySite[siteKey] ?? []
+      : jvInitialSelections.deliveryIdsBySite[siteKey] ?? [];
+
+    return { rubricIds, mainRubricId, deliveryIds };
+  }
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -2237,9 +2258,9 @@ export default function CreateProductPage() {
   ): JvCreateAndPushPayload {
     const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
     const price = normalizeDecimalPrice(jvFields.price || asTrimmedString(sourcePayload.price));
-    const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[siteKey] ?? [];
-    const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[siteKey] ?? null;
-    const selectedDeliveryId = jvPublishingSelectionsRef.current.deliveryIdsBySite[siteKey]?.[0];
+    const { rubricIds: selectedRubrics, mainRubricId: mainRubric, deliveryIds } =
+      getEffectiveJvPublishingSelections(siteKey);
+    const selectedDeliveryId = deliveryIds[0];
     const orderedRubrics = selectedRubrics.slice().sort((left, right) => {
       if (left === mainRubric) return -1;
       if (right === mainRubric) return 1;
@@ -2322,9 +2343,11 @@ export default function CreateProductPage() {
     const validationErrors: string[] = [];
     const targetSites = JV_RUBRIC_SITE_TABS.filter((site) => targetSiteKeys.includes(site.key));
     for (const site of targetSites) {
-      const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[site.key] ?? [];
-      const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[site.key] ?? null;
-      const selectedDelivery = jvPublishingSelectionsRef.current.deliveryIdsBySite[site.key] ?? [];
+      const {
+        rubricIds: selectedRubrics,
+        mainRubricId: mainRubric,
+        deliveryIds: selectedDelivery,
+      } = getEffectiveJvPublishingSelections(site.key);
 
       if (selectedRubrics.length === 0) {
         validationErrors.push(t.createProductSelectAtLeastOneRubric.replace("{site}", site.label));

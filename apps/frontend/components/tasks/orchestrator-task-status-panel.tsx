@@ -19,6 +19,8 @@ type SourceKey = "orchestrator" | "productEditor" | "marketplace" | "jvBatch";
 type SourceState = { tasks: Task[]; total: number };
 type SourceStates = Record<SourceKey, SourceState>;
 type SourceOffsets = Record<SourceKey, number>;
+type SourceLoading = Record<SourceKey, boolean>;
+type SourceErrors = Record<SourceKey, string>;
 
 const emptyStates: SourceStates = {
   orchestrator: { tasks: [], total: 0 },
@@ -27,6 +29,8 @@ const emptyStates: SourceStates = {
   jvBatch: { tasks: [], total: 0 },
 };
 const emptyOffsets: SourceOffsets = { orchestrator: 0, productEditor: 0, marketplace: 0, jvBatch: 0 };
+const initialSourceLoading: SourceLoading = { orchestrator: true, productEditor: true, marketplace: true, jvBatch: true };
+const emptySourceErrors: SourceErrors = { orchestrator: "", productEditor: "", marketplace: "", jvBatch: "" };
 
 function statusClass(status: string): string {
   if (["completed", "ok", "success", "applied"].includes(status)) return "bg-emerald-100 text-emerald-800";
@@ -67,39 +71,62 @@ export function OrchestratorTaskStatusPanel() {
   const [offsets, setOffsets] = useState<SourceOffsets>(emptyOffsets);
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [sourceLoading, setSourceLoading] = useState<SourceLoading>(initialSourceLoading);
+  const [sourceErrors, setSourceErrors] = useState<SourceErrors>(emptySourceErrors);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
 
   const loadTasks = useCallback(async () => {
     setRefreshing(true);
-    try {
-      setError("");
-      const [jobsResponse, productEditorResponse, marketplaceResponse, jvBatchResponse] = await Promise.all([
-        apiFetch(`/api/v1/orchestrator/jobs?${buildQuery(offsets.orchestrator, query)}`),
-        apiFetch(`/api/v1/orchestrator/product-editor/jobs?${buildQuery(offsets.productEditor, query)}`),
-        apiFetch(`/api/v1/orchestrator/marketplace/jobs?${buildQuery(offsets.marketplace, query)}`),
-        apiFetch(`/api/v1/jv/batch/jobs/?${buildQuery(offsets.jvBatch, query)}`),
-      ]);
-      const [jobsPayload, productEditorPayload, marketplacePayload, jvBatchPayload] = await Promise.all([
-        jobsResponse.json() as Promise<JobsResponse<Task>>,
-        productEditorResponse.json() as Promise<JobsResponse<ProductEditorTask>>,
-        marketplaceResponse.json() as Promise<JobsResponse<MarketplaceToggleTask>>,
-        jvBatchResponse.json() as Promise<JobsResponse<JvBatchTask>>,
-      ]);
-      if (!jobsResponse.ok || !productEditorResponse.ok || !marketplaceResponse.ok || !jvBatchResponse.ok) throw new Error("task_status_request_failed");
-      setSourceStates({
-        orchestrator: { tasks: Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : [], total: jobsPayload.total ?? 0 },
-        productEditor: { tasks: (productEditorPayload.jobs ?? []).map(toProductEditorTask), total: productEditorPayload.total ?? 0 },
-        marketplace: { tasks: (marketplacePayload.jobs ?? []).map(toMarketplaceTask), total: marketplacePayload.total ?? 0 },
-        jvBatch: { tasks: (jvBatchPayload.jobs ?? []).map(toJvBatchTask), total: jvBatchPayload.total ?? 0 },
-      });
-    } catch {
-      setError(t.taskStatusesError);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const loadSource = async <T,>(
+      source: SourceKey,
+      url: string,
+      toTasks: (payload: JobsResponse<T>) => Task[],
+    ) => {
+      setSourceLoading((current) => ({ ...current, [source]: true }));
+      try {
+        const response = await apiFetch(url);
+        const payload = await response.json() as JobsResponse<T>;
+        if (!response.ok) {
+          throw new Error("task_status_request_failed");
+        }
+        setSourceStates((current) => ({
+          ...current,
+          [source]: {
+            tasks: toTasks(payload),
+            total: payload.total ?? 0,
+          },
+        }));
+        setSourceErrors((current) => ({ ...current, [source]: "" }));
+      } catch {
+        setSourceErrors((current) => ({ ...current, [source]: t.taskStatusesError }));
+      } finally {
+        setSourceLoading((current) => ({ ...current, [source]: false }));
+      }
+    };
+
+    await Promise.all([
+      loadSource<Task>(
+        "orchestrator",
+        `/api/v1/orchestrator/jobs?${buildQuery(offsets.orchestrator, query)}`,
+        (payload) => Array.isArray(payload.jobs) ? payload.jobs : [],
+      ),
+      loadSource<ProductEditorTask>(
+        "productEditor",
+        `/api/v1/orchestrator/product-editor/jobs?${buildQuery(offsets.productEditor, query)}`,
+        (payload) => (payload.jobs ?? []).map(toProductEditorTask),
+      ),
+      loadSource<MarketplaceToggleTask>(
+        "marketplace",
+        `/api/v1/orchestrator/marketplace/jobs?${buildQuery(offsets.marketplace, query)}`,
+        (payload) => (payload.jobs ?? []).map(toMarketplaceTask),
+      ),
+      loadSource<JvBatchTask>(
+        "jvBatch",
+        `/api/v1/jv/batch/jobs/?${buildQuery(offsets.jvBatch, query)}`,
+        (payload) => (payload.jobs ?? []).map(toJvBatchTask),
+      ),
+    ]);
+    setRefreshing(false);
   }, [offsets, query, t.taskStatusesError]);
 
   useEffect(() => {
@@ -132,24 +159,21 @@ export function OrchestratorTaskStatusPanel() {
         <Button type="submit"><Search size={16} className="mr-2" />{t.taskStatusesSearch}</Button>
       </form>
 
-      {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-      {loading && !error ? <p className="inline-flex items-center gap-2 rounded-xl border p-5 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin" />{t.taskStatusesLoading}</p> : null}
-
       <div className="grid gap-4">
-        <TaskSection title={t.taskStatusesOrchestrator} state={sourceStates.orchestrator} offset={offsets.orchestrator} onPage={(offset) => setOffsets((current) => ({ ...current, orchestrator: offset }))} labels={t} />
-        <TaskSection title={t.taskStatusesProductEditor} state={sourceStates.productEditor} offset={offsets.productEditor} onPage={(offset) => setOffsets((current) => ({ ...current, productEditor: offset }))} labels={t} />
-        <TaskSection title={t.taskStatusesMarketplace} state={sourceStates.marketplace} offset={offsets.marketplace} onPage={(offset) => setOffsets((current) => ({ ...current, marketplace: offset }))} labels={t} />
-        <TaskSection title={t.taskStatusesJvBatch} state={sourceStates.jvBatch} offset={offsets.jvBatch} onPage={(offset) => setOffsets((current) => ({ ...current, jvBatch: offset }))} labels={t} />
+        <TaskSection title={t.taskStatusesOrchestrator} state={sourceStates.orchestrator} loading={sourceLoading.orchestrator} error={sourceErrors.orchestrator} offset={offsets.orchestrator} onPage={(offset) => setOffsets((current) => ({ ...current, orchestrator: offset }))} labels={t} />
+        <TaskSection title={t.taskStatusesProductEditor} state={sourceStates.productEditor} loading={sourceLoading.productEditor} error={sourceErrors.productEditor} offset={offsets.productEditor} onPage={(offset) => setOffsets((current) => ({ ...current, productEditor: offset }))} labels={t} />
+        <TaskSection title={t.taskStatusesMarketplace} state={sourceStates.marketplace} loading={sourceLoading.marketplace} error={sourceErrors.marketplace} offset={offsets.marketplace} onPage={(offset) => setOffsets((current) => ({ ...current, marketplace: offset }))} labels={t} />
+        <TaskSection title={t.taskStatusesJvBatch} state={sourceStates.jvBatch} loading={sourceLoading.jvBatch} error={sourceErrors.jvBatch} offset={offsets.jvBatch} onPage={(offset) => setOffsets((current) => ({ ...current, jvBatch: offset }))} labels={t} />
       </div>
     </section>
   );
 }
 
-function TaskSection({ title, state, offset, onPage, labels }: { title: string; state: SourceState; offset: number; onPage: (offset: number) => void; labels: ReturnType<typeof useLabels> }) {
+function TaskSection({ title, state, loading, error, offset, onPage, labels }: { title: string; state: SourceState; loading: boolean; error: string; offset: number; onPage: (offset: number) => void; labels: ReturnType<typeof useLabels> }) {
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const hasPrevious = offset > 0;
   const hasNext = offset + PAGE_SIZE < state.total;
-  return <section className="rounded-xl border bg-card p-4 shadow-sm"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-foreground">{title}</h2><p className="text-xs text-muted-foreground">{labels.taskStatusesFound}: {state.total}</p></div><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" onClick={() => onPage(Math.max(0, offset - PAGE_SIZE))} disabled={!hasPrevious} aria-label={labels.taskStatusesPrevious}><ChevronLeft size={16} /></Button><span className="min-w-16 text-center text-xs text-muted-foreground">{labels.taskStatusesPage} {page}</span><Button type="button" variant="ghost" size="icon" onClick={() => onPage(offset + PAGE_SIZE)} disabled={!hasNext} aria-label={labels.taskStatusesNext}><ChevronRight size={16} /></Button></div></div>{state.tasks.length === 0 ? <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">{labels.taskStatusesEmpty}</p> : <div className="grid gap-3">{state.tasks.map((task) => <TaskCard key={task.job_id} task={task} labels={labels} />)}</div>}</section>;
+  return <section className="rounded-xl border bg-card p-4 shadow-sm"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="inline-flex items-center gap-2 font-semibold text-foreground">{title}{loading ? <LoaderCircle size={15} className="animate-spin text-primary" aria-label={labels.taskStatusesLoading} /> : null}</h2><p className="text-xs text-muted-foreground">{labels.taskStatusesFound}: {state.total}</p></div><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon" onClick={() => onPage(Math.max(0, offset - PAGE_SIZE))} disabled={!hasPrevious || loading} aria-label={labels.taskStatusesPrevious}><ChevronLeft size={16} /></Button><span className="min-w-16 text-center text-xs text-muted-foreground">{labels.taskStatusesPage} {page}</span><Button type="button" variant="ghost" size="icon" onClick={() => onPage(offset + PAGE_SIZE)} disabled={!hasNext || loading} aria-label={labels.taskStatusesNext}><ChevronRight size={16} /></Button></div></div>{loading && state.tasks.length === 0 ? <p className="inline-flex items-center gap-2 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin" />{labels.taskStatusesLoading}</p> : error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : state.tasks.length === 0 ? <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">{labels.taskStatusesEmpty}</p> : <div className="grid gap-3">{state.tasks.map((task) => <TaskCard key={task.job_id} task={task} labels={labels} />)}</div>}</section>;
 }
 
 function TaskCard({ task, labels }: { task: Task; labels: ReturnType<typeof useLabels> }) {
