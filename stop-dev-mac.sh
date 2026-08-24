@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose_file="$repo_root/infra/local/docker-compose.dev.yml"
+root_env_path="$repo_root/.env"
 local_dev_log_directory="$repo_root/logs/local-dev"
 app_pid_filenames=(
   "frontend.pid"
@@ -44,6 +45,38 @@ assert_repo_root() {
 assert_docker() {
   command_exists docker || die "docker is not available on PATH."
   docker compose version >/dev/null
+}
+
+assert_root_env_file() {
+  [[ -f "$root_env_path" ]] || die "Missing root .env file: $root_env_path"
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+import_root_env() {
+  local raw_line line key value
+
+  while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+    line="${raw_line%$'\r'}"
+    [[ -z "$(trim_whitespace "$line")" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="$(trim_whitespace "${BASH_REMATCH[2]}")"
+      if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+      export "$key=$value"
+    fi
+  done <"$root_env_path"
 }
 
 assert_compose_config() {
@@ -117,6 +150,8 @@ stop_warehub_local_app_processes() {
 
 assert_repo_root
 assert_docker
+assert_root_env_file
+import_root_env
 assert_compose_config
 
 stop_warehub_local_app_processes

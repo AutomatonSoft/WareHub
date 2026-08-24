@@ -30,6 +30,7 @@ class Settings:
         self.base_url = os.getenv("DATABASE_SERVICE_BASE_URL", "http://localhost:8000").rstrip("/")
         self.service_auth_token = (os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN") or "").strip()
         self.timeout_seconds = float(os.getenv("ORCHESTRATOR_HTTP_TIMEOUT_SECONDS", "8"))
+        self.discover_timeout_seconds = float(os.getenv("ORCHESTRATOR_DISCOVER_TIMEOUT_SECONDS", "15"))
         self.marketplace_toggle_timeout_seconds = float(os.getenv("ORCHESTRATOR_MARKETPLACE_TOGGLE_TIMEOUT_SECONDS", "60"))
         self.retries = int(os.getenv("ORCHESTRATOR_HTTP_RETRIES", "2"))
         self.idempotency_ttl_seconds = int(os.getenv("ORCHESTRATOR_IDEMPOTENCY_TTL_SECONDS", "86400"))

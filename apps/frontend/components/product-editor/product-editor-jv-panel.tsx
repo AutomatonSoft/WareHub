@@ -186,10 +186,10 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     mainRubricIdBySite: Object.fromEntries(Object.entries(categoriesBySiteKey).map(([key, categories]) => [key, categories.find((item) => item.main_category)?.category_id ?? null])),
     deliveryIdsBySite: Object.fromEntries(Object.entries(deliveryValuesBySiteKey).map(([key, deliveryValue]) => {
       const deliveryId = Number(deliveryValue ?? "");
-      return [key, Number.isFinite(deliveryId) && deliveryId > 0 ? [deliveryId] : []];
+      return [key, Number.isFinite(deliveryId) && deliveryId >= 0 ? [deliveryId] : []];
     })),
   }), [categoriesBySiteKey, deliveryValuesBySiteKey]);
-  const publishingSelectionKey = useMemo(() => JSON.stringify(publishingSelections), [publishingSelections]);
+  const publishingSelectionKey = `${props.draft.target_id}:${props.draft.ean}:${baselineSiteKey}`;
   const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
@@ -634,7 +634,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                 category_id: category.category_id,
                 main_category: Boolean(category.main_category),
               }))}
-              sourceDeliveryId={Number(deliveryValuesBySiteKey[baselineSiteKey] ?? "") || undefined}
+              sourceDeliveryId={toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey])}
               initialSelections={publishingSelections}
               initialSelectionKey={publishingSelectionKey}
               onSelectionsChange={applyPublishingSelections}
@@ -951,6 +951,11 @@ function getDraftDeliveryValuesBySiteKey(
     next[site.key] = String(siteFields.lieferzeitid ?? baselineValue ?? "").trim();
   }
   return next;
+}
+
+function toOptionalDeliveryId(value: string | undefined): number | undefined {
+  const deliveryId = Number(value ?? "");
+  return Number.isFinite(deliveryId) && deliveryId >= 0 ? deliveryId : undefined;
 }
 
 function getDeliverySelectionLabel(value: string, notSelectedLabel: string): string {
