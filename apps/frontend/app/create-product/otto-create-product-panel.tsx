@@ -88,6 +88,9 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
     setDraft(sourceDraftRef.current);
   }, [draftKey]);
   useEffect(() => {
+    setDraft(initialDraft);
+  }, [draftKey, initialDraft]);
+  useEffect(() => {
     if (!categoryName || draft.category === categoryName) return;
     const next = { ...draft, category: categoryName };
     setDraft(next);
