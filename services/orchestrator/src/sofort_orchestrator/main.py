@@ -134,6 +134,7 @@ def _build_product_editor_service(*, job_store: SqliteJobStore) -> ProductEditor
         base_url=settings.base_url,
         http_client=http_client,
         service_auth_token=settings.service_auth_token,
+        discover_timeout_seconds=settings.discover_timeout_seconds,
     )
     store_path = settings.jobs_sqlite_path.replace(".sqlite3", "_product_editor.sqlite3")
     store = SqliteProductEditorStore(db_path=_ensure_sqlite_parent_dir(store_path))

@@ -80,8 +80,13 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const onDraftChangeRef = useRef(onDraftChange);
+  const sourceDraftRef = useRef(initialDraft);
 
   useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
+  useEffect(() => { sourceDraftRef.current = initialDraft; }, [draftKey, initialDraft]);
+  useEffect(() => {
+    setDraft(sourceDraftRef.current);
+  }, [draftKey]);
   useEffect(() => {
     setDraft(initialDraft);
   }, [draftKey, initialDraft]);

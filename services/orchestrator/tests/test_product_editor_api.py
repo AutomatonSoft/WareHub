@@ -4,9 +4,10 @@ from fastapi.testclient import TestClient
 
 from src.sofort_orchestrator.api.product_editor_routes import ProductEditorDeps
 from src.sofort_orchestrator.api.routes import Deps
-from src.sofort_orchestrator.domain.models import ChannelResult, FinalStatus, JobStatus, OrchestrateResponse
+from src.sofort_orchestrator.domain.models import ChannelResult, ErrorContract, FinalStatus, JobStatus, OrchestrateResponse
 from src.sofort_orchestrator.application.orchestrator_service import OrchestratorService
 from src.sofort_orchestrator.application.product_editor_service import ProductEditorService
+from src.sofort_orchestrator.infra.http_client import RetryExhaustedError
 from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
 from src.sofort_orchestrator.infra.product_editor_store import SqliteProductEditorStore
@@ -307,6 +308,27 @@ def test_product_editor_discover_returns_hood_found_and_excludes_jv_main(tmp_pat
     assert gateway.xl_sites_calls == 1
     all_target_ids = [target["id"] for group in payload["groups"] for target in group["targets"]]
     assert "JV_MAIN" not in all_target_ids
+
+
+def test_product_editor_discover_keeps_other_groups_when_hood_times_out(tmp_path):
+    client, gateway = _client(tmp_path)
+
+    def timeout_hood_fetch(*, ean: str, account: str, request_id: str):
+        raise RetryExhaustedError("timed out", kind="timeout")
+
+    gateway.fetch_hood_by_ean = timeout_hood_fetch
+
+    response = client.post("/api/v1/orchestrator/product-editor/discover", json={"ean": "4012345678901"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    hood_group = next(group for group in payload["groups"] if group["id"] == "HOOD")
+    hood_targets = {target["id"]: target for target in hood_group["targets"]}
+    assert hood_targets["HOOD_JV"]["status"] == "error"
+    assert hood_targets["HOOD_XL"]["status"] == "error"
+    assert hood_targets["HOOD_JV"]["warnings"][0]["code"] == "product_editor_discover_upstream_timeout"
+    jv_group = next(group for group in payload["groups"] if group["id"] == "JV")
+    assert next(target for target in jv_group["targets"] if target["id"] == "JV_DE")["status"] == "found"
 
 
 def test_product_editor_discover_respects_active_group_jv(tmp_path):
@@ -916,6 +938,63 @@ def test_product_editor_apply_executes_jv_batch_apply_via_orchestrator(tmp_path)
     assert job_payload["status"] == "queued"
 
 
+def test_product_editor_jv_timeout_is_reported_as_failed_with_job_metadata(tmp_path):
+    client, _ = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "changed_fields": ["price"],
+            "draft": {"target_id": "JV_DE", "price": "10.00"},
+            "selected_target_ids": ["JV_DE"],
+        },
+    )
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+    job_id = apply_response.json()["job_id"]
+    command = Deps.job_store.get_job_command(job_id=job_id)
+    assert command is not None
+    assert Deps.job_store.mark_running(job_id=job_id) is True
+    timeout_error = ErrorContract(
+        code="orchestrator_channel_timeout",
+        message="Marketplace request retries exhausted",
+        request_id="req-timeout",
+        details={"reason": "timed out", "kind": "timeout"},
+    )
+    Deps.job_store.mark_completed(
+        job_id=job_id,
+        result=OrchestrateResponse(
+            request_id="req-timeout",
+            status=FinalStatus.FAILED,
+            results=[
+                ChannelResult(
+                    marketplace=command.channels[0].marketplace,
+                    target="xljv,site=JV,site_key=JV_DE",
+                    status="failed",
+                    status_code=504,
+                    data={},
+                    error=timeout_error,
+                )
+            ],
+        ),
+    )
+
+    job_response = client.get(f"/api/v1/orchestrator/product-editor/jobs/{job_id}")
+
+    assert job_response.status_code == 200
+    payload = job_response.json()
+    assert payload["status"] == JobStatus.FAILED.value
+    assert payload["ean"] == "4012345678901"
+    assert payload["summary"] == {"supported": True, "success": 0, "failed": 1}
+    assert payload["targets"][0]["status_code"] == 504
+    assert payload["error"]["code"] == "orchestrator_channel_timeout"
+    assert payload["created_at_unix_ms"] > 0
+    assert payload["updated_at_unix_ms"] >= payload["created_at_unix_ms"]
+
+
 def test_product_editor_apply_executes_xl_batch_apply_via_orchestrator(tmp_path):
     client, gateway = _client(tmp_path)
     plan_response = client.post(
@@ -1226,6 +1305,43 @@ def test_product_editor_apply_sends_site_specific_jv_batch_overrides(tmp_path):
     assert payload["jv_fields_by_site_key"]["JV_DE"]["lieferzeitid"] == "11"
     assert payload["jv_fields_by_site_key"]["JV_AT"]["lieferzeitid"] == "7"
     assert payload["jv_fields_by_site_key"]["JV_AT"]["content_by_language"] == [{"language_code": "de", "name": "Desk"}]
+
+
+def test_product_editor_apply_sends_delivery_only_jv_batch_overrides(tmp_path):
+    client, _ = _client(tmp_path)
+    plan_response = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "JV",
+            "changed_fields": ["jv_fields"],
+            "draft": {
+                "target_id": "JV_DE",
+                "jv_fields": {"lieferzeitid": "3"},
+                "jv_fields_by_site_key": {
+                    "JV_DE": {"lieferzeitid": "3"},
+                    "JV_AT": {"lieferzeitid": "8"},
+                },
+            },
+            "selected_target_ids": ["JV_DE", "JV_AT"],
+        },
+    )
+    assert plan_response.status_code == 200
+
+    apply_response = client.post(
+        "/api/v1/orchestrator/product-editor/apply",
+        json={"plan_id": plan_response.json()["plan_id"], "confirmation": True},
+    )
+    assert apply_response.status_code == 200
+
+    command = Deps.job_store.get_job_command(job_id=apply_response.json()["job_id"])
+    assert command is not None
+    payload = command.channels[0].overrides
+    assert payload["jv_fields"]["lieferzeitid"] == "3"
+    assert payload["jv_fields_by_site_key"] == {
+        "JV_DE": {"lieferzeitid": "3"},
+        "JV_AT": {"lieferzeitid": "8"},
+    }
 
 
 def test_product_editor_job_status_endpoint_returns_not_found(tmp_path):

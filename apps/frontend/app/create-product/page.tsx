@@ -1216,6 +1216,7 @@ export default function CreateProductPage() {
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
   const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
   const [activeTabGalleryImageIdByTab, setActiveTabGalleryImageIdByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const removedSourceGalleryItemIdsByTabRef = useRef<Partial<Record<CreateProductTab, Set<string>>>>({});
   const mainLocalImageFilesRef = useRef<File[]>([]);
   const [rubricTreesBySite, setRubricTreesBySite] = useState<RubricTreeCache>({});
   const [rubricTreeLoading, setRubricTreeLoading] = useState(false);
@@ -1643,6 +1644,11 @@ export default function CreateProductPage() {
     setReservedMarketplaceEans({});
     setOttoCategoryByTab({});
     setOttoCategoryNameByTab({});
+    setGalleryItems([]);
+    setActiveGalleryImageId("");
+    setTabGalleryItemsByTab({});
+    setActiveTabGalleryImageIdByTab({});
+    removedSourceGalleryItemIdsByTabRef.current = {};
   }, [activeDraftContextKey]);
 
   useEffect(() => {
@@ -1748,7 +1754,8 @@ export default function CreateProductPage() {
         return current;
       }
       const localItems = current.filter((item) => item.isLocal);
-      const remoteItems = sourceGalleryItems;
+      const removedIds = removedSourceGalleryItemIdsByTabRef.current.jv ?? new Set<string>();
+      const remoteItems = sourceGalleryItems.filter((item) => !removedIds.has(item.id));
       return [...remoteItems, ...localItems];
     });
   }, [activeTab, sourceGalleryItems]);
@@ -1788,9 +1795,13 @@ export default function CreateProductPage() {
     setTabGalleryItemsByTab((current) => {
       const currentItems = current[activeTab] ?? [];
       const localItems = currentItems.filter((item) => item.isLocal);
+      const removedIds = removedSourceGalleryItemIdsByTabRef.current[activeTab] ?? new Set<string>();
       return {
         ...current,
-        [activeTab]: [...activeTabSourceGalleryItems, ...localItems],
+        [activeTab]: [
+          ...activeTabSourceGalleryItems.filter((item) => !removedIds.has(item.id)),
+          ...localItems,
+        ],
       };
     });
   }, [activeTab, activeTabSourceGalleryItems]);
@@ -1964,6 +1975,13 @@ export default function CreateProductPage() {
       if (target?.isLocal) {
         URL.revokeObjectURL(target.src);
         localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
+      } else if (target) {
+        const removedIds = new Set(removedSourceGalleryItemIdsByTabRef.current.jv ?? []);
+        removedIds.add(itemId);
+        removedSourceGalleryItemIdsByTabRef.current = {
+          ...removedSourceGalleryItemIdsByTabRef.current,
+          jv: removedIds,
+        };
       }
       return current.filter((item) => item.id !== itemId);
     });
@@ -2046,6 +2064,13 @@ export default function CreateProductPage() {
       if (target?.isLocal) {
         URL.revokeObjectURL(target.src);
         localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
+      } else if (target) {
+        const removedIds = new Set(removedSourceGalleryItemIdsByTabRef.current[activeTab] ?? []);
+        removedIds.add(itemId);
+        removedSourceGalleryItemIdsByTabRef.current = {
+          ...removedSourceGalleryItemIdsByTabRef.current,
+          [activeTab]: removedIds,
+        };
       }
       return {
         ...current,

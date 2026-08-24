@@ -28,6 +28,11 @@ export type JvPublishingSelections = {
   deliveryIdsBySite: Partial<Record<SiteKey, number[]>>;
 };
 
+function haveSameNumberIds(left: Set<number> | undefined, right: number[]) {
+  if ((left?.size ?? 0) !== right.length) return false;
+  return right.every((id) => left?.has(id));
+}
+
 type Props = {
   sourceSiteKey?: string;
   sourceCategories: Array<{ category_id: number; main_category: boolean }>;
@@ -147,6 +152,11 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   const manuallyChangedRubricSitesRef = useRef<Set<SiteKey>>(new Set());
   const manuallyChangedDeliverySitesRef = useRef<Set<SiteKey>>(new Set());
   const rubricNodeRefs = useRef<Partial<Record<SiteKey, Map<number, HTMLDivElement>>>>({});
+  const latestSelectionsRef = useRef<JvPublishingSelections>({
+    rubricIdsBySite: {},
+    mainRubricIdBySite: {},
+    deliveryIdsBySite: {},
+  });
 
   useEffect(() => {
     callbackRef.current = onSelectionsChange;
@@ -172,18 +182,21 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
         Object.hasOwn(initialSelections.deliveryIdsBySite, key)
       ));
       for (const { key } of loadedSites) {
-        if (initializedSitesRef.current.has(key)) continue;
-        initializedSitesRef.current.add(key);
-        if (!manuallyChangedRubricSitesRef.current.has(key)) {
+        const isFirstInitialization = !initializedSitesRef.current.has(key);
+        if (isFirstInitialization) {
+          initializedSitesRef.current.add(key);
+        }
+        if (isFirstInitialization && !manuallyChangedRubricSitesRef.current.has(key)) {
           const rubricIds = initialSelections.rubricIdsBySite[key] ?? [];
           setRubricIds((current) => ({ ...current, [key]: new Set(rubricIds) }));
           setMainIds((current) => ({ ...current, [key]: initialSelections.mainRubricIdBySite[key] ?? rubricIds[0] ?? null }));
         }
         if (!manuallyChangedDeliverySitesRef.current.has(key)) {
           const deliveryIds = initialSelections.deliveryIdsBySite[key] ?? [];
-          if (deliveryIds.length > 0) {
-            setDeliveryIds((current) => ({ ...current, [key]: new Set(deliveryIds) }));
-          }
+          setDeliveryIds((current) => {
+            if (haveSameNumberIds(current[key], deliveryIds)) return current;
+            return { ...current, [key]: new Set(deliveryIds) };
+          });
         }
       }
       setRubricSite(site.key);
@@ -244,12 +257,24 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
 
   useEffect(() => {
     if (!isSelectionInitialized) return;
-    callbackRef.current({
+    const nextSelections = {
       rubricIdsBySite: Object.fromEntries(Object.entries(rubricIds).map(([siteKey, ids]) => [siteKey, Array.from(ids ?? [])])),
       mainRubricIdBySite: mainIds,
       deliveryIdsBySite: Object.fromEntries(Object.entries(deliveryIds).map(([siteKey, ids]) => [siteKey, Array.from(ids ?? [])])),
-    });
+    } satisfies JvPublishingSelections;
+    latestSelectionsRef.current = nextSelections;
+    callbackRef.current(nextSelections);
   }, [deliveryIds, isSelectionInitialized, mainIds, rubricIds]);
+
+  const publishSelectionPatch = (patch: Partial<JvPublishingSelections>) => {
+    const nextSelections: JvPublishingSelections = {
+      rubricIdsBySite: patch.rubricIdsBySite ?? latestSelectionsRef.current.rubricIdsBySite,
+      mainRubricIdBySite: patch.mainRubricIdBySite ?? latestSelectionsRef.current.mainRubricIdBySite,
+      deliveryIdsBySite: patch.deliveryIdsBySite ?? latestSelectionsRef.current.deliveryIdsBySite,
+    };
+    latestSelectionsRef.current = nextSelections;
+    callbackRef.current(nextSelections);
+  };
 
   const selectedRubrics = useMemo(() => rubricIds[rubricSite] ?? new Set<number>(), [rubricIds, rubricSite]);
   const selectedRubricLabels = useMemo(() => {
@@ -273,16 +298,28 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   const shownDelivery = useMemo(() => (deliveries[deliverySite] ?? []).filter((item) => (!deliveryQuery || String(item.label ?? "").toLowerCase().includes(deliveryQuery.toLowerCase())) && (!selectedDeliveryOnly || (deliveryIds[deliverySite] ?? new Set()).has(item.id))), [deliveries, deliveryIds, deliveryQuery, deliverySite, selectedDeliveryOnly]);
   const toggleRubric = (id: number) => {
     manuallyChangedRubricSitesRef.current.add(rubricSite);
-    setRubricIds((current) => { const next = new Set(current[rubricSite] ?? []); next.has(id) ? next.delete(id) : next.add(id); return { ...current, [rubricSite]: next }; });
+    const next = new Set(rubricIds[rubricSite] ?? []);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setRubricIds((current) => ({ ...current, [rubricSite]: next }));
+    publishSelectionPatch({
+      rubricIdsBySite: {
+        ...latestSelectionsRef.current.rubricIdsBySite,
+        [rubricSite]: Array.from(next),
+      },
+    });
   };
-  const toggleDelivery = (id: number) => setDeliveryIds((current) => {
+  const toggleDelivery = (id: number) => {
     manuallyChangedDeliverySitesRef.current.add(deliverySite);
-    const selected = current[deliverySite] ?? new Set<number>();
-    return {
-      ...current,
-      [deliverySite]: selected.has(id) ? new Set<number>() : new Set([id]),
-    };
-  });
+    const selected = deliveryIds[deliverySite] ?? new Set<number>();
+    const next = selected.has(id) ? new Set<number>() : new Set([id]);
+    setDeliveryIds((current) => ({ ...current, [deliverySite]: next }));
+    publishSelectionPatch({
+      deliveryIdsBySite: {
+        ...latestSelectionsRef.current.deliveryIdsBySite,
+        [deliverySite]: Array.from(next),
+      },
+    });
+  };
   const focusSelectedRubric = (id: number) => {
     setSelectedRubricsOnly(false);
     setPendingRubricFocusId(id);
@@ -328,7 +365,14 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
             disabled={!isSelected}
             onChange={() => {
               manuallyChangedRubricSitesRef.current.add(rubricSite);
-              setMainIds((current) => ({ ...current, [rubricSite]: current[rubricSite] === node.id ? null : node.id }));
+              const nextMainId = mainIds[rubricSite] === node.id ? null : node.id;
+              setMainIds((current) => ({ ...current, [rubricSite]: nextMainId }));
+              publishSelectionPatch({
+                mainRubricIdBySite: {
+                  ...latestSelectionsRef.current.mainRubricIdBySite,
+                  [rubricSite]: nextMainId,
+                },
+              });
             }}
             aria-label={t.createProductMainRubricAria.replace("{label}", label)}
             className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-40"
