@@ -13,10 +13,17 @@ class GatewayResult:
 
 class ProductEditorGateway:
     _JV_REQUEST_TIMEOUT_SECONDS = 45
-    def __init__(self, base_url: str, http_client: HttpClient, service_auth_token: str = "") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        http_client: HttpClient,
+        service_auth_token: str = "",
+        discover_timeout_seconds: float = 15,
+    ) -> None:
         self.base_url = base_url
         self.http = http_client
         self.service_auth_token = service_auth_token
+        self.discover_timeout_seconds = discover_timeout_seconds
 
     def _headers(self, request_id: str, *, content_type: str | None = None) -> dict[str, str]:
         headers = {"X-Request-Id": request_id, "Accept": "application/json"}
@@ -29,7 +36,13 @@ class ProductEditorGateway:
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
-        response = self.http.request("GET", url, headers=headers, params={"account": account})
+        response = self.http.request(
+            "GET",
+            url,
+            headers=headers,
+            params={"account": account},
+            timeout_seconds=self.discover_timeout_seconds,
+        )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def patch_hood_by_ean(self, *, ean: str, account: str, request_id: str, payload: dict) -> GatewayResult:
@@ -41,7 +54,7 @@ class ProductEditorGateway:
     def fetch_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/kaufland/{ean}/{controller}/"
-        response = self.http.request("GET", url, headers=headers)
+        response = self.http.request("GET", url, headers=headers, timeout_seconds=self.discover_timeout_seconds)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def change_kaufland_by_ean(self, *, ean: str, controller: str, request_id: str, payload: dict) -> GatewayResult:
@@ -59,7 +72,7 @@ class ProductEditorGateway:
     def fetch_otto_by_sku(self, *, sku: str, profile: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/otto/{profile}/products/by-sku/{sku}/"
-        response = self.http.request("GET", url, headers=headers)
+        response = self.http.request("GET", url, headers=headers, timeout_seconds=self.discover_timeout_seconds)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
@@ -98,7 +111,13 @@ class ProductEditorGateway:
         params = {"site": "XL"}
         if site_key:
             params["site_key"] = site_key
-        response = self.http.request("GET", url, headers=headers, params=params)
+        response = self.http.request(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            timeout_seconds=self.discover_timeout_seconds,
+        )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def fetch_xl_local_by_ean(self, *, ean: str, site_key: str, request_id: str) -> GatewayResult:

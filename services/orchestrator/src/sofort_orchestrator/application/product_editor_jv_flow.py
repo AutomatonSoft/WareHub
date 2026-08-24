@@ -339,6 +339,7 @@ class ProductEditorJvFlow:
                     orchestrator_job_id=job_id,
                     request_id=request_id,
                     batch_body=live_batch.body,
+                    details=details,
                 )
 
         summary = _map_jv_orchestrator_summary(details=details)
@@ -347,14 +348,19 @@ class ProductEditorJvFlow:
         facade_status = details.status
         if details.status is JobStatus.COMPLETED and int(summary.get("failed") or 0) > 0:
             facade_status = JobStatus.FAILED
+        if error is None and facade_status is JobStatus.FAILED and details.result is not None and details.result.results:
+            error = details.result.results[0].error
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,
+            ean=details.ean,
             status=facade_status,
             active_group=ProductEditorGroupId.JV,
             summary=summary,
             targets=targets,
             error=error,
+            created_at_unix_ms=details.created_at_unix_ms,
+            updated_at_unix_ms=details.updated_at_unix_ms,
         )
 
     def _resolve_baseline_site_key(
@@ -800,7 +806,7 @@ def _jv_batch_payload_is_nonterminal(batch_body: dict) -> bool:
     return any(str(item.get("status") or "").strip().lower() not in terminal_item_statuses for item in items if isinstance(item, dict))
 
 
-def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict) -> ProductEditorJobResponse:
+def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict, details) -> ProductEditorJobResponse:
     job = batch_body.get("job") if isinstance(batch_body.get("job"), dict) else {}
     batch_status = str(job.get("status") or "").strip().lower()
     summary = job.get("result_summary") if isinstance(job.get("result_summary"), dict) else {}
@@ -812,11 +818,14 @@ def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str
     return ProductEditorJobResponse(
         request_id=request_id,
         job_id=orchestrator_job_id,
+        ean=details.ean,
         status=facade_status,
         active_group=ProductEditorGroupId.JV,
         summary=mapped_summary,
         targets=_map_jv_batch_targets({"job": job}, request_id=request_id) if batch_status in {"applied", "failed"} else [],
         error=None,
+        created_at_unix_ms=details.created_at_unix_ms,
+        updated_at_unix_ms=details.updated_at_unix_ms,
     )
 
 
@@ -891,6 +900,10 @@ def _map_jv_orchestrator_summary(*, details) -> dict:
     failed_count = len(targets) - success_count
     if not targets and items:
         failed_count = len(items)
+    if not targets and not items:
+        channel_succeeded = channel_result.status == "success"
+        success_count = 1 if channel_succeeded else 0
+        failed_count = 0 if channel_succeeded else 1
     return {"supported": True, "success": success_count, "failed": failed_count}
 
 

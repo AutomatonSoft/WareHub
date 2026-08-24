@@ -4,7 +4,7 @@ import { Clock3, PackageSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels, useLanguage } from "../../app/use-labels";
-import { apiFetch } from "../../lib/api/client";
+import { fetchDatabaseServiceWithSessionRetry } from "./dashboard-api";
 import { getServicesApiBase } from "../inventory/inventory-api";
 import type { SofortListRow } from "../inventory/sofort-list/sofort-list-types";
 import { normalizePhotoList, normalizePlaceValue, type KidDto } from "../inventory/inventory-table-utils";
@@ -437,7 +437,7 @@ export function CriticalInventoryPanel() {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(`${getServicesApiBase()}/inventory/critical/`);
+        const response = await fetchDatabaseServiceWithSessionRetry(`${getServicesApiBase()}/inventory/critical/`);
         if (!response.ok) throw new Error(`critical_inventory_request_failed:${response.status}`);
         const payload = await response.json() as CriticalInventoryResponse;
         const allRows = payload.results;

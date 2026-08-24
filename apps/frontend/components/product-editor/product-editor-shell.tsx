@@ -285,7 +285,7 @@ function ProductEditorContent() {
         ean: draft.ean.trim(),
         changedFields: buildJvChangedFields(initialJvDraftsByTab[tabKey], draft),
         draft: draft as unknown as Record<string, unknown>,
-        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found"]),
+        selectedTargetIds: getJvTargetIdsForPlan(discover, tabKey, draft.target_id),
       });
     });
 
@@ -1272,11 +1272,10 @@ function ProductEditorContent() {
       showToast(`No edited ${activeStructuredLabel} fields to apply.`, "error");
       return;
     }
-    const selectedTargetIds = (
-      discover?.groups
-        .find((group) => group.id === activeStructuredGroup)
-        ?.targets.filter((target) => target.status === "found")
-        .map((target) => target.id) ?? []
+    const selectedTargetIds = getJvTargetIdsForPlan(
+      discover,
+      activeStructuredGroup,
+      jvDraft.target_id
     ) as ProductEditorJvSiteKey[];
     if (selectedTargetIds.length === 0) {
       showToast(`No found ${activeStructuredLabel} targets are available for orchestrator apply.`, "error");
@@ -1661,10 +1660,7 @@ function ProductEditorContent() {
       return {
         activeDraft: jvDraft,
         changedFields: jvChangedFields,
-        selectedTargetIds: discover?.groups
-          .find((group) => group.id === activeGroupId)
-          ?.targets.filter((target) => target.status === "found")
-          .map((target) => target.id) ?? []
+        selectedTargetIds: getJvTargetIdsForPlan(discover, activeGroupId, jvDraft.target_id)
       };
     }
     return { activeDraft: null, changedFields: [], selectedTargetIds: [] };
@@ -2211,6 +2207,23 @@ function getTargetIdsForTab(
       return id.includes(`_${variantUpper}`) || family === variantUpper || label.includes(variantUpper);
     })
     .map((target) => target.id);
+}
+
+function getJvTargetIdsForPlan(
+  discover: ProductEditorDiscoverResponse | null,
+  tabKey: JvTabKey,
+  baselineTargetId: string
+): string[] {
+  const foundTargetIds = getTargetIdsForTab(discover, tabKey, ["found"]);
+  const normalizedBaselineTargetId = baselineTargetId.trim();
+  const requiredBaselineTargetId = tabKey === "JV"
+    ? normalizedBaselineTargetId === "JV_DE" ? normalizedBaselineTargetId : ""
+    : normalizedBaselineTargetId;
+
+  return Array.from(new Set([
+    ...(requiredBaselineTargetId ? [requiredBaselineTargetId] : []),
+    ...foundTargetIds,
+  ]));
 }
 
 export function ProductEditorShell() {

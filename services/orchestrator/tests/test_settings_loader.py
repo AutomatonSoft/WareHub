@@ -69,8 +69,10 @@ def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):
     module_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
     monkeypatch.delenv("ORCHESTRATOR_HTTP_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("ORCHESTRATOR_DISCOVER_TIMEOUT_SECONDS", raising=False)
 
     module = _load_settings_module(module_path, "test_settings_missing_dotenv")
 
     assert module.settings.timeout_seconds == 8.0
+    assert module.settings.discover_timeout_seconds == 15.0
     assert module.settings.marketplace_toggle_timeout_seconds == 60.0

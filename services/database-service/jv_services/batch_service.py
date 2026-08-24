@@ -798,8 +798,8 @@ def save_job_precompute_context(job: JVBatchJob, *, precomputed: dict) -> None:
 
 def load_job_precompute_context(job: JVBatchJob) -> dict:
     summary = dict(job.result_summary or {})
-    precomputed = summary.get("precomputed") or {}
-    if not isinstance(precomputed, dict):
+    precomputed = summary.get("precomputed")
+    if not isinstance(precomputed, dict) or not precomputed:
         return {}
     selected_site_keys = precomputed.get("selected_site_keys") or []
     template_site_key = str(precomputed.get("template_site_key") or "").strip().upper()
@@ -1751,8 +1751,6 @@ def create_job_with_plan(
             request_payload=_json_safe(payload),
             result_summary=initial_summary,
         )
-        precomputed = build_job_precompute_context(ean=ean, payload=payload)
-        save_job_precompute_context(job, precomputed=precomputed)
         logger.warning(
             "JV_BATCH_JOB_CREATED code=jv_batch_job_created job_id=%s ean=%s build_plan_now=%s initial_status=%s payload_site_keys=%s runtime=%s",
             job.id,
@@ -1762,6 +1760,11 @@ def create_job_with_plan(
             payload.get("site_keys"),
             _runtime_debug_context(),
         )
+        if not build_plan_now:
+            return job
+
+        precomputed = build_job_precompute_context(ean=ean, payload=payload)
+        save_job_precompute_context(job, precomputed=precomputed)
         plan_items = build_batch_plan(ean=ean, payload=payload, precomputed=precomputed)
         logger.warning(
             "JV_BATCH_JOB_PLAN_READY code=jv_batch_job_plan_ready job_id=%s build_plan_now=%s payload_site_keys=%s precomputed_site_keys=%s plan_site_keys=%s runtime=%s",
