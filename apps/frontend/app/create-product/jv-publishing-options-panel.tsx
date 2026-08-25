@@ -163,8 +163,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   }, [onSelectionsChange]);
 
   useEffect(() => {
-    const site = SITES.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase());
-    if (!site) return;
+    const site = SITES.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase()) ?? SITES[0];
     if (initialSelections) {
       if (initializedSelectionKeyRef.current !== initialSelectionKey) {
         initializedSelectionKeyRef.current = initialSelectionKey ?? null;
@@ -208,6 +207,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
     setRubricIds((current) => ({ ...current, [site.key]: new Set(ids) }));
     setMainIds((current) => ({ ...current, [site.key]: sourceCategories.find((item) => item.main_category)?.category_id ?? ids[0] ?? null }));
     setRubricSite(site.key);
+    setDeliverySite(site.key);
     setIsSelectionInitialized(true);
   }, [initialSelectionKey, initialSelections, sourceCategories, sourceSiteKey]);
 
