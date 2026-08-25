@@ -354,6 +354,23 @@ jobs:
             --output "$candidate_dir/.env"
           cp infra/deploy/stage/docker-compose.yml "$candidate_dir/docker-compose.yml"
 
+          image_keys=(
+            BACKEND_IMAGE
+            FRONTEND_IMAGE
+            GATEWAY_IMAGE
+            MOBILE_IMAGE
+            SERVICES_IMAGE
+            ORCHESTRATOR_IMAGE
+          )
+
+          for key in "${image_keys[@]}"; do
+            if ! grep -Eq "^${key}=" "$candidate_dir/.env"; then
+              echo "Missing image key in STAGE_ENV_FILE: $key" >&2
+              exit 1
+            fi
+            sed -i -E "s|^${key}=.*$|${key}=$(printenv "$key")|" "$candidate_dir/.env"
+          done
+
           tag_keys=(
             BACKEND_STAGE_TAG
             FRONTEND_STAGE_TAG
