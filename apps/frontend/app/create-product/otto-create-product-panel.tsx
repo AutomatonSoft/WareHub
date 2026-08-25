@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
+import { normalizeOttoProductAttributes } from "./otto-create-product-model.mjs";
 
 export type OttoCreateProductDraft = {
   productReference: string;
@@ -45,32 +46,6 @@ type Props = {
 
 type OttoProductAttribute = { id: string; label: string; value: string };
 
-function attributeValue(value: unknown): string {
-  if (Array.isArray(value)) return value.map(attributeValue).filter(Boolean).join(", ");
-  if (value && typeof value === "object") {
-    const item = value as Record<string, unknown>;
-    return attributeValue(item.value ?? item.name ?? item.label ?? item.displayValue ?? item.id);
-  }
-  return value === null || value === undefined ? "" : String(value).trim();
-}
-
-function normalizeProductAttributes(value: unknown): OttoProductAttribute[] {
-  if (Array.isArray(value)) {
-    return value.map((attribute, index) => {
-      if (!attribute || typeof attribute !== "object") return null;
-      const item = attribute as Record<string, unknown>;
-      const id = attributeValue(item.attributeId ?? item.attributeKey ?? item.id) || String(index);
-      const label = attributeValue(item.name ?? item.label ?? item.attributeKey ?? item.attributeId) || id;
-      const selectedValue = attributeValue(item.value ?? item.values ?? item.selectedValues ?? item.attributeValue);
-      return selectedValue ? { id, label, value: selectedValue } : null;
-    }).filter((attribute): attribute is OttoProductAttribute => Boolean(attribute));
-  }
-  if (!value || typeof value !== "object") return [];
-  return Object.entries(value as Record<string, unknown>)
-    .map(([id, selectedValue]) => ({ id, label: id, value: attributeValue(selectedValue) }))
-    .filter((attribute) => Boolean(attribute.value));
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
@@ -81,15 +56,19 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const onDraftChangeRef = useRef(onDraftChange);
   const sourceDraftRef = useRef(initialDraft);
+  const dirtyDraftKeyRef = useRef<string | null>(null);
+  const initialDraftSignature = JSON.stringify(initialDraft);
 
   useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
-  useEffect(() => { sourceDraftRef.current = initialDraft; }, [draftKey, initialDraft]);
+  sourceDraftRef.current = initialDraft;
   useEffect(() => {
+    dirtyDraftKeyRef.current = null;
     setDraft(sourceDraftRef.current);
   }, [draftKey]);
   useEffect(() => {
-    setDraft(initialDraft);
-  }, [draftKey, initialDraft]);
+    if (dirtyDraftKeyRef.current === draftKey) return;
+    setDraft(sourceDraftRef.current);
+  }, [draftKey, initialDraftSignature]);
   useEffect(() => {
     if (!categoryName || draft.category === categoryName) return;
     const next = { ...draft, category: categoryName };
@@ -108,7 +87,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
   }, [categoryId]);
   useEffect(() => {
     const attributeNames = Object.fromEntries(
-      normalizeProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
+      normalizeOttoProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
     );
     if (Object.keys(attributeNames).length === 0) return;
     const missingNames = Object.fromEntries(
@@ -122,6 +101,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     const next = { ...draft, [key]: value };
+    dirtyDraftKeyRef.current = draftKey;
     setDraft(next);
     onDraftChangeRef.current(next);
   };
@@ -131,9 +111,9 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
     update("bulletPoints", next);
   };
   const bulletPoints = Array.from({ length: 5 }, (_, index) => draft.bulletPoints[index] ?? "");
-  const selectedAttributes = normalizeProductAttributes(productAttributes)
+  const selectedAttributes = normalizeOttoProductAttributes(productAttributes)
     .filter((attribute) => !draft.removedAttributeIds.includes(attribute.id))
-    .map((attribute) => ({ ...attribute, value: draft.attributeOverrides[attribute.id] ?? attribute.value }));
+    .map((attribute) => ({ ...attribute, value: draft.attributeOverrides[attribute.id] ?? attribute.values.join(", ") }));
   const selectedAttributeNames = new Set(selectedAttributes.map((attribute) => attribute.label.trim().toLocaleLowerCase()));
   const availableCategoryAttributes = categoryAttributes.filter((attribute) =>
     !selectedAttributeNames.has(attribute.name.trim().toLocaleLowerCase()) && !(attribute.id in draft.additionalAttributes),
@@ -147,6 +127,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
       additionalAttributes: { ...draft.additionalAttributes, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.name },
     };
+    dirtyDraftKeyRef.current = draftKey;
     setDraft(next);
     onDraftChangeRef.current(next);
   };
@@ -156,6 +137,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
       attributeOverrides: { ...draft.attributeOverrides, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.label },
     };
+    dirtyDraftKeyRef.current = draftKey;
     setDraft(next);
     onDraftChangeRef.current(next);
   };
