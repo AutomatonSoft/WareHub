@@ -1450,7 +1450,7 @@ export async function patchKidPhotoUrls(kidId: number, photoUrls: string[]): Pro
 
 export async function patchKidMarketplaceEans(params: {
   kidId: number;
-  mainEan: string;
+  mainEanJv: string;
   jv: string;
   xl: string;
   ottoJv: string;
@@ -1466,8 +1466,7 @@ export async function patchKidMarketplaceEans(params: {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      main_ean: params.mainEan,
-      database_ean: params.mainEan,
+      main_ean_jv: params.mainEanJv,
       cosmoshop_ean: params.jv,
       opencart_ean: params.xl,
       otto_jv_ean: params.ottoJv,

@@ -181,9 +181,10 @@ class OttoFullCacheSyncTests(SimpleTestCase):
 
 
 class OttoExternalProductsClientTests(SimpleTestCase):
-    def test_payload_serializer_accepts_shipping_profile_id(self):
+    def test_payload_serializer_accepts_shipping_profile_id_and_quantity(self):
         serializer = OttoProductPayloadSerializer(data={
             "productReference": "4021234231234",
+            "quantity": 1,
             "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
         })
 
@@ -192,6 +193,7 @@ class OttoExternalProductsClientTests(SimpleTestCase):
             str(serializer.validated_data["shippingProfileId"]),
             "786c6468-3baf-52e0-88b5-13757eb7f873",
         )
+        self.assertEqual(serializer.validated_data["quantity"], 1)
 
     def test_fetch_products_uses_external_contract(self):
         session = FakeSession(
@@ -276,6 +278,7 @@ class OttoExternalProductsClientTests(SimpleTestCase):
         products = [{
             "productReference": "4021234231234",
             "sku": "4021234231234",
+            "quantity": 1,
             "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
             "productDescription": {"category": "Sessel"},
             "delivery": {"type": "PARCEL", "deliveryTime": 14},
@@ -291,6 +294,7 @@ class OttoExternalProductsClientTests(SimpleTestCase):
         self.assertEqual(session.calls[0][1]["json"], [{
             "productReference": "4021234231234",
             "sku": "4021234231234",
+            "quantity": 1,
             "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
             "productDescription": {"category": "Sessel"},
             "delivery": {"type": "PARCEL", "deliveryTime": 14},
@@ -344,7 +348,7 @@ class OttoExternalProductsClientTests(SimpleTestCase):
 
         sent_product = session.calls[0][1]["json"][0]
         self.assertNotIn("maxOrderQuantity", sent_product)
-        self.assertEqual(sent_product["productDescription"]["productLine"], "x" * 50)
+        self.assertEqual(sent_product["productDescription"]["productLine"], "x" * 60)
         self.assertEqual(sent_product["mediaAssets"], [
             {"type": "IMAGE", "location": "https://i.otto.de/i/otto/main-image.jpg"},
         ])

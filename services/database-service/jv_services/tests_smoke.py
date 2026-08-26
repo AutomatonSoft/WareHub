@@ -894,6 +894,52 @@ class JVRoutesSmokeTest(SimpleTestCase):
 
 
 class JVBatchQueueingTest(TestCase):
+    @patch("jv_services.create_service.close_old_connections")
+    @patch("jv_services.create_service.create_and_push_jv_product")
+    def test_create_conflict_marks_item_failed_without_updating_existing_product(
+        self,
+        mock_create_and_push,
+        _mock_close_old_connections,
+    ):
+        from rest_framework.response import Response
+
+        from jv_services.create_service import _create_one_item, enqueue_create_job
+        from jv_services.models import JVBatchJobItem
+
+        job = enqueue_create_job(
+            request=SimpleNamespace(session={}),
+            ean="JVM4067282644571",
+            name="Test product",
+            sites=[
+                {
+                    "site": "JV",
+                    "site_key": "JV_DE",
+                    "domain": "https://www.jvmoebel.de",
+                    "payload": {"ean": "JVM4067282644571", "source_model": "JVM4067282644571"},
+                }
+            ],
+        )
+        item = job.items.get()
+        mock_create_and_push.return_value = Response(
+            {
+                "code": "jv_create_artikelnr_conflict",
+                "detail": "Article number already exists.",
+            },
+            status=409,
+        )
+
+        summary = _create_one_item(
+            job_id=job.id,
+            item_id=item.id,
+            ean=job.ean,
+            actor="test-user",
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.status, JVBatchJobItem.Status.FAILED)
+        self.assertEqual(item.error_code, "jv_create_artikelnr_conflict")
+        self.assertEqual(summary["failed"], 1)
+
     @patch("jv_services.batch_service.normalize_job_items_for_payload")
     @patch("jv_services.batch_service.build_batch_plan")
     @patch("jv_services.batch_service.save_job_precompute_context")

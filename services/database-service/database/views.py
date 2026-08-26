@@ -300,8 +300,8 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
         _normalize_search_text(value)
         for value in (
             row.get("ean"),
-            row.get("main_ean"),
-            row.get("database_ean"),
+            row.get("main_ean_jv"),
+            row.get("main_ean_xl"),
             row.get("jv_ean"),
             row.get("xl_ean"),
             row.get("otto_jv_ean"),
@@ -950,7 +950,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         summary["ok"] = False
         summary["errors"].append({"code": code, "detail": detail})
 
-    def _apply_kid_enrichment(self, kid, *, product_attrs: dict, main_ean: str | None) -> dict:
+    def _apply_kid_enrichment(self, kid, *, product_attrs: dict, main_eans: dict[str, str | None]) -> dict:
         summary = self._empty_enrichment_summary()
 
         try:
@@ -974,12 +974,12 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             )
 
         try:
-            self._upsert_main_ean(kid, main_ean)
+            self._upsert_main_eans(kid, main_eans)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("KID_MAIN_EAN_PERSIST_FAILED kid_id=%s", getattr(kid, "id", None))
+            logger.exception("KID_MAIN_EANS_PERSIST_FAILED kid_id=%s", getattr(kid, "id", None))
             self._append_enrichment_error(
                 summary,
-                code="main_ean_persist_failed",
+                code="main_eans_persist_failed",
                 detail=str(exc),
             )
 
@@ -1073,23 +1073,28 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         return attrs
 
     @classmethod
-    def _extract_create_main_ean(cls, data, query):
-        raw_main = cls._coalesce_value(data, query, "main_ean")
-        if raw_main in (None, ""):
-            raw_main = cls._coalesce_value(data, query, "database_ean")
-        normalized = KidMarketplaceEansAPIView._normalize_optional_ean(raw_main)
-        if normalized is not None:
-            KidMarketplaceEansAPIView._validate_ean(normalized, "main_ean")
-        return normalized
+    def _extract_create_main_eans(cls, data, query) -> dict[str, str | None]:
+        main_eans: dict[str, str | None] = {}
+        for field_name in ("main_ean_jv", "main_ean_xl"):
+            normalized = KidMarketplaceEansAPIView._normalize_optional_ean(
+                cls._coalesce_value(data, query, field_name)
+            )
+            if normalized is not None:
+                KidMarketplaceEansAPIView._validate_ean(normalized, field_name)
+            main_eans[field_name] = normalized
+        return main_eans
 
     @staticmethod
-    def _upsert_main_ean(kid, main_ean: str | None):
-        if main_ean is None:
-            return
+    def _upsert_main_eans(kid, main_eans: dict[str, str | None]) -> None:
         ean_row, _ = Ean.objects.get_or_create(kid=kid)
-        if getattr(ean_row, "main_ean", None) != main_ean:
-            ean_row.main_ean = main_ean
-            ean_row.save(update_fields=["main_ean"])
+        update_fields: list[str] = []
+        for field_name, value in main_eans.items():
+            if value is None or getattr(ean_row, field_name) == value:
+                continue
+            setattr(ean_row, field_name, value)
+            update_fields.append(field_name)
+        if update_fields:
+            ean_row.save(update_fields=update_fields)
 
     @staticmethod
     def _upsert_product_attributes(kid, attrs: dict):
@@ -1113,7 +1118,8 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         ean_row, _ = Ean.objects.get_or_create(kid=kid)
 
         nullable_fields = (
-            "main_ean",
+            "main_ean_jv",
+            "main_ean_xl",
             "jv",
             "xl",
             "otto_jv",
@@ -1165,14 +1171,14 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             payload["account"] = str(account).strip().upper()
         furniture_type = self._extract_furniture_type(payload, query)
         product_attrs = self._extract_product_attributes(payload, query)
-        main_ean = self._extract_create_main_ean(payload, query)
+        main_eans = self._extract_create_main_eans(payload, query)
         if furniture_type is not None:
             payload["furniture_type"] = furniture_type
         try:
             payload.pop("type")
         except Exception:
             pass
-        for attr_key in ("company", "color", "size", "material", "price", "quantity", "currency", "main_ean", "database_ean"):
+        for attr_key in ("company", "color", "size", "material", "price", "quantity", "currency", "main_ean_jv", "main_ean_xl"):
             try:
                 payload.pop(attr_key)
             except Exception:
@@ -1234,7 +1240,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             enrichment_summary = self._apply_kid_enrichment(
                 kid,
                 product_attrs=product_attrs,
-                main_ean=main_ean,
+                main_eans=main_eans,
             )
             output = self.get_serializer(kid)
             headers = self.get_success_headers(output.data)
@@ -1271,7 +1277,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
         enrichment_summary = self._apply_kid_enrichment(
             existing,
             product_attrs=product_attrs,
-            main_ean=main_ean,
+            main_eans=main_eans,
         )
         sync_summary = (
             self._skipped_order_sync_summary(existing)
@@ -1635,8 +1641,8 @@ class KidMarketplaceEansAPIView(APIView):
         return {
             "kid_id": kid.id,
             "kid_number": kid_number,
-            "main_ean": cls._normalize_ean_for_response(getattr(ean_row, "main_ean", None)),
-            "database_ean": cls._normalize_ean_for_response(getattr(ean_row, "main_ean", None)),
+            "main_ean_jv": cls._normalize_ean_for_response(getattr(ean_row, "main_ean_jv", None)),
+            "main_ean_xl": cls._normalize_ean_for_response(getattr(ean_row, "main_ean_xl", None)),
             "cosmoshop_ean": cls._normalize_ean_for_response(getattr(ean_row, "jv", None)),
             "opencart_ean": cls._normalize_ean_for_response(getattr(ean_row, "xl", None)),
             "otto_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "otto_jv", None)),
@@ -1679,19 +1685,13 @@ class KidMarketplaceEansAPIView(APIView):
         ]
 
         updates: dict[str, str | None] = {}
-        if "main_ean" in payload or "database_ean" in payload:
-            raw_main = payload.get("main_ean", payload.get("database_ean"))
-            raw_database = payload.get("database_ean", payload.get("main_ean"))
-            normalized_main = self._normalize_optional_ean(raw_main)
-            normalized_database = self._normalize_optional_ean(raw_database)
-            if normalized_main != normalized_database:
-                return Response(
-                    {"detail": "main_ean and database_ean must match when both are provided."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if normalized_main is not None:
-                self._validate_ean(normalized_main, "main_ean")
-            updates["ean"] = normalized_main
+        for field in ("main_ean_jv", "main_ean_xl"):
+            if field not in payload:
+                continue
+            normalized = self._normalize_optional_ean(payload.get(field))
+            if normalized is not None:
+                self._validate_ean(normalized, field)
+            updates[field] = normalized
 
         for field in fields:
             if field not in payload:
@@ -1705,7 +1705,8 @@ class KidMarketplaceEansAPIView(APIView):
             return Response({"detail": "No valid fields to update."}, status=status.HTTP_400_BAD_REQUEST)
 
         field_map = {
-            "ean": "main_ean",
+            "main_ean_jv": "main_ean_jv",
+            "main_ean_xl": "main_ean_xl",
             "cosmoshop_ean": "jv",
             "opencart_ean": "xl",
             "otto_jv_ean": "otto_jv",

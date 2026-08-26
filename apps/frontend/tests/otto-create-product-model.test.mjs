@@ -5,6 +5,8 @@ import {
   applyReservedOttoIdentity,
   buildOttoPayloadAttributes,
   extractOttoMediaUrls,
+  isOttoProductLineValid,
+  OTTO_PRODUCT_LINE_MAX_LENGTH,
 } from "../app/create-product/otto-create-product-model.mjs";
 
 test("reserved OTTO EAN replaces SKU and EAN without changing product reference", () => {
@@ -15,6 +17,12 @@ test("reserved OTTO EAN replaces SKU and EAN without changing product reference"
     ),
     { productReference: "old-reference", sku: "4260123456789", ean: "4260123456789", productLine: "Chair" },
   );
+});
+
+test("OTTO product line is limited to 70 characters", () => {
+  assert.equal(OTTO_PRODUCT_LINE_MAX_LENGTH, 70);
+  assert.equal(isOttoProductLineValid("x".repeat(70)), true);
+  assert.equal(isOttoProductLineValid("x".repeat(71)), false);
 });
 
 test("OTTO payload retains untouched attributes while applying changes and removals", () => {

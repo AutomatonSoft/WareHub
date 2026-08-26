@@ -66,6 +66,7 @@ import {
 type Labels = Record<string, string>;
 
 type ToastTone = "success" | "info" | "error";
+type MainEanFamily = "jv" | "xl";
 
 function normalizeKauflandImageUrls(imageUrls: string[]): string[] {
   return Array.from(new Set(imageUrls
@@ -109,6 +110,7 @@ type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
   sourceSite: CreateProductSourceSiteKind;
+  mainEanFamily: MainEanFamily;
   preferredSourceSiteKey?: string;
 };
 
@@ -153,7 +155,7 @@ function sourceCacheKey(mainEan: string, sourceSite: CreateProductSourceSiteKind
 }
 
 export function useCreateProductController(input: UseCreateProductControllerInput) {
-  const { t, showToast, sourceSite, preferredSourceSiteKey = "" } = input;
+  const { t, showToast, sourceSite, mainEanFamily, preferredSourceSiteKey = "" } = input;
   const searchParams = useSearchParams();
 
   const [selectedSites, setSelectedSites] = useState<string[]>(() => allMarketplaceSites.map((site) => site.id));
@@ -215,6 +217,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
   const sourceKidId = Number.parseInt(sourceKidParam, 10);
+  const activeMainEan = mainEanFamily === "jv"
+    ? kidContext?.mainEanJv.trim() || ""
+    : kidContext?.mainEanXl.trim() || "";
 
   const applySourceSnapshot = useCallback((snapshot: CreateProductJvSourceSnapshot, mainEan: string, site: CreateProductSourceSiteKind) => {
     setSourceSnapshot(snapshot);
@@ -269,13 +274,13 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
   const selectSourceSite = useCallback((siteKey: string) => {
     setSelectedSourceSiteKey(siteKey);
-    if (kidContext?.mainEan) {
+    if (activeMainEan) {
       sourceCacheRef.current.selectedSiteKeyBySource.set(
-        sourceCacheKey(kidContext.mainEan, sourceSite),
+        sourceCacheKey(activeMainEan, sourceSite),
         siteKey,
       );
     }
-  }, [kidContext?.mainEan, sourceSite]);
+  }, [activeMainEan, sourceSite]);
 
   useEffect(() => {
     if (!Number.isFinite(sourceKidId) || sourceKidId <= 0) {
@@ -328,7 +333,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   }, [showToast, sourceKidId, t.failedLoadKidContext]);
 
   useEffect(() => {
-    if (!kidContext?.mainEan) {
+    if (!activeMainEan) {
       setSourceSites([]);
       setSourceSitesError(null);
       setSourceSitesLoading(false);
@@ -338,7 +343,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     let active = true;
-    const cacheKey = sourceCacheKey(kidContext.mainEan, sourceSite);
+    const cacheKey = sourceCacheKey(activeMainEan, sourceSite);
     const selectCachedSite = (sites: CreateProductJvSourceSite[]) => {
       setSelectedSourceSiteKey((current) => {
         const preferredSiteKey = preferredSourceSiteKey.trim();
@@ -368,7 +373,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSitesLoading(true);
     setSourceSitesError(null);
 
-    void fetchCreateProductSourceSitesByMainEan({ mainEan: kidContext.mainEan, site: sourceSite })
+    void fetchCreateProductSourceSitesByMainEan({ mainEan: activeMainEan, site: sourceSite })
       .then((sites) => {
         if (!active) return;
         sourceCacheRef.current.sitesBySource.set(cacheKey, sites);
@@ -390,16 +395,16 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, preferredSourceSiteKey, showToast, sourceSite]);
+  }, [activeMainEan, preferredSourceSiteKey, showToast, sourceSite]);
 
   useEffect(() => {
     setJvSourceSnapshotsBySiteKey({});
     setJvSourceSnapshotsReady(false);
     setSourceDiscoveryBySiteKey({});
-  }, [kidContext?.mainEan]);
+  }, [activeMainEan]);
 
   useEffect(() => {
-    const mainEan = kidContext?.mainEan.trim() || "";
+    const mainEan = activeMainEan;
     if (!mainEan || prefetchedMainEansRef.current.has(mainEan)) {
       return;
     }
@@ -501,14 +506,14 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, loadSourceSnapshot]);
+  }, [activeMainEan, loadSourceSnapshot]);
 
   useEffect(() => {
-    const sourceSitesCacheKey = kidContext?.mainEan
-      ? sourceCacheKey(kidContext.mainEan, sourceSite)
+    const sourceSitesCacheKey = activeMainEan
+      ? sourceCacheKey(activeMainEan, sourceSite)
       : "";
     if (
-      !kidContext?.mainEan
+      !activeMainEan
       || !selectedSourceSiteKey
       || loadedSourceSitesCacheKey !== sourceSitesCacheKey
     ) {
@@ -522,7 +527,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSnapshotLoading(true);
     setSourceSnapshotError(null);
 
-    void loadSourceSnapshot(kidContext.mainEan, sourceSite, selectedSourceSiteKey)
+    void loadSourceSnapshot(activeMainEan, sourceSite, selectedSourceSiteKey)
       .then((snapshot) => {
         if (!active) return;
         if (sourceSite === "JV") {
@@ -531,7 +536,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
             [selectedSourceSiteKey]: snapshot,
           }));
         }
-        applySourceSnapshot(snapshot, kidContext.mainEan, sourceSite);
+        applySourceSnapshot(snapshot, activeMainEan, sourceSite);
       })
       .catch((error) => {
         if (!active) return;
@@ -547,7 +552,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [applySourceSnapshot, kidContext?.mainEan, loadSourceSnapshot, loadedSourceSitesCacheKey, selectedSourceSiteKey, showToast, sourceSite]);
+  }, [activeMainEan, applySourceSnapshot, loadSourceSnapshot, loadedSourceSitesCacheKey, selectedSourceSiteKey, showToast, sourceSite]);
 
   function toggleSite(siteId: string) {
     setSelectedSites((prev) =>
@@ -1236,6 +1241,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     jobStatusDetails,
     reconciliationSummary,
     kidContext,
+    activeMainEan,
     kidContextLoading,
     kidContextError,
     sourceSites,

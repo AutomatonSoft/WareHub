@@ -195,8 +195,8 @@ def _parse_listing_form(text: str) -> dict[str, str]:
             parsed["kid_number"] = value
         elif key in {"place", "platz", "место"}:
             parsed["place"] = value
-        elif key in {"main_ean", "ean", "eanka"}:
-            parsed["main_ean"] = value
+        elif key in {"main_ean_jv", "ean", "eanka"}:
+            parsed["main_ean_jv"] = value
         elif key in {"quantity", "qty", "count", "количество"}:
             parsed["quantity"] = value
         elif key in {"price", "цена"}:
@@ -210,12 +210,12 @@ def _build_listing_form_prompt(kid: Kid | None = None) -> str:
         "",
         "KID: 538053450",
         "Place: 9999",
-        "main_ean: 4260174428871",
+        "main_ean_jv: 4260174428871",
         "Quantity: 5",
         "Price: 4564",
         "",
         "Обязательные поля: KID, Place",
-        "Опциональные поля: main_ean, Quantity, Price",
+        "Опциональные поля: main_ean_jv, Quantity, Price",
     ]
     if kid is not None:
         lines.extend(
@@ -244,7 +244,7 @@ def _format_kid_summary(kid: Kid) -> str:
             f"KID: {primary_kid_number(kid.kid_number)}",
             f"Place: {kid.place or '-'}",
             f"JV EAN: {getattr(ean_row, 'jv', '') or '-'}",
-            f"Main EAN: {getattr(ean_row, 'main_ean', '') or '-'}",
+            f"Main EAN JV: {getattr(ean_row, 'main_ean_jv', '') or '-'}",
             f"Quantity: {getattr(product, 'quantity', '') or '-'}",
             f"Status JV: {'on' if bool(getattr(status_row, 'jv', False)) else 'off'}",
         ]
@@ -666,17 +666,17 @@ class TelegramConversationService:
             "kid_number": kid_number,
             "place": place,
         }
-        main_ean = str(payload.get("main_ean") or "").strip()
-        if main_ean:
-            if not _is_main_ean_text(main_ean):
+        main_ean_jv = str(payload.get("main_ean_jv") or "").strip()
+        if main_ean_jv:
+            if not _is_main_ean_text(main_ean_jv):
                 self.bot.send_message(
                     chat_id=ctx.chat_id or 0,
                     message_thread_id=ctx.message_thread_id,
-                    text="main_ean должен состоять ровно из 13 цифр. Отправь форму ещё раз.",
+                    text="main_ean_jv должен состоять ровно из 13 цифр. Отправь форму ещё раз.",
                     reply_markup=build_action_keyboard(),
                 )
-                return {"status": "ignored", "reason": "invalid_main_ean"}
-            normalized_payload["main_ean"] = main_ean
+                return {"status": "ignored", "reason": "invalid_main_ean_jv"}
+            normalized_payload["main_ean_jv"] = main_ean_jv
 
         quantity_text = str(payload.get("quantity") or "").strip()
         if quantity_text:
@@ -713,7 +713,7 @@ class TelegramConversationService:
                     "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438 \u0432\u044b\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0442\u043e\u0432\u0430\u0440\u0430:",
                     f"KID: {kid_number}",
                     f"Place: {place}",
-                    f"main_ean: {normalized_payload.get('main_ean') or '-'}",
+                    f"main_ean_jv: {normalized_payload.get('main_ean_jv') or '-'}",
                     f"Quantity: {normalized_payload.get('quantity') if 'quantity' in normalized_payload else '-'}",
                     f"Price: {normalized_payload.get('price') or '-'}",
                 ]
@@ -745,7 +745,7 @@ class TelegramConversationService:
             "Place \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d.",
             f"KID: {kid_number}",
             f"\u041d\u043e\u0432\u044b\u0439 place: {place_value}",
-            "\u0412\u0432\u0435\u0434\u0438 main_ean (13 \u0446\u0438\u0444\u0440) \u0438\u043b\u0438 \u043d\u0430\u0436\u043c\u0438 '\u041f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c':",
+            "\u0412\u0432\u0435\u0434\u0438 main_ean_jv (13 \u0446\u0438\u0444\u0440) \u0438\u043b\u0438 \u043d\u0430\u0436\u043c\u0438 '\u041f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c':",
         ]
         if kid is not None:
             confirm_lines.insert(1, _format_kid_summary(kid))
@@ -775,12 +775,12 @@ class TelegramConversationService:
             self.bot.send_message(
                 chat_id=ctx.chat_id or 0,
                 message_thread_id=ctx.message_thread_id,
-                text="main_ean \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0441\u0442\u043e\u044f\u0442\u044c \u0440\u043e\u0432\u043d\u043e \u0438\u0437 13 \u0446\u0438\u0444\u0440. \u0412\u0432\u0435\u0434\u0438 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u0435\u0449\u0435 \u0440\u0430\u0437.",
+                text="main_ean_jv \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0441\u0442\u043e\u044f\u0442\u044c \u0440\u043e\u0432\u043d\u043e \u0438\u0437 13 \u0446\u0438\u0444\u0440. \u0412\u0432\u0435\u0434\u0438 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u0435\u0449\u0435 \u0440\u0430\u0437.",
                 reply_markup=build_optional_step_keyboard(),
             )
-            return {"status": "ignored", "reason": "invalid_main_ean"}
+            return {"status": "ignored", "reason": "invalid_main_ean_jv"}
         payload = dict(state_row.payload)
-        payload["main_ean"] = ctx.text.strip()
+        payload["main_ean_jv"] = ctx.text.strip()
         state_row.state = "awaiting_quantity"
         state_row.payload = payload
         state_row.save(update_fields=["state", "payload", "updated_at"])
@@ -842,7 +842,7 @@ class TelegramConversationService:
                         "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438 \u0432\u044b\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0442\u043e\u0432\u0430\u0440\u0430:",
                         f"KID: {kid_number}",
                         f"Place: {payload.get('place') or '-'}",
-                        f"main_ean: {payload.get('main_ean') or '-'}",
+                        f"main_ean_jv: {payload.get('main_ean_jv') or '-'}",
                         f"Quantity: {payload.get('quantity') if 'quantity' in payload else '-'}",
                         "Price: -",
                     ]
@@ -873,7 +873,7 @@ class TelegramConversationService:
                     "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438 \u0432\u044b\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0442\u043e\u0432\u0430\u0440\u0430:",
                     f"KID: {kid_number}",
                     f"Place: {payload.get('place') or '-'}",
-                    f"main_ean: {payload.get('main_ean') or '-'}",
+                    f"main_ean_jv: {payload.get('main_ean_jv') or '-'}",
                     f"Quantity: {payload.get('quantity')}",
                     f"Price: {payload.get('price')}",
                 ]
@@ -891,10 +891,10 @@ class TelegramConversationService:
         action = str(state_row.payload.get("action") or "").strip()
         kid_number = str(state_row.payload.get("kid_number") or "").strip()
         place = str(state_row.payload.get("place") or "").strip()
-        main_ean_value = state_row.payload.get("main_ean")
+        main_ean_jv_value = state_row.payload.get("main_ean_jv")
         quantity_value = state_row.payload.get("quantity")
         price_value = state_row.payload.get("price")
-        main_ean = str(main_ean_value or "").strip() or None
+        main_ean_jv = str(main_ean_jv_value or "").strip() or None
         quantity = int(quantity_value) if quantity_value not in (None, "") else None
         price = str(price_value or "").strip() or None
         state_row.state = "processing"
@@ -906,7 +906,7 @@ class TelegramConversationService:
                 payload = self.kids.create_kid(
                     kid_number=kid_number,
                     place=place,
-                    main_ean=main_ean,
+                    main_ean_jv=main_ean_jv,
                     quantity=quantity,
                     price=price,
                 )
@@ -918,7 +918,7 @@ class TelegramConversationService:
                     [
                         f"{action_prefix}: {kid_number}",
                         f"Place: {place}",
-                        f"main_ean: {main_ean or '-'}",
+                        f"main_ean_jv: {main_ean_jv or '-'}",
                         f"Quantity: {quantity if quantity is not None else '-'}",
                         f"Price: {price or '-'}",
                         f"Kid ID: {response_data.get('id') or '-'}",
@@ -929,7 +929,7 @@ class TelegramConversationService:
                 payload = {
                     "kid_number": kid_number,
                     "place": place,
-                    "main_ean": main_ean,
+                    "main_ean_jv": main_ean_jv,
                     "quantity": quantity,
                     "price": price,
                     "error": str(exc),
@@ -939,7 +939,7 @@ class TelegramConversationService:
                     [
                         f"\u0412\u044b\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u043d\u0435 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u043e: {kid_number}",
                         f"Place: {place}",
-                        f"main_ean: {main_ean or '-'}",
+                        f"main_ean_jv: {main_ean_jv or '-'}",
                         f"Quantity: {quantity if quantity is not None else '-'}",
                         f"Price: {price or '-'}",
                         f"\u041e\u0448\u0438\u0431\u043a\u0430: {exc}",

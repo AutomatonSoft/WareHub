@@ -282,10 +282,10 @@ class TelegramServiceTests(SimpleTestCase):
     def test_kids_client_uses_post_kids_route(self, mocked_post):
         mocked_post.return_value.status_code = 201
         mocked_post.return_value.raise_for_status.return_value = None
-        mocked_post.return_value.json.return_value = {"id": 77, "kid_number": "566725168", "place": "55", "main_ean": "4062292028939"}
+        mocked_post.return_value.json.return_value = {"id": 77, "kid_number": "566725168", "place": "55", "main_ean_jv": "4062292028939"}
 
         client = TelegramKidsClient(load_telegram_runtime_config())
-        created = client.create_kid(kid_number="566725168", place="55", main_ean="4062292028939", quantity=3, price="199.99")
+        created = client.create_kid(kid_number="566725168", place="55", main_ean_jv="4062292028939", quantity=3, price="199.99")
 
         self.assertEqual(
             mocked_post.call_args.args[0],
@@ -293,7 +293,7 @@ class TelegramServiceTests(SimpleTestCase):
         )
         self.assertEqual(
             mocked_post.call_args.kwargs["json"],
-            {"kid_number": "566725168", "place": "55", "main_ean": "4062292028939", "quantity": 3, "price": "199.99"},
+            {"kid_number": "566725168", "place": "55", "main_ean_jv": "4062292028939", "quantity": 3, "price": "199.99"},
         )
         self.assertEqual(
             mocked_post.call_args.kwargs["headers"],
@@ -325,7 +325,7 @@ class TelegramServiceTests(SimpleTestCase):
         client = TelegramKidsClient(load_telegram_runtime_config())
 
         with self.assertRaises(requests.HTTPError) as ctx:
-            client.create_kid(kid_number="566725168", place="55", main_ean="4062292028939", quantity=3, price="199.99")
+            client.create_kid(kid_number="566725168", place="55", main_ean_jv="4062292028939", quantity=3, price="199.99")
 
         self.assertIn("Response body", str(ctx.exception))
         self.assertIn('{"detail":"boom"}', str(ctx.exception))
@@ -556,7 +556,7 @@ class TelegramServiceAsyncFlowTests(TestCase):
         self.assertEqual(state.state, "awaiting_confirmation")
         self.assertEqual(state.payload["kid_number"], "566725168")
         self.assertEqual(state.payload["place"], "9999")
-        self.assertNotIn("main_ean", state.payload)
+        self.assertNotIn("main_ean_jv", state.payload)
         self.assertNotIn("quantity", state.payload)
         self.assertNotIn("price", state.payload)
 
@@ -581,7 +581,7 @@ class TelegramServiceAsyncFlowTests(TestCase):
         mocked_create_kid.assert_called_once_with(
             kid_number="566725168",
             place="9999",
-            main_ean=None,
+            main_ean_jv=None,
             quantity=None,
             price=None,
         )
@@ -653,14 +653,14 @@ class TelegramServiceAsyncFlowTests(TestCase):
             telegram_user_id=200,
             thread_key="",
             state="awaiting_confirmation",
-            payload={"action": "list", "kid_number": "566725168", "place": "55", "main_ean": "4062292028939", "quantity": 3, "price": "199.99"},
+            payload={"action": "list", "kid_number": "566725168", "place": "55", "main_ean_jv": "4062292028939", "quantity": 3, "price": "199.99"},
         )
 
         with patch.object(service.bot, "send_message", return_value={"ok": True}) as mocked_send:
             result = service._handle_confirmation(ctx)
 
         self.assertEqual(result["status"], "processed")
-        mocked_create_kid.assert_called_once_with(kid_number="566725168", place="55", main_ean="4062292028939", quantity=3, price="199.99")
+        mocked_create_kid.assert_called_once_with(kid_number="566725168", place="55", main_ean_jv="4062292028939", quantity=3, price="199.99")
         mocked_create_job.assert_not_called()
         mocked_send.assert_called_once()
         audit = TelegramActionAudit.objects.get(action="list", kid_number="566725168")
