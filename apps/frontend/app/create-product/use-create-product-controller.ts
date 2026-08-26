@@ -212,7 +212,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     snapshotRequestsBySource: new Map(),
     selectedSiteKeyBySource: new Map(),
   });
-  const prefetchedMainEansRef = useRef(new Set<string>());
+  const prefetchedSourceFamiliesRef = useRef(new Set<string>());
 
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
@@ -400,18 +400,25 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   useEffect(() => {
     setJvSourceSnapshotsBySiteKey({});
     setJvSourceSnapshotsReady(false);
+  }, [kidContext?.mainEanJv]);
+
+  useEffect(() => {
     setSourceDiscoveryBySiteKey({});
-  }, [activeMainEan]);
+    prefetchedSourceFamiliesRef.current.clear();
+  }, [kidContext?.mainEanJv, kidContext?.mainEanXl]);
 
   useEffect(() => {
     const mainEan = activeMainEan;
-    if (!mainEan || prefetchedMainEansRef.current.has(mainEan)) {
+    const prefetchKey = `${mainEanFamily}:${mainEan}`;
+    if (!mainEan || prefetchedSourceFamiliesRef.current.has(prefetchKey)) {
       return;
     }
 
-    prefetchedMainEansRef.current.add(mainEan);
+    prefetchedSourceFamiliesRef.current.add(prefetchKey);
     let active = true;
-    const sourceKinds: CreateProductSourceSiteKind[] = ["JV", "XL", "HOOD", "KAUFLAND"];
+    const sourceKinds: CreateProductSourceSiteKind[] = mainEanFamily === "jv"
+      ? ["JV", "XL", "HOOD", "KAUFLAND"]
+      : ["XL", "HOOD", "KAUFLAND"];
 
     setSourceDiscoveryBySiteKey(
       Object.fromEntries(
@@ -506,7 +513,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [activeMainEan, loadSourceSnapshot]);
+  }, [activeMainEan, loadSourceSnapshot, mainEanFamily]);
 
   useEffect(() => {
     const sourceSitesCacheKey = activeMainEan

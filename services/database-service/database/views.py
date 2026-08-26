@@ -2657,6 +2657,8 @@ class EANPoolClaimForJobAPIView(APIView):
         kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
         reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
         reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+        if reservation_family:
+            reservation_key = f"{reservation_key}:{reservation_family}"
 
         ean_row = None
         reserved_field = ""
@@ -2672,7 +2674,9 @@ class EANPoolClaimForJobAPIView(APIView):
                 )
             reserved_field = f"reserved_{reservation_family}"
             reserved_ean = str(getattr(ean_row, reserved_field) or "").strip()
-            if reserved_ean:
+            other_reserved_field = "reserved_xl" if reservation_family == "jv" else "reserved_jv"
+            other_reserved_ean = str(getattr(ean_row, other_reserved_field) or "").strip()
+            if reserved_ean and reserved_ean != other_reserved_ean:
                 item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first()
                 if item is None:
                     return Response(
@@ -2732,6 +2736,8 @@ class EANPoolMarkJobUsedAPIView(APIView):
             item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first() if reserved_ean else None
         else:
             reservation_key = f"orchestrator-job:{serializer.validated_data['job_id']}"
+            if reservation_family:
+                reservation_key = f"{reservation_key}:{reservation_family}"
             item = EANPool.objects.select_for_update().filter(reserved_by=reservation_key).first()
         if item is None:
             return Response({"detail": "Резерв EAN для задания не найден."}, status=status.HTTP_404_NOT_FOUND)

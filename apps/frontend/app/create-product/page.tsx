@@ -1227,6 +1227,7 @@ export default function CreateProductPage() {
     mainRubricIdBySite: {},
     deliveryIdsBySite: {},
   });
+  const jvPublishingSelectionKeyRef = useRef("");
   const xlDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<XlCreateProductDraft>>>>({});
   const hoodDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<HoodCreateProductDraft>>>>({});
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
@@ -1404,12 +1405,18 @@ export default function CreateProductPage() {
 
     return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
   }, [controller.jvSourceSnapshotsBySiteKey]);
-  const jvInitialSelectionKey = controller.kidContext?.mainEanJv ?? "";
+  const jvInitialSelectionKey = [
+    controller.kidContext?.kidNumber?.trim() || "",
+    controller.kidContext?.mainEanJv?.trim() || "",
+    controller.kidContext?.mainEanXl?.trim() || "",
+  ].filter(Boolean).join(":");
 
   function getEffectiveJvPublishingSelections(
     siteKey: (typeof JV_RUBRIC_SITE_TABS)[number]["key"],
   ) {
-    const currentSelections = jvPublishingSelectionsRef.current;
+    const currentSelections = jvPublishingSelectionKeyRef.current === jvInitialSelectionKey
+      ? jvPublishingSelectionsRef.current
+      : { rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} };
     const hasSelectedRubrics = Object.hasOwn(currentSelections.rubricIdsBySite, siteKey);
     const hasSelectedMainRubric = Object.hasOwn(currentSelections.mainRubricIdBySite, siteKey);
     const hasSelectedDelivery = Object.hasOwn(currentSelections.deliveryIdsBySite, siteKey);
@@ -1426,6 +1433,16 @@ export default function CreateProductPage() {
 
     return { rubricIds, mainRubricId, deliveryIds };
   }
+  const rememberedJvPublishingSelections = JV_RUBRIC_SITE_TABS.reduce<JvPublishingSelections>(
+    (selections, site) => {
+      const effective = getEffectiveJvPublishingSelections(site.key);
+      selections.rubricIdsBySite[site.key] = effective.rubricIds;
+      selections.mainRubricIdBySite[site.key] = effective.mainRubricId;
+      selections.deliveryIdsBySite[site.key] = effective.deliveryIds;
+      return selections;
+    },
+    { rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} },
+  );
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -1672,6 +1689,12 @@ export default function CreateProductPage() {
     jvDraftRef.current = {
       name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "",
     };
+    jvPublishingSelectionsRef.current = {
+      rubricIdsBySite: {},
+      mainRubricIdBySite: {},
+      deliveryIdsBySite: {},
+    };
+    jvPublishingSelectionKeyRef.current = "";
     xlDraftRefByTab.current = {};
     hoodDraftRefByTab.current = {};
     kauflandDraftRefByTab.current = {};
@@ -2914,9 +2937,12 @@ export default function CreateProductPage() {
 
   function handleMainCreate() {
     const siteKey = "JV_DE";
-    const selectedCategoryIds = jvPublishingSelectionsRef.current.rubricIdsBySite[siteKey] ?? [];
-    const mainCategoryId = jvPublishingSelectionsRef.current.mainRubricIdBySite[siteKey] ?? null;
-    const selectedDeliveryId = jvPublishingSelectionsRef.current.deliveryIdsBySite[siteKey]?.[0];
+    const {
+      rubricIds: selectedCategoryIds,
+      mainRubricId: mainCategoryId,
+      deliveryIds,
+    } = getEffectiveJvPublishingSelections(siteKey);
+    const selectedDeliveryId = deliveryIds[0];
 
     if (selectedCategoryIds.length === 0) {
       showToast("Select at least one JV DE category before creating the job.", "error");
@@ -2931,7 +2957,7 @@ export default function CreateProductPage() {
       return;
     }
 
-    const orderedCategoryIds = selectedCategoryIds.sort((left, right) => {
+    const orderedCategoryIds = selectedCategoryIds.slice().sort((left, right) => {
       if (left === mainCategoryId) return -1;
       if (right === mainCategoryId) return 1;
       return left - right;
@@ -3079,10 +3105,11 @@ export default function CreateProductPage() {
                   sourceSiteKey={controller.sourceSnapshot?.siteKey}
                   sourceCategories={sourceCategories}
                   sourceDeliveryId={asIntegerOrUndefined(sourceJvFields.lieferzeitid)}
-                  initialSelections={controller.jvSourceSnapshotsReady ? jvInitialSelections : undefined}
+                  initialSelections={controller.jvSourceSnapshotsReady ? rememberedJvPublishingSelections : undefined}
                   initialSelectionKey={controller.jvSourceSnapshotsReady ? jvInitialSelectionKey : undefined}
                   onSelectionsChange={(selections) => {
                     jvPublishingSelectionsRef.current = selections;
+                    jvPublishingSelectionKeyRef.current = jvInitialSelectionKey;
                   }}
                 />
               </div>

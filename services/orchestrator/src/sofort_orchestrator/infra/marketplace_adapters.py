@@ -52,7 +52,7 @@ class MarketplaceAdapters:
             url = f"{self.base_url}/api/v1/otto/{profile}/products/upsert/"
             otto_payload = dict(payload)
             if channel.ean_source == "pool":
-                otto_payload.update({"productReference": ean, "sku": ean, "ean": ean})
+                otto_payload.update({"sku": ean, "ean": ean})
             response = self.http.request("POST", url, headers=headers, json=otto_payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
