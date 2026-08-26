@@ -509,7 +509,7 @@ def test_product_editor_otto_apply_normalizes_source_payload_for_upsert(tmp_path
     assert command is not None
     override = command.channels[0].overrides
     assert "maxOrderQuantity" not in override
-    assert override["productDescription"]["productLine"] == "x" * 50
+    assert override["productDescription"]["productLine"] == "x" * 60
     assert override["mediaAssets"] == [{
         "type": "IMAGE",
         "location": "https://i.otto.de/i/otto/main-image.jpg",

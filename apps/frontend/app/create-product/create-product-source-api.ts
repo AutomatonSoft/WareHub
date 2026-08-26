@@ -13,7 +13,8 @@ import { normalizeEanOrEmpty } from "../../components/inventory/ean-utils";
 import { apiFetch } from "../../lib/api/client";
 
 type KidMarketplaceEansResponse = {
-  main_ean?: unknown;
+  main_ean_jv?: unknown;
+  main_ean_xl?: unknown;
 };
 
 type DescriptionRow = {
@@ -33,7 +34,8 @@ type CategoryRow = {
 export type CreateProductKidContext = {
   kidId: number;
   kidNumber: string;
-  mainEan: string;
+  mainEanJv: string;
+  mainEanXl: string;
   place: string;
   room: string;
   furnitureType: string;
@@ -101,14 +103,17 @@ function stripHtml(value: string): string {
     .trim();
 }
 
-async function fetchKidMarketplaceMainEan(kidId: number): Promise<string> {
+async function fetchKidMarketplaceMainEans(kidId: number): Promise<{ mainEanJv: string; mainEanXl: string }> {
   const response = await apiFetch(`${getServicesApiBase()}/kids/${kidId}/marketplace-eans/`);
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
     throw new Error(asTrimmedString(payload.detail) || `create_product_main_ean_http:${response.status}`);
   }
   const payload = (await response.json()) as KidMarketplaceEansResponse;
-  return normalizeEanOrEmpty(asTrimmedString(payload.main_ean));
+  return {
+    mainEanJv: normalizeEanOrEmpty(asTrimmedString(payload.main_ean_jv)),
+    mainEanXl: normalizeEanOrEmpty(asTrimmedString(payload.main_ean_xl)),
+  };
 }
 
 function pickGermanLikeDescription(descriptions: DescriptionRow[]): DescriptionRow | null {
@@ -376,19 +381,15 @@ function normalizeHoodSnapshot(payload: Record<string, unknown>, account: HoodAc
 }
 
 export async function fetchCreateProductKidContext(kidId: number): Promise<CreateProductKidContext> {
-  const [details, mainEan] = await Promise.all([
+  const [details, mainEans] = await Promise.all([
     fetchKidDetails(kidId),
-    fetchKidMarketplaceMainEan(kidId),
+    fetchKidMarketplaceMainEans(kidId),
   ]);
-
-  if (!mainEan) {
-    throw new Error("create_product_main_ean_missing");
-  }
 
   return {
     kidId,
     kidNumber: details.kidNumber,
-    mainEan,
+    ...mainEans,
     place: details.place,
     room: details.room,
     furnitureType: details.furnitureType,

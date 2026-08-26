@@ -120,7 +120,7 @@ class HoodMarketplaceEanMappingTests(TestCase):
     def test_confirmed_hood_pool_ean_is_saved_on_the_source_kid(self):
         kid = Kid.objects.create(kid_number=["KID-HOOD-POOL"])
         source_ean = "4012345678901"
-        Ean.objects.create(kid=kid, main_ean=source_ean)
+        Ean.objects.create(kid=kid, main_ean_jv=source_ean)
 
         result = _record_hood_marketplace_ean(
             source_ean=source_ean,

@@ -17,7 +17,7 @@ def _to_external_otto_product(product: dict[str, Any], *, controller: str) -> di
     if isinstance(product_description, dict) and "productLine" in product_description:
         external_product["productDescription"] = {
             **product_description,
-            "productLine": str(product_description.get("productLine") or "").strip()[:50],
+            "productLine": str(product_description.get("productLine") or "").strip()[:70],
         }
 
     media_assets = external_product.get("mediaAssets")

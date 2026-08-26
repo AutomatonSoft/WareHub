@@ -46,7 +46,8 @@ def build_inventory_dashboard_summary() -> dict[str, object]:
         "photo",
         "in_transit",
         "b_ware",
-        "ean__main_ean",
+        "ean__main_ean_jv",
+        "ean__main_ean_xl",
         "product_attributes__price",
     )
 
@@ -63,7 +64,7 @@ def build_inventory_dashboard_summary() -> dict[str, object]:
         total_products += 1
         has_place = bool(str(row["place"] or "").strip())
         has_photo = _has_photo_value(row["photo"])
-        has_ean = _has_main_ean(row["ean__main_ean"])
+        has_ean = _has_main_ean(row["ean__main_ean_jv"]) or _has_main_ean(row["ean__main_ean_xl"])
         has_price = row["product_attributes__price"] is not None
 
         if has_place:
@@ -136,7 +137,7 @@ def _critical_inventory_score(row: dict) -> tuple[int, int]:
     age = weights[23] if days is None else weights[0] if days >= 180 else weights[1] if days >= 120 else weights[2] if days >= 90 else weights[3] if days >= 45 else 0
     marketplace_groups = (("jv_ean", "xl_ean"), ("otto_jv_ean", "otto_xl_ean"), ("ebay_jv_ean", "ebay_xl_ean"), ("kaufland_jv_ean", "kaufland_xl_ean"), ("hood_jv_ean", "hood_xl_ean"))
     score = age
-    for weight, key in zip(weights[4:8], ("place", "section", "photo", "main_ean"), strict=True):
+    for weight, key in zip(weights[4:8], ("place", "section", "photo", "main_ean_jv"), strict=True):
         if missing(key): score += weight
     for weight, keys in zip(weights[8:13], marketplace_groups, strict=True):
         if all(missing(key) for key in keys): score += weight
@@ -331,7 +332,8 @@ def build_inventory_rows() -> list[dict]:
         ean_status_row = getattr(kid, "status", None)
         attrs = getattr(kid, "product_attributes", None)
         primary_kid = primary_kid_number(kid.kid_number)
-        main_ean = _norm_ean(getattr(ean_row, "main_ean", None))
+        main_ean_jv = _norm_ean(getattr(ean_row, "main_ean_jv", None))
+        main_ean_xl = _norm_ean(getattr(ean_row, "main_ean_xl", None))
         cosmoshop_ean = _norm_ean(getattr(ean_row, "jv", None))
         opencart_ean = _norm_ean(getattr(ean_row, "xl", None))
         otto_jv_ean = _norm_ean(getattr(ean_row, "otto_jv", None))
@@ -417,9 +419,9 @@ def build_inventory_rows() -> list[dict]:
                 "additional_order_ids_text": ", ".join(combined_additional_order_ids) if combined_additional_order_ids else "-",
                 "additional_items": additional_items,
                 "sku_eans": sku_eans,
-                "ean": main_ean,
-                "main_ean": main_ean,
-                "database_ean": main_ean,
+                "ean": main_ean_jv,
+                "main_ean_jv": main_ean_jv,
+                "main_ean_xl": main_ean_xl,
                 "jv_ean": cosmoshop_ean,
                 "xl_ean": opencart_ean,
                 "otto_jv_ean": otto_jv_ean,
@@ -503,8 +505,8 @@ def build_kid_ean_summary(kid_id: int) -> dict:
         "room": "",
         "furniture_type": "",
         "store": False,
-        "main_ean": "",
-        "database_ean": "",
+        "main_ean_jv": "",
+        "main_ean_xl": "",
         "main_photo": None,
         "photo_count": 0,
         "last_update": None,
@@ -550,8 +552,8 @@ def build_kid_ean_summary(kid_id: int) -> dict:
             "room": str(base_row.get("room") or "").strip(),
             "furniture_type": str(base_row.get("type") or "").strip(),
             "store": bool(base_row.get("store")),
-            "main_ean": _norm_ean(base_row.get("main_ean") or base_row.get("database_ean") or base_row.get("ean")),
-            "database_ean": _norm_ean(base_row.get("database_ean") or base_row.get("main_ean") or base_row.get("ean")),
+            "main_ean_jv": _norm_ean(base_row.get("main_ean_jv") or base_row.get("ean")),
+            "main_ean_xl": _norm_ean(base_row.get("main_ean_xl")),
             "main_photo": main_photo,
             "photo_count": photo_count,
             "last_update": max(last_dates) if last_dates else None,

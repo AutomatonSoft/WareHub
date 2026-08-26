@@ -275,10 +275,10 @@ export function SofortListTable() {
           ? "out"
           : "in_stock";
       const normalizedRowEan =
-        typeof (item as { database_ean?: unknown }).database_ean === "string" && (item as { database_ean?: string }).database_ean?.trim()
-          ? (item as { database_ean?: string }).database_ean!.trim()
-          : typeof (item as { main_ean?: unknown }).main_ean === "string" && (item as { main_ean?: string }).main_ean?.trim()
-            ? (item as { main_ean?: string }).main_ean!.trim()
+        typeof (item as { main_ean_jv?: unknown }).main_ean_jv === "string" && (item as { main_ean_jv?: string }).main_ean_jv?.trim()
+          ? (item as { main_ean_jv?: string }).main_ean_jv!.trim()
+          : typeof (item as { main_ean_xl?: unknown }).main_ean_xl === "string" && (item as { main_ean_xl?: string }).main_ean_xl?.trim()
+            ? (item as { main_ean_xl?: string }).main_ean_xl!.trim()
             : "";
 
       const normalizedSiteEans = {

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
-import { normalizeOttoProductAttributes } from "./otto-create-product-model.mjs";
+import { normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
 
 export type OttoCreateProductDraft = {
   productReference: string;
@@ -151,7 +151,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
 
   return (
     <div className="space-y-4">
-      <Field label={t.ottoProductLine}><Input value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
+      <Field label={t.ottoProductLine}><Input maxLength={OTTO_PRODUCT_LINE_MAX_LENGTH} value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
       <div className="grid gap-3 md:grid-cols-3">
         <Field label={t.ottoProductReference}><Input value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
         <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
