@@ -177,12 +177,22 @@ def test_otto_contract_path_with_profile():
         ean="4012345678901",
         request_id="r3",
         channel=ChannelTarget(marketplace=Marketplace.OTTO, profile="jv", ean_source="pool"),
-        payload={"productReference": "OTTO-1", "sku": "OTTO-1", "ean": "OTTO-1"},
+        payload={
+            "productReference": "OTTO-1",
+            "sku": "OTTO-1",
+            "ean": "OTTO-1",
+            "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+        },
     )
     call = fake_http.calls[0]
     assert call["method"] == "POST"
     assert call["url"] == "http://database-service:8000/api/v1/otto/jv/products/upsert/"
-    assert call["json"] == {"productReference": "4012345678901", "sku": "4012345678901", "ean": "4012345678901"}
+    assert call["json"] == {
+        "productReference": "OTTO-1",
+        "sku": "4012345678901",
+        "ean": "4012345678901",
+        "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+    }
 
 
 def test_xl_contract_path_and_query_params():

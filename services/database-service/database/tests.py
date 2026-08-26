@@ -112,6 +112,37 @@ class DatabaseApiTests(APITestCase):
         jv_pool_ean.refresh_from_db()
         self.assertEqual(jv_pool_ean.status, "used")
 
+    def test_ean_pool_repairs_duplicate_marketplace_family_reservation(self):
+        duplicate = EANPool.objects.create(
+            ean="4012345678901",
+            status="reserved",
+            reserved_by="legacy",
+        )
+        replacement = EANPool.objects.create(ean="4012345678902")
+        ean_row = Ean.objects.create(
+            kid=self.kid,
+            main_ean_jv="4012345678903",
+            main_ean_xl="4012345678904",
+            reserved_jv=duplicate.ean,
+            reserved_xl=duplicate.ean,
+        )
+
+        response = self.client.post(
+            "/api/v1/ean-pool/claim-for-job/",
+            {
+                "job_id": "642088ea-6194-4db6-965e-3f2618d46bd8",
+                "kid_number": "13234455",
+                "reservation_family": "xl",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["ean"], replacement.ean)
+        ean_row.refresh_from_db()
+        self.assertEqual(ean_row.reserved_jv, duplicate.ean)
+        self.assertEqual(ean_row.reserved_xl, replacement.ean)
+
     def test_marketplace_ean_mapping_confirmation_updates_ean_and_status(self):
         response = self.client.post(
             "/api/v1/marketplace/ean-mappings/confirm/",

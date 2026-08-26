@@ -22,7 +22,7 @@ const PAGE_SIZE = 20;
 type TaskTarget = { marketplace?: string; target?: string; status?: string; error?: { message?: string } };
 type Task = { job_id: string; request_id: string; ean: string; operation: string; status: string; created_at_unix_ms: number; updated_at_unix_ms: number; result?: { results?: TaskTarget[] }; error?: { message?: string } };
 type ProductEditorTask = { job_id: string; request_id: string; active_group?: string; ean?: string; status: string; targets?: Array<{ target_id?: string; status?: string; error?: { message?: string } }>; error?: { message?: string }; created_at_unix_ms?: number; updated_at_unix_ms?: number };
-type MarketplaceToggleTask = { job_id: string; request_id: string; kid_number: string; inactive: boolean; status: string; results?: Array<{ site_key?: string; channel?: string; ok?: boolean; status_code?: number }>; error?: { message?: string }; created_at_unix_ms?: number; updated_at_unix_ms?: number };
+type MarketplaceToggleTask = { job_id: string; request_id: string; kid_number: string; inactive: boolean; job_status?: string; status: string; results?: Array<{ site_key?: string; channel?: string; ok?: boolean; status_code?: number }>; error?: { message?: string }; created_at_unix_ms?: number; updated_at_unix_ms?: number };
 type JvBatchTask = { id: number; ean: string; operation: string; status: string; created_at?: string; updated_at?: string; items?: Array<{ site?: string; site_key?: string; status?: string; error_text?: string }> };
 type JobsResponse<T> = { jobs?: T[]; total?: number };
 type SourceKey = "orchestrator" | "productEditor" | "marketplace" | "jvBatch";
@@ -73,7 +73,7 @@ function toProductEditorTask(job: ProductEditorTask): Task {
 }
 
 function toMarketplaceTask(job: MarketplaceToggleTask): Task {
-  return { job_id: job.job_id, request_id: job.request_id, ean: `KID ${job.kid_number}`, operation: job.inactive ? "marketplace_deactivate" : "marketplace_activate", status: job.status === "ok" ? "completed" : job.status, created_at_unix_ms: job.created_at_unix_ms ?? 0, updated_at_unix_ms: job.updated_at_unix_ms ?? 0, result: { results: (job.results ?? []).map((result) => ({ marketplace: result.channel, target: result.site_key, status: result.ok ? "success" : "failed", error: result.ok ? undefined : { message: `HTTP ${result.status_code ?? "-"}` } })) }, error: job.error };
+  return { job_id: job.job_id, request_id: job.request_id, ean: `KID ${job.kid_number}`, operation: job.inactive ? "marketplace_deactivate" : "marketplace_activate", status: job.job_status === "completed" ? "completed" : job.status === "ok" ? "completed" : job.status, created_at_unix_ms: job.created_at_unix_ms ?? 0, updated_at_unix_ms: job.updated_at_unix_ms ?? 0, result: { results: (job.results ?? []).map((result) => ({ marketplace: result.channel, target: result.site_key, status: result.ok ? "success" : "failed", error: result.ok ? undefined : { message: `HTTP ${result.status_code ?? "-"}` } })) }, error: job.error };
 }
 
 function toJvBatchTask(job: JvBatchTask): Task {
