@@ -59,7 +59,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
   const dirtyDraftKeyRef = useRef<string | null>(null);
   const initialDraftSignature = JSON.stringify(initialDraft);
 
-  useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
+  onDraftChangeRef.current = onDraftChange;
   sourceDraftRef.current = initialDraft;
   useEffect(() => {
     dirtyDraftKeyRef.current = null;
