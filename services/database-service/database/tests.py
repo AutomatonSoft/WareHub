@@ -70,7 +70,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(first.status, "used")
 
     def test_ean_pool_reserves_one_ean_per_marketplace_family_for_kid(self):
-        ean_row = Ean.objects.create(kid=self.kid, main_ean="4012345678901")
+        ean_row = Ean.objects.create(kid=self.kid, main_ean_jv="4012345678901", main_ean_xl="4012345678902")
         jv_pool_ean = EANPool.objects.create(ean="4012345678902")
         xl_pool_ean = EANPool.objects.create(ean="4012345678903")
         first_job_id = "b1d878f1-7a89-4c7b-a5fb-1b3a0e310ac1"
@@ -295,7 +295,8 @@ class DatabaseApiTests(APITestCase):
         )
         Ean.objects.create(
             kid=self.kid,
-            main_ean="4062292498370",
+            main_ean_jv="4062292498370",
+            main_ean_xl="4062292498371",
             jv="1111111111111",
             xl="2222222222222",
             otto_jv="B_WARE",
@@ -383,7 +384,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["kid"]["id"], self.kid.id)
         self.assertEqual(response.data["kid"]["place"], "155A")
-        self.assertEqual(response.data["ean"]["main_ean"], "4062292498370")
+        self.assertEqual(response.data["ean"]["main_ean_jv"], "4062292498370")
+        self.assertEqual(response.data["ean"]["main_ean_xl"], "4062292498371")
         self.assertEqual(response.data["ean_status"]["jv"], True)
         self.assertEqual(response.data["product_attributes"]["price"], "761.00")
         self.assertEqual(response.data["product_attributes"]["company"], "omide")
@@ -440,7 +442,7 @@ class DatabaseApiTests(APITestCase):
             status="no_paid",
             full_amount="999.99",
         )
-        Ean.objects.create(kid=self.kid, main_ean="4260174428871")
+        Ean.objects.create(kid=self.kid, main_ean_jv="4260174428871")
         ProductAttributes.objects.create(kid=self.kid, price=Decimal("199.99"))
         EanStatus.objects.create(
             ean=self.kid,
@@ -452,7 +454,7 @@ class DatabaseApiTests(APITestCase):
         )
 
         missing_photo = Kid.objects.create(kid_number="MISSING-PHOTO", place="2A", in_transit=True)
-        Ean.objects.create(kid=missing_photo, main_ean="4260174428872")
+        Ean.objects.create(kid=missing_photo, main_ean_jv="4260174428872")
         ProductAttributes.objects.create(kid=missing_photo, price=Decimal("49.99"))
 
         Kid.objects.create(
@@ -500,7 +502,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(Kid.objects.filter(kid_number__contains=["900900"]).count(), 1)
         kid = Kid.objects.get(kid_number__contains=["900900"])
         ean_row = Ean.objects.get(kid=kid)
-        self.assertIsNone(ean_row.main_ean)
+        self.assertIsNone(ean_row.main_ean_jv)
+        self.assertIsNone(ean_row.main_ean_xl)
         self.assertIsNone(ean_row.jv)
         self.assertIsNone(ean_row.xl)
         self.assertIsNone(ean_row.otto_jv)
@@ -601,14 +604,14 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(Kid.objects.filter(kid_number__contains=["900908"]).exists())
         mocked_upsert_product_attributes.assert_called_once()
 
-    @patch.object(KidListCreateAPIView, "_upsert_main_ean", side_effect=RuntimeError("main ean write failed"))
-    def test_create_kid_reports_main_ean_persist_failure(self, mocked_upsert_main_ean):
+    @patch.object(KidListCreateAPIView, "_upsert_main_eans", side_effect=RuntimeError("main ean write failed"))
+    def test_create_kid_reports_main_eans_persist_failure(self, mocked_upsert_main_eans):
         response = self.client.post(
             "/api/v1/kids/",
             {
                 "kid_number": "900909",
                 "place": "9999",
-                "main_ean": "4260174428871",
+                "main_ean_jv": "4260174428871",
                 "quantity": 5,
                 "price": "4561",
             },
@@ -619,11 +622,11 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(response.data["enrichment"]["ok"])
         self.assertEqual(
             response.data["enrichment"]["errors"][0]["code"],
-            "main_ean_persist_failed",
+            "main_eans_persist_failed",
         )
         self.assertIn("main ean write failed", response.data["enrichment"]["errors"][0]["detail"])
         self.assertTrue(Kid.objects.filter(kid_number__contains=["900909"]).exists())
-        mocked_upsert_main_ean.assert_called_once()
+        mocked_upsert_main_eans.assert_called_once()
 
     @patch.object(KidListCreateAPIView, "_ensure_database_ean_defaults")
     def test_create_kid_initializes_database_ean_defaults(self, mocked_sync):
@@ -676,11 +679,12 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(str(attrs.price), "349.99")
         self.assertEqual(attrs.currency, "EUR")
 
-    def test_create_kid_accepts_main_ean(self):
+    def test_create_kid_accepts_main_eans(self):
         payload = {
             "kid_number": "900906",
             "place": "12",
-            "main_ean": "4062292028939",
+            "main_ean_jv": "4062292028939",
+            "main_ean_xl": "4062292028940",
             "quantity": 3,
             "price": "349.99",
         }
@@ -691,7 +695,8 @@ class DatabaseApiTests(APITestCase):
         kid = Kid.objects.get(kid_number__contains=["900906"])
         ean_row = Ean.objects.get(kid=kid)
         attrs = ProductAttributes.objects.get(kid=kid)
-        self.assertEqual(ean_row.main_ean, "4062292028939")
+        self.assertEqual(ean_row.main_ean_jv, "4062292028939")
+        self.assertEqual(ean_row.main_ean_xl, "4062292028940")
         self.assertEqual(attrs.quantity, 3)
         self.assertEqual(str(attrs.price), "349.99")
 
@@ -700,11 +705,12 @@ class DatabaseApiTests(APITestCase):
         ORCHESTRATOR_SERVICE_AUTH_TOKEN="warehub-local-orchestrator",
         ORCHESTRATOR_SERVICE_ALLOWED_HOSTS=["localhost", "127.0.0.1", "services"],
     )
-    def test_create_kid_accepts_main_ean_for_service_token_requests(self):
+    def test_create_kid_accepts_main_eans_for_service_token_requests(self):
         payload = {
             "kid_number": "900910",
             "place": "9999",
-            "main_ean": "4260174428871",
+            "main_ean_jv": "4260174428871",
+            "main_ean_xl": "4260174428872",
             "quantity": 5,
             "price": "4564",
         }
@@ -722,7 +728,8 @@ class DatabaseApiTests(APITestCase):
         kid = Kid.objects.get(kid_number__contains=["900910"])
         ean_row = Ean.objects.get(kid=kid)
         attrs = ProductAttributes.objects.get(kid=kid)
-        self.assertEqual(ean_row.main_ean, "4260174428871")
+        self.assertEqual(ean_row.main_ean_jv, "4260174428871")
+        self.assertEqual(ean_row.main_ean_xl, "4260174428872")
         self.assertEqual(attrs.quantity, 5)
         self.assertEqual(str(attrs.price), "4564.00")
 
@@ -1813,7 +1820,7 @@ class DatabaseApiTests(APITestCase):
         kid = Kid.objects.create(kid_number=["KID-JV-NO-STATUS"], place="4")
         Ean.objects.create(
             kid=kid,
-            main_ean="4062292001215",
+            main_ean_jv="4062292001215",
             jv="JVM4062292001215",
         )
 
@@ -1854,7 +1861,7 @@ class DatabaseApiTests(APITestCase):
         kid = Kid.objects.create(kid_number=["KID-JV-NO-PLACE"], place=None)
         Ean.objects.create(
             kid=kid,
-            main_ean="4062292001215",
+            main_ean_jv="4062292001215",
             jv="JVM4062292001215",
         )
 
@@ -2618,8 +2625,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["kid_snapshot"]["place"], "A-01")
         self.assertEqual(response.data["kid_snapshot"]["room"], "ROOM-1")
         self.assertEqual(response.data["kid_snapshot"]["furniture_type"], "chair")
-        self.assertEqual(response.data["kid_snapshot"]["main_ean"], "")
-        self.assertEqual(response.data["kid_snapshot"]["database_ean"], "")
+        self.assertEqual(response.data["kid_snapshot"]["main_ean_jv"], "")
+        self.assertEqual(response.data["kid_snapshot"]["main_ean_xl"], "")
         self.assertEqual(
             response.data["kid_snapshot"]["main_photo"],
             "https://cdn.example.com/photo-main.jpg",
@@ -2632,10 +2639,11 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(response.data["inventory_flags"]["missing_room"])
         self.assertFalse(response.data["inventory_flags"]["missing_photo"])
 
-    def test_marketplace_eans_patch_updates_database_ean(self):
+    def test_marketplace_eans_patch_updates_main_eans(self):
         ean_row = Ean.objects.create(
             kid=self.kid,
-            main_ean="0000000000000",
+            main_ean_jv="0000000000000",
+            main_ean_xl="0000000000000",
             jv="0000000000000",
             xl="0000000000000",
             otto_jv="0000000000000",
@@ -2649,8 +2657,8 @@ class DatabaseApiTests(APITestCase):
         )
 
         payload = {
-            "main_ean": "4444444444444",
-            "database_ean": "4444444444444",
+            "main_ean_jv": "4444444444444",
+            "main_ean_xl": "5555555555555",
             "cosmoshop_ean": "4444444444444",
             "opencart_ean": "4444444444444",
             "otto_jv_ean": "4444444444444",
@@ -2667,10 +2675,11 @@ class DatabaseApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ean_row.refresh_from_db()
-        self.assertEqual(ean_row.main_ean, "4444444444444")
+        self.assertEqual(ean_row.main_ean_jv, "4444444444444")
+        self.assertEqual(ean_row.main_ean_xl, "5555555555555")
         self.assertEqual(ean_row.jv, "4444444444444")
-        self.assertEqual(response.data["main_ean"], "4444444444444")
-        self.assertEqual(response.data["database_ean"], "4444444444444")
+        self.assertEqual(response.data["main_ean_jv"], "4444444444444")
+        self.assertEqual(response.data["main_ean_xl"], "5555555555555")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
 
     def test_marketplace_eans_patch_allows_b_ware_for_otto_only(self):
@@ -2688,21 +2697,21 @@ class DatabaseApiTests(APITestCase):
         response = self.client.patch(
             f"/api/v1/kids/{self.kid.id}/marketplace-eans/",
             {
-                "main_ean": "JVM-ARTICLE-42",
-                "database_ean": "JVM-ARTICLE-42",
+                "main_ean_jv": "JVM-ARTICLE-42",
                 "cosmoshop_ean": "JV-SKU-42",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["main_ean"], "JVM-ARTICLE-42")
+        self.assertEqual(response.data["main_ean_jv"], "JVM-ARTICLE-42")
         self.assertEqual(response.data["cosmoshop_ean"], "JV-SKU-42")
 
     def test_marketplace_eans_get_hides_placeholder_values(self):
         Ean.objects.create(
             kid=self.kid,
-            main_ean="0000000000000",
+            main_ean_jv="0000000000000",
+            main_ean_xl="0000000000000",
             jv="0000000000000",
             xl="0000000000000",
             otto_jv="0000000000000",
@@ -2718,8 +2727,8 @@ class DatabaseApiTests(APITestCase):
         response = self.client.get(f"/api/v1/kids/{self.kid.id}/marketplace-eans/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["main_ean"], "")
-        self.assertEqual(response.data["database_ean"], "")
+        self.assertEqual(response.data["main_ean_jv"], "")
+        self.assertEqual(response.data["main_ean_xl"], "")
         self.assertEqual(response.data["cosmoshop_ean"], "")
         self.assertEqual(response.data["opencart_ean"], "")
         self.assertEqual(response.data["otto_jv_ean"], "")
@@ -3366,7 +3375,8 @@ class DatabaseApiTests(APITestCase):
         )
         Ean.objects.create(
             kid=self.kid,
-            main_ean="5555555555555",
+            main_ean_jv="5555555555555",
+            main_ean_xl="5555555555556",
             jv="1111111111111",
             xl="2222222222222",
             otto_jv="3333333333333",

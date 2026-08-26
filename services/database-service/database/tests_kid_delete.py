@@ -13,7 +13,7 @@ class KidDeleteTests(APITestCase):
     def test_admin_can_delete_kid(self):
         self.set_session_role("admin")
         kid = Kid.objects.create(kid_number="KID-DEL-001")
-        Ean.objects.create(kid=kid, main_ean="1234567890123")
+        Ean.objects.create(kid=kid, main_ean_jv="1234567890123", main_ean_xl="1234567890124")
         EanStatus.objects.create(ean=kid, jv=True)
         Orders.objects.create(kid=kid, order_id="ORDER-DEL-001", title="Delete me")
         ProductAttributes.objects.create(kid=kid, quantity=2)

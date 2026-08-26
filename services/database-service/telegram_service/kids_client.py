@@ -16,7 +16,7 @@ class TelegramKidsClient:
         *,
         kid_number: str,
         place: str,
-        main_ean: str | None,
+        main_ean_jv: str | None,
         quantity: int | None,
         price: str | None,
     ) -> dict[str, Any]:
@@ -24,8 +24,8 @@ class TelegramKidsClient:
             "kid_number": str(kid_number).strip(),
             "place": str(place).strip(),
         }
-        if str(main_ean or "").strip():
-            payload["main_ean"] = str(main_ean).strip()
+        if str(main_ean_jv or "").strip():
+            payload["main_ean_jv"] = str(main_ean_jv).strip()
         if quantity is not None:
             payload["quantity"] = int(quantity)
         if str(price or "").strip():

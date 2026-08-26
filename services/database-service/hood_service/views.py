@@ -108,7 +108,8 @@ def _record_hood_marketplace_ean(*, source_ean: str, marketplace_ean: str, accou
     if account not in {"jv", "xl"} or not normalized_source_ean or not normalized_marketplace_ean:
         return {"saved": False, "reason": "source_ean_not_provided"}
 
-    ean_row = Ean.objects.select_related("kid").filter(main_ean=normalized_source_ean).first()
+    source_field = "main_ean_jv" if account == "jv" else "main_ean_xl"
+    ean_row = Ean.objects.select_related("kid").filter(**{source_field: normalized_source_ean}).first()
     if ean_row is None:
         logger.warning(
             "HOOD_MARKETPLACE_EAN_SOURCE_NOT_FOUND source_ean=%s account=%s marketplace_ean=%s",

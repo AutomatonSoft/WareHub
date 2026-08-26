@@ -21,6 +21,10 @@ export function buildOttoPayloadAttributes(input: {
 
 export function extractOttoMediaUrls(product: Record<string, unknown> | undefined): string[];
 
+export declare const OTTO_PRODUCT_LINE_MAX_LENGTH: 70;
+
+export function isOttoProductLineValid(value: unknown): boolean;
+
 export function applyReservedOttoIdentity<T extends { sku: string; ean: string }>(
   draft: T,
   reservedEan: string,

@@ -4,6 +4,12 @@ function text(value) {
   return "";
 }
 
+export const OTTO_PRODUCT_LINE_MAX_LENGTH = 70;
+
+export function isOttoProductLineValid(value) {
+  return text(value).length <= OTTO_PRODUCT_LINE_MAX_LENGTH;
+}
+
 function values(value) {
   if (Array.isArray(value)) return value.flatMap(values).filter(Boolean);
   if (value && typeof value === "object") {

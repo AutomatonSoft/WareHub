@@ -30,7 +30,7 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
     ),
     Marketplace.OTTO: MarketplaceFieldSpec(
         allowed_fields={
-            "productReference", "sku", "ean", "isbn", "upc", "pzn", "mpn", "moin", "offeringStartDate", "releaseDate", "maxOrderQuantity", "productDescription", "mediaAssets", "delivery", "order", "pricing", "logistics", "compliance", "shippingProfileId",
+            "productReference", "sku", "ean", "isbn", "upc", "pzn", "mpn", "moin", "offeringStartDate", "releaseDate", "quantity", "maxOrderQuantity", "productDescription", "mediaAssets", "delivery", "order", "pricing", "logistics", "compliance", "shippingProfileId",
         },
         required_fields={"productReference", "ean"},
     ),

@@ -154,7 +154,7 @@ def _normalize_otto_draft(body: dict, target_id: str, fallback_ean: str) -> dict
     product_description = product.get("productDescription") if isinstance(product.get("productDescription"), dict) else {}
     product_description = dict(product_description)
     if "productLine" in product_description:
-        product_description["productLine"] = str(product_description.get("productLine") or "").strip()[:50]
+        product_description["productLine"] = str(product_description.get("productLine") or "").strip()[:70]
     order = product.get("order") if isinstance(product.get("order"), dict) else {}
     max_order_quantity = product.get("maxOrderQuantity", order.get("maxOrderQuantity"))
     if not isinstance(max_order_quantity, int) or isinstance(max_order_quantity, bool):

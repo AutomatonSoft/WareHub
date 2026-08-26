@@ -38,7 +38,7 @@ import { KauflandProductFields } from "../../components/product-forms/kaufland-p
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
 import { OttoCategoriesPanel } from "./otto-categories-panel";
 import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
-import { applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls } from "./otto-create-product-model.mjs";
+import { applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
 import { claimEanForKid } from "../../components/editor/ean-pool-api";
 
 const CreateProductImageGallery = dynamic(
@@ -92,6 +92,7 @@ type MarketplaceReservationFamily = "jv" | "xl";
 type CreateProductTabMeta = {
   label: string;
   sourceSite: "JV" | "XL" | "HOOD" | "KAUFLAND";
+  mainEanFamily: MarketplaceReservationFamily;
   sourceSiteKey?: string;
   targetSiteIds: string[];
   marketplace?: "HOOD" | "KAUFLAND" | "OTTO" | "EBAY";
@@ -326,18 +327,21 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: t.createProductTabMain,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: ALL_MARKETPLACE_SITE_IDS,
       };
     case "jv":
       return {
         label: t.channelJv,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: allMarketplaceSites.filter((site) => site.family === "JVMOEBEL").map((site) => site.id),
       };
     case "xl":
       return {
         label: t.channelXl,
         sourceSite: "XL",
+        mainEanFamily: "jv",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: XL_MARKETPLACE_SITE_IDS,
       };
@@ -345,6 +349,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelHood} JV`,
         sourceSite: "HOOD",
+        mainEanFamily: "jv",
         sourceSiteKey: "HOOD_JV",
         targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "JV"),
         marketplace: "HOOD",
@@ -354,6 +359,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelHood} XL`,
         sourceSite: "HOOD",
+        mainEanFamily: "xl",
         sourceSiteKey: "HOOD_XL",
         targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "XL"),
         marketplace: "HOOD",
@@ -363,6 +369,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelKaufland} JV`,
         sourceSite: "KAUFLAND",
+        mainEanFamily: "jv",
         sourceSiteKey: "KAUFLAND_JV",
         targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "JV"),
         marketplace: "KAUFLAND",
@@ -372,6 +379,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelKaufland} XL`,
         sourceSite: "KAUFLAND",
+        mainEanFamily: "xl",
         sourceSiteKey: "KAUFLAND_XL",
         targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "XL"),
         marketplace: "KAUFLAND",
@@ -381,6 +389,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelOtto} JV`,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "JV"),
         marketplace: "OTTO",
         account: "JV",
@@ -389,6 +398,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelOtto} XL`,
         sourceSite: "XL",
+        mainEanFamily: "xl",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "XL"),
         marketplace: "OTTO",
@@ -398,6 +408,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelEbay} JV`,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "JV"),
         marketplace: "EBAY",
         account: "JV",
@@ -406,6 +417,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelEbay} XL`,
         sourceSite: "XL",
+        mainEanFamily: "xl",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "XL"),
         marketplace: "EBAY",
@@ -415,6 +427,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: String(tab),
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: [],
       };
   }
@@ -1123,16 +1136,6 @@ function buildOttoSourceGalleryItems(product: Record<string, unknown> | undefine
   }));
 }
 
-function mergeGalleryItems(...groups: GalleryItem[][]): GalleryItem[] {
-  const seen = new Set<string>();
-  return groups.flatMap((items) => items.filter((item) => {
-    const key = item.src.trim().toLocaleLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }));
-}
-
 function pickPrimaryDescriptionRecord(payload: Record<string, unknown>): Record<string, unknown> {
   const descriptions = Array.isArray(payload.descriptions) ? payload.descriptions : [];
   const records = descriptions.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === "object"));
@@ -1198,6 +1201,7 @@ export default function CreateProductPage() {
     t,
     showToast,
     sourceSite: activeTabMeta.sourceSite,
+    mainEanFamily: activeTabMeta.mainEanFamily,
     preferredSourceSiteKey: activeTabMeta.sourceSiteKey,
   });
   const [jvName, setJvName] = useState("");
@@ -1283,8 +1287,11 @@ export default function CreateProductPage() {
   const isLoading =
     controller.kidContextLoading || controller.sourceSitesLoading || controller.sourceSnapshotLoading;
   useEffect(() => {
-    const sku = controller.kidContext?.mainEan.trim() || "";
-    if (!sku) {
+    const eansByProfile: Record<OttoProfile, string> = {
+      jv: controller.kidContext?.mainEanJv.trim() || "",
+      xl: controller.kidContext?.mainEanXl.trim() || "",
+    };
+    if (!eansByProfile.jv && !eansByProfile.xl) {
       setOttoProductsByProfile({});
       setOttoSearchErrors({});
       setOttoSearchLoading(false);
@@ -1297,6 +1304,8 @@ export default function CreateProductPage() {
     setOttoSearchErrors({});
 
     void Promise.allSettled((['jv', 'xl'] as OttoProfile[]).map(async (profile) => {
+      const sku = eansByProfile[profile];
+      if (!sku) return;
       try {
         const product = await fetchOttoProductBySku(profile, sku);
         if (active) {
@@ -1319,7 +1328,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [controller.kidContext?.mainEan, showToast]);
+  }, [controller.kidContext?.mainEanJv, controller.kidContext?.mainEanXl, showToast]);
   const galleryImages = useMemo(() => controller.sourceSnapshot?.imageUrls ?? [], [controller.sourceSnapshot?.imageUrls]);
   const jvUrlKey = useMemo(() => buildUrlKeyFromName(jvName), [jvName]);
   const jvEvp = useMemo(() => computeEvpFromPrice(jvPrice), [jvPrice]);
@@ -1395,7 +1404,7 @@ export default function CreateProductPage() {
 
     return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
   }, [controller.jvSourceSnapshotsBySiteKey]);
-  const jvInitialSelectionKey = controller.kidContext?.mainEan ?? "";
+  const jvInitialSelectionKey = controller.kidContext?.mainEanJv ?? "";
 
   function getEffectiveJvPublishingSelections(
     siteKey: (typeof JV_RUBRIC_SITE_TABS)[number]["key"],
@@ -1439,7 +1448,7 @@ export default function CreateProductPage() {
       if (activeTabMeta.sourceSite === "KAUFLAND") return kauflandSourceGalleryItems;
       if (activeTabMeta.marketplace === "OTTO") {
         const profile: OttoProfile = activeTabMeta.account === "XL" ? "xl" : "jv";
-        return mergeGalleryItems(sourceGalleryItems, buildOttoSourceGalleryItems(ottoProductsByProfile[profile]));
+        return buildOttoSourceGalleryItems(ottoProductsByProfile[profile]);
       }
       return sourceGalleryItems;
     },
@@ -1592,7 +1601,8 @@ export default function CreateProductPage() {
   ].join(":");
   const activeDraftContextKey = [
     controller.kidContext?.kidNumber?.trim() || "",
-    controller.kidContext?.mainEan?.trim() || "",
+    controller.kidContext?.mainEanJv?.trim() || "",
+    controller.kidContext?.mainEanXl?.trim() || "",
   ].filter(Boolean).join(":") || "new-product";
   const activeXlSourceKey = activeDraftContextKey;
   const activeJvSourceKey = activeDraftContextKey;
@@ -2308,7 +2318,7 @@ export default function CreateProductPage() {
     jvFields: JvCreateProductFields,
   ): JvCreateAndPushPayload {
     const ean = asTrimmedString(
-      jvFields.artikelnr || controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean,
+      jvFields.artikelnr || controller.kidContext?.mainEanJv || controller.sourceSnapshot?.ean || sourcePayload.ean,
     );
     const price = normalizeDecimalPrice(jvFields.price || asTrimmedString(sourcePayload.price));
     const { rubricIds: selectedRubrics, mainRubricId: mainRubric, deliveryIds } =
@@ -2384,7 +2394,7 @@ export default function CreateProductPage() {
   async function handleSendToAllJvSites(targetSiteKeys = JV_RUBRIC_SITE_TABS.map((site) => site.key)) {
     const jvFields = jvDraftRef.current;
     const ean = asTrimmedString(
-      jvFields.artikelnr || controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean,
+      jvFields.artikelnr || controller.kidContext?.mainEanJv || controller.sourceSnapshot?.ean || sourcePayload.ean,
     );
     if (!jvFields.name.trim()) {
       showToast(t.createProductNameRequiredBeforeSend, "error");
@@ -2697,19 +2707,23 @@ export default function CreateProductPage() {
       productLine: profile === "xl" ? activeXlDescriptionFields.name : jvName,
       ean: fallbackEan,
       sku: fallbackEan,
-      productReference: fallbackEan,
+      productReference: profile === "xl"
+        ? activeXlDescriptionFields.ean
+        : String(controller.sourceSnapshot?.ean || ""),
       category: ottoCategoryNameByTab[ottoTab] ?? "",
     });
-    const ottoGalleryItems = tabGalleryItemsByTab[ottoTab]?.length
-      ? tabGalleryItemsByTab[ottoTab]
-      : galleryItems;
+    const ottoGalleryItems = tabGalleryItemsByTab[ottoTab] ?? EMPTY_GALLERY_ITEMS;
     const imageUrls = ottoGalleryItems.map((item) => item.src.trim()).filter(Boolean);
     const identityEan = reservedEan || draft.ean.trim() || controller.ean.trim();
-    const productReference = draft.productReference.trim() || (
-      profile === "xl"
-        ? activeXlDescriptionFields.ean.trim()
-        : String(controller.sourceSnapshot?.ean || "").trim()
-    );
+    const productReference = draft.productReference.trim();
+    if (!productReference) {
+      showToast("Enter a product reference for OTTO.", "error");
+      return;
+    }
+    if (!isOttoProductLineValid(draft.productLine)) {
+      showToast("OTTO product line must contain at most 70 characters.", "error");
+      return;
+    }
     const ean = identityEan;
     const deliveryTime = Number(draft.deliveryTime);
     if (!Number.isInteger(deliveryTime) || deliveryTime < 1) {
@@ -2739,6 +2753,7 @@ export default function CreateProductPage() {
         productReference,
         sku: reservedEan || draft.sku.trim() || productReference,
         ean,
+        quantity: 1,
         shippingProfileId,
         productDescription: {
           category: draft.category.trim(),
