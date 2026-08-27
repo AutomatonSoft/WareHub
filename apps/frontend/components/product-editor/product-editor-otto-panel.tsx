@@ -76,6 +76,7 @@ function toCreateDraft(draft: ProductEditorOttoDraft): OttoCreateProductDraft {
     productReference: draft.productReference,
     sku: draft.sku,
     ean: draft.ean,
+    quantity: "1",
     price: textValue(asRecord(draft.pricing.standardPrice).amount),
     deliveryTime: textValue(draft.delivery.deliveryTime),
     shippingProfileId: draft.shippingProfileId,
@@ -183,6 +184,7 @@ export function ProductEditorOttoPanel(props: Props) {
             <OttoCreateProductPanel
               initialDraft={initialCreateDraft}
               draftKey={`${props.draft.target_id}:${props.draft.profile}`}
+              showQuantity={false}
               profile={props.draft.profile}
               categoryId={selectedCategoryId}
               categoryName={textValue(description.category)}
