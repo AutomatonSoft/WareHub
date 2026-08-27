@@ -23,10 +23,9 @@ export function XlCreateProductPanel({ initialFields, draftKey, codeLabel, previ
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
   const [manufacturers, setManufacturers] = useState<XlManufacturerOption[]>([]);
   const [manufacturersError, setManufacturersError] = useState("");
-  const sourceDraftRef = useRef(initialFields); const onDraftChangeRef = useRef(onDraftChange);
+  const sourceDraftRef = useRef(initialFields);
   useEffect(() => { sourceDraftRef.current = initialFields; }, [draftKey, initialFields]);
-  useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
-  useEffect(() => { setDraft(sourceDraftRef.current); setDescriptionMode("preview"); onDraftChangeRef.current(sourceDraftRef.current); }, [draftKey]);
+  useEffect(() => { setDraft(sourceDraftRef.current); setDescriptionMode("preview"); }, [draftKey]);
   useEffect(() => {
     let active = true;
     void fetchXlManufacturerOptions()

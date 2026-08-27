@@ -177,6 +177,7 @@ function buildOttoDraft(product: Record<string, unknown>, fallback: OttoCreatePr
     productReference: readOttoText(product.productReference) || fallback.productReference,
     sku: readOttoText(product.sku) || fallback.sku,
     ean: readOttoText(product.ean) || fallback.ean,
+    quantity: readOttoText(product.quantity) || fallback.quantity,
     price: readOttoText((product.pricing as Record<string, unknown> | undefined)?.standardPrice && ((product.pricing as Record<string, unknown>).standardPrice as Record<string, unknown>).amount) || fallback.price,
     deliveryTime: readOttoText((product.delivery as Record<string, unknown> | undefined)?.deliveryTime) || fallback.deliveryTime,
     shippingProfileId: readOttoText(product.shippingProfileId) || fallback.shippingProfileId,
@@ -454,7 +455,9 @@ function getSourceDiscoveryForTab(
       .filter((status): status is CreateProductSourceDiscovery => Boolean(status));
     if (jvStatuses.some((status) => status.status === "found")) return { status: "found" };
     if (jvStatuses.some((status) => status.status === "loading")) return { status: "loading" };
-    if (jvStatuses.every((status) => status.status === "missing")) return { status: "missing" };
+    if (jvStatuses.length > 0 && jvStatuses.every((status) => status.status === "missing")) {
+      return { status: "missing" };
+    }
     return jvStatuses.find((status) => status.status === "error") ?? null;
   }
   const siteKeyByTab: Partial<Record<CreateProductTab, string>> = {
@@ -2748,6 +2751,11 @@ export default function CreateProductPage() {
       return;
     }
     const ean = identityEan;
+    const quantity = Number(draft.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      showToast("Enter a positive whole quantity for OTTO.", "error");
+      return;
+    }
     const deliveryTime = Number(draft.deliveryTime);
     if (!Number.isInteger(deliveryTime) || deliveryTime < 1) {
       showToast("Enter a delivery time in whole days for OTTO.", "error");
@@ -2776,7 +2784,7 @@ export default function CreateProductPage() {
         productReference,
         sku: reservedEan || draft.sku.trim() || productReference,
         ean,
-        quantity: 1,
+        quantity,
         shippingProfileId,
         productDescription: {
           category: draft.category.trim(),
@@ -3168,6 +3176,7 @@ export default function CreateProductPage() {
                       <div className="text-sm text-muted-foreground">{t.ottoNoProductForEan}</div>
                     ) : null}
                     <OttoCreateProductPanel
+                      key={activeTab}
                       initialDraft={activeOttoInitialDraft}
                       draftKey={`${activeTab}:${activeOttoDraftKey}:${activeReservedMarketplaceEan}`}
                       profile={activeOttoProfile ?? "jv"}

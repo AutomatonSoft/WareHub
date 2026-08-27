@@ -343,7 +343,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     let active = true;
-    const cacheKey = sourceCacheKey(activeMainEan, sourceSite);
+    const cacheKey = sourceCacheKey(activeMainEan, sourceSite, preferredSourceSiteKey);
     const selectCachedSite = (sites: CreateProductJvSourceSite[]) => {
       setSelectedSourceSiteKey((current) => {
         const preferredSiteKey = preferredSourceSiteKey.trim();
@@ -373,7 +373,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSitesLoading(true);
     setSourceSitesError(null);
 
-    void fetchCreateProductSourceSitesByMainEan({ mainEan: activeMainEan, site: sourceSite })
+    void fetchCreateProductSourceSitesByMainEan({
+      mainEan: activeMainEan,
+      site: sourceSite,
+      siteKey: preferredSourceSiteKey,
+    })
       .then((sites) => {
         if (!active) return;
         sourceCacheRef.current.sitesBySource.set(cacheKey, sites);
@@ -408,36 +412,46 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   }, [kidContext?.mainEanJv, kidContext?.mainEanXl]);
 
   useEffect(() => {
-    const mainEan = activeMainEan;
-    const prefetchKey = `${mainEanFamily}:${mainEan}`;
-    if (!mainEan || prefetchedSourceFamiliesRef.current.has(prefetchKey)) {
+    const mainEanJv = kidContext?.mainEanJv.trim() || "";
+    const mainEanXl = kidContext?.mainEanXl.trim() || "";
+    const prefetchKey = `${mainEanJv}:${mainEanXl}`;
+    if ((!mainEanJv && !mainEanXl) || prefetchedSourceFamiliesRef.current.has(prefetchKey)) {
       return;
     }
 
     prefetchedSourceFamiliesRef.current.add(prefetchKey);
     let active = true;
-    const sourceKinds: CreateProductSourceSiteKind[] = mainEanFamily === "jv"
-      ? ["JV", "XL", "HOOD", "KAUFLAND"]
-      : ["XL", "HOOD", "KAUFLAND"];
+    const sourceRequests = [
+      ...(mainEanJv ? [
+        { mainEan: mainEanJv, site: "JV" as const, siteKey: "JV_DE", siteKeys: SOURCE_SITE_KEYS_BY_KIND.JV },
+        { mainEan: mainEanJv, site: "XL" as const, siteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, siteKeys: SOURCE_SITE_KEYS_BY_KIND.XL },
+        { mainEan: mainEanJv, site: "HOOD" as const, siteKey: "HOOD_JV", siteKeys: ["HOOD_JV"] },
+        { mainEan: mainEanJv, site: "KAUFLAND" as const, siteKey: "KAUFLAND_JV", siteKeys: ["KAUFLAND_JV"] },
+      ] : []),
+      ...(mainEanXl ? [
+        { mainEan: mainEanXl, site: "HOOD" as const, siteKey: "HOOD_XL", siteKeys: ["HOOD_XL"] },
+        { mainEan: mainEanXl, site: "KAUFLAND" as const, siteKey: "KAUFLAND_XL", siteKeys: ["KAUFLAND_XL"] },
+      ] : []),
+    ];
 
     setSourceDiscoveryBySiteKey(
       Object.fromEntries(
-        sourceKinds.flatMap((site) => SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "loading" }])),
+        sourceRequests.flatMap(({ siteKeys }) => siteKeys.map((siteKey) => [siteKey, { status: "loading" }])),
       ),
     );
 
     void Promise.allSettled(
-      sourceKinds.map(async (site) => {
+      sourceRequests.map(async ({ mainEan, site, siteKey, siteKeys }) => {
         try {
-          const sites = await fetchCreateProductSourceSitesByMainEan({ mainEan, site });
+          const sites = await fetchCreateProductSourceSitesByMainEan({ mainEan, site, siteKey });
           if (!active) return;
 
-          sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site), sites);
+          sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site, siteKey), sites);
           const foundSiteKeys = new Set(sites.map((sourceSite) => sourceSite.siteKey));
           setSourceDiscoveryBySiteKey((current) => {
             const next = { ...current };
-            for (const siteKey of SOURCE_SITE_KEYS_BY_KIND[site]) {
-              next[siteKey] = foundSiteKeys.has(siteKey) ? { status: "loading" } : { status: "missing" };
+            for (const targetSiteKey of siteKeys) {
+              next[targetSiteKey] = foundSiteKeys.has(targetSiteKey) ? { status: "loading" } : { status: "missing" };
             }
             return next;
           });
@@ -502,7 +516,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           setSourceDiscoveryBySiteKey((current) => ({
             ...current,
             ...Object.fromEntries(
-              SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "error", message }]),
+              siteKeys.map((targetSiteKey) => [targetSiteKey, { status: "error", message }]),
             ),
           }));
           if (site === "JV") setJvSourceSnapshotsReady(true);
@@ -513,11 +527,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [activeMainEan, loadSourceSnapshot, mainEanFamily]);
+  }, [kidContext?.mainEanJv, kidContext?.mainEanXl, loadSourceSnapshot]);
 
   useEffect(() => {
     const sourceSitesCacheKey = activeMainEan
-      ? sourceCacheKey(activeMainEan, sourceSite)
+      ? sourceCacheKey(activeMainEan, sourceSite, preferredSourceSiteKey)
       : "";
     if (
       !activeMainEan
