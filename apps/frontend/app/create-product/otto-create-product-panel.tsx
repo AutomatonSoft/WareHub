@@ -16,6 +16,7 @@ export type OttoCreateProductDraft = {
   productReference: string;
   sku: string;
   ean: string;
+  quantity: string;
   price: string;
   deliveryTime: string;
   shippingProfileId: string;
@@ -30,13 +31,14 @@ export type OttoCreateProductDraft = {
 };
 
 export const EMPTY_OTTO_CREATE_PRODUCT_DRAFT: OttoCreateProductDraft = {
-  productReference: "", sku: "", ean: "", price: "", deliveryTime: "", shippingProfileId: "", category: "", productLine: "", description: "",
+  productReference: "", sku: "", ean: "", quantity: "1", price: "", deliveryTime: "", shippingProfileId: "", category: "", productLine: "", description: "",
   bulletPoints: [], additionalAttributes: {}, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: [],
 };
 
 type Props = {
   initialDraft: OttoCreateProductDraft;
   draftKey: string;
+  showQuantity?: boolean;
   profile: OttoShippingProfileAccount;
   categoryId: string;
   categoryName: string;
@@ -50,7 +52,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, draftKey, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
   const t = useLabels();
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
@@ -157,7 +159,12 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, profile, catego
         <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
         <Field label="EAN"><Input value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
-      <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+      {showQuantity ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+          <Field label={t.quantity}><Input type="number" min="1" step="1" inputMode="numeric" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} /></Field>
+        </div>
+      ) : <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>}
       <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
       <Field label={t.ottoShippingProfile}>
         <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>

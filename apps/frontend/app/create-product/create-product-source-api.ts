@@ -433,6 +433,7 @@ export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promi
 export async function fetchCreateProductSourceSitesByMainEan(input: {
   mainEan: string;
   site: CreateProductSourceSiteKind;
+  siteKey?: string;
 }): Promise<CreateProductJvSourceSite[]> {
   const normalizedMainEan = normalizeEanOrEmpty(input.mainEan);
   if (!normalizedMainEan) {
@@ -449,7 +450,10 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   }
 
   if (input.site === "HOOD") {
-    const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
+    const accounts: HoodAccount[] = input.siteKey
+      ? [hoodAccountFromSiteKey(input.siteKey)]
+      : ["jv", "xl"];
+    const outcomes = await Promise.allSettled(accounts.map(async (account) => {
       const { response, payload } = await fetchHoodByEan(normalizedMainEan, account as HoodAccount);
       if (response.status === 404) return null;
       if (!response.ok) {
@@ -465,11 +469,21 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
         title: snapshot.productName,
       };
     }));
-    return results.filter((result): result is CreateProductJvSourceSite => Boolean(result));
+    const results = outcomes.flatMap((outcome) =>
+      outcome.status === "fulfilled" && outcome.value ? [outcome.value] : [],
+    );
+    if (results.length > 0) return results;
+
+    const failedOutcome = outcomes.find((outcome) => outcome.status === "rejected");
+    if (failedOutcome?.status === "rejected") throw failedOutcome.reason;
+    return [];
   }
 
   if (input.site === "KAUFLAND") {
-    const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
+    const accounts: KauflandSite[] = input.siteKey
+      ? [kauflandAccountFromSiteKey(input.siteKey)]
+      : ["jv", "xl"];
+    const outcomes = await Promise.allSettled(accounts.map(async (account) => {
       const { response, payload } = await fetchKauflandByEan({ ean: normalizedMainEan, site: account as KauflandSite });
       if (response.status === 404) return null;
       if (!response.ok) {
@@ -485,7 +499,14 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
         title: snapshot.productName,
       };
     }));
-    return results.filter((result): result is CreateProductJvSourceSite => Boolean(result));
+    const results = outcomes.flatMap((outcome) =>
+      outcome.status === "fulfilled" && outcome.value ? [outcome.value] : [],
+    );
+    if (results.length > 0) return results;
+
+    const failedOutcome = outcomes.find((outcome) => outcome.status === "rejected");
+    if (failedOutcome?.status === "rejected") throw failedOutcome.reason;
+    return [];
   }
 
   return fetchCreateProductJvSitesByMainEan(normalizedMainEan);

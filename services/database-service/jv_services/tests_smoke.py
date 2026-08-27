@@ -586,6 +586,20 @@ class JVRoutesSmokeTest(SimpleTestCase):
             },
         )
 
+    def test_jv_batch_serializer_accepts_prefixed_source_ean_field(self):
+        from jv_services.serializers import JVBatchPayloadSerializer
+
+        serializer = JVBatchPayloadSerializer(
+            data={
+                "site_family": "JV",
+                "site_keys": ["JV_DE"],
+                "ean": "JVM4071489846317",
+                "source_ean_field": "JVM4071489846317",
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def test_jv_sync_rubrikartikel_skips_categories_without_rubnum(self):
         from unittest.mock import MagicMock, patch
 
