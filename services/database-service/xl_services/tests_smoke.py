@@ -10,7 +10,7 @@ from .batch_translation import detect_language_from_texts
 from .models import ImportedProduct
 from .serializers import XLBatchPayloadSerializer
 from .source_client import fetch_xl_product_brief_by_ean, fetch_xl_product_snapshot_by_ean
-from .views_read import XLSitesByEANAPIView
+from .views_read import XLProductByEANAPIView, XLSitesByEANAPIView
 from .views_write import _localized_xl_create_payload
 
 
@@ -89,15 +89,25 @@ class XLRoutesSmokeTest(SimpleTestCase):
     @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)
     @patch("xl_services.views_read.fetch_xl_product_brief_by_ean", return_value={"product_id": 55, "ean": "4260533187876", "price": "10.00", "currency_code": "EUR", "title": "XL DE product"})
     @patch("xl_services.views_read.source_db_config_for_xl", return_value={"configured": True})
-    def test_xl_sites_by_ean_respects_site_key_filter(self, _mock_db_config, _mock_fetch):
+    def test_xl_sites_by_ean_checks_xl_de_only(self, _mock_db_config, _mock_fetch):
         factory = APIRequestFactory()
-        request = factory.get("/api/v1/xl/sites/by-ean/4260533187876/", {"site": "XL", "site_key": "XLMOEBEL_DE"})
+        request = factory.get("/api/v1/xl/sites/by-ean/4260533187876/", {"site": "XL"})
         response = XLSitesByEANAPIView.as_view()(request, ean="4260533187876")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["found_count"], 1)
         self.assertEqual(response.data["missing_count"], 0)
         self.assertEqual([row["site_key"] for row in response.data["found"]], ["XLMOEBEL_DE"])
+
+    @override_settings(DEBUG=True)
+    @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)
+    def test_xl_product_by_ean_rejects_non_de_site_key(self):
+        factory = APIRequestFactory()
+        request = factory.get("/api/v1/xl/products/by-ean/4260533187876/", {"site": "XL", "site_key": "JV_CO_UK"})
+        response = XLProductByEANAPIView.as_view()(request, ean="4260533187876")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["site_key"], "JV_CO_UK")
 
 
 class XLBatchImageBySiteKeyTest(SimpleTestCase):
@@ -154,9 +164,9 @@ class XLBatchImageBySiteKeyTest(SimpleTestCase):
                 "translation_source_language": "auto",
                 "convert_currency": True,
                 "source_currency": "EUR",
-                "currency_by_site_key": {"XLFURNITURE_CO_UK": "EUR"},
+                "currency_by_site_key": {"XLMOEBEL_DE": "EUR"},
             },
-            site_key="XLFURNITURE_CO_UK",
+            site_key="XLMOEBEL_DE",
             db_config=None,
         )
 
@@ -179,7 +189,6 @@ class XLBatchImageBySiteKeyTest(SimpleTestCase):
     ):
         mock_sites_for_family.return_value = [
             {"site": ImportedProduct.Site.XL, "site_key": "XLMOEBEL_DE", "domain": "xlmoebel.de"},
-            {"site": ImportedProduct.Site.XL, "site_key": "XLMOEBEL_AT", "domain": "xlmoebel.at"},
         ]
         mock_fetch_source_product_brief_by_ean.return_value = {
             "product_id": 123,
@@ -192,10 +201,9 @@ class XLBatchImageBySiteKeyTest(SimpleTestCase):
             ean="4071489201321",
             site_family=ImportedProduct.Site.XL,
             payload={
-                "site_keys": ["XLMOEBEL_DE", "XLMOEBEL_AT"],
+                "site_keys": ["XLMOEBEL_DE"],
                 "image_by_site_key": {
                     "XLMOEBEL_DE": "https://img.example/de.jpg",
-                    "XLMOEBEL_AT": "https://img.example/at.jpg",
                 },
             },
         )
@@ -205,8 +213,7 @@ class XLBatchImageBySiteKeyTest(SimpleTestCase):
             for item in plan
         }
         self.assertEqual(image_by_site["XLMOEBEL_DE"], "https://img.example/de.jpg")
-        self.assertEqual(image_by_site["XLMOEBEL_AT"], "https://img.example/at.jpg")
-        self.assertEqual(mock_source_db_config_for_site.call_count, 2)
+        self.assertEqual(mock_source_db_config_for_site.call_count, 1)
 
 
 class XLSourceLookupConsistencyTest(SimpleTestCase):

@@ -250,6 +250,21 @@ class KauflandProductLookupApiTests(SimpleTestCase):
         self.assertEqual(response.data["error"], "kaufland_product_not_found")
 
     @patch("kaufland.views.product_inside")
+    def test_normalizes_none_iterable_lookup_500_to_not_found(self, mock_product_inside):
+        upstream_response = Mock(status_code=500)
+        upstream_response.json.return_value = {
+            "detail": "TypeError at /api/products/product/ean/: "
+            "&#x27;NoneType&#x27; object is not iterable"
+        }
+        mock_product_inside.side_effect = requests.HTTPError(response=upstream_response)
+        request = self.factory.get("/")
+
+        response = GetProductAPIView.as_view()(request, ean="4062292276706", site="jv")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error"], "kaufland_product_not_found")
+
+    @patch("kaufland.views.product_inside")
     def test_preserves_unrelated_upstream_500_error(self, mock_product_inside):
         upstream_response = Mock(status_code=500)
         upstream_response.json.return_value = {"detail": "Kaufland service unavailable"}

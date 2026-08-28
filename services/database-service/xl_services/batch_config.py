@@ -7,28 +7,6 @@ from .source_client import source_db_config_for_xl, xl_site_catalog
 DEFAULT_LOCALE_BY_SITE_KEY = {}
 DEFAULT_CURRENCY_BY_SITE_KEY = {
     "XLMOEBEL_DE": "EUR",
-    "XLMOEBEL_CH": "CHF",
-    "XLMOBILI_IT": "EUR",
-    "XLMEUBILAIR_NL": "EUR",
-    "XLMEBELES_LV": "EUR",
-    "XLMOEBEL_LU": "EUR",
-    "XLNABYTEK_CZ": "CZK",
-    "XLPOSLOVNO_SI": "EUR",
-    "XLFURNITURE_CO_UK": "GBP",
-    "XLBUTOROK_HU": "HUF",
-    "XLHOME_GR": "EUR",
-    "XLMEBLE_PL": "PLN",
-    "XLMEUBELLA_BE": "EUR",
-    "XLMEUBLES_FR": "EUR",
-    "XLMOEBEL_AT": "EUR",
-    "XLMUEBLES_ES": "EUR",
-    "XLFURNITURE_IE": "EUR",
-    "XLHUONEKALUT_FI": "EUR",
-    "XLMOBILA_RO": "RON",
-    "XLMOBILIARIO_PT": "EUR",
-    "XLMOBLER_SE": "SEK",
-    "XLNABYTOK_SK": "EUR",
-    "XXLMOBLER_DK": "DKK",
 }
 DEFAULT_LANGUAGE_ID_BY_LOCALE = {
     "de": 1,
@@ -63,7 +41,7 @@ def source_db_config_for_site(site: str, site_key: str | None = None):
 def sites_for_family(site_family: str, selected_site_keys: list[str] | None = None):
     if site_family != ImportedProduct.Site.XL:
         return []
-    rows = [{"site": ImportedProduct.Site.XL, "site_key": row["site_key"], "domain": row["domain"]} for row in xl_site_catalog(lambda x: x)]
+    rows = [{"site": ImportedProduct.Site.XL, "site_key": row["site_key"], "domain": row["domain"]} for row in xl_site_catalog()]
     if not selected_site_keys:
         return rows
     normalized = {str(key or "").strip().upper() for key in selected_site_keys if str(key or "").strip()}

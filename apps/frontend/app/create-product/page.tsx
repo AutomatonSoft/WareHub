@@ -1626,7 +1626,15 @@ export default function CreateProductPage() {
   ].filter(Boolean).join(":") || "new-product";
   const activeXlSourceKey = activeDraftContextKey;
   const activeJvSourceKey = activeDraftContextKey;
-  const activeHoodSourceKey = activeDraftContextKey;
+  const activeHoodSnapshot = controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
+    ? controller.sourceSnapshot
+    : null;
+  const activeHoodSourceKey = [
+    activeDraftContextKey,
+    activeTabMeta.sourceSiteKey || "",
+    activeHoodSnapshot?.ean || "",
+    activeHoodSnapshot?.sourceProductId || "",
+  ].join(":");
   const activeKauflandSourceKey = activeDraftContextKey;
   const activeKauflandDescriptionFields = useMemo(
     () => buildKauflandDescriptionFields(kauflandProduct),
@@ -1642,7 +1650,7 @@ export default function CreateProductPage() {
   const activeXlDraftSnapshot = xlDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
     ? xlDraftRefByTab.current[activeTab]
     : undefined;
-  const activeHoodDraftSnapshot = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+  const activeHoodDraftSnapshot = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
     ? hoodDraftRefByTab.current[activeTab]
     : undefined;
   const activeKauflandDraftSnapshot = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
@@ -1678,7 +1686,7 @@ export default function CreateProductPage() {
       category: ottoCategoryNameByTab[activeTab] ?? "",
     }), activeReservedMarketplaceEan);
   const activeXlDraftKey = activeXlDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
-  const activeHoodDraftKey = activeHoodDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeHoodDraftKey = activeHoodSourceKey;
   const activeKauflandDraftKey = activeKauflandDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
   const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
 
