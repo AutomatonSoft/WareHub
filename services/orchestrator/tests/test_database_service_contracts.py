@@ -19,7 +19,7 @@ class CapturingHttpClient:
     def __init__(self):
         self.calls = []
 
-    def request(self, method, url, *, headers, params=None, json=None):
+    def request(self, method, url, *, headers, params=None, json=None, timeout_seconds=None):
         self.calls.append(
             {
                 "method": method,
@@ -27,6 +27,7 @@ class CapturingHttpClient:
                 "headers": headers,
                 "params": params,
                 "json": json,
+                "timeout_seconds": timeout_seconds,
             }
         )
         return FakeResponse()
@@ -102,6 +103,24 @@ def test_jv_publish_contract_uses_create_and_push_endpoint():
     assert call["json"]["descriptions"][0]["name"] == "Desk"
 
 
+def test_jv_batch_apply_uses_request_id_as_idempotency_key():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="req-jv-batch",
+        channel=ChannelTarget(marketplace=Marketplace.XLJV, site="JV", site_key="JV_DE"),
+        payload={"__product_editor_mode": "jv_batch_apply", "site_keys": ["JV_DE"]},
+    )
+
+    call = fake_http.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://database-service:8000/api/v1/jv/batch/update-by-artikelnr/4012345678901/apply/"
+    assert call["headers"]["Idempotency-Key"] == "req-jv-batch"
+    assert call["json"] == {"site_keys": ["JV_DE"]}
+
+
 def test_xl_publish_contract_uses_create_and_push_endpoint():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
@@ -147,6 +166,7 @@ def test_product_editor_kaufland_discover_contract_path():
     call = fake_http.calls[0]
     assert call["method"] == "GET"
     assert call["url"] == "http://database-service:8000/api/v1/kaufland/4012345678901/jv/"
+    assert call["timeout_seconds"] == 15
     assert call["params"] is None
 
 
@@ -157,12 +177,22 @@ def test_otto_contract_path_with_profile():
         ean="4012345678901",
         request_id="r3",
         channel=ChannelTarget(marketplace=Marketplace.OTTO, profile="jv", ean_source="pool"),
-        payload={"productReference": "OTTO-1", "sku": "OTTO-1", "ean": "OTTO-1"},
+        payload={
+            "productReference": "OTTO-1",
+            "sku": "OTTO-1",
+            "ean": "OTTO-1",
+            "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+        },
     )
     call = fake_http.calls[0]
     assert call["method"] == "POST"
     assert call["url"] == "http://database-service:8000/api/v1/otto/jv/products/upsert/"
-    assert call["json"] == {"productReference": "4012345678901", "sku": "4012345678901", "ean": "4012345678901"}
+    assert call["json"] == {
+        "productReference": "OTTO-1",
+        "sku": "4012345678901",
+        "ean": "4012345678901",
+        "shippingProfileId": "786c6468-3baf-52e0-88b5-13757eb7f873",
+    }
 
 
 def test_xl_contract_path_and_query_params():

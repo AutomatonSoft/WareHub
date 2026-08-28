@@ -118,25 +118,24 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const entries = await Promise.all(
-        siteTabs.map(async ({ key }) => {
-          try {
-            return [key, isXlMode ? [] : await loadCachedJvDeliveryOptions(key)] as const;
-          } catch {
-            return [key, []] as const;
-          }
-        })
-      );
-      if (mounted) {
-        setDeliveryOptionsBySite(Object.fromEntries(entries) as Partial<Record<ProductEditorJvSiteKey, ProductEditorJvDeliveryOption[]>>);
+      try {
+        const options = isXlMode ? [] : await loadCachedJvDeliveryOptions(activeSiteKey);
+        if (!mounted) return;
+        setDeliveryOptionsBySite((current) => ({ ...current, [activeSiteKey]: options }));
+      } catch {
+        if (mounted) {
+          setDeliveryOptionsBySite((current) => ({ ...current, [activeSiteKey]: [] }));
+        }
       }
     })().catch(() => {
-      if (mounted) setDeliveryOptionsBySite({});
+      if (mounted) {
+        setDeliveryOptionsBySite((current) => ({ ...current, [activeSiteKey]: [] }));
+      }
     });
     return () => {
       mounted = false;
     };
-  }, [isXlMode, siteTabs]);
+  }, [activeSiteKey, isXlMode]);
 
   useEffect(() => {
     return () => {
@@ -150,34 +149,28 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const entries = await Promise.all(
-        siteTabs.map(async ({ key }) => {
-          try {
-            const tree = isXlMode ? await loadCachedXlRubricTree(key) : await loadCachedJvRubricTree(key);
-            return [key, tree, collectAllCategoryIds(tree)] as const;
-          } catch {
-            return [key, [], new Set<number>()] as const;
-          }
-        })
-      );
-      if (mounted) {
-        setCategoryTreeBySite(
-          Object.fromEntries(entries.map(([key, tree]) => [key, tree])) as Partial<Record<ProductEditorJvSiteKey, ProductEditorJvRubricNode[]>>
-        );
-        setExpandedCategoryIdsBySite(
-          Object.fromEntries(entries.map(([key, _tree, expanded]) => [key, expanded])) as Partial<Record<ProductEditorJvSiteKey, Set<number>>>
-        );
+      try {
+        const tree = isXlMode
+          ? await loadCachedXlRubricTree(activeSiteKey)
+          : await loadCachedJvRubricTree(activeSiteKey);
+        if (!mounted) return;
+        setCategoryTreeBySite((current) => ({ ...current, [activeSiteKey]: tree }));
+        setExpandedCategoryIdsBySite((current) => ({ ...current, [activeSiteKey]: collectAllCategoryIds(tree) }));
+      } catch {
+        if (!mounted) return;
+        setCategoryTreeBySite((current) => ({ ...current, [activeSiteKey]: [] }));
+        setExpandedCategoryIdsBySite((current) => ({ ...current, [activeSiteKey]: new Set<number>() }));
       }
     })().catch(() => {
       if (mounted) {
-        setCategoryTreeBySite({});
-        setExpandedCategoryIdsBySite({});
+        setCategoryTreeBySite((current) => ({ ...current, [activeSiteKey]: [] }));
+        setExpandedCategoryIdsBySite((current) => ({ ...current, [activeSiteKey]: new Set<number>() }));
       }
     });
     return () => {
       mounted = false;
     };
-  }, [isXlMode, siteTabs]);
+  }, [activeSiteKey, isXlMode]);
 
   const categoriesBySiteKey = getDraftCategoriesBySiteKey(props.draft, baselineSiteKey);
   const currentCategories = categoriesBySiteKey[activeSiteKey] ?? [];
@@ -189,14 +182,14 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   const deliveryOptions = deliveryOptionsBySite[activeSiteKey] ?? [];
   const deliveryValuesBySiteKey = getDraftDeliveryValuesBySiteKey(props.draft, baselineSiteKey);
   const publishingSelections = useMemo<JvPublishingSelections>(() => ({
-    rubricIdsBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => [key, (categoriesBySiteKey[key] ?? []).map((item) => item.category_id)])),
-    mainRubricIdBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => [key, (categoriesBySiteKey[key] ?? []).find((item) => item.main_category)?.category_id ?? null])),
-    deliveryIdsBySite: Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
-      const deliveryId = Number(deliveryValuesBySiteKey[key] ?? "");
-      return [key, Number.isFinite(deliveryId) && deliveryId > 0 ? [deliveryId] : []];
+    rubricIdsBySite: Object.fromEntries(Object.entries(categoriesBySiteKey).map(([key, categories]) => [key, categories.map((item) => item.category_id)])),
+    mainRubricIdBySite: Object.fromEntries(Object.entries(categoriesBySiteKey).map(([key, categories]) => [key, categories.find((item) => item.main_category)?.category_id ?? null])),
+    deliveryIdsBySite: Object.fromEntries(Object.entries(deliveryValuesBySiteKey).map(([key, deliveryValue]) => {
+      const deliveryId = Number(deliveryValue ?? "");
+      return [key, Number.isFinite(deliveryId) && deliveryId >= 0 ? [deliveryId] : []];
     })),
   }), [categoriesBySiteKey, deliveryValuesBySiteKey]);
-  const publishingSelectionKey = useMemo(() => JSON.stringify(publishingSelections), [publishingSelections]);
+  const publishingSelectionKey = `${props.draft.target_id}:${props.draft.ean}:${baselineSiteKey}`;
   const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
@@ -452,20 +445,19 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
   function applyPublishingSelections(selections: JvPublishingSelections) {
     const nextCategoriesBySiteKey = {
       ...categoriesBySiteKey,
-      ...Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
+      ...Object.fromEntries(Object.entries(selections.rubricIdsBySite).map(([key, selectedIds]) => {
         const publishingKey = key as JvPublishingSiteKey;
-        const selectedIds = selections.rubricIdsBySite[publishingKey] ?? [];
         const mainId = selections.mainRubricIdBySite[publishingKey] ?? selectedIds[0] ?? null;
         return [key, selectedIds.map((category_id) => ({ category_id, main_category: category_id === mainId }))];
       })),
     };
     const nextFieldsBySiteKey: ProductEditorJvFieldsBySiteKey = {
       ...props.draft.jv_fields_by_site_key,
-      ...Object.fromEntries(JV_SITE_TABS.map(({ key }) => {
-        const publishingKey = key as JvPublishingSiteKey;
-        const deliveryId = selections.deliveryIdsBySite[publishingKey]?.[0];
-        const current = props.draft.jv_fields_by_site_key[key] ?? {};
-        return [key, {
+      ...Object.fromEntries(Object.entries(selections.deliveryIdsBySite).map(([key, selectedIds]) => {
+        const siteKey = key as ProductEditorJvSiteKey;
+        const deliveryId = selectedIds?.[0];
+        const current = props.draft.jv_fields_by_site_key[siteKey] ?? {};
+        return [siteKey, {
           ...current,
           lieferzeitid: deliveryId == null ? "" : String(deliveryId),
           lieferzeit: deliveryId == null ? "" : String(deliveryId),
@@ -642,7 +634,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
                 category_id: category.category_id,
                 main_category: Boolean(category.main_category),
               }))}
-              sourceDeliveryId={Number(deliveryValuesBySiteKey[baselineSiteKey] ?? "") || undefined}
+              sourceDeliveryId={toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey])}
               initialSelections={publishingSelections}
               initialSelectionKey={publishingSelectionKey}
               onSelectionsChange={applyPublishingSelections}
@@ -959,6 +951,11 @@ function getDraftDeliveryValuesBySiteKey(
     next[site.key] = String(siteFields.lieferzeitid ?? baselineValue ?? "").trim();
   }
   return next;
+}
+
+function toOptionalDeliveryId(value: string | undefined): number | undefined {
+  const deliveryId = Number(value ?? "");
+  return Number.isFinite(deliveryId) && deliveryId >= 0 ? deliveryId : undefined;
 }
 
 function getDeliverySelectionLabel(value: string, notSelectedLabel: string): string {

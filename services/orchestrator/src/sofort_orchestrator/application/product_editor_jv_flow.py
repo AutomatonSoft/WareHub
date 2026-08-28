@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import uuid
 
@@ -129,31 +128,28 @@ class ProductEditorJvFlow:
             return "JV_CO_UK"
         return None
 
-    def load(self, *, ean: str, request_id: str, baseline_target_id: str | None) -> ProductEditorLoadResponse:
-        target_states = self.discover_targets(ean=ean, request_id=request_id)
-        found_target_ids = [target_id for target_id, state in target_states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
-        baseline_site_key = (
-            baseline_target_id
-            if baseline_target_id in found_target_ids
-            else self.recommended_baseline_from_results(target_states)
-        )
-        if baseline_site_key is None:
-            return ProductEditorLoadResponse(
-                request_id=request_id,
+    def load(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        baseline_target_id: str | None,
+        publishing_target_id: str | None = None,
+    ) -> ProductEditorLoadResponse:
+        requested_publishing_target = str(publishing_target_id or "").strip().upper()
+        if requested_publishing_target:
+            return self._load_publishing_selections(
                 ean=ean,
-                active_group=ProductEditorGroupId.JV,
-                baseline_target_id=baseline_target_id,
-                supported=False,
-                warnings=[ProductEditorWarning(code="product_editor_jv_target_not_found", message="No JV target was found for this EAN.")],
+                request_id=request_id,
+                site_key=requested_publishing_target,
             )
 
-        with ThreadPoolExecutor(max_workers=len(found_target_ids)) as executor:
-            futures = {
-                site_key: executor.submit(self._load_local_draft_for_site, ean=ean, request_id=request_id, site_key=site_key)
-                for site_key in found_target_ids
-            }
-            site_results = {site_key: future.result() for site_key, future in futures.items()}
-        local = site_results[baseline_site_key]
+        baseline_site_key = "JV_DE"
+        local = self._load_local_draft_for_site(
+            ean=ean,
+            request_id=request_id,
+            site_key=baseline_site_key,
+        )
 
         if not (200 <= local.status_code < 300):
             return ProductEditorLoadResponse(
@@ -162,7 +158,7 @@ class ProductEditorJvFlow:
                 active_group=ProductEditorGroupId.JV,
                 baseline_target_id=baseline_site_key,
                 supported=False,
-                warnings=[ProductEditorWarning(code="product_editor_jv_load_failed", message="Failed to load JV baseline draft.")],
+                warnings=[ProductEditorWarning(code="product_editor_jv_de_baseline_load_failed", message="Failed to load the JV_DE baseline draft.")],
             )
 
         warnings: list[ProductEditorWarning] = []
@@ -176,33 +172,10 @@ class ProductEditorJvFlow:
             )
 
         draft = _normalize_jv_draft(local.body, baseline_site_key)
-        site_payloads: dict[str, dict] = {}
-        for site_key in found_target_ids:
-            site_payload = site_results[site_key].body
-            if isinstance(site_payload, dict) and site_payload.get("ean"):
-                site_payloads[site_key] = site_payload
-        draft["categories_by_site_key"] = {
-            site_key: site_categories
-            for site_key, site_categories in (
-                (
-                    site_key,
-                    site_payload.get("categories") if isinstance(site_payload.get("categories"), list) else [],
-                )
-                for site_key, site_payload in site_payloads.items()
-            )
-            if site_categories
-        }
-        draft["jv_fields_by_site_key"] = {
-            site_key: site_fields
-            for site_key, site_fields in (
-                (
-                    site_key,
-                    site_payload.get("jv_fields") if isinstance(site_payload.get("jv_fields"), dict) else {},
-                )
-                for site_key, site_payload in site_payloads.items()
-            )
-            if site_fields
-        }
+        categories = local.body.get("categories") if isinstance(local.body, dict) else None
+        fields = local.body.get("jv_fields") if isinstance(local.body, dict) else None
+        draft["categories_by_site_key"] = {baseline_site_key: categories} if isinstance(categories, list) and categories else {}
+        draft["jv_fields_by_site_key"] = {baseline_site_key: fields} if isinstance(fields, dict) and fields else {}
 
         return ProductEditorLoadResponse(
             request_id=request_id,
@@ -212,6 +185,49 @@ class ProductEditorJvFlow:
             draft=draft,
             supported=True,
             warnings=warnings,
+        )
+
+    def _load_publishing_selections(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        site_key: str,
+    ) -> ProductEditorLoadResponse:
+        if site_key not in _JV_PRIORITY:
+            return ProductEditorLoadResponse(
+                request_id=request_id,
+                ean=ean,
+                active_group=ProductEditorGroupId.JV,
+                baseline_target_id="JV_DE",
+                supported=False,
+                warnings=[ProductEditorWarning(code="product_editor_jv_publishing_target_invalid", message="Invalid JV publishing target.")],
+            )
+
+        local = self._load_local_draft_for_site(ean=ean, request_id=request_id, site_key=site_key)
+        if not (200 <= local.status_code < 300):
+            return ProductEditorLoadResponse(
+                request_id=request_id,
+                ean=ean,
+                active_group=ProductEditorGroupId.JV,
+                baseline_target_id="JV_DE",
+                supported=False,
+                warnings=[ProductEditorWarning(code="product_editor_jv_publishing_settings_load_failed", message="Failed to load JV publishing settings.")],
+            )
+
+        body = local.body if isinstance(local.body, dict) else {}
+        categories = body.get("categories") if isinstance(body.get("categories"), list) else []
+        fields = body.get("jv_fields") if isinstance(body.get("jv_fields"), dict) else {}
+        return ProductEditorLoadResponse(
+            request_id=request_id,
+            ean=ean,
+            active_group=ProductEditorGroupId.JV,
+            baseline_target_id="JV_DE",
+            draft={
+                "categories_by_site_key": {site_key: categories},
+                "jv_fields_by_site_key": {site_key: fields},
+            },
+            supported=True,
         )
 
     def plan(
@@ -241,14 +257,9 @@ class ProductEditorJvFlow:
         if not target_ids:
             raise ProductEditorJvFlowError("product_editor_no_found_targets", "No found JV targets are available for this EAN.", 409)
 
-        baseline_site_key = self._resolve_baseline_site_key(
-            ean=ean,
-            request_id=request_id,
-            preferred_target_id=str(draft.get("target_id") or "").strip() or None,
-            available_target_ids=target_ids,
-        )
-        if baseline_site_key is None:
-            raise ProductEditorJvFlowError("product_editor_jv_baseline_missing", "JV baseline target could not be resolved.", 409)
+        baseline_site_key = "JV_DE"
+        if baseline_site_key not in target_ids:
+            raise ProductEditorJvFlowError("product_editor_jv_de_baseline_missing", "JV_DE must be selected as the JV baseline target.", 409)
 
         payload = _build_jv_batch_payload(draft=draft, changed_fields=changed_fields, target_ids=target_ids, baseline_site_key=baseline_site_key)
         warnings = _plan_warnings_for_jv(changed_fields=changed_fields, target_ids=target_ids)
@@ -328,6 +339,7 @@ class ProductEditorJvFlow:
                     orchestrator_job_id=job_id,
                     request_id=request_id,
                     batch_body=live_batch.body,
+                    details=details,
                 )
 
         summary = _map_jv_orchestrator_summary(details=details)
@@ -336,14 +348,19 @@ class ProductEditorJvFlow:
         facade_status = details.status
         if details.status is JobStatus.COMPLETED and int(summary.get("failed") or 0) > 0:
             facade_status = JobStatus.FAILED
+        if error is None and facade_status is JobStatus.FAILED and details.result is not None and details.result.results:
+            error = details.result.results[0].error
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,
+            ean=details.ean,
             status=facade_status,
             active_group=ProductEditorGroupId.JV,
             summary=summary,
             targets=targets,
             error=error,
+            created_at_unix_ms=details.created_at_unix_ms,
+            updated_at_unix_ms=details.updated_at_unix_ms,
         )
 
     def _resolve_baseline_site_key(
@@ -789,7 +806,7 @@ def _jv_batch_payload_is_nonterminal(batch_body: dict) -> bool:
     return any(str(item.get("status") or "").strip().lower() not in terminal_item_statuses for item in items if isinstance(item, dict))
 
 
-def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict) -> ProductEditorJobResponse:
+def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str, batch_body: dict, details) -> ProductEditorJobResponse:
     job = batch_body.get("job") if isinstance(batch_body.get("job"), dict) else {}
     batch_status = str(job.get("status") or "").strip().lower()
     summary = job.get("result_summary") if isinstance(job.get("result_summary"), dict) else {}
@@ -801,11 +818,14 @@ def _map_live_jv_batch_job_response(*, orchestrator_job_id: str, request_id: str
     return ProductEditorJobResponse(
         request_id=request_id,
         job_id=orchestrator_job_id,
+        ean=details.ean,
         status=facade_status,
         active_group=ProductEditorGroupId.JV,
         summary=mapped_summary,
         targets=_map_jv_batch_targets({"job": job}, request_id=request_id) if batch_status in {"applied", "failed"} else [],
         error=None,
+        created_at_unix_ms=details.created_at_unix_ms,
+        updated_at_unix_ms=details.updated_at_unix_ms,
     )
 
 
@@ -880,6 +900,10 @@ def _map_jv_orchestrator_summary(*, details) -> dict:
     failed_count = len(targets) - success_count
     if not targets and items:
         failed_count = len(items)
+    if not targets and not items:
+        channel_succeeded = channel_result.status == "success"
+        success_count = 1 if channel_succeeded else 0
+        failed_count = 0 if channel_succeeded else 1
     return {"supported": True, "success": success_count, "failed": failed_count}
 
 

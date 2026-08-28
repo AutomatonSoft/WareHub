@@ -158,6 +158,7 @@ function ProductEditorContent() {
   const [discovering, setDiscovering] = useState(false);
   const [discover, setDiscover] = useState<ProductEditorDiscoverResponse | null>(null);
   const discoverRequestVersionRef = useRef(0);
+  const jvPublishingSelectionsLoadKeyRef = useRef<string | null>(null);
   const [activeTabKey, setActiveTabKey] = useState<string>("HOOD_JV");
   const activeGroupId = getGroupIdForTab(activeTabKey);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -284,7 +285,7 @@ function ProductEditorContent() {
         ean: draft.ean.trim(),
         changedFields: buildJvChangedFields(initialJvDraftsByTab[tabKey], draft),
         draft: draft as unknown as Record<string, unknown>,
-        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found"]),
+        selectedTargetIds: getJvTargetIdsForPlan(discover, tabKey, draft.target_id),
       });
     });
 
@@ -437,6 +438,7 @@ function ProductEditorContent() {
 
   async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null, targetTabKey?: string): Promise<boolean> {
     const requestVersion = ++discoverRequestVersionRef.current;
+    let backgroundPrefetchStarted = false;
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
@@ -449,10 +451,18 @@ function ProductEditorContent() {
       if (!activeGroup) {
         const nextTabEans = Object.fromEntries(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, ean]));
         setTabEanInputs(nextTabEans);
-        setTabSearchStatuses(Object.fromEntries(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, "loading"] as const)));
+        setTabSearchStatuses(Object.fromEntries(
+          PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, getTabSearchStatus(normalizedResponse, tab.key)]),
+        ));
+        backgroundPrefetchStarted = true;
         globalPrefetchInFlightRef.current = true;
-        await Promise.all(PRODUCT_EDITOR_DISCOVERY_GROUPS.map((groupId) => prefetchGlobalGroup(ean, groupId, requestVersion)));
-        globalPrefetchInFlightRef.current = false;
+        void Promise.all(
+          PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => preloadGlobalTab(tab.key, normalizedResponse, requestVersion)),
+        ).finally(() => {
+          if (discoverRequestVersionRef.current === requestVersion) {
+            globalPrefetchInFlightRef.current = false;
+          }
+        });
       }
       return activeGroup
         ? hasFoundTargetInGroup(normalizedResponse, nextActiveGroup)
@@ -463,7 +473,9 @@ function ProductEditorContent() {
       showToast(message, "error");
       return false;
     } finally {
-      globalPrefetchInFlightRef.current = false;
+      if (!backgroundPrefetchStarted) {
+        globalPrefetchInFlightRef.current = false;
+      }
       setDiscovering(false);
     }
   }
@@ -696,10 +708,69 @@ function ProductEditorContent() {
       setJvTabWarnings(tabKey, response.warnings);
       loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(ean, baselineTargetId ?? response.baseline_target_id);
       clearPlanAndJobState();
+      if (activeGroup === "JV") {
+        void loadJvPublishingSelections(ean, tabKey);
+      }
       return true;
     } finally {
       if (jvAutoLoadInFlightKeyRef.current === autoLoadKey) jvAutoLoadInFlightKeyRef.current = null;
       setJvTabLoading(tabKey, false);
+    }
+  }
+
+  async function loadJvPublishingSelections(ean: string, tabKey: JvTabKey): Promise<void> {
+    const loadKey = `${ean}:${tabKey}`;
+    if (jvPublishingSelectionsLoadKeyRef.current === loadKey) return;
+    jvPublishingSelectionsLoadKeyRef.current = loadKey;
+    const publishingSiteKeys = ["JV_AT", "JV_CH", "JV_CO_UK"] as const;
+    try {
+      for (const publishingTargetId of publishingSiteKeys) {
+        try {
+          const response = await loadProductEditorGroup({
+            ean,
+            activeGroup: "JV",
+            baselineTargetId: "JV_DE",
+            publishingTargetId,
+          });
+          if (!response.supported) continue;
+
+          const publishingDraft = response.draft as unknown as Partial<ProductEditorJvDraft>;
+          const categoriesBySiteKey = publishingDraft.categories_by_site_key ?? {};
+          const fieldsBySiteKey = publishingDraft.jv_fields_by_site_key ?? {};
+          if (!Object.keys(categoriesBySiteKey).length && !Object.keys(fieldsBySiteKey).length) continue;
+
+          setJvDraftsByTab((current) => {
+            const draft = current[tabKey];
+            if (draft.ean !== ean) return current;
+            return {
+              ...current,
+              [tabKey]: {
+                ...draft,
+                categories_by_site_key: { ...draft.categories_by_site_key, ...categoriesBySiteKey },
+                jv_fields_by_site_key: { ...draft.jv_fields_by_site_key, ...fieldsBySiteKey },
+              },
+            };
+          });
+          setInitialJvDraftsByTab((current) => {
+            const draft = current[tabKey];
+            if (draft.ean !== ean) return current;
+            return {
+              ...current,
+              [tabKey]: {
+                ...draft,
+                categories_by_site_key: { ...draft.categories_by_site_key, ...categoriesBySiteKey },
+                jv_fields_by_site_key: { ...draft.jv_fields_by_site_key, ...fieldsBySiteKey },
+              },
+            };
+          });
+        } catch {
+          // The baseline stays usable if an optional per-site publishing lookup fails.
+        }
+      }
+    } finally {
+      if (jvPublishingSelectionsLoadKeyRef.current === loadKey) {
+        jvPublishingSelectionsLoadKeyRef.current = null;
+      }
     }
   }
 
@@ -733,38 +804,6 @@ function ProductEditorContent() {
       return true;
     } finally {
       setOttoTabLoading(tabKey, false);
-    }
-  }
-
-  async function prefetchGlobalGroup(
-    ean: string,
-    groupId: ProductEditorGroupId,
-    requestVersion: number,
-  ): Promise<void> {
-    const groupTabs = PRODUCT_EDITOR_DISPLAY_TABS.filter((tab) => tab.groupId === groupId);
-    try {
-      const response = await discoverProductEditor(ean, groupId);
-      if (discoverRequestVersionRef.current !== requestVersion) return;
-      setTabSearchStatuses((current) => ({
-        ...current,
-        ...Object.fromEntries(groupTabs.map((tab) => [tab.key, getTabSearchStatus(response, tab.key)])),
-      }));
-      setDiscover((current) => {
-        if (!current || current.ean !== ean) return current;
-        const discoveredGroup = response.groups.find((group) => group.id === groupId);
-        if (!discoveredGroup) return current;
-        return {
-          ...current,
-          groups: current.groups.map((group) => group.id === groupId ? discoveredGroup : group),
-        };
-      });
-      await Promise.all(groupTabs.map((tab) => preloadGlobalTab(tab.key, response, requestVersion)));
-    } catch {
-      if (discoverRequestVersionRef.current !== requestVersion) return;
-      setTabSearchStatuses((current) => ({
-        ...current,
-        ...Object.fromEntries(groupTabs.map((tab) => [tab.key, "error"])),
-      }));
     }
   }
 
@@ -1233,11 +1272,10 @@ function ProductEditorContent() {
       showToast(`No edited ${activeStructuredLabel} fields to apply.`, "error");
       return;
     }
-    const selectedTargetIds = (
-      discover?.groups
-        .find((group) => group.id === activeStructuredGroup)
-        ?.targets.filter((target) => target.status === "found")
-        .map((target) => target.id) ?? []
+    const selectedTargetIds = getJvTargetIdsForPlan(
+      discover,
+      activeStructuredGroup,
+      jvDraft.target_id
     ) as ProductEditorJvSiteKey[];
     if (selectedTargetIds.length === 0) {
       showToast(`No found ${activeStructuredLabel} targets are available for orchestrator apply.`, "error");
@@ -1622,10 +1660,7 @@ function ProductEditorContent() {
       return {
         activeDraft: jvDraft,
         changedFields: jvChangedFields,
-        selectedTargetIds: discover?.groups
-          .find((group) => group.id === activeGroupId)
-          ?.targets.filter((target) => target.status === "found")
-          .map((target) => target.id) ?? []
+        selectedTargetIds: getJvTargetIdsForPlan(discover, activeGroupId, jvDraft.target_id)
       };
     }
     return { activeDraft: null, changedFields: [], selectedTargetIds: [] };
@@ -1990,8 +2025,6 @@ const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGr
   { key: "EBAY_XL", groupId: "EBAY" }
 ];
 
-const PRODUCT_EDITOR_DISCOVERY_GROUPS: ProductEditorGroupId[] = ["JV", "XL", "HOOD", "KAUFLAND", "OTTO", "EBAY"];
-
 function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof useLabels>): string {
   switch (tabKey) {
     case "JV":
@@ -2174,6 +2207,23 @@ function getTargetIdsForTab(
       return id.includes(`_${variantUpper}`) || family === variantUpper || label.includes(variantUpper);
     })
     .map((target) => target.id);
+}
+
+function getJvTargetIdsForPlan(
+  discover: ProductEditorDiscoverResponse | null,
+  tabKey: JvTabKey,
+  baselineTargetId: string
+): string[] {
+  const foundTargetIds = getTargetIdsForTab(discover, tabKey, ["found"]);
+  const normalizedBaselineTargetId = baselineTargetId.trim();
+  const requiredBaselineTargetId = tabKey === "JV"
+    ? normalizedBaselineTargetId === "JV_DE" ? normalizedBaselineTargetId : ""
+    : normalizedBaselineTargetId;
+
+  return Array.from(new Set([
+    ...(requiredBaselineTargetId ? [requiredBaselineTargetId] : []),
+    ...foundTargetIds,
+  ]));
 }
 
 export function ProductEditorShell() {

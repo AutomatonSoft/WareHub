@@ -10,11 +10,13 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
+import { normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
 
 export type OttoCreateProductDraft = {
   productReference: string;
   sku: string;
   ean: string;
+  quantity: string;
   price: string;
   deliveryTime: string;
   shippingProfileId: string;
@@ -29,13 +31,14 @@ export type OttoCreateProductDraft = {
 };
 
 export const EMPTY_OTTO_CREATE_PRODUCT_DRAFT: OttoCreateProductDraft = {
-  productReference: "", sku: "", ean: "", price: "", deliveryTime: "", shippingProfileId: "", category: "", productLine: "", description: "",
+  productReference: "", sku: "", ean: "", quantity: "1", price: "", deliveryTime: "", shippingProfileId: "", category: "", productLine: "", description: "",
   bulletPoints: [], additionalAttributes: {}, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: [],
 };
 
 type Props = {
   initialDraft: OttoCreateProductDraft;
   draftKey: string;
+  showQuantity?: boolean;
   profile: OttoShippingProfileAccount;
   categoryId: string;
   categoryName: string;
@@ -45,46 +48,33 @@ type Props = {
 
 type OttoProductAttribute = { id: string; label: string; value: string };
 
-function attributeValue(value: unknown): string {
-  if (Array.isArray(value)) return value.map(attributeValue).filter(Boolean).join(", ");
-  if (value && typeof value === "object") {
-    const item = value as Record<string, unknown>;
-    return attributeValue(item.value ?? item.name ?? item.label ?? item.displayValue ?? item.id);
-  }
-  return value === null || value === undefined ? "" : String(value).trim();
-}
-
-function normalizeProductAttributes(value: unknown): OttoProductAttribute[] {
-  if (Array.isArray(value)) {
-    return value.map((attribute, index) => {
-      if (!attribute || typeof attribute !== "object") return null;
-      const item = attribute as Record<string, unknown>;
-      const id = attributeValue(item.attributeId ?? item.attributeKey ?? item.id) || String(index);
-      const label = attributeValue(item.name ?? item.label ?? item.attributeKey ?? item.attributeId) || id;
-      const selectedValue = attributeValue(item.value ?? item.values ?? item.selectedValues ?? item.attributeValue);
-      return selectedValue ? { id, label, value: selectedValue } : null;
-    }).filter((attribute): attribute is OttoProductAttribute => Boolean(attribute));
-  }
-  if (!value || typeof value !== "object") return [];
-  return Object.entries(value as Record<string, unknown>)
-    .map(([id, selectedValue]) => ({ id, label: id, value: attributeValue(selectedValue) }))
-    .filter((attribute) => Boolean(attribute.value));
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
   const t = useLabels();
-  const draft = initialDraft;
+  const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const onDraftChangeRef = useRef(onDraftChange);
+  const sourceDraftRef = useRef(initialDraft);
+  const dirtyDraftKeyRef = useRef<string | null>(null);
+  const initialDraftSignature = JSON.stringify(initialDraft);
 
-  useEffect(() => { onDraftChangeRef.current = onDraftChange; }, [onDraftChange]);
+  onDraftChangeRef.current = onDraftChange;
+  sourceDraftRef.current = initialDraft;
+  useEffect(() => {
+    dirtyDraftKeyRef.current = null;
+    setDraft(sourceDraftRef.current);
+  }, [draftKey]);
+  useEffect(() => {
+    if (dirtyDraftKeyRef.current === draftKey) return;
+    setDraft(sourceDraftRef.current);
+  }, [draftKey, initialDraftSignature]);
   useEffect(() => {
     if (!categoryName || draft.category === categoryName) return;
     const next = { ...draft, category: categoryName };
+    setDraft(next);
     onDraftChangeRef.current(next);
   }, [categoryName, draft]);
   useEffect(() => {
@@ -99,7 +89,7 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
   }, [categoryId]);
   useEffect(() => {
     const attributeNames = Object.fromEntries(
-      normalizeProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
+      normalizeOttoProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
     );
     if (Object.keys(attributeNames).length === 0) return;
     const missingNames = Object.fromEntries(
@@ -107,12 +97,15 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
     );
     if (Object.keys(missingNames).length === 0) return;
     const next = { ...draft, attributeNames: { ...draft.attributeNames, ...missingNames } };
+    setDraft(next);
     onDraftChangeRef.current(next);
   }, [draft, productAttributes]);
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     const next = { ...draft, [key]: value };
-    onDraftChange(next);
+    dirtyDraftKeyRef.current = draftKey;
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const updateBullet = (index: number, value: string) => {
     const next = Array.from({ length: Math.max(5, draft.bulletPoints.length) }, (_, itemIndex) => draft.bulletPoints[itemIndex] ?? "");
@@ -120,9 +113,9 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
     update("bulletPoints", next);
   };
   const bulletPoints = Array.from({ length: 5 }, (_, index) => draft.bulletPoints[index] ?? "");
-  const selectedAttributes = normalizeProductAttributes(productAttributes)
+  const selectedAttributes = normalizeOttoProductAttributes(productAttributes)
     .filter((attribute) => !draft.removedAttributeIds.includes(attribute.id))
-    .map((attribute) => ({ ...attribute, value: draft.attributeOverrides[attribute.id] ?? attribute.value }));
+    .map((attribute) => ({ ...attribute, value: draft.attributeOverrides[attribute.id] ?? attribute.values.join(", ") }));
   const selectedAttributeNames = new Set(selectedAttributes.map((attribute) => attribute.label.trim().toLocaleLowerCase()));
   const availableCategoryAttributes = categoryAttributes.filter((attribute) =>
     !selectedAttributeNames.has(attribute.name.trim().toLocaleLowerCase()) && !(attribute.id in draft.additionalAttributes),
@@ -136,7 +129,9 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
       additionalAttributes: { ...draft.additionalAttributes, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.name },
     };
-    onDraftChange(next);
+    dirtyDraftKeyRef.current = draftKey;
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const updateProductAttribute = (attribute: OttoProductAttribute, value: string) => {
     const next = {
@@ -144,7 +139,9 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
       attributeOverrides: { ...draft.attributeOverrides, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.label },
     };
-    onDraftChange(next);
+    dirtyDraftKeyRef.current = draftKey;
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
   const removeProductAttribute = (attributeId: string) => {
     update("removedAttributeIds", [...draft.removedAttributeIds, attributeId]);
@@ -156,13 +153,18 @@ export function OttoCreateProductPanel({ initialDraft, profile, categoryId, cate
 
   return (
     <div className="space-y-4">
-      <Field label={t.ottoProductLine}><Input value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
+      <Field label={t.ottoProductLine}><Input maxLength={OTTO_PRODUCT_LINE_MAX_LENGTH} value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
       <div className="grid gap-3 md:grid-cols-3">
         <Field label={t.ottoProductReference}><Input value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
         <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
         <Field label="EAN"><Input value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
-      <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+      {showQuantity ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+          <Field label={t.quantity}><Input type="number" min="1" step="1" inputMode="numeric" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} /></Field>
+        </div>
+      ) : <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>}
       <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
       <Field label={t.ottoShippingProfile}>
         <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>

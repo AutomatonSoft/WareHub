@@ -48,7 +48,8 @@ type EditDraftState = {
   color: string;
   size: string;
   material: string;
-  ean: string;
+  mainEanJv: string;
+  mainEanXl: string;
   jv: string;
   xl: string;
   ottoJv: string;
@@ -561,7 +562,8 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     color: row.color ?? "",
     size: row.size ?? "",
     material: row.material ?? "",
-    ean: row.ean,
+    mainEanJv: row.ean,
+    mainEanXl: "",
     jv: row.siteEans.jv,
     xl: row.siteEans.xl,
     ottoJv: row.siteEans.ottoJv,
@@ -956,7 +958,8 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
             material: details.productAttributes?.material ?? base.material,
             price: details.productAttributes?.price ?? base.price,
             currency: details.productAttributes?.currency ?? base.currency,
-            ean: details.ean?.main_ean ?? base.ean,
+            mainEanJv: details.ean?.main_ean_jv ?? base.mainEanJv,
+            mainEanXl: details.ean?.main_ean_xl ?? base.mainEanXl,
             jv: details.ean?.jv ?? base.jv,
             xl: details.ean?.xl ?? base.xl,
             ottoJv: details.ean?.otto_jv ?? base.ottoJv,
@@ -1083,7 +1086,8 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
         ...uploadedPhotoUrls.map((value) => value.trim()).filter(Boolean)
       ];
 
-      const normalizedEan = editDraft.ean.trim();
+      const normalizedMainEanJv = editDraft.mainEanJv.trim();
+      const normalizedMainEanXl = editDraft.mainEanXl.trim();
       const normalizedSiteEans = {
         jv: editDraft.jv.trim(),
         xl: editDraft.xl.trim(),
@@ -1113,7 +1117,8 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
           in_transit: editDraft.inTransit,
         },
         ean: {
-          main_ean: normalizedEan || null,
+          main_ean_jv: normalizedMainEanJv || null,
+          main_ean_xl: normalizedMainEanXl || null,
           jv: normalizedSiteEans.jv || null,
           xl: normalizedSiteEans.xl || null,
           otto_jv: normalizedSiteEans.ottoJv || null,
@@ -1140,7 +1145,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
       const nextRow: SofortListRow = {
         ...editingRow,
         kidNumber: editDraft.kidNumber.trim() || editingRow.kidNumber,
-        ean: normalizedEan,
+        ean: normalizedMainEanJv || normalizedMainEanXl,
         siteEans: normalizedSiteEans,
         photo: normalizedPhotoUrls[0] ?? "-",
         photoUrls: normalizedPhotoUrls,
@@ -2066,12 +2071,20 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                       <SectionCard>
                         <div className="space-y-4">
                           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            <CompactField label={t.mainEan} htmlFor="edit-main-ean">
+                            <CompactField label={`${t.mainEan} JV`} htmlFor="edit-main-ean-jv">
                               <Input
-                                id="edit-main-ean"
+                                id="edit-main-ean-jv"
                                 className="h-10 rounded-[var(--radius-control)]"
-                                value={editDraft.ean}
-                                onChange={(event) => updateDraft("ean", event.target.value)}
+                                value={editDraft.mainEanJv}
+                                onChange={(event) => updateDraft("mainEanJv", event.target.value)}
+                              />
+                            </CompactField>
+                            <CompactField label={`${t.mainEan} XL`} htmlFor="edit-main-ean-xl">
+                              <Input
+                                id="edit-main-ean-xl"
+                                className="h-10 rounded-[var(--radius-control)]"
+                                value={editDraft.mainEanXl}
+                                onChange={(event) => updateDraft("mainEanXl", event.target.value)}
                               />
                             </CompactField>
                           </div>

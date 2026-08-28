@@ -1,5 +1,7 @@
 import logging
 
+from django.db.models import Q
+
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -220,5 +222,60 @@ class JVBatchJobStatusAPIView(APIView):
                 "language_mapping_by_site": _collect_language_mapping_by_site(job),
                 "translation_status_by_site": _collect_translation_status_by_site(job),
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class JVBatchJobListAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        raw_limit = request.query_params.get("limit", "20")
+        raw_offset = request.query_params.get("offset", "0")
+        try:
+            limit = int(raw_limit)
+            offset = int(raw_offset)
+        except (TypeError, ValueError):
+            return Response(
+                {"code": "jv_batch_jobs_pagination_invalid", "detail": "limit and offset must be integers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not 1 <= limit <= 100 or offset < 0:
+            return Response(
+                {"code": "jv_batch_jobs_pagination_invalid", "detail": "limit must be between 1 and 100 and offset must be non-negative."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        query = str(request.query_params.get("query", "")).strip()
+        jobs_queryset = JVBatchJob.objects.all()
+        if query:
+            jobs_queryset = jobs_queryset.filter(Q(ean__icontains=query))
+        total = jobs_queryset.count()
+        jobs = jobs_queryset.prefetch_related("items").order_by("-created_at")[offset : offset + limit]
+        payload = []
+        for job in jobs:
+            payload.append(
+                {
+                    "id": job.id,
+                    "ean": job.ean,
+                    "operation": job.operation,
+                    "status": job.status,
+                    "result_summary": JVBatchJobSerializer(job).data.get("result_summary") or {},
+                    "created_at": job.created_at.isoformat(),
+                    "updated_at": job.updated_at.isoformat(),
+                    "items": [
+                        {
+                            "site": item.site,
+                            "site_key": item.site_key,
+                            "status": item.status,
+                            "error_code": item.error_code,
+                            "error_text": item.error_text,
+                        }
+                        for item in job.items.all()
+                    ],
+                }
+            )
+        return Response(
+            {"code": "jv_batch_jobs_list", "total": total, "limit": limit, "offset": offset, "jobs": payload},
             status=status.HTTP_200_OK,
         )

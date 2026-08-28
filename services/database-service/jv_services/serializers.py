@@ -109,7 +109,7 @@ class ImportedProductSpecialPatchSerializer(serializers.Serializer):
 class ImportedProductPatchSerializer(serializers.Serializer):
     source_model = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
     source_sku = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
-    source_ean_field = serializers.CharField(max_length=14, required=False, allow_blank=True, allow_null=True)
+    source_ean_field = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
 
     price = serializers.DecimalField(max_digits=15, decimal_places=4, required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, allow_null=True)
@@ -246,7 +246,7 @@ class JVBatchPayloadSerializer(serializers.Serializer):
     jv_fields = serializers.DictField(required=False)
     source_model = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
     source_sku = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
-    source_ean_field = serializers.CharField(max_length=14, required=False, allow_blank=True, allow_null=True)
+    source_ean_field = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
     price = serializers.DecimalField(max_digits=15, decimal_places=4, required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, allow_null=True)
     status = serializers.BooleanField(required=False)

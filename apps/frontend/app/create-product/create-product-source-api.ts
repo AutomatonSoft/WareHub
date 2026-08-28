@@ -7,13 +7,19 @@ import {
   xljvGetSitesByEan,
 } from "../../components/xljv/xljv-api";
 import { fetchHoodByEan } from "../../components/hood/hood-api";
-import { decodeHtmlEntities, extractFirstItemFromPayload, type HoodAccount } from "../../components/hood/hood-search-utils";
+import {
+  decodeHtmlEntities,
+  extractFirstItemFromPayload,
+  type HoodAccount,
+  type HoodResponse,
+} from "../../components/hood/hood-search-utils";
 import { fetchKauflandByEan, type KauflandSite } from "../../components/channels/kaufland-api";
 import { normalizeEanOrEmpty } from "../../components/inventory/ean-utils";
 import { apiFetch } from "../../lib/api/client";
 
 type KidMarketplaceEansResponse = {
-  main_ean?: unknown;
+  main_ean_jv?: unknown;
+  main_ean_xl?: unknown;
 };
 
 type DescriptionRow = {
@@ -33,7 +39,8 @@ type CategoryRow = {
 export type CreateProductKidContext = {
   kidId: number;
   kidNumber: string;
-  mainEan: string;
+  mainEanJv: string;
+  mainEanXl: string;
   place: string;
   room: string;
   furnitureType: string;
@@ -101,14 +108,17 @@ function stripHtml(value: string): string {
     .trim();
 }
 
-async function fetchKidMarketplaceMainEan(kidId: number): Promise<string> {
+async function fetchKidMarketplaceMainEans(kidId: number): Promise<{ mainEanJv: string; mainEanXl: string }> {
   const response = await apiFetch(`${getServicesApiBase()}/kids/${kidId}/marketplace-eans/`);
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
     throw new Error(asTrimmedString(payload.detail) || `create_product_main_ean_http:${response.status}`);
   }
   const payload = (await response.json()) as KidMarketplaceEansResponse;
-  return normalizeEanOrEmpty(asTrimmedString(payload.main_ean));
+  return {
+    mainEanJv: normalizeEanOrEmpty(asTrimmedString(payload.main_ean_jv)),
+    mainEanXl: normalizeEanOrEmpty(asTrimmedString(payload.main_ean_xl)),
+  };
 }
 
 function pickGermanLikeDescription(descriptions: DescriptionRow[]): DescriptionRow | null {
@@ -346,10 +356,20 @@ function hoodSiteKey(account: HoodAccount): string {
   return `HOOD_${account.toUpperCase()}`;
 }
 
+function isHoodProductNotFound(response: Response, payload: HoodResponse): boolean {
+  return response.status === 404 || (
+    (payload as HoodResponse & { code?: unknown }).code === "hood_external_error_status"
+    && payload.status_code === 404
+  );
+}
+
 function normalizeHoodSnapshot(payload: Record<string, unknown>, account: HoodAccount, mainEan: string): CreateProductJvSourceSnapshot {
   const item = extractFirstItemFromPayload(payload.external_payload);
+  const cachedItem = extractFirstItemFromPayload({ items: payload.items });
   const imageUrls = stringList(item?.images);
-  const description = decodeHtmlEntities(asTrimmedString(item?.description));
+  const description = decodeHtmlEntities(
+    asTrimmedString(item?.description) || asTrimmedString(cachedItem?.description),
+  );
   const productName = asTrimmedString(item?.title) || asTrimmedString(payload.items && Array.isArray(payload.items) ? payload.items[0]?.title : "") || mainEan;
 
   return {
@@ -376,19 +396,15 @@ function normalizeHoodSnapshot(payload: Record<string, unknown>, account: HoodAc
 }
 
 export async function fetchCreateProductKidContext(kidId: number): Promise<CreateProductKidContext> {
-  const [details, mainEan] = await Promise.all([
+  const [details, mainEans] = await Promise.all([
     fetchKidDetails(kidId),
-    fetchKidMarketplaceMainEan(kidId),
+    fetchKidMarketplaceMainEans(kidId),
   ]);
-
-  if (!mainEan) {
-    throw new Error("create_product_main_ean_missing");
-  }
 
   return {
     kidId,
     kidNumber: details.kidNumber,
-    mainEan,
+    ...mainEans,
     place: details.place,
     room: details.room,
     furnitureType: details.furnitureType,
@@ -432,6 +448,7 @@ export async function fetchCreateProductJvSitesByMainEan(mainEan: string): Promi
 export async function fetchCreateProductSourceSitesByMainEan(input: {
   mainEan: string;
   site: CreateProductSourceSiteKind;
+  siteKey?: string;
 }): Promise<CreateProductJvSourceSite[]> {
   const normalizedMainEan = normalizeEanOrEmpty(input.mainEan);
   if (!normalizedMainEan) {
@@ -448,9 +465,12 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   }
 
   if (input.site === "HOOD") {
-    const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
+    const accounts: HoodAccount[] = input.siteKey
+      ? [hoodAccountFromSiteKey(input.siteKey)]
+      : ["jv", "xl"];
+    const outcomes = await Promise.allSettled(accounts.map(async (account) => {
       const { response, payload } = await fetchHoodByEan(normalizedMainEan, account as HoodAccount);
-      if (response.status === 404) return null;
+      if (isHoodProductNotFound(response, payload)) return null;
       if (!response.ok) {
         throw new Error(asTrimmedString((payload as { detail?: unknown }).detail) || `create_product_hood_source_sites_http:${response.status}`);
       }
@@ -464,11 +484,21 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
         title: snapshot.productName,
       };
     }));
-    return results.filter((result): result is CreateProductJvSourceSite => Boolean(result));
+    const results = outcomes.flatMap((outcome) =>
+      outcome.status === "fulfilled" && outcome.value ? [outcome.value] : [],
+    );
+    if (results.length > 0) return results;
+
+    const failedOutcome = outcomes.find((outcome) => outcome.status === "rejected");
+    if (failedOutcome?.status === "rejected") throw failedOutcome.reason;
+    return [];
   }
 
   if (input.site === "KAUFLAND") {
-    const results: Array<CreateProductJvSourceSite | null> = await Promise.all(["jv", "xl"].map(async (account) => {
+    const accounts: KauflandSite[] = input.siteKey
+      ? [kauflandAccountFromSiteKey(input.siteKey)]
+      : ["jv", "xl"];
+    const outcomes = await Promise.allSettled(accounts.map(async (account) => {
       const { response, payload } = await fetchKauflandByEan({ ean: normalizedMainEan, site: account as KauflandSite });
       if (response.status === 404) return null;
       if (!response.ok) {
@@ -484,7 +514,14 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
         title: snapshot.productName,
       };
     }));
-    return results.filter((result): result is CreateProductJvSourceSite => Boolean(result));
+    const results = outcomes.flatMap((outcome) =>
+      outcome.status === "fulfilled" && outcome.value ? [outcome.value] : [],
+    );
+    if (results.length > 0) return results;
+
+    const failedOutcome = outcomes.find((outcome) => outcome.status === "rejected");
+    if (failedOutcome?.status === "rejected") throw failedOutcome.reason;
+    return [];
   }
 
   return fetchCreateProductJvSitesByMainEan(normalizedMainEan);
@@ -584,6 +621,9 @@ export async function fetchCreateProductSourceSnapshot(input: {
   if (input.site === "HOOD") {
     const account = hoodAccountFromSiteKey(input.siteKey);
     const { response, payload } = await fetchHoodByEan(normalizedMainEan, account);
+    if (isHoodProductNotFound(response, payload)) {
+      throw new Error("Hood source product was not found.");
+    }
     if (!response.ok) {
       throw new Error(asTrimmedString(payload.detail) || `Hood source product request failed: HTTP ${response.status}`);
     }

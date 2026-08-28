@@ -337,7 +337,7 @@ export function CriticalInventoryEditDialog({
 
       await patchKidMarketplaceEans({
         kidId: row.kidId,
-        mainEan: normalizedEan,
+        mainEanJv: normalizedEan,
         ...normalizedSiteEans,
       });
 

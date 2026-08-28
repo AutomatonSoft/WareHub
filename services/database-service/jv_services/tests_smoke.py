@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase, TestCase
@@ -585,6 +586,20 @@ class JVRoutesSmokeTest(SimpleTestCase):
             },
         )
 
+    def test_jv_batch_serializer_accepts_prefixed_source_ean_field(self):
+        from jv_services.serializers import JVBatchPayloadSerializer
+
+        serializer = JVBatchPayloadSerializer(
+            data={
+                "site_family": "JV",
+                "site_keys": ["JV_DE"],
+                "ean": "JVM4071489846317",
+                "source_ean_field": "JVM4071489846317",
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def test_jv_sync_rubrikartikel_skips_categories_without_rubnum(self):
         from unittest.mock import MagicMock, patch
 
@@ -890,6 +905,134 @@ class JVRoutesSmokeTest(SimpleTestCase):
         from jv_services.views_create_prepare import prepare_create_identity
 
         self.assertTrue(callable(prepare_create_identity))
+
+
+class JVBatchQueueingTest(TestCase):
+    @patch("jv_services.create_service.close_old_connections")
+    @patch("jv_services.create_service.create_and_push_jv_product")
+    def test_create_conflict_marks_item_failed_without_updating_existing_product(
+        self,
+        mock_create_and_push,
+        _mock_close_old_connections,
+    ):
+        from rest_framework.response import Response
+
+        from jv_services.create_service import _create_one_item, enqueue_create_job
+        from jv_services.models import JVBatchJobItem
+
+        job = enqueue_create_job(
+            request=SimpleNamespace(session={}),
+            ean="JVM4067282644571",
+            name="Test product",
+            sites=[
+                {
+                    "site": "JV",
+                    "site_key": "JV_DE",
+                    "domain": "https://www.jvmoebel.de",
+                    "payload": {"ean": "JVM4067282644571", "source_model": "JVM4067282644571"},
+                }
+            ],
+        )
+        item = job.items.get()
+        mock_create_and_push.return_value = Response(
+            {
+                "code": "jv_create_artikelnr_conflict",
+                "detail": "Article number already exists.",
+            },
+            status=409,
+        )
+
+        summary = _create_one_item(
+            job_id=job.id,
+            item_id=item.id,
+            ean=job.ean,
+            actor="test-user",
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.status, JVBatchJobItem.Status.FAILED)
+        self.assertEqual(item.error_code, "jv_create_artikelnr_conflict")
+        self.assertEqual(summary["failed"], 1)
+
+    @patch("jv_services.batch_service.normalize_job_items_for_payload")
+    @patch("jv_services.batch_service.build_batch_plan")
+    @patch("jv_services.batch_service.save_job_precompute_context")
+    @patch("jv_services.batch_service.build_job_precompute_context")
+    def test_deferred_job_creation_does_not_build_plan_in_request(
+        self,
+        mock_build_precompute,
+        mock_save_precompute,
+        mock_build_plan,
+        mock_normalize,
+    ):
+        from jv_services.batch_service import create_job_with_plan
+        from jv_services.models import JVBatchJob
+
+        job = create_job_with_plan(
+            request=SimpleNamespace(session={}),
+            ean="JVM4067282644571",
+            site_family="JV",
+            payload={"site_keys": ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"]},
+            idempotency_key="request-id",
+            build_plan_now=False,
+        )
+
+        self.assertEqual(job.status, JVBatchJob.Status.PENDING)
+        self.assertEqual(job.items.count(), 0)
+        mock_build_precompute.assert_not_called()
+        mock_save_precompute.assert_not_called()
+        mock_build_plan.assert_not_called()
+        mock_normalize.assert_not_called()
+
+    @patch("jv_services.management.commands.run_jv_batch_job.close_old_connections")
+    @patch("jv_services.management.commands.run_jv_batch_job.apply_batch")
+    @patch("jv_services.management.commands.run_jv_batch_job.update_job_progress")
+    @patch("jv_services.management.commands.run_jv_batch_job.normalize_job_items_for_payload")
+    @patch("jv_services.management.commands.run_jv_batch_job.save_job_precompute_context")
+    @patch("jv_services.management.commands.run_jv_batch_job.build_batch_plan")
+    @patch("jv_services.management.commands.run_jv_batch_job.build_job_precompute_context")
+    def test_worker_builds_plan_for_deferred_job(
+        self,
+        mock_build_precompute,
+        mock_build_plan,
+        _mock_save_precompute,
+        _mock_normalize,
+        _mock_update_progress,
+        mock_apply_batch,
+        _mock_close_old_connections,
+    ):
+        from jv_services.management.commands.run_jv_batch_job import Command
+        from jv_services.models import JVBatchJob, JVBatchJobItem
+
+        job = JVBatchJob.objects.create(
+            ean="JVM4067282644571",
+            site_family="JV",
+            status=JVBatchJob.Status.PENDING,
+            request_payload={"site_keys": ["JV_DE"]},
+        )
+        mock_build_precompute.return_value = {"selected_site_keys": ["JV_DE"]}
+        mock_build_plan.return_value = [
+            {
+                "site": "JV",
+                "site_key": "JV_DE",
+                "domain": "https://www.jvmoebel.de",
+                "status": JVBatchJobItem.Status.PENDING,
+                "effective_ean": job.ean,
+                "details": {},
+            }
+        ]
+        mock_apply_batch.return_value = {"total": 1, "applied": 1, "failed": 0, "skipped": 0}
+
+        Command().handle(job_id=job.id, already_claimed=False)
+
+        mock_build_precompute.assert_called_once_with(ean=job.ean, payload=job.request_payload)
+        mock_build_plan.assert_called_once_with(
+            ean=job.ean,
+            payload=job.request_payload,
+            precomputed=mock_build_precompute.return_value,
+        )
+        self.assertTrue(job.items.filter(site_key="JV_DE").exists())
+        mock_apply_batch.assert_called_once()
 
 
 class JVSyncUtilsTest(TestCase):

@@ -66,6 +66,7 @@ import {
 type Labels = Record<string, string>;
 
 type ToastTone = "success" | "info" | "error";
+type MainEanFamily = "jv" | "xl";
 
 function normalizeKauflandImageUrls(imageUrls: string[]): string[] {
   return Array.from(new Set(imageUrls
@@ -109,12 +110,14 @@ type UseCreateProductControllerInput = {
   t: Labels;
   showToast: (message: string, tone: ToastTone) => void;
   sourceSite: CreateProductSourceSiteKind;
+  mainEanFamily: MainEanFamily;
   preferredSourceSiteKey?: string;
 };
 
 type SourceCache = {
   sitesBySource: Map<string, CreateProductJvSourceSite[]>;
   snapshotsBySource: Map<string, CreateProductJvSourceSnapshot>;
+  snapshotRequestsBySource: Map<string, Promise<CreateProductJvSourceSnapshot>>;
   selectedSiteKeyBySource: Map<string, string>;
 };
 
@@ -152,7 +155,7 @@ function sourceCacheKey(mainEan: string, sourceSite: CreateProductSourceSiteKind
 }
 
 export function useCreateProductController(input: UseCreateProductControllerInput) {
-  const { t, showToast, sourceSite, preferredSourceSiteKey = "" } = input;
+  const { t, showToast, sourceSite, mainEanFamily, preferredSourceSiteKey = "" } = input;
   const searchParams = useSearchParams();
 
   const [selectedSites, setSelectedSites] = useState<string[]>(() => allMarketplaceSites.map((site) => site.id));
@@ -206,13 +209,17 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const sourceCacheRef = useRef<SourceCache>({
     sitesBySource: new Map(),
     snapshotsBySource: new Map(),
+    snapshotRequestsBySource: new Map(),
     selectedSiteKeyBySource: new Map(),
   });
-  const prefetchedMainEansRef = useRef(new Set<string>());
+  const prefetchedSourceFamiliesRef = useRef(new Set<string>());
 
   const orderedSites = useMemo(() => sortMarketplaceSitesByName(allMarketplaceSites), []);
   const sourceKidParam = searchParams.get("kid") ?? "";
   const sourceKidId = Number.parseInt(sourceKidParam, 10);
+  const activeMainEan = mainEanFamily === "jv"
+    ? kidContext?.mainEanJv.trim() || ""
+    : kidContext?.mainEanXl.trim() || "";
 
   const applySourceSnapshot = useCallback((snapshot: CreateProductJvSourceSnapshot, mainEan: string, site: CreateProductSourceSiteKind) => {
     setSourceSnapshot(snapshot);
@@ -241,15 +248,39 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     });
   }, []);
 
+  const loadSourceSnapshot = useCallback(async (
+    mainEan: string,
+    site: CreateProductSourceSiteKind,
+    siteKey: string,
+  ): Promise<CreateProductJvSourceSnapshot> => {
+    const cacheKey = sourceCacheKey(mainEan, site, siteKey);
+    const cachedSnapshot = sourceCacheRef.current.snapshotsBySource.get(cacheKey);
+    if (cachedSnapshot) return cachedSnapshot;
+
+    const pendingRequest = sourceCacheRef.current.snapshotRequestsBySource.get(cacheKey);
+    if (pendingRequest) return pendingRequest;
+
+    const request = fetchCreateProductSourceSnapshot({ mainEan, site, siteKey })
+      .then((snapshot) => {
+        sourceCacheRef.current.snapshotsBySource.set(cacheKey, snapshot);
+        return snapshot;
+      })
+      .finally(() => {
+        sourceCacheRef.current.snapshotRequestsBySource.delete(cacheKey);
+      });
+    sourceCacheRef.current.snapshotRequestsBySource.set(cacheKey, request);
+    return request;
+  }, []);
+
   const selectSourceSite = useCallback((siteKey: string) => {
     setSelectedSourceSiteKey(siteKey);
-    if (kidContext?.mainEan) {
+    if (activeMainEan) {
       sourceCacheRef.current.selectedSiteKeyBySource.set(
-        sourceCacheKey(kidContext.mainEan, sourceSite),
+        sourceCacheKey(activeMainEan, sourceSite),
         siteKey,
       );
     }
-  }, [kidContext?.mainEan, sourceSite]);
+  }, [activeMainEan, sourceSite]);
 
   useEffect(() => {
     if (!Number.isFinite(sourceKidId) || sourceKidId <= 0) {
@@ -271,6 +302,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       setImageFiles([]);
       sourceCacheRef.current.sitesBySource.clear();
       sourceCacheRef.current.snapshotsBySource.clear();
+      sourceCacheRef.current.snapshotRequestsBySource.clear();
       sourceCacheRef.current.selectedSiteKeyBySource.clear();
       return;
     }
@@ -301,7 +333,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   }, [showToast, sourceKidId, t.failedLoadKidContext]);
 
   useEffect(() => {
-    if (!kidContext?.mainEan) {
+    if (!activeMainEan) {
       setSourceSites([]);
       setSourceSitesError(null);
       setSourceSitesLoading(false);
@@ -311,12 +343,15 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     let active = true;
-    const cacheKey = sourceCacheKey(kidContext.mainEan, sourceSite);
+    const cacheKey = sourceCacheKey(activeMainEan, sourceSite, preferredSourceSiteKey);
     const selectCachedSite = (sites: CreateProductJvSourceSite[]) => {
       setSelectedSourceSiteKey((current) => {
         const preferredSiteKey = preferredSourceSiteKey.trim();
         const rememberedSiteKey = sourceCacheRef.current.selectedSiteKeyBySource.get(cacheKey);
-        const siteKey = [preferredSiteKey, rememberedSiteKey, current, sites[0]?.siteKey].find(
+        const baselineSiteKey = sourceSite === "JV"
+          ? sites.find((site) => site.siteKey === "JV_DE")?.siteKey
+          : undefined;
+        const siteKey = [preferredSiteKey, rememberedSiteKey, current, baselineSiteKey, sites[0]?.siteKey].find(
           (candidate): candidate is string => Boolean(candidate && sites.some((site) => site.siteKey === candidate)),
         ) ?? "";
         if (siteKey) sourceCacheRef.current.selectedSiteKeyBySource.set(cacheKey, siteKey);
@@ -338,7 +373,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setSourceSitesLoading(true);
     setSourceSitesError(null);
 
-    void fetchCreateProductSourceSitesByMainEan({ mainEan: kidContext.mainEan, site: sourceSite })
+    void fetchCreateProductSourceSitesByMainEan({
+      mainEan: activeMainEan,
+      site: sourceSite,
+      siteKey: preferredSourceSiteKey,
+    })
       .then((sites) => {
         if (!active) return;
         sourceCacheRef.current.sitesBySource.set(cacheKey, sites);
@@ -360,76 +399,114 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan, preferredSourceSiteKey, showToast, sourceSite]);
+  }, [activeMainEan, preferredSourceSiteKey, showToast, sourceSite]);
 
   useEffect(() => {
     setJvSourceSnapshotsBySiteKey({});
     setJvSourceSnapshotsReady(false);
-    setSourceDiscoveryBySiteKey({});
-  }, [kidContext?.mainEan]);
+  }, [kidContext?.mainEanJv]);
 
   useEffect(() => {
-    const mainEan = kidContext?.mainEan.trim() || "";
-    if (!mainEan || prefetchedMainEansRef.current.has(mainEan)) {
+    setSourceDiscoveryBySiteKey({});
+    prefetchedSourceFamiliesRef.current.clear();
+  }, [kidContext?.mainEanJv, kidContext?.mainEanXl]);
+
+  useEffect(() => {
+    const mainEanJv = kidContext?.mainEanJv.trim() || "";
+    const mainEanXl = kidContext?.mainEanXl.trim() || "";
+    const prefetchKey = `${mainEanJv}:${mainEanXl}`;
+    if ((!mainEanJv && !mainEanXl) || prefetchedSourceFamiliesRef.current.has(prefetchKey)) {
       return;
     }
 
-    prefetchedMainEansRef.current.add(mainEan);
+    prefetchedSourceFamiliesRef.current.add(prefetchKey);
     let active = true;
-    const sourceKinds: CreateProductSourceSiteKind[] = ["JV", "XL", "HOOD", "KAUFLAND"];
+    const sourceRequests = [
+      ...(mainEanJv ? [
+        { mainEan: mainEanJv, site: "JV" as const, siteKey: "JV_DE", siteKeys: SOURCE_SITE_KEYS_BY_KIND.JV },
+        { mainEan: mainEanJv, site: "XL" as const, siteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, siteKeys: SOURCE_SITE_KEYS_BY_KIND.XL },
+        { mainEan: mainEanJv, site: "HOOD" as const, siteKey: "HOOD_JV", siteKeys: ["HOOD_JV"] },
+        { mainEan: mainEanJv, site: "KAUFLAND" as const, siteKey: "KAUFLAND_JV", siteKeys: ["KAUFLAND_JV"] },
+      ] : []),
+      ...(mainEanXl ? [
+        { mainEan: mainEanXl, site: "HOOD" as const, siteKey: "HOOD_XL", siteKeys: ["HOOD_XL"] },
+        { mainEan: mainEanXl, site: "KAUFLAND" as const, siteKey: "KAUFLAND_XL", siteKeys: ["KAUFLAND_XL"] },
+      ] : []),
+    ];
 
     setSourceDiscoveryBySiteKey(
       Object.fromEntries(
-        sourceKinds.flatMap((site) => SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "loading" }])),
+        sourceRequests.flatMap(({ siteKeys }) => siteKeys.map((siteKey) => [siteKey, { status: "loading" }])),
       ),
     );
 
     void Promise.allSettled(
-      sourceKinds.map(async (site) => {
+      sourceRequests.map(async ({ mainEan, site, siteKey, siteKeys }) => {
         try {
-          const sites = await fetchCreateProductSourceSitesByMainEan({ mainEan, site });
+          const sites = await fetchCreateProductSourceSitesByMainEan({ mainEan, site, siteKey });
           if (!active) return;
 
-          sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site), sites);
+          sourceCacheRef.current.sitesBySource.set(sourceCacheKey(mainEan, site, siteKey), sites);
           const foundSiteKeys = new Set(sites.map((sourceSite) => sourceSite.siteKey));
           setSourceDiscoveryBySiteKey((current) => {
             const next = { ...current };
-            for (const siteKey of SOURCE_SITE_KEYS_BY_KIND[site]) {
-              next[siteKey] = foundSiteKeys.has(siteKey) ? { status: "loading" } : { status: "missing" };
+            for (const targetSiteKey of siteKeys) {
+              next[targetSiteKey] = foundSiteKeys.has(targetSiteKey) ? { status: "loading" } : { status: "missing" };
             }
             return next;
           });
+          const recordSnapshot = (sourceSite: CreateProductJvSourceSite, snapshot: CreateProductJvSourceSnapshot) => {
+            if (!active) return;
+            if (site === "JV") {
+              setJvSourceSnapshotsBySiteKey((current) => ({
+                ...current,
+                [sourceSite.siteKey]: snapshot,
+              }));
+            }
+            setSourceDiscoveryBySiteKey((current) => ({
+              ...current,
+              [sourceSite.siteKey]: { status: "found" },
+            }));
+          };
+          const recordSnapshotFailure = (sourceSite: CreateProductJvSourceSite, error: unknown) => {
+            if (!active) return;
+            const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite.siteKey}.`);
+            setSourceDiscoveryBySiteKey((current) => ({
+              ...current,
+              [sourceSite.siteKey]: { status: "error", message },
+            }));
+          };
+
+          if (site === "JV") {
+            const baseline = sites.find((sourceSite) => sourceSite.siteKey === "JV_DE") ?? sites[0];
+            if (baseline) {
+              try {
+                recordSnapshot(baseline, await loadSourceSnapshot(mainEan, site, baseline.siteKey));
+              } catch (error) {
+                recordSnapshotFailure(baseline, error);
+              }
+            }
+            if (active) setJvSourceSnapshotsReady(true);
+
+            void (async () => {
+              for (const sourceSite of sites) {
+                if (sourceSite.siteKey === baseline?.siteKey) continue;
+                try {
+                  recordSnapshot(sourceSite, await loadSourceSnapshot(mainEan, site, sourceSite.siteKey));
+                } catch (error) {
+                  recordSnapshotFailure(sourceSite, error);
+                }
+              }
+            })();
+            return;
+          }
+
           await Promise.allSettled(
             sites.map(async (sourceSite) => {
               try {
-                const snapshot = await fetchCreateProductSourceSnapshot({
-                  mainEan,
-                  site,
-                  siteKey: sourceSite.siteKey,
-                });
-                if (active) {
-                  sourceCacheRef.current.snapshotsBySource.set(
-                    sourceCacheKey(mainEan, site, sourceSite.siteKey),
-                    snapshot,
-                  );
-                  if (site === "JV") {
-                    setJvSourceSnapshotsBySiteKey((current) => ({
-                      ...current,
-                      [sourceSite.siteKey]: snapshot,
-                    }));
-                  }
-                  setSourceDiscoveryBySiteKey((current) => ({
-                    ...current,
-                    [sourceSite.siteKey]: { status: "found" },
-                  }));
-                }
+                recordSnapshot(sourceSite, await loadSourceSnapshot(mainEan, site, sourceSite.siteKey));
               } catch (error) {
-                if (!active) return;
-                const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite.siteKey}.`);
-                setSourceDiscoveryBySiteKey((current) => ({
-                  ...current,
-                  [sourceSite.siteKey]: { status: "error", message },
-                }));
+                recordSnapshotFailure(sourceSite, error);
               }
             }),
           );
@@ -439,26 +516,25 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           setSourceDiscoveryBySiteKey((current) => ({
             ...current,
             ...Object.fromEntries(
-              SOURCE_SITE_KEYS_BY_KIND[site].map((siteKey) => [siteKey, { status: "error", message }]),
+              siteKeys.map((targetSiteKey) => [targetSiteKey, { status: "error", message }]),
             ),
           }));
+          if (site === "JV") setJvSourceSnapshotsReady(true);
         }
       }),
-    ).finally(() => {
-      if (active) setJvSourceSnapshotsReady(true);
-    });
+    );
 
     return () => {
       active = false;
     };
-  }, [kidContext?.mainEan]);
+  }, [kidContext?.mainEanJv, kidContext?.mainEanXl, loadSourceSnapshot]);
 
   useEffect(() => {
-    const sourceSitesCacheKey = kidContext?.mainEan
-      ? sourceCacheKey(kidContext.mainEan, sourceSite)
+    const sourceSitesCacheKey = activeMainEan
+      ? sourceCacheKey(activeMainEan, sourceSite, preferredSourceSiteKey)
       : "";
     if (
-      !kidContext?.mainEan
+      !activeMainEan
       || !selectedSourceSiteKey
       || loadedSourceSitesCacheKey !== sourceSitesCacheKey
     ) {
@@ -469,35 +545,19 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     let active = true;
-    const cacheKey = sourceCacheKey(kidContext.mainEan, sourceSite, selectedSourceSiteKey);
-    const cachedSnapshot = sourceCacheRef.current.snapshotsBySource.get(cacheKey);
-    if (cachedSnapshot) {
-      applySourceSnapshot(cachedSnapshot, kidContext.mainEan, sourceSite);
-      setSourceSnapshotError(null);
-      setSourceSnapshotLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-
     setSourceSnapshotLoading(true);
     setSourceSnapshotError(null);
 
-    void fetchCreateProductSourceSnapshot({
-      mainEan: kidContext.mainEan,
-      site: sourceSite,
-      siteKey: selectedSourceSiteKey,
-    })
+    void loadSourceSnapshot(activeMainEan, sourceSite, selectedSourceSiteKey)
       .then((snapshot) => {
         if (!active) return;
-        sourceCacheRef.current.snapshotsBySource.set(cacheKey, snapshot);
         if (sourceSite === "JV") {
           setJvSourceSnapshotsBySiteKey((current) => ({
             ...current,
             [selectedSourceSiteKey]: snapshot,
           }));
         }
-        applySourceSnapshot(snapshot, kidContext.mainEan, sourceSite);
+        applySourceSnapshot(snapshot, activeMainEan, sourceSite);
       })
       .catch((error) => {
         if (!active) return;
@@ -513,7 +573,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return () => {
       active = false;
     };
-  }, [applySourceSnapshot, kidContext?.mainEan, loadedSourceSitesCacheKey, selectedSourceSiteKey, showToast, sourceSite]);
+  }, [activeMainEan, applySourceSnapshot, loadSourceSnapshot, loadedSourceSitesCacheKey, selectedSourceSiteKey, showToast, sourceSite]);
 
   function toggleSite(siteId: string) {
     setSelectedSites((prev) =>
@@ -1202,6 +1262,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     jobStatusDetails,
     reconciliationSummary,
     kidContext,
+    activeMainEan,
     kidContextLoading,
     kidContextError,
     sourceSites,

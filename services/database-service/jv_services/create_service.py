@@ -25,10 +25,7 @@ from .batch_item_status import (
 )
 from .batch_service import _json_safe, _merge_batch_summary, _session_actor
 from .models import ImportedProduct, JVBatchJob, JVBatchJobItem
-from .views_write import (
-    create_and_push_jv_product,
-    update_and_push_jv_product_by_ean,
-)
+from .views_write import create_and_push_jv_product
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +118,7 @@ def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
 
         from database.models import Ean
 
-        Ean.objects.filter(main_ean=ean_digits).filter(
+        Ean.objects.filter(main_ean_jv=ean_digits).filter(
             Q(jv__isnull=True) | Q(jv="")
         ).update(jv=artikelnr)
     except Exception:  # noqa: BLE001
@@ -176,32 +173,6 @@ def _create_one_item(*, job_id: int, item_id: int, ean: str, actor: str) -> dict
 
         if response.status_code in _SUCCESS_STATUS:
             _apply_success(item, summary, data)
-            close_old_connections()
-            return summary
-
-        # The same article (by artikelnr, or by EAN in the legacy/no-artikelnr case)
-        # already exists on the site -> update that product instead of creating a new one,
-        # mirroring the previous client-side create-then-update fallback.
-        if str(data.get("code") or "") in ("jv_create_artikelnr_conflict", "jv_create_ean_conflict"):
-            update_item_progress(item, phase="updating", message="Article already exists; updating instead.")
-            update_response = update_and_push_jv_product_by_ean(
-                ean=ean,
-                site=item.site,
-                site_key=item.site_key,
-                payload_data=payload,
-                actor=actor,
-                idem_record=None,
-            )
-            update_data = update_response.data if isinstance(update_response.data, dict) else {}
-            if update_response.status_code in _SUCCESS_STATUS:
-                _apply_success(item, summary, update_data)
-            else:
-                mark_item_failed(
-                    item,
-                    summary,
-                    code=str(update_data.get("code") or f"http_{update_response.status_code}"),
-                    text=str(update_data.get("detail") or update_data.get("error") or "Update failed."),
-                )
             close_old_connections()
             return summary
 

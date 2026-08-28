@@ -8,7 +8,6 @@ import { AppShell } from "../../components/layout/app-shell";
 import { allMarketplaceSites, type SiteFamily } from "../../lib/marketplace-sites";
 import {
   xljvEnqueueCreateJob,
-  xljvGetBatchJob,
   xljvGetDeliveryOptions,
   xljvGetRubricsTree,
   xljvUploadImages,
@@ -39,6 +38,7 @@ import { KauflandProductFields } from "../../components/product-forms/kaufland-p
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
 import { OttoCategoriesPanel } from "./otto-categories-panel";
 import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
+import { applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
 import { claimEanForKid } from "../../components/editor/ean-pool-api";
 
 const CreateProductImageGallery = dynamic(
@@ -92,6 +92,7 @@ type MarketplaceReservationFamily = "jv" | "xl";
 type CreateProductTabMeta = {
   label: string;
   sourceSite: "JV" | "XL" | "HOOD" | "KAUFLAND";
+  mainEanFamily: MarketplaceReservationFamily;
   sourceSiteKey?: string;
   targetSiteIds: string[];
   marketplace?: "HOOD" | "KAUFLAND" | "OTTO" | "EBAY";
@@ -146,7 +147,8 @@ type LocalDraftSnapshot<TDraft> = {
 };
 
 function readOttoText(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 function readOttoTextList(value: unknown): string[] {
@@ -175,8 +177,10 @@ function buildOttoDraft(product: Record<string, unknown>, fallback: OttoCreatePr
     productReference: readOttoText(product.productReference) || fallback.productReference,
     sku: readOttoText(product.sku) || fallback.sku,
     ean: readOttoText(product.ean) || fallback.ean,
+    quantity: readOttoText(product.quantity) || fallback.quantity,
     price: readOttoText((product.pricing as Record<string, unknown> | undefined)?.standardPrice && ((product.pricing as Record<string, unknown>).standardPrice as Record<string, unknown>).amount) || fallback.price,
     deliveryTime: readOttoText((product.delivery as Record<string, unknown> | undefined)?.deliveryTime) || fallback.deliveryTime,
+    shippingProfileId: readOttoText(product.shippingProfileId) || fallback.shippingProfileId,
     category: readOttoText(product.category) || readOttoText(description.category) || fallback.category,
     productLine: readOttoText(description.productLine) || readOttoText(description.title) || fallback.productLine,
     description: readOttoText(description.description) || readOttoText(description.text) || fallback.description,
@@ -278,7 +282,6 @@ type JvCreateAndPushPayload = {
   jv_fields: Record<string, unknown>;
 };
 
-const JV_CREATE_JOB_STORAGE_KEY = "wh:jv-create-active-job";
 
 type RubricTreeCache = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], RubricTreeNode[]>>;
 type ExpandedRubricIdsBySite = Partial<Record<(typeof JV_RUBRIC_SITE_TABS)[number]["key"], Set<number>>>;
@@ -325,18 +328,21 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: t.createProductTabMain,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: ALL_MARKETPLACE_SITE_IDS,
       };
     case "jv":
       return {
         label: t.channelJv,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: allMarketplaceSites.filter((site) => site.family === "JVMOEBEL").map((site) => site.id),
       };
     case "xl":
       return {
         label: t.channelXl,
         sourceSite: "XL",
+        mainEanFamily: "jv",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: XL_MARKETPLACE_SITE_IDS,
       };
@@ -344,6 +350,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelHood} JV`,
         sourceSite: "HOOD",
+        mainEanFamily: "jv",
         sourceSiteKey: "HOOD_JV",
         targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "JV"),
         marketplace: "HOOD",
@@ -353,6 +360,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelHood} XL`,
         sourceSite: "HOOD",
+        mainEanFamily: "xl",
         sourceSiteKey: "HOOD_XL",
         targetSiteIds: getSiteIdsByFamilyAndKind("HOOD", "XL"),
         marketplace: "HOOD",
@@ -362,6 +370,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelKaufland} JV`,
         sourceSite: "KAUFLAND",
+        mainEanFamily: "jv",
         sourceSiteKey: "KAUFLAND_JV",
         targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "JV"),
         marketplace: "KAUFLAND",
@@ -371,6 +380,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelKaufland} XL`,
         sourceSite: "KAUFLAND",
+        mainEanFamily: "xl",
         sourceSiteKey: "KAUFLAND_XL",
         targetSiteIds: getSiteIdsByFamilyAndKind("KAUFLAND", "XL"),
         marketplace: "KAUFLAND",
@@ -380,6 +390,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelOtto} JV`,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "JV"),
         marketplace: "OTTO",
         account: "JV",
@@ -388,6 +399,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelOtto} XL`,
         sourceSite: "XL",
+        mainEanFamily: "xl",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: getSiteIdsByFamilyAndKind("OTTO", "XL"),
         marketplace: "OTTO",
@@ -397,6 +409,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelEbay} JV`,
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "JV"),
         marketplace: "EBAY",
         account: "JV",
@@ -405,6 +418,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: `${t.channelEbay} XL`,
         sourceSite: "XL",
+        mainEanFamily: "xl",
         sourceSiteKey: CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
         targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "XL"),
         marketplace: "EBAY",
@@ -414,6 +428,7 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
       return {
         label: String(tab),
         sourceSite: "JV",
+        mainEanFamily: "jv",
         targetSiteIds: [],
       };
   }
@@ -440,7 +455,9 @@ function getSourceDiscoveryForTab(
       .filter((status): status is CreateProductSourceDiscovery => Boolean(status));
     if (jvStatuses.some((status) => status.status === "found")) return { status: "found" };
     if (jvStatuses.some((status) => status.status === "loading")) return { status: "loading" };
-    if (jvStatuses.every((status) => status.status === "missing")) return { status: "missing" };
+    if (jvStatuses.length > 0 && jvStatuses.every((status) => status.status === "missing")) {
+      return { status: "missing" };
+    }
     return jvStatuses.find((status) => status.status === "error") ?? null;
   }
   const siteKeyByTab: Partial<Record<CreateProductTab, string>> = {
@@ -1113,6 +1130,15 @@ function buildKauflandSourceGalleryItems(imageUrls: string[]): GalleryItem[] {
   });
 }
 
+function buildOttoSourceGalleryItems(product: Record<string, unknown> | undefined): GalleryItem[] {
+  return extractOttoMediaUrls(product).map((src) => ({
+    id: `otto-gallery-${src}`,
+    src,
+    sourcePath: src,
+    isLocal: false,
+  }));
+}
+
 function pickPrimaryDescriptionRecord(payload: Record<string, unknown>): Record<string, unknown> {
   const descriptions = Array.isArray(payload.descriptions) ? payload.descriptions : [];
   const records = descriptions.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === "object"));
@@ -1178,6 +1204,7 @@ export default function CreateProductPage() {
     t,
     showToast,
     sourceSite: activeTabMeta.sourceSite,
+    mainEanFamily: activeTabMeta.mainEanFamily,
     preferredSourceSiteKey: activeTabMeta.sourceSiteKey,
   });
   const [jvName, setJvName] = useState("");
@@ -1203,6 +1230,7 @@ export default function CreateProductPage() {
     mainRubricIdBySite: {},
     deliveryIdsBySite: {},
   });
+  const jvPublishingSelectionKeyRef = useRef("");
   const xlDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<XlCreateProductDraft>>>>({});
   const hoodDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<HoodCreateProductDraft>>>>({});
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
@@ -1218,6 +1246,7 @@ export default function CreateProductPage() {
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
   const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
   const [activeTabGalleryImageIdByTab, setActiveTabGalleryImageIdByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
+  const removedSourceGalleryItemIdsByTabRef = useRef<Partial<Record<CreateProductTab, Set<string>>>>({});
   const mainLocalImageFilesRef = useRef<File[]>([]);
   const [rubricTreesBySite, setRubricTreesBySite] = useState<RubricTreeCache>({});
   const [rubricTreeLoading, setRubricTreeLoading] = useState(false);
@@ -1248,7 +1277,6 @@ export default function CreateProductPage() {
   const [selectedDeliveryIdsBySite, setSelectedDeliveryIdsBySite] = useState<SelectedDeliveryIdsBySite>({});
   const [sendAllSitesLoading, setSendAllSitesLoading] = useState(false);
   const [, setSendAllSitesStatus] = useState("");
-  const [, setSendAllSitesLog] = useState("");
   const localObjectUrlsRef = useRef<string[]>([]);
   // Tracks mount state so the background JV send can safely skip component state
   // updates after the user navigates away (the completion toast still fires via
@@ -1260,38 +1288,14 @@ export default function CreateProductPage() {
       isMountedRef.current = false;
     };
   }, []);
-  // Holds the id of the create-job currently being polled so we never start
-  // two concurrent polling loops for the same job.
-  const pollingJobRef = useRef<number | null>(null);
-  // Resume polling an in-flight create-job after a full page reload: the job
-  // runs server-side, so we just need to reattach and surface the toast.
-  useEffect(() => {
-    let raw: string | null = null;
-    try {
-      raw = window.localStorage.getItem(JV_CREATE_JOB_STORAGE_KEY);
-    } catch {
-      raw = null;
-    }
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as { jobId?: number; ean?: string };
-      const jobId = Number(parsed?.jobId);
-      if (Number.isFinite(jobId)) {
-        setSendAllSitesLoading(true);
-        setSendAllSitesStatus(t.createProductResumeJvJob.replace("{jobId}", String(jobId)));
-        void pollCreateJob(jobId);
-      }
-    } catch {
-      /* ignore malformed storage */
-    }
-    // pollCreateJob is a stable component-scoped declaration; run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const isLoading =
     controller.kidContextLoading || controller.sourceSitesLoading || controller.sourceSnapshotLoading;
   useEffect(() => {
-    const sku = controller.kidContext?.mainEan.trim() || "";
-    if (!sku) {
+    const eansByProfile: Record<OttoProfile, string> = {
+      jv: controller.kidContext?.mainEanJv.trim() || "",
+      xl: controller.kidContext?.mainEanXl.trim() || "",
+    };
+    if (!eansByProfile.jv && !eansByProfile.xl) {
       setOttoProductsByProfile({});
       setOttoSearchErrors({});
       setOttoSearchLoading(false);
@@ -1304,6 +1308,8 @@ export default function CreateProductPage() {
     setOttoSearchErrors({});
 
     void Promise.allSettled((['jv', 'xl'] as OttoProfile[]).map(async (profile) => {
+      const sku = eansByProfile[profile];
+      if (!sku) return;
       try {
         const product = await fetchOttoProductBySku(profile, sku);
         if (active) {
@@ -1326,7 +1332,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [controller.kidContext?.mainEan, showToast]);
+  }, [controller.kidContext?.mainEanJv, controller.kidContext?.mainEanXl, showToast]);
   const galleryImages = useMemo(() => controller.sourceSnapshot?.imageUrls ?? [], [controller.sourceSnapshot?.imageUrls]);
   const jvUrlKey = useMemo(() => buildUrlKeyFromName(jvName), [jvName]);
   const jvEvp = useMemo(() => computeEvpFromPrice(jvPrice), [jvPrice]);
@@ -1402,14 +1408,44 @@ export default function CreateProductPage() {
 
     return { rubricIdsBySite, mainRubricIdBySite, deliveryIdsBySite };
   }, [controller.jvSourceSnapshotsBySiteKey]);
-  const jvInitialSelectionKey = useMemo(() => JSON.stringify(
-    JV_RUBRIC_SITE_TABS.map((site) => ({
-      siteKey: site.key,
-      categories: jvInitialSelections.rubricIdsBySite[site.key] ?? [],
-      mainCategory: jvInitialSelections.mainRubricIdBySite[site.key] ?? null,
-      delivery: jvInitialSelections.deliveryIdsBySite[site.key] ?? [],
-    })),
-  ), [jvInitialSelections]);
+  const jvInitialSelectionKey = [
+    controller.kidContext?.kidNumber?.trim() || "",
+    controller.kidContext?.mainEanJv?.trim() || "",
+    controller.kidContext?.mainEanXl?.trim() || "",
+  ].filter(Boolean).join(":");
+
+  function getEffectiveJvPublishingSelections(
+    siteKey: (typeof JV_RUBRIC_SITE_TABS)[number]["key"],
+  ) {
+    const currentSelections = jvPublishingSelectionKeyRef.current === jvInitialSelectionKey
+      ? jvPublishingSelectionsRef.current
+      : { rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} };
+    const hasSelectedRubrics = Object.hasOwn(currentSelections.rubricIdsBySite, siteKey);
+    const hasSelectedMainRubric = Object.hasOwn(currentSelections.mainRubricIdBySite, siteKey);
+    const hasSelectedDelivery = Object.hasOwn(currentSelections.deliveryIdsBySite, siteKey);
+    const draftRubrics = jvInitialSelections.rubricIdsBySite[siteKey] ?? [];
+    const rubricIds = hasSelectedRubrics
+      ? currentSelections.rubricIdsBySite[siteKey] ?? []
+      : draftRubrics;
+    const mainRubricId = hasSelectedMainRubric
+      ? currentSelections.mainRubricIdBySite[siteKey] ?? null
+      : jvInitialSelections.mainRubricIdBySite[siteKey] ?? draftRubrics[0] ?? null;
+    const deliveryIds = hasSelectedDelivery
+      ? currentSelections.deliveryIdsBySite[siteKey] ?? []
+      : jvInitialSelections.deliveryIdsBySite[siteKey] ?? [];
+
+    return { rubricIds, mainRubricId, deliveryIds };
+  }
+  const rememberedJvPublishingSelections = JV_RUBRIC_SITE_TABS.reduce<JvPublishingSelections>(
+    (selections, site) => {
+      const effective = getEffectiveJvPublishingSelections(site.key);
+      selections.rubricIdsBySite[site.key] = effective.rubricIds;
+      selections.mainRubricIdBySite[site.key] = effective.mainRubricId;
+      selections.deliveryIdsBySite[site.key] = effective.deliveryIds;
+      return selections;
+    },
+    { rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} },
+  );
   const sourceContentRows = useMemo(
     () => (Array.isArray(sourceJvFields.content_by_language) ? sourceJvFields.content_by_language : []) as unknown[],
     [sourceJvFields]
@@ -1430,9 +1466,13 @@ export default function CreateProductPage() {
     () => {
       if (activeTabMeta.sourceSite === "XL") return xlSourceGalleryItems;
       if (activeTabMeta.sourceSite === "KAUFLAND") return kauflandSourceGalleryItems;
+      if (activeTabMeta.marketplace === "OTTO") {
+        const profile: OttoProfile = activeTabMeta.account === "XL" ? "xl" : "jv";
+        return buildOttoSourceGalleryItems(ottoProductsByProfile[profile]);
+      }
       return sourceGalleryItems;
     },
-    [activeTabMeta.sourceSite, kauflandSourceGalleryItems, sourceGalleryItems, xlSourceGalleryItems]
+    [activeTabMeta.account, activeTabMeta.marketplace, activeTabMeta.sourceSite, kauflandSourceGalleryItems, ottoProductsByProfile, sourceGalleryItems, xlSourceGalleryItems]
   );
   const primaryContentRow = useMemo(() => pickPrimaryJvContentRow(sourceContentRows), [sourceContentRows]);
   const normalizedDescriptionPreviewHtml = useMemo(
@@ -1581,11 +1621,20 @@ export default function CreateProductPage() {
   ].join(":");
   const activeDraftContextKey = [
     controller.kidContext?.kidNumber?.trim() || "",
-    controller.kidContext?.mainEan?.trim() || "",
+    controller.kidContext?.mainEanJv?.trim() || "",
+    controller.kidContext?.mainEanXl?.trim() || "",
   ].filter(Boolean).join(":") || "new-product";
   const activeXlSourceKey = activeDraftContextKey;
   const activeJvSourceKey = activeDraftContextKey;
-  const activeHoodSourceKey = activeDraftContextKey;
+  const activeHoodSnapshot = controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
+    ? controller.sourceSnapshot
+    : null;
+  const activeHoodSourceKey = [
+    activeDraftContextKey,
+    activeTabMeta.sourceSiteKey || "",
+    activeHoodSnapshot?.ean || "",
+    activeHoodSnapshot?.sourceProductId || "",
+  ].join(":");
   const activeKauflandSourceKey = activeDraftContextKey;
   const activeKauflandDescriptionFields = useMemo(
     () => buildKauflandDescriptionFields(kauflandProduct),
@@ -1601,7 +1650,7 @@ export default function CreateProductPage() {
   const activeXlDraftSnapshot = xlDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
     ? xlDraftRefByTab.current[activeTab]
     : undefined;
-  const activeHoodDraftSnapshot = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+  const activeHoodDraftSnapshot = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
     ? hoodDraftRefByTab.current[activeTab]
     : undefined;
   const activeKauflandDraftSnapshot = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
@@ -1626,18 +1675,18 @@ export default function CreateProductPage() {
   const activeOttoDraftSnapshot = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
     ? ottoDraftRefByTab.current[activeTab]
     : undefined;
-  const activeOttoInitialDraft = activeOttoDraftSnapshot
+  const activeOttoInitialDraft = applyReservedOttoIdentity(activeOttoDraftSnapshot
     ? activeOttoDraftSnapshot.draft
     : buildOttoDraft(activeOttoProduct ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.name : jvName,
       ean: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
       sku: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
-      productReference: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
+      productReference: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || ""),
       category: ottoCategoryNameByTab[activeTab] ?? "",
-    });
+    }), activeReservedMarketplaceEan);
   const activeXlDraftKey = activeXlDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
-  const activeHoodDraftKey = activeHoodDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeHoodDraftKey = activeHoodSourceKey;
   const activeKauflandDraftKey = activeKauflandDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
   const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
 
@@ -1651,6 +1700,12 @@ export default function CreateProductPage() {
     jvDraftRef.current = {
       name: "", urlKey: "", artikelnr: "", price: "", evp: "", bezeichnung: "", kurzbeschreibung: "", shortDescriptionReal: "", metaTitle: "", metaDescription: "", metaKeyword: "", description: "",
     };
+    jvPublishingSelectionsRef.current = {
+      rubricIdsBySite: {},
+      mainRubricIdBySite: {},
+      deliveryIdsBySite: {},
+    };
+    jvPublishingSelectionKeyRef.current = "";
     xlDraftRefByTab.current = {};
     hoodDraftRefByTab.current = {};
     kauflandDraftRefByTab.current = {};
@@ -1659,6 +1714,11 @@ export default function CreateProductPage() {
     setReservedMarketplaceEans({});
     setOttoCategoryByTab({});
     setOttoCategoryNameByTab({});
+    setGalleryItems([]);
+    setActiveGalleryImageId("");
+    setTabGalleryItemsByTab({});
+    setActiveTabGalleryImageIdByTab({});
+    removedSourceGalleryItemIdsByTabRef.current = {};
   }, [activeDraftContextKey]);
 
   useEffect(() => {
@@ -1697,7 +1757,7 @@ export default function CreateProductPage() {
             : activeOttoInitialDraft;
           ottoDraftRefByTab.current[activeTab] = {
             sourceKey: activeOttoSourceKey,
-            draft: { ...current, productReference: ean, sku: ean, ean },
+            draft: { ...current, sku: ean, ean },
           };
         }
         setReservedMarketplaceEans((current) =>
@@ -1764,7 +1824,8 @@ export default function CreateProductPage() {
         return current;
       }
       const localItems = current.filter((item) => item.isLocal);
-      const remoteItems = sourceGalleryItems;
+      const removedIds = removedSourceGalleryItemIdsByTabRef.current.jv ?? new Set<string>();
+      const remoteItems = sourceGalleryItems.filter((item) => !removedIds.has(item.id));
       return [...remoteItems, ...localItems];
     });
   }, [activeTab, sourceGalleryItems]);
@@ -1804,9 +1865,13 @@ export default function CreateProductPage() {
     setTabGalleryItemsByTab((current) => {
       const currentItems = current[activeTab] ?? [];
       const localItems = currentItems.filter((item) => item.isLocal);
+      const removedIds = removedSourceGalleryItemIdsByTabRef.current[activeTab] ?? new Set<string>();
       return {
         ...current,
-        [activeTab]: [...activeTabSourceGalleryItems, ...localItems],
+        [activeTab]: [
+          ...activeTabSourceGalleryItems.filter((item) => !removedIds.has(item.id)),
+          ...localItems,
+        ],
       };
     });
   }, [activeTab, activeTabSourceGalleryItems]);
@@ -1980,6 +2045,13 @@ export default function CreateProductPage() {
       if (target?.isLocal) {
         URL.revokeObjectURL(target.src);
         localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
+      } else if (target) {
+        const removedIds = new Set(removedSourceGalleryItemIdsByTabRef.current.jv ?? []);
+        removedIds.add(itemId);
+        removedSourceGalleryItemIdsByTabRef.current = {
+          ...removedSourceGalleryItemIdsByTabRef.current,
+          jv: removedIds,
+        };
       }
       return current.filter((item) => item.id !== itemId);
     });
@@ -2062,6 +2134,13 @@ export default function CreateProductPage() {
       if (target?.isLocal) {
         URL.revokeObjectURL(target.src);
         localObjectUrlsRef.current = localObjectUrlsRef.current.filter((url) => url !== target.src);
+      } else if (target) {
+        const removedIds = new Set(removedSourceGalleryItemIdsByTabRef.current[activeTab] ?? []);
+        removedIds.add(itemId);
+        removedSourceGalleryItemIdsByTabRef.current = {
+          ...removedSourceGalleryItemIdsByTabRef.current,
+          [activeTab]: removedIds,
+        };
       }
       return {
         ...current,
@@ -2272,11 +2351,13 @@ export default function CreateProductPage() {
     uploadedGallery: { image?: string; images: Array<{ image: string; sort_order: number }> },
     jvFields: JvCreateProductFields,
   ): JvCreateAndPushPayload {
-    const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
+    const ean = asTrimmedString(
+      jvFields.artikelnr || controller.kidContext?.mainEanJv || controller.sourceSnapshot?.ean || sourcePayload.ean,
+    );
     const price = normalizeDecimalPrice(jvFields.price || asTrimmedString(sourcePayload.price));
-    const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[siteKey] ?? [];
-    const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[siteKey] ?? null;
-    const selectedDeliveryId = jvPublishingSelectionsRef.current.deliveryIdsBySite[siteKey]?.[0];
+    const { rubricIds: selectedRubrics, mainRubricId: mainRubric, deliveryIds } =
+      getEffectiveJvPublishingSelections(siteKey);
+    const selectedDeliveryId = deliveryIds[0];
     const orderedRubrics = selectedRubrics.slice().sort((left, right) => {
       if (left === mainRubric) return -1;
       if (right === mainRubric) return 1;
@@ -2346,7 +2427,9 @@ export default function CreateProductPage() {
 
   async function handleSendToAllJvSites(targetSiteKeys = JV_RUBRIC_SITE_TABS.map((site) => site.key)) {
     const jvFields = jvDraftRef.current;
-    const ean = asTrimmedString(controller.kidContext?.mainEan || controller.sourceSnapshot?.ean || sourcePayload.ean);
+    const ean = asTrimmedString(
+      jvFields.artikelnr || controller.kidContext?.mainEanJv || controller.sourceSnapshot?.ean || sourcePayload.ean,
+    );
     if (!jvFields.name.trim()) {
       showToast(t.createProductNameRequiredBeforeSend, "error");
       return;
@@ -2359,9 +2442,11 @@ export default function CreateProductPage() {
     const validationErrors: string[] = [];
     const targetSites = JV_RUBRIC_SITE_TABS.filter((site) => targetSiteKeys.includes(site.key));
     for (const site of targetSites) {
-      const selectedRubrics = jvPublishingSelectionsRef.current.rubricIdsBySite[site.key] ?? [];
-      const mainRubric = jvPublishingSelectionsRef.current.mainRubricIdBySite[site.key] ?? null;
-      const selectedDelivery = jvPublishingSelectionsRef.current.deliveryIdsBySite[site.key] ?? [];
+      const {
+        rubricIds: selectedRubrics,
+        mainRubricId: mainRubric,
+        deliveryIds: selectedDelivery,
+      } = getEffectiveJvPublishingSelections(site.key);
 
       if (selectedRubrics.length === 0) {
         validationErrors.push(t.createProductSelectAtLeastOneRubric.replace("{site}", site.label));
@@ -2387,7 +2472,6 @@ export default function CreateProductPage() {
 
     setSendAllSitesLoading(true);
     setSendAllSitesStatus(t.createProductQueueingJvJob);
-    setSendAllSitesLog("");
     showToast(
       t.createProductJvQueuedToast,
       "info"
@@ -2453,7 +2537,6 @@ export default function CreateProductPage() {
           return;
         }
 
-        persistActiveCreateJob(jobId, ean);
         if (isMountedRef.current) {
           setSendAllSitesStatus(
             t.createProductJvJobQueuedBackground
@@ -2461,7 +2544,9 @@ export default function CreateProductPage() {
               .replace("{count}", String(targetSites.length))
           );
         }
-        await pollCreateJob(jobId);
+        if (isMountedRef.current) {
+          setSendAllSitesLoading(false);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : t.createProductJvBackgroundFailed;
         if (isMountedRef.current) {
@@ -2471,86 +2556,6 @@ export default function CreateProductPage() {
         showToast(message, "error");
       }
     })();
-  }
-
-  function persistActiveCreateJob(jobId: number, jobEan: string): void {
-    try {
-      window.localStorage.setItem(
-        JV_CREATE_JOB_STORAGE_KEY,
-        JSON.stringify({ jobId, ean: jobEan, startedAt: Date.now() })
-      );
-    } catch {
-      /* ignore storage failures */
-    }
-  }
-
-  function clearActiveCreateJob(): void {
-    try {
-      window.localStorage.removeItem(JV_CREATE_JOB_STORAGE_KEY);
-    } catch {
-      /* ignore storage failures */
-    }
-  }
-
-  async function pollCreateJob(jobId: number): Promise<void> {
-    if (pollingJobRef.current === jobId) return;
-    pollingJobRef.current = jobId;
-    const deadline = Date.now() + 15 * 60 * 1000;
-    try {
-      while (Date.now() < deadline) {
-        let payload: Record<string, unknown> = {};
-        let httpStatus = 0;
-        try {
-          const res = await xljvGetBatchJob(jobId);
-          payload = res.payload;
-          httpStatus = res.response.status;
-        } catch {
-          // transient network error — keep retrying until the deadline
-        }
-        if (httpStatus === 404) {
-          clearActiveCreateJob();
-          if (isMountedRef.current) setSendAllSitesLoading(false);
-          showToast(t.createProductJvJobNotFound.replace("{jobId}", String(jobId)), "error");
-          return;
-        }
-
-        const job = (payload.job ?? payload) as JvBatchJobStatus | undefined;
-        const statusValue = String(job?.status ?? "").toLowerCase();
-        const items = Array.isArray(job?.items) ? job!.items! : [];
-        const total = items.length || JV_RUBRIC_SITE_TABS.length;
-        const appliedCount = items.filter((item) => String(item.status).toLowerCase() === "applied").length;
-
-        if (statusValue === "applied" || statusValue === "failed") {
-          clearActiveCreateJob();
-          const summary = t.createProductJvCreateFinished
-            .replace("{applied}", String(appliedCount))
-            .replace("{total}", String(total));
-          if (isMountedRef.current) {
-            setSendAllSitesStatus(summary);
-            setSendAllSitesLoading(false);
-            setSendAllSitesLog(JSON.stringify(job, null, 2));
-          }
-          showToast(summary, statusValue === "applied" ? "success" : "error");
-          return;
-        }
-
-        if (isMountedRef.current) {
-          setSendAllSitesStatus(
-            t.createProductJvCreateProgress
-              .replace("{applied}", String(appliedCount))
-              .replace("{total}", String(total))
-              .replace("{jobId}", String(jobId))
-          );
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-      }
-      if (isMountedRef.current) {
-        setSendAllSitesStatus(t.createProductJvJobStillRunning.replace("{jobId}", String(jobId)));
-        setSendAllSitesLoading(false);
-      }
-    } finally {
-      if (pollingJobRef.current === jobId) pollingJobRef.current = null;
-    }
   }
 
   function renderRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {
@@ -2736,15 +2741,29 @@ export default function CreateProductPage() {
       productLine: profile === "xl" ? activeXlDescriptionFields.name : jvName,
       ean: fallbackEan,
       sku: fallbackEan,
-      productReference: fallbackEan,
+      productReference: profile === "xl"
+        ? activeXlDescriptionFields.ean
+        : String(controller.sourceSnapshot?.ean || ""),
       category: ottoCategoryNameByTab[ottoTab] ?? "",
     });
-    const ottoGalleryItems = tabGalleryItemsByTab[ottoTab]?.length
-      ? tabGalleryItemsByTab[ottoTab]
-      : galleryItems;
+    const ottoGalleryItems = tabGalleryItemsByTab[ottoTab] ?? EMPTY_GALLERY_ITEMS;
     const imageUrls = ottoGalleryItems.map((item) => item.src.trim()).filter(Boolean);
-    const productReference = draft.productReference.trim() || draft.sku.trim() || draft.ean.trim();
-    const ean = draft.ean.trim() || controller.ean.trim();
+    const identityEan = reservedEan || draft.ean.trim() || controller.ean.trim();
+    const productReference = draft.productReference.trim();
+    if (!productReference) {
+      showToast("Enter a product reference for OTTO.", "error");
+      return;
+    }
+    if (!isOttoProductLineValid(draft.productLine)) {
+      showToast("OTTO product line must contain at most 70 characters.", "error");
+      return;
+    }
+    const ean = identityEan;
+    const quantity = Number(draft.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      showToast("Enter a positive whole quantity for OTTO.", "error");
+      return;
+    }
     const deliveryTime = Number(draft.deliveryTime);
     if (!Number.isInteger(deliveryTime) || deliveryTime < 1) {
       showToast("Enter a delivery time in whole days for OTTO.", "error");
@@ -2755,18 +2774,14 @@ export default function CreateProductPage() {
       showToast("Select a shipping profile for OTTO.", "error");
       return;
     }
-    const attributeNames = draft.attributeNames ?? {};
-    const attributeEntries = Object.entries({ ...draft.additionalAttributes, ...draft.attributeOverrides })
-      .filter(([, value]) => value.trim());
-    const unresolvedAttributeIds = attributeEntries
-      .map(([attributeId]) => attributeId)
-      .filter((attributeId) => !attributeNames[attributeId]);
-    if (unresolvedAttributeIds.length > 0) {
-      showToast("OTTO attribute names are not loaded yet. Reopen the category and try again.", "error");
-      return;
-    }
     const attributes = deduplicateOttoAttributes(
-      attributeEntries.map(([attributeId, value]) => ({ name: attributeNames[attributeId], values: [value] })),
+      buildOttoPayloadAttributes({
+        productAttributes: readOttoProductAttributes(ottoProductsByProfile[profile]),
+        additionalAttributes: draft.additionalAttributes,
+        attributeOverrides: draft.attributeOverrides,
+        attributeNames: draft.attributeNames,
+        removedAttributeIds: draft.removedAttributeIds,
+      }),
     );
     return controller.handleCreateProduct({}, siteIds, {
       ottoEan: ean,
@@ -2775,8 +2790,9 @@ export default function CreateProductPage() {
       ottoImageUrls: imageUrls,
       ottoPayload: {
         productReference,
-        sku: draft.sku.trim() || productReference,
+        sku: reservedEan || draft.sku.trim() || productReference,
         ean,
+        quantity,
         shippingProfileId,
         productDescription: {
           category: draft.category.trim(),
@@ -2937,9 +2953,12 @@ export default function CreateProductPage() {
 
   function handleMainCreate() {
     const siteKey = "JV_DE";
-    const selectedCategoryIds = jvPublishingSelectionsRef.current.rubricIdsBySite[siteKey] ?? [];
-    const mainCategoryId = jvPublishingSelectionsRef.current.mainRubricIdBySite[siteKey] ?? null;
-    const selectedDeliveryId = jvPublishingSelectionsRef.current.deliveryIdsBySite[siteKey]?.[0];
+    const {
+      rubricIds: selectedCategoryIds,
+      mainRubricId: mainCategoryId,
+      deliveryIds,
+    } = getEffectiveJvPublishingSelections(siteKey);
+    const selectedDeliveryId = deliveryIds[0];
 
     if (selectedCategoryIds.length === 0) {
       showToast("Select at least one JV DE category before creating the job.", "error");
@@ -2954,7 +2973,7 @@ export default function CreateProductPage() {
       return;
     }
 
-    const orderedCategoryIds = selectedCategoryIds.sort((left, right) => {
+    const orderedCategoryIds = selectedCategoryIds.slice().sort((left, right) => {
       if (left === mainCategoryId) return -1;
       if (right === mainCategoryId) return 1;
       return left - right;
@@ -3102,10 +3121,11 @@ export default function CreateProductPage() {
                   sourceSiteKey={controller.sourceSnapshot?.siteKey}
                   sourceCategories={sourceCategories}
                   sourceDeliveryId={asIntegerOrUndefined(sourceJvFields.lieferzeitid)}
-                  initialSelections={controller.jvSourceSnapshotsReady ? jvInitialSelections : undefined}
+                  initialSelections={controller.jvSourceSnapshotsReady ? rememberedJvPublishingSelections : undefined}
                   initialSelectionKey={controller.jvSourceSnapshotsReady ? jvInitialSelectionKey : undefined}
                   onSelectionsChange={(selections) => {
                     jvPublishingSelectionsRef.current = selections;
+                    jvPublishingSelectionKeyRef.current = jvInitialSelectionKey;
                   }}
                 />
               </div>
@@ -3164,8 +3184,9 @@ export default function CreateProductPage() {
                       <div className="text-sm text-muted-foreground">{t.ottoNoProductForEan}</div>
                     ) : null}
                     <OttoCreateProductPanel
+                      key={activeTab}
                       initialDraft={activeOttoInitialDraft}
-                      draftKey={`${activeOttoDraftKey}:${activeReservedMarketplaceEan}`}
+                      draftKey={`${activeTab}:${activeOttoDraftKey}:${activeReservedMarketplaceEan}`}
                       profile={activeOttoProfile ?? "jv"}
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}

@@ -97,7 +97,10 @@ def _is_missing_product_lookup_error(*, status_code: int, detail: object) -> boo
     if status_code != 500:
         return False
     message = unescape(str(detail)).lower()
-    return "'nonetype' object has no attribute 'get'" in message
+    return (
+        "'nonetype' object has no attribute 'get'" in message
+        or "'nonetype' object is not iterable" in message
+    )
 
 
 class GetProductAPIView(APIView):

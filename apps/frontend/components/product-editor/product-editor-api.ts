@@ -77,11 +77,13 @@ export async function loadProductEditorGroup(input: {
   ean: string;
   activeGroup: ProductEditorGroupId;
   baselineTargetId?: string | null;
+  publishingTargetId?: string | null;
 }): Promise<ProductEditorLoadResponse> {
   const requestBody = JSON.stringify({
     ean: input.ean,
     active_group: input.activeGroup,
-    baseline_target_id: input.baselineTargetId ?? null
+    baseline_target_id: input.baselineTargetId ?? null,
+    publishing_target_id: input.publishingTargetId ?? null
   });
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await apiFetch("/api/v1/orchestrator/product-editor/load", {

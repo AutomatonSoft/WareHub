@@ -4,7 +4,7 @@ import { Clock3, PackageSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels, useLanguage } from "../../app/use-labels";
-import { apiFetch } from "../../lib/api/client";
+import { fetchDatabaseServiceWithSessionRetry } from "./dashboard-api";
 import { getServicesApiBase } from "../inventory/inventory-api";
 import type { SofortListRow } from "../inventory/sofort-list/sofort-list-types";
 import { normalizePhotoList, normalizePlaceValue, type KidDto } from "../inventory/inventory-table-utils";
@@ -77,7 +77,8 @@ type CriticalInventorySourceRow = KidDto & {
   material?: string | null;
   price?: string | null;
   global_price?: string | null;
-  main_ean?: string | null;
+  main_ean_jv?: string | null;
+  main_ean_xl?: string | null;
   ean?: string | null;
   section?: string | null;
   room?: string | null;
@@ -199,7 +200,7 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
     kidId: Number(row.kid_id),
     orderDbId: typeof row.order_db_id === "number" ? row.order_db_id : null,
     kidNumber: row.kid_number?.trim() || "-",
-    ean: firstText(row.main_ean, row.ean),
+    ean: firstText(row.main_ean_jv, row.main_ean_xl, row.ean),
     siteEans: {
       jv: firstText(row.jv_ean, row.ean_jv, row.jv_site_ean, row.jvSiteEan),
       xl: firstText(row.xl_ean, row.ean_xl, row.xl_site_ean, row.xlSiteEan),
@@ -257,7 +258,7 @@ function buildCriticalInventoryItem(row: CriticalInventorySourceRow, t: ReturnTy
   if (place === "-") reasons.push({ key: "place", label: t.criticalInventoryReasonMissingPlace, weight: CRITICAL_WEIGHTS.missingPlace });
   if (!hasText(row.section)) reasons.push({ key: "section", label: t.criticalInventoryReasonMissingSection, weight: CRITICAL_WEIGHTS.missingSection });
   if (photos.length === 0) reasons.push({ key: "photo", label: t.criticalInventoryReasonMissingPhoto, weight: CRITICAL_WEIGHTS.missingPhoto });
-  if (!hasText(row.main_ean ?? row.ean)) reasons.push({ key: "ean", label: t.criticalInventoryReasonMissingEan, weight: CRITICAL_WEIGHTS.missingMainEan });
+  if (!hasText(row.main_ean_jv ?? row.main_ean_xl ?? row.ean)) reasons.push({ key: "ean", label: t.criticalInventoryReasonMissingEan, weight: CRITICAL_WEIGHTS.missingMainEan });
   if (!hasMarketplaceEans(row, ["jv_ean", "ean_jv", "jv_site_ean", "jvSiteEan", "xl_ean", "ean_xl", "xl_site_ean", "xlSiteEan"])) reasons.push({ key: "sites-ean", label: t.criticalInventoryReasonMissingSitesEan, weight: CRITICAL_WEIGHTS.missingSitesEan });
   if (!hasMarketplaceEans(row, ["otto_jv_ean", "otto_ean_jv", "ean_otto_jv", "ottoJvEan", "otto_xl_ean", "otto_ean_xl", "ean_otto_xl", "ottoXlEan"])) reasons.push({ key: "otto-ean", label: t.criticalInventoryReasonMissingOttoEan, weight: CRITICAL_WEIGHTS.missingOttoEan });
   if (!hasMarketplaceEans(row, ["ebay_jv_ean", "ebay_ean_jv", "ean_ebay_jv", "ebayJvEan", "ebay_xl_ean", "ebay_ean_xl", "ean_ebay_xl", "ebayXlEan"])) reasons.push({ key: "ebay-ean", label: t.criticalInventoryReasonMissingEbayEan, weight: CRITICAL_WEIGHTS.missingEbayEan });
@@ -437,7 +438,7 @@ export function CriticalInventoryPanel() {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(`${getServicesApiBase()}/inventory/critical/`);
+        const response = await fetchDatabaseServiceWithSessionRetry(`${getServicesApiBase()}/inventory/critical/`);
         if (!response.ok) throw new Error(`critical_inventory_request_failed:${response.status}`);
         const payload = await response.json() as CriticalInventoryResponse;
         const allRows = payload.results;

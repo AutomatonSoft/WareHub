@@ -1,6 +1,7 @@
 import { API_V1_ROUTES, buildApiV1Url } from "../../app/api-v1-routes";
 import { DEFAULT_API_BASE } from "../../app/client-api";
-import { authorizedFetch } from "../../app/client-api-shared";
+import { authorizedFetch, readAuth } from "../../app/client-api-shared";
+import { syncDatabaseServiceSession } from "../../app/services-session";
 import { resolveServicesApiBase } from "../../lib/api/services-base";
 
 export type DashboardWarehouseSummaryDto = {
@@ -70,15 +71,34 @@ function getServicesApiBase(): string {
   return resolveServicesApiBase(process.env.NEXT_PUBLIC_SERVICES_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
+export async function fetchDatabaseServiceWithSessionRetry(url: string): Promise<Response> {
+  const request = () => fetch(url, { credentials: "include", cache: "no-store" });
+  let response = await request();
+
+  if (response.status !== 403 || typeof window === "undefined") {
+    return response;
+  }
+
+  const token = readAuth()?.token;
+  if (!token || !(await syncDatabaseServiceSession(token))) {
+    return response;
+  }
+
+  response = await request();
+  return response;
+}
+
 export async function fetchDashboardOverviewData(): Promise<DashboardWarehouseSummaryDto> {
   const base = getServicesApiBase();
-  const summaryResponse = await fetch(`${base}/inventory/dashboard-summary/`, {
-    credentials: "include",
-    cache: "no-store"
-  });
+  const summaryResponse = await fetchDatabaseServiceWithSessionRetry(`${base}/inventory/dashboard-summary/`);
 
   if (!summaryResponse.ok) {
-    console.error("DASHBOARD_OVERVIEW_REQUEST_FAILED", { code: summaryResponse.status });
+    const payload = (await summaryResponse.json().catch(() => null)) as { code?: string; request_id?: string } | null;
+    console.error("DASHBOARD_OVERVIEW_REQUEST_FAILED", {
+      code: summaryResponse.status,
+      error_code: payload?.code,
+      request_id: payload?.request_id
+    });
     throw new Error("dashboard_overview_request_failed");
   }
 
@@ -124,10 +144,7 @@ export async function fetchInventoryChangeHistory(params: {
   if (params.dateFrom) searchParams.set("date_from", params.dateFrom);
   if (params.dateTo) searchParams.set("date_to", params.dateTo);
 
-  const response = await fetch(`${getServicesApiBase()}/inventory/change-history/?${searchParams.toString()}`, {
-    credentials: "include",
-    cache: "no-store"
-  });
+  const response = await fetchDatabaseServiceWithSessionRetry(`${getServicesApiBase()}/inventory/change-history/?${searchParams.toString()}`);
   if (!response.ok) {
     throw new Error("inventory_change_history_request_failed");
   }

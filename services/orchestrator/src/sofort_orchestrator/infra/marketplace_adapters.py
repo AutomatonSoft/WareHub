@@ -52,7 +52,7 @@ class MarketplaceAdapters:
             url = f"{self.base_url}/api/v1/otto/{profile}/products/upsert/"
             otto_payload = dict(payload)
             if channel.ean_source == "pool":
-                otto_payload.update({"productReference": ean, "sku": ean, "ean": ean})
+                otto_payload.update({"sku": ean, "ean": ean})
             response = self.http.request("POST", url, headers=headers, json=otto_payload)
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
@@ -67,7 +67,12 @@ class MarketplaceAdapters:
             if product_editor_mode == "jv_batch_apply":
                 url = f"{self.base_url}/api/v1/jv/batch/update-by-artikelnr/{ean}/apply/"
                 batch_payload = {key: value for key, value in payload.items() if not str(key).startswith("__product_editor_")}
-                response = self.http.request("POST", url, headers=headers, json=batch_payload)
+                response = self.http.request(
+                    "POST",
+                    url,
+                    headers={**headers, "Idempotency-Key": request_id},
+                    json=batch_payload,
+                )
                 return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
             if product_editor_mode == "xl_batch_apply":
                 url = f"{self.base_url}/api/v1/xl/batch/update-by-ean/{ean}/apply/"

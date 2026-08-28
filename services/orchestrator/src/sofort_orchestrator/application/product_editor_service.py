@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from ..domain.product_editor_models import (
     ProductEditorDiscoverResponse,
     ProductEditorGroupId,
@@ -32,16 +34,59 @@ class ProductEditorService:
 
     def discover(self, *, ean: str, request_id: str, active_group: ProductEditorGroupId | None = None) -> ProductEditorDiscoverResponse:
         groups = build_product_editor_groups()
-        discover_hood = active_group in (None, ProductEditorGroupId.HOOD)
-        discover_jv = active_group in (None, ProductEditorGroupId.JV)
-        discover_kaufland = active_group is ProductEditorGroupId.KAUFLAND
-        discover_otto = active_group is ProductEditorGroupId.OTTO
-        discover_xl = active_group is ProductEditorGroupId.XL
-        hood_results = self.hood_flow.discover_targets(ean=ean, request_id=request_id) if discover_hood else {}
-        jv_results = self.jv_flow.discover_targets(ean=ean, request_id=request_id) if discover_jv else {}
-        kaufland_results = self.kaufland_flow.discover_targets(ean=ean, request_id=request_id) if discover_kaufland else {}
-        otto_results = self.otto_flow.discover_targets(ean=ean, request_id=request_id) if discover_otto else {}
-        xl_results = self.xl_flow.discover_targets(ean=ean, request_id=request_id) if discover_xl else {}
+        if active_group is None:
+            with ThreadPoolExecutor(max_workers=5, thread_name_prefix="product-editor-discover") as executor:
+                hood_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.HOOD,
+                    discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id),
+                )
+                jv_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.JV,
+                    discover=lambda: self.jv_flow.discover_targets(ean=ean, request_id=request_id),
+                )
+                kaufland_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.KAUFLAND,
+                    discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id),
+                )
+                otto_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.OTTO,
+                    discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id),
+                )
+                xl_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.XL,
+                    discover=lambda: self.xl_flow.discover_targets(ean=ean, request_id=request_id),
+                )
+                hood_results = hood_future.result()
+                jv_results = jv_future.result()
+                kaufland_results = kaufland_future.result()
+                otto_results = otto_future.result()
+                xl_results = xl_future.result()
+        else:
+            hood_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.HOOD,
+                discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.HOOD else {}
+            jv_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.JV,
+                discover=lambda: self.jv_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.JV else {}
+            kaufland_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.KAUFLAND,
+                discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.KAUFLAND else {}
+            otto_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.OTTO,
+                discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.OTTO else {}
+            xl_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.XL,
+                discover=lambda: self.xl_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.XL else {}
 
         hood_found_target_ids: list[str] = []
         jv_found_target_ids: list[str] = []
@@ -135,6 +180,25 @@ class ProductEditorService:
             warnings=warnings,
         )
 
+    def _discover_targets_safely(self, *, group_id: ProductEditorGroupId, discover) -> dict[str, dict]:
+        try:
+            return discover()
+        except RetryExhaustedError as exc:
+            warning = ProductEditorWarning(
+                code="product_editor_discover_upstream_timeout" if exc.kind == "timeout" else "product_editor_discover_upstream_unavailable",
+                message="Marketplace discovery request timed out." if exc.kind == "timeout" else "Marketplace discovery service is unavailable.",
+            )
+            return {
+                target.id: {
+                    "status": ProductEditorTargetStatus.ERROR,
+                    "metadata": {"kind": exc.kind},
+                    "warnings": [warning],
+                }
+                for group in build_product_editor_groups()
+                if group.id is group_id
+                for target in group.targets
+            }
+
     def load(
         self,
         *,
@@ -142,12 +206,18 @@ class ProductEditorService:
         request_id: str,
         active_group: ProductEditorGroupId,
         baseline_target_id: str | None,
+        publishing_target_id: str | None = None,
     ) -> ProductEditorLoadResponse:
         try:
             if active_group is ProductEditorGroupId.HOOD:
                 return self.hood_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
             if active_group is ProductEditorGroupId.JV:
-                return self.jv_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
+                return self.jv_flow.load(
+                    ean=ean,
+                    request_id=request_id,
+                    baseline_target_id=baseline_target_id,
+                    publishing_target_id=publishing_target_id,
+                )
             if active_group is ProductEditorGroupId.XL:
                 return self.xl_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
             if active_group is ProductEditorGroupId.KAUFLAND:
@@ -241,6 +311,40 @@ class ProductEditorService:
             details={"active_group": plan["active_group"].value},
         )
 
+    def execute_queued_job(self, *, job_id: str) -> None:
+        job = self.store.get_job(job_id=job_id)
+        if job is None:
+            raise ProductEditorServiceError("product_editor_job_not_found", "Product Editor job was not found.", 404, details={"job_id": job_id})
+        if job["active_group"] is ProductEditorGroupId.HOOD:
+            self.hood_flow.execute_job(job_id=job_id)
+            return
+        if job["active_group"] is ProductEditorGroupId.KAUFLAND:
+            self.kaufland_flow.execute_job(job_id=job_id)
+            return
+        raise ProductEditorServiceError(
+            "product_editor_job_not_queueable",
+            "Product Editor job is handled by a different worker.",
+            409,
+            details={"job_id": job_id, "active_group": job["active_group"].value},
+        )
+
+    def list_jobs(self, *, request_id: str, limit: int, offset: int = 0, query: str = "") -> list[ProductEditorJobResponse]:
+        return [
+            ProductEditorJobResponse(
+                request_id=request_id,
+                job_id=job["job_id"],
+                ean=job["ean"],
+                status=job["status"],
+                active_group=job["active_group"],
+                summary=job["summary"],
+                targets=job["targets"],
+                error=job["error"],
+                created_at_unix_ms=job["created_at_unix_ms"],
+                updated_at_unix_ms=job["updated_at_unix_ms"],
+            )
+            for job in self.store.list_jobs(limit=limit, offset=offset, query=query)
+        ]
+
     def get_job(self, *, job_id: str, request_id: str) -> ProductEditorJobResponse:
         job = self.store.get_job(job_id=job_id)
         if job is None:
@@ -260,11 +364,14 @@ class ProductEditorService:
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,
+            ean=job["ean"],
             status=job["status"],
             active_group=job["active_group"],
             summary=job["summary"],
             targets=job["targets"],
             error=job["error"],
+            created_at_unix_ms=job["created_at_unix_ms"],
+            updated_at_unix_ms=job["updated_at_unix_ms"],
         )
 
 

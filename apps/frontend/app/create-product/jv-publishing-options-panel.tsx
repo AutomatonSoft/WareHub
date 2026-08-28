@@ -17,11 +17,21 @@ type SiteKey = (typeof SITES)[number]["key"];
 type RubricNode = { id: number; parent_id?: number; name?: string; children?: RubricNode[] };
 type DeliveryOption = { id: number; lieferzeitid?: number; label?: string; is_default?: boolean };
 
+let cachedRubricTrees: Partial<Record<SiteKey, RubricNode[]>> = {};
+let rubricTreeRequests: Partial<Record<SiteKey, Promise<RubricNode[]>>> = {};
+let cachedDeliveryOptions: Partial<Record<SiteKey, DeliveryOption[]>> = {};
+let deliveryOptionRequests: Partial<Record<SiteKey, Promise<DeliveryOption[]>>> = {};
+
 export type JvPublishingSelections = {
   rubricIdsBySite: Partial<Record<SiteKey, number[]>>;
   mainRubricIdBySite: Partial<Record<SiteKey, number | null>>;
   deliveryIdsBySite: Partial<Record<SiteKey, number[]>>;
 };
+
+function haveSameNumberIds(left: Set<number> | undefined, right: number[]) {
+  if ((left?.size ?? 0) !== right.length) return false;
+  return right.every((id) => left?.has(id));
+}
 
 type Props = {
   sourceSiteKey?: string;
@@ -80,6 +90,46 @@ function collectExpandableRubricIds(nodes: RubricNode[]): Set<number> {
   return ids;
 }
 
+async function loadRubricTree(siteKey: SiteKey): Promise<RubricNode[]> {
+  const cached = cachedRubricTrees[siteKey];
+  if (cached) return cached;
+
+  if (!rubricTreeRequests[siteKey]) {
+    rubricTreeRequests[siteKey] = xljvGetRubricsTree({ site: "JV", siteKey, language: "de" })
+      .then((result) => {
+        if (!result.response.ok) throw new Error(String(result.response.status));
+        const tree = normalizeTree(result.payload);
+        cachedRubricTrees = { ...cachedRubricTrees, [siteKey]: tree };
+        return tree;
+      })
+      .finally(() => {
+        rubricTreeRequests = { ...rubricTreeRequests, [siteKey]: undefined };
+      });
+  }
+
+  return rubricTreeRequests[siteKey] ?? [];
+}
+
+async function loadDeliveryOptions(siteKey: SiteKey): Promise<DeliveryOption[]> {
+  const cached = cachedDeliveryOptions[siteKey];
+  if (cached) return cached;
+
+  if (!deliveryOptionRequests[siteKey]) {
+    deliveryOptionRequests[siteKey] = xljvGetDeliveryOptions({ site: "JV", siteKey, language: "de" })
+      .then((result) => {
+        if (!result.response.ok) throw new Error(String(result.response.status));
+        const options = Array.isArray(result.payload.items) ? result.payload.items as DeliveryOption[] : [];
+        cachedDeliveryOptions = { ...cachedDeliveryOptions, [siteKey]: options };
+        return options;
+      })
+      .finally(() => {
+        deliveryOptionRequests = { ...deliveryOptionRequests, [siteKey]: undefined };
+      });
+  }
+
+  return deliveryOptionRequests[siteKey] ?? [];
+}
+
 export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sourceDeliveryId, initialSelections, initialSelectionKey, onSelectionsChange }: Props) {
   const t = useLabels();
   const callbackRef = useRef(onSelectionsChange);
@@ -98,47 +148,56 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   const [selectedDeliveryOnly, setSelectedDeliveryOnly] = useState(false);
   const [isSelectionInitialized, setIsSelectionInitialized] = useState(false);
   const initializedSelectionKeyRef = useRef<string | null>(null);
+  const initializedSitesRef = useRef<Set<SiteKey>>(new Set());
+  const manuallyChangedRubricSitesRef = useRef<Set<SiteKey>>(new Set());
+  const manuallyChangedDeliverySitesRef = useRef<Set<SiteKey>>(new Set());
   const rubricNodeRefs = useRef<Partial<Record<SiteKey, Map<number, HTMLDivElement>>>>({});
+  const latestSelectionsRef = useRef<JvPublishingSelections>({
+    rubricIdsBySite: {},
+    mainRubricIdBySite: {},
+    deliveryIdsBySite: {},
+  });
 
   useEffect(() => {
     callbackRef.current = onSelectionsChange;
   }, [onSelectionsChange]);
 
   useEffect(() => {
-    void Promise.allSettled(SITES.map(async (site) => {
-      const result = await xljvGetRubricsTree({ site: "JV", siteKey: site.key, language: "de" });
-      if (!result.response.ok) throw new Error(String(result.response.status));
-      return [site.key, normalizeTree(result.payload)] as const;
-    })).then((results) => {
-      const loadedTrees = Object.fromEntries(
-        results
-          .filter((result): result is PromiseFulfilledResult<readonly [SiteKey, RubricNode[]]> => result.status === "fulfilled")
-          .map((result) => result.value)
-      ) as Partial<Record<SiteKey, RubricNode[]>>;
-      setTrees((current) => ({ ...current, ...loadedTrees }));
-      setExpanded((current) => ({
-        ...current,
-        ...Object.fromEntries(
-          Object.entries(loadedTrees).map(([siteKey, tree]) => [siteKey, collectExpandableRubricIds(tree ?? [])])
-        ),
-      }));
-    });
-    void Promise.allSettled(SITES.map(async (site) => {
-      const result = await xljvGetDeliveryOptions({ site: "JV", siteKey: site.key, language: "de" });
-      if (!result.response.ok) throw new Error(String(result.response.status));
-      return [site.key, Array.isArray(result.payload.items) ? result.payload.items as DeliveryOption[] : []] as const;
-    })).then((results) => setDeliveries((current) => ({ ...current, ...Object.fromEntries(results.filter((result): result is PromiseFulfilledResult<readonly [SiteKey, DeliveryOption[]]> => result.status === "fulfilled").map((result) => result.value)) })));
-  }, []);
-
-  useEffect(() => {
-    const site = SITES.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase());
-    if (!site) return;
+    const site = SITES.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase()) ?? SITES[0];
     if (initialSelections) {
-      if (initializedSelectionKeyRef.current === initialSelectionKey) return;
-      initializedSelectionKeyRef.current = initialSelectionKey ?? null;
-      setRubricIds(Object.fromEntries(SITES.map((item) => [item.key, new Set(initialSelections.rubricIdsBySite[item.key] ?? [])])));
-      setMainIds(Object.fromEntries(SITES.map((item) => [item.key, initialSelections.mainRubricIdBySite[item.key] ?? null])));
-      setDeliveryIds(Object.fromEntries(SITES.map((item) => [item.key, new Set(initialSelections.deliveryIdsBySite[item.key] ?? [])])));
+      if (initializedSelectionKeyRef.current !== initialSelectionKey) {
+        initializedSelectionKeyRef.current = initialSelectionKey ?? null;
+        initializedSitesRef.current.clear();
+        manuallyChangedRubricSitesRef.current.clear();
+        manuallyChangedDeliverySitesRef.current.clear();
+        setRubricIds({});
+        setMainIds({});
+        setDeliveryIds({});
+      }
+
+      const loadedSites = SITES.filter(({ key }) => (
+        Object.hasOwn(initialSelections.rubricIdsBySite, key) ||
+        Object.hasOwn(initialSelections.mainRubricIdBySite, key) ||
+        Object.hasOwn(initialSelections.deliveryIdsBySite, key)
+      ));
+      for (const { key } of loadedSites) {
+        const isFirstInitialization = !initializedSitesRef.current.has(key);
+        if (isFirstInitialization) {
+          initializedSitesRef.current.add(key);
+        }
+        if (isFirstInitialization && !manuallyChangedRubricSitesRef.current.has(key)) {
+          const rubricIds = initialSelections.rubricIdsBySite[key] ?? [];
+          setRubricIds((current) => ({ ...current, [key]: new Set(rubricIds) }));
+          setMainIds((current) => ({ ...current, [key]: initialSelections.mainRubricIdBySite[key] ?? rubricIds[0] ?? null }));
+        }
+        if (!manuallyChangedDeliverySitesRef.current.has(key)) {
+          const deliveryIds = initialSelections.deliveryIdsBySite[key] ?? [];
+          setDeliveryIds((current) => {
+            if (haveSameNumberIds(current[key], deliveryIds)) return current;
+            return { ...current, [key]: new Set(deliveryIds) };
+          });
+        }
+      }
       setRubricSite(site.key);
       setDeliverySite(site.key);
       setIsSelectionInitialized(true);
@@ -148,8 +207,39 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
     setRubricIds((current) => ({ ...current, [site.key]: new Set(ids) }));
     setMainIds((current) => ({ ...current, [site.key]: sourceCategories.find((item) => item.main_category)?.category_id ?? ids[0] ?? null }));
     setRubricSite(site.key);
+    setDeliverySite(site.key);
     setIsSelectionInitialized(true);
   }, [initialSelectionKey, initialSelections, sourceCategories, sourceSiteKey]);
+
+  useEffect(() => {
+    if (!isSelectionInitialized || trees[rubricSite]) return;
+    let mounted = true;
+    void loadRubricTree(rubricSite)
+      .then((tree) => {
+        if (!mounted) return;
+        setTrees((current) => ({ ...current, [rubricSite]: tree }));
+        setExpanded((current) => ({ ...current, [rubricSite]: collectExpandableRubricIds(tree) }));
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [isSelectionInitialized, rubricSite, trees]);
+
+  useEffect(() => {
+    if (!isSelectionInitialized || deliveries[deliverySite]) return;
+    let mounted = true;
+    void loadDeliveryOptions(deliverySite)
+      .then((options) => {
+        if (mounted) {
+          setDeliveries((current) => ({ ...current, [deliverySite]: options }));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [deliveries, deliverySite, isSelectionInitialized]);
 
   useEffect(() => {
     if (!Object.keys(deliveries).length) return;
@@ -167,12 +257,24 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
 
   useEffect(() => {
     if (!isSelectionInitialized) return;
-    callbackRef.current({
-      rubricIdsBySite: Object.fromEntries(SITES.map((site) => [site.key, Array.from(rubricIds[site.key] ?? [])])),
+    const nextSelections = {
+      rubricIdsBySite: Object.fromEntries(Object.entries(rubricIds).map(([siteKey, ids]) => [siteKey, Array.from(ids ?? [])])),
       mainRubricIdBySite: mainIds,
-      deliveryIdsBySite: Object.fromEntries(SITES.map((site) => [site.key, Array.from(deliveryIds[site.key] ?? [])])),
-    });
+      deliveryIdsBySite: Object.fromEntries(Object.entries(deliveryIds).map(([siteKey, ids]) => [siteKey, Array.from(ids ?? [])])),
+    } satisfies JvPublishingSelections;
+    latestSelectionsRef.current = nextSelections;
+    callbackRef.current(nextSelections);
   }, [deliveryIds, isSelectionInitialized, mainIds, rubricIds]);
+
+  const publishSelectionPatch = (patch: Partial<JvPublishingSelections>) => {
+    const nextSelections: JvPublishingSelections = {
+      rubricIdsBySite: patch.rubricIdsBySite ?? latestSelectionsRef.current.rubricIdsBySite,
+      mainRubricIdBySite: patch.mainRubricIdBySite ?? latestSelectionsRef.current.mainRubricIdBySite,
+      deliveryIdsBySite: patch.deliveryIdsBySite ?? latestSelectionsRef.current.deliveryIdsBySite,
+    };
+    latestSelectionsRef.current = nextSelections;
+    callbackRef.current(nextSelections);
+  };
 
   const selectedRubrics = useMemo(() => rubricIds[rubricSite] ?? new Set<number>(), [rubricIds, rubricSite]);
   const selectedRubricLabels = useMemo(() => {
@@ -194,14 +296,30 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   }, [mainIds, rubricSite, selectedRubrics, trees]);
   const filteredTree = useMemo(() => filterTree(trees[rubricSite] ?? [], rubricQuery.trim().toLowerCase(), selectedRubricsOnly, selectedRubrics), [rubricQuery, rubricSite, selectedRubrics, selectedRubricsOnly, trees]);
   const shownDelivery = useMemo(() => (deliveries[deliverySite] ?? []).filter((item) => (!deliveryQuery || String(item.label ?? "").toLowerCase().includes(deliveryQuery.toLowerCase())) && (!selectedDeliveryOnly || (deliveryIds[deliverySite] ?? new Set()).has(item.id))), [deliveries, deliveryIds, deliveryQuery, deliverySite, selectedDeliveryOnly]);
-  const toggleRubric = (id: number) => setRubricIds((current) => { const next = new Set(current[rubricSite] ?? []); next.has(id) ? next.delete(id) : next.add(id); return { ...current, [rubricSite]: next }; });
-  const toggleDelivery = (id: number) => setDeliveryIds((current) => {
-    const selected = current[deliverySite] ?? new Set<number>();
-    return {
-      ...current,
-      [deliverySite]: selected.has(id) ? new Set<number>() : new Set([id]),
-    };
-  });
+  const toggleRubric = (id: number) => {
+    manuallyChangedRubricSitesRef.current.add(rubricSite);
+    const next = new Set(rubricIds[rubricSite] ?? []);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setRubricIds((current) => ({ ...current, [rubricSite]: next }));
+    publishSelectionPatch({
+      rubricIdsBySite: {
+        ...latestSelectionsRef.current.rubricIdsBySite,
+        [rubricSite]: Array.from(next),
+      },
+    });
+  };
+  const toggleDelivery = (id: number) => {
+    manuallyChangedDeliverySitesRef.current.add(deliverySite);
+    const selected = deliveryIds[deliverySite] ?? new Set<number>();
+    const next = selected.has(id) ? new Set<number>() : new Set([id]);
+    setDeliveryIds((current) => ({ ...current, [deliverySite]: next }));
+    publishSelectionPatch({
+      deliveryIdsBySite: {
+        ...latestSelectionsRef.current.deliveryIdsBySite,
+        [deliverySite]: Array.from(next),
+      },
+    });
+  };
   const focusSelectedRubric = (id: number) => {
     setSelectedRubricsOnly(false);
     setPendingRubricFocusId(id);
@@ -245,7 +363,17 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
             type="checkbox"
             checked={isMain}
             disabled={!isSelected}
-            onChange={() => setMainIds((current) => ({ ...current, [rubricSite]: current[rubricSite] === node.id ? null : node.id }))}
+            onChange={() => {
+              manuallyChangedRubricSitesRef.current.add(rubricSite);
+              const nextMainId = mainIds[rubricSite] === node.id ? null : node.id;
+              setMainIds((current) => ({ ...current, [rubricSite]: nextMainId }));
+              publishSelectionPatch({
+                mainRubricIdBySite: {
+                  ...latestSelectionsRef.current.mainRubricIdBySite,
+                  [rubricSite]: nextMainId,
+                },
+              });
+            }}
             aria-label={t.createProductMainRubricAria.replace("{label}", label)}
             className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-40"
           />
