@@ -10,6 +10,8 @@ class MarketplaceEanMappingError(ValueError):
 
 
 _MAPPING_FIELDS: dict[tuple[str, str], str] = {
+    ("xljv", "jv"): "jv",
+    ("xljv", "xl"): "xl",
     ("hood", "jv"): "hood_jv",
     ("hood", "xl"): "hood_xl",
     ("kaufland", "jv"): "kaufland_jv",

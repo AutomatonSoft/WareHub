@@ -7,7 +7,12 @@ import {
   xljvGetSitesByEan,
 } from "../../components/xljv/xljv-api";
 import { fetchHoodByEan } from "../../components/hood/hood-api";
-import { decodeHtmlEntities, extractFirstItemFromPayload, type HoodAccount } from "../../components/hood/hood-search-utils";
+import {
+  decodeHtmlEntities,
+  extractFirstItemFromPayload,
+  type HoodAccount,
+  type HoodResponse,
+} from "../../components/hood/hood-search-utils";
 import { fetchKauflandByEan, type KauflandSite } from "../../components/channels/kaufland-api";
 import { normalizeEanOrEmpty } from "../../components/inventory/ean-utils";
 import { apiFetch } from "../../lib/api/client";
@@ -351,10 +356,20 @@ function hoodSiteKey(account: HoodAccount): string {
   return `HOOD_${account.toUpperCase()}`;
 }
 
+function isHoodProductNotFound(response: Response, payload: HoodResponse): boolean {
+  return response.status === 404 || (
+    (payload as HoodResponse & { code?: unknown }).code === "hood_external_error_status"
+    && payload.status_code === 404
+  );
+}
+
 function normalizeHoodSnapshot(payload: Record<string, unknown>, account: HoodAccount, mainEan: string): CreateProductJvSourceSnapshot {
   const item = extractFirstItemFromPayload(payload.external_payload);
+  const cachedItem = extractFirstItemFromPayload({ items: payload.items });
   const imageUrls = stringList(item?.images);
-  const description = decodeHtmlEntities(asTrimmedString(item?.description));
+  const description = decodeHtmlEntities(
+    asTrimmedString(item?.description) || asTrimmedString(cachedItem?.description),
+  );
   const productName = asTrimmedString(item?.title) || asTrimmedString(payload.items && Array.isArray(payload.items) ? payload.items[0]?.title : "") || mainEan;
 
   return {
@@ -455,7 +470,7 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
       : ["jv", "xl"];
     const outcomes = await Promise.allSettled(accounts.map(async (account) => {
       const { response, payload } = await fetchHoodByEan(normalizedMainEan, account as HoodAccount);
-      if (response.status === 404) return null;
+      if (isHoodProductNotFound(response, payload)) return null;
       if (!response.ok) {
         throw new Error(asTrimmedString((payload as { detail?: unknown }).detail) || `create_product_hood_source_sites_http:${response.status}`);
       }
@@ -606,6 +621,9 @@ export async function fetchCreateProductSourceSnapshot(input: {
   if (input.site === "HOOD") {
     const account = hoodAccountFromSiteKey(input.siteKey);
     const { response, payload } = await fetchHoodByEan(normalizedMainEan, account);
+    if (isHoodProductNotFound(response, payload)) {
+      throw new Error("Hood source product was not found.");
+    }
     if (!response.ok) {
       throw new Error(asTrimmedString(payload.detail) || `Hood source product request failed: HTTP ${response.status}`);
     }
