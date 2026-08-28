@@ -298,17 +298,11 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
     int quantity = 1,
     int unitIndex = 1,
     int? totalParts,
-    String? sectionCode,
     int? slotNumber,
   }) async {
     try {
       final AppStrings strings = _strings;
-      final String basePayload = _buildLabelQrPayload(warehouseLocation);
-      final String normalizedSection =
-          normalizeWarehouseSection(sectionCode ?? '');
-      final String payload = normalizedSection.isEmpty
-          ? basePayload
-          : '$normalizedSection$basePayload';
+      final String payload = _buildLabelQrPayload(warehouseLocation);
       final String mainCaption = payload;
       final int partsTotal = totalParts ?? quantity;
       final List<ui.Image> images = <ui.Image>[];
@@ -398,7 +392,6 @@ extension _QrHomePagePrintJobs on _QrHomePageState {
         quantity: item.boxTotal < 1 ? 1 : item.boxTotal,
         totalParts: item.boxTotal,
         unitIndex: item.unitIndex,
-        sectionCode: item.section,
         slotNumber: item.slotNumber,
       );
     } finally {

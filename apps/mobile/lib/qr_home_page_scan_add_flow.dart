@@ -156,7 +156,6 @@ extension _QrHomePageAddFlow on _QrHomePageState {
       quantity: result.boxTotal,
       unitIndex: result.unitIndex,
       totalParts: result.boxTotal,
-      sectionCode: result.section,
       slotNumber: result.slotNumber,
     );
 
