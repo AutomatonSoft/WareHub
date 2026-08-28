@@ -79,18 +79,20 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
   }
 
   Future<int> _markOldestIntakeByLocation({
-    required String section,
     required int place,
     required String stockStatus,
+    String? section,
   }) async {
     final Uri url = Uri.parse(
       '${_effectiveApiBase()}/services/kids/mark-out-of-stock/',
     );
     final Map<String, dynamic> body = {
       'place': '$place',
-      'section': section,
       'stock_status': stockStatus,
     };
+    if (section != null && section.trim().isNotEmpty) {
+      body['section'] = section;
+    }
     String jsonString = jsonEncode(body);
     final http.Response response = await _authorizedRequest(
       'POST',
@@ -165,10 +167,16 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
         return;
       }
 
-      String number = targetLocation.substring(1);
+      // New labels encode the place only (e.g. `123`); older labels may still
+      // carry a leading section letter (e.g. `A123`). Strip a single optional
+      // section prefix so both resolve to the same place.
+      final String placeText = RegExp(r'^[A-Z]?([0-9]+[A-Z]*)$')
+              .firstMatch(targetLocation)
+              ?.group(1) ??
+          targetLocation;
 
       final List<IntakeData> targets =
-          _findActiveTargetsByWarehouseLocation(number);
+          _findActiveTargetsByWarehouseLocation(placeText);
       if (targets.isEmpty) {
         _showMessage(
           _strings.format(
@@ -181,21 +189,21 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
       }
 
       final bool confirmed = await _confirmRemoveByLocation(
-        warehouseLocation: targetLocation,
+        warehouseLocation: placeText,
         targets: targets,
       );
       if (!confirmed) {
         return;
       }
-      final MapEntry<String, int>? parsed =
-          parseWarehouseSectionAndSlot(targetLocation);
-      if (parsed == null) {
+      final int? placeNumber = parseWarehouseSlotNumber(placeText);
+      if (placeNumber == null ||
+          placeNumber < kWarehouseMinSlot ||
+          placeNumber > kWarehouseMaxSlot) {
         _showMessage('${_strings.text('format_place')} 2', error: true);
         return;
       }
       final int partsCount = await _markOldestIntakeByLocation(
-        section: parsed.key,
-        place: parsed.value,
+        place: placeNumber,
         stockStatus: kStockStatusOut,
       );
       await _reloadList();

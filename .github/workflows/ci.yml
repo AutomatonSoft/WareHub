@@ -552,7 +552,7 @@ jobs:
           load: true
           tags: warehub-database-service:ci-validation
           cache-from: type=gha,scope=ci-database-service
-          cache-to: type=gha,mode=max,scope=ci-database-service
+          cache-to: type=gha,mode=min,scope=ci-database-service,ignore-error=true
 
       - name: Build orchestrator image
         uses: docker/build-push-action@v6
@@ -562,7 +562,7 @@ jobs:
           load: true
           tags: warehub-orchestrator:ci-validation
           cache-from: type=gha,scope=ci-orchestrator
-          cache-to: type=gha,mode=max,scope=ci-orchestrator
+          cache-to: type=gha,mode=max,scope=ci-orchestrator,ignore-error=true
 
       - name: List validation images
         run: docker image ls --filter "reference=warehub-*:*"
@@ -592,7 +592,7 @@ jobs:
           load: true
           tags: warehub-frontend:ci-validation
           cache-from: type=gha,scope=ci-frontend
-          cache-to: type=gha,mode=max,scope=ci-frontend
+          cache-to: type=gha,mode=max,scope=ci-frontend,ignore-error=true
 
       - name: List validation image
         run: docker image ls --filter "reference=warehub-frontend:*"
@@ -629,7 +629,7 @@ jobs:
           load: true
           tags: warehub-gateway:ci-validation
           cache-from: type=gha,scope=ci-gateway
-          cache-to: type=gha,mode=max,scope=ci-gateway
+          cache-to: type=gha,mode=max,scope=ci-gateway,ignore-error=true
 
       - name: Validate gateway nginx config
         run: >
@@ -669,7 +669,7 @@ jobs:
           load: true
           tags: warehub-backend:ci-validation
           cache-from: type=gha,scope=ci-backend
-          cache-to: type=gha,mode=max,scope=ci-backend
+          cache-to: type=gha,mode=max,scope=ci-backend,ignore-error=true
 
       - name: Build mobile image
         uses: docker/build-push-action@v6
@@ -680,7 +680,7 @@ jobs:
           load: true
           tags: warehub-mobile:ci-validation
           cache-from: type=gha,scope=ci-mobile
-          cache-to: type=gha,mode=max,scope=ci-mobile
+          cache-to: type=gha,mode=max,scope=ci-mobile,ignore-error=true
 
       - name: Build infra image
         uses: docker/build-push-action@v6
@@ -691,7 +691,7 @@ jobs:
           load: true
           tags: warehub-infra:ci-validation
           cache-from: type=gha,scope=ci-infra
-          cache-to: type=gha,mode=max,scope=ci-infra
+          cache-to: type=gha,mode=max,scope=ci-infra,ignore-error=true
 
       - name: List validation images
         run: docker image ls --filter "reference=warehub-*:*"
