@@ -31,7 +31,13 @@ class XLProductByEANAPIView(APIView):
     def get(self, request, ean: str):
         force_xl_site(request)
         site = ImportedProduct.Site.XL
-        site_key = str(request.query_params.get("site_key") or "").strip().upper() or None
+        requested_site_key = normalize_site_key(request.query_params.get("site_key"))
+        site_key = "XLMOEBEL_DE"
+        if requested_site_key and requested_site_key != site_key:
+            return Response(
+                {"detail": "Requested XL site_key is not supported.", "site_key": requested_site_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         db_config = source_db_config_for_xl(site_key=site_key)
         if not db_config:
             return Response(
@@ -122,7 +128,7 @@ class XLSitesByEANAPIView(APIView):
         found = []
         missing = []
         requested_site_key = normalize_site_key(request.query_params.get("site_key"))
-        catalog = xl_site_catalog(lambda x: x)
+        catalog = xl_site_catalog()
         if requested_site_key:
             catalog = [site_info for site_info in catalog if str(site_info.get("site_key") or "").strip().upper() == requested_site_key]
             if not catalog:

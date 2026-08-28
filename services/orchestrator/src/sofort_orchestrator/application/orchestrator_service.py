@@ -236,13 +236,15 @@ class OrchestratorService:
                         target_label=reservation_family or target_label,
                     )
                     used_pool_reservations[reservation_id] = reservation_family
+                mapping_account = self._marketplace_mapping_account(channel)
+                if mapping_account:
                     result_data["marketplace_ean_mapping"] = self._confirm_marketplace_ean_mapping(
                         command=command,
                         request_id=request_id,
                         kid_number=kid_number,
                         channel=channel,
                         ean=channel_ean,
-                        reservation_family=reservation_family,
+                        account=mapping_account,
                     )
                 if self.circuit_breaker is not None:
                     self.circuit_breaker.record_success(breaker_key)
@@ -329,10 +331,10 @@ class OrchestratorService:
         kid_number: str,
         channel,
         ean: str,
-        reservation_family: str | None,
+        account: str,
     ) -> dict[str, object]:
-        if command.operation is not Operation.PUBLISH or not kid_number or not reservation_family:
-            return {"status": "skipped", "reason": "not_a_pool_publish_mapping"}
+        if command.operation is not Operation.PUBLISH or not kid_number:
+            return {"status": "skipped", "reason": "publish_kid_number_required"}
         if self.marketplace_ean_mapping_gateway is None:
             return {"status": "skipped", "reason": "mapping_gateway_not_configured"}
         try:
@@ -340,7 +342,7 @@ class OrchestratorService:
                 request_id=request_id,
                 kid_number=kid_number,
                 marketplace=channel.marketplace.value,
-                account=reservation_family,
+                account=account,
                 ean=ean,
             )
         except Exception as exc:  # noqa: BLE001
@@ -351,6 +353,14 @@ class OrchestratorService:
         if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO}:
             return None
         account = str(channel.account or channel.profile or "").strip().lower()
+        return account if account in {"jv", "xl"} else None
+
+    @staticmethod
+    def _marketplace_mapping_account(channel) -> str | None:
+        if channel.marketplace is Marketplace.XLJV:
+            account = str(channel.site or "").strip().lower()
+        else:
+            account = str(channel.account or channel.profile or "").strip().lower()
         return account if account in {"jv", "xl"} else None
 
     def _unsupported_operation_response(self, *, request_id: str, command: OrchestrateRequest) -> OrchestrateResponse:

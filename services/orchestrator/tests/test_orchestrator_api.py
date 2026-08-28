@@ -444,8 +444,8 @@ def test_publish_uses_a_distinct_pool_ean_for_each_pool_channel():
                 "title": "Desk",
                 "description": "Oak",
                 "price": "199.99",
-                "quantity": 1,
                 "source_model": "4012345678901",
+                "quantity": 1,
                 "productReference": "4012345678901",
                 "ean": "4012345678901",
             },
@@ -507,11 +507,14 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
                 "title": "Desk",
                 "description": "Oak",
                 "price": "199.99",
+                "source_model": "4012345678901",
                 "quantity": 1,
                 "productReference": "4012345678901",
                 "ean": "4012345678901",
             },
             "channels": [
+                {"marketplace": "xljv", "site": "JV", "site_key": "JV_DE"},
+                {"marketplace": "xljv", "site": "XL", "site_key": "XLMOEBEL_DE"},
                 {"marketplace": "hood", "account": "jv", "ean_source": "pool"},
                 {"marketplace": "kaufland", "account": "jv", "ean_source": "pool"},
                 {"marketplace": "hood", "account": "xl", "ean_source": "pool"},
@@ -524,14 +527,18 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
 
     assert result.status == "success"
     assert [(call["marketplace"], call["account"]) for call in mapping_gateway.calls] == [
+        ("xljv", "jv"),
+        ("xljv", "xl"),
         ("hood", "jv"),
         ("kaufland", "jv"),
         ("hood", "xl"),
         ("otto", "jv"),
     ]
-    assert mapping_gateway.calls[0]["ean"] == mapping_gateway.calls[1]["ean"]
-    assert mapping_gateway.calls[0]["ean"] != mapping_gateway.calls[2]["ean"]
-    assert mapping_gateway.calls[0]["ean"] == mapping_gateway.calls[3]["ean"]
+    assert mapping_gateway.calls[0]["ean"] == "4012345678901"
+    assert mapping_gateway.calls[1]["ean"] == "4012345678901"
+    assert mapping_gateway.calls[2]["ean"] == mapping_gateway.calls[3]["ean"]
+    assert mapping_gateway.calls[2]["ean"] != mapping_gateway.calls[4]["ean"]
+    assert mapping_gateway.calls[2]["ean"] == mapping_gateway.calls[5]["ean"]
     assert all(item.data["marketplace_ean_mapping"]["status"] == "confirmed" for item in result.results)
 
 

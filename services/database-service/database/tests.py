@@ -1185,6 +1185,24 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.otto_xl)
         self.assertFalse(status_row.hood_jv)
 
+    def test_xljv_marketplace_ean_mapping_confirmation_updates_ean_and_status(self):
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "marketplace": "xljv",
+                "account": "xl",
+                "ean": "4012345678901",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ean_row = Ean.objects.get(kid=self.kid)
+        status_row = EanStatus.objects.get(ean=self.kid)
+        self.assertEqual(ean_row.xl, "4012345678901")
+        self.assertTrue(status_row.xl)
+
     @patch("database.marketplace_deactivate_service.fetch_source_product_snapshot_by_ean")
     @patch("database.marketplace_deactivate_service.push_product_to_source")
     def test_marketplace_deactivate_by_kid_number_fans_out_jv_and_updates_status(self, mocked_push, mocked_fetch_snapshot):
