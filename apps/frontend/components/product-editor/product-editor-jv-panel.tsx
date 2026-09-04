@@ -190,25 +190,6 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     })),
   }), [categoriesBySiteKey, deliveryValuesBySiteKey]);
   const publishingSelectionKey = `${props.draft.target_id}:${props.draft.ean}:${baselineSiteKey}`;
-  const publishingInitialDataRef = useRef<{
-    key: string;
-    selections: JvPublishingSelections;
-    sourceCategories: Array<{ category_id: number; main_category: boolean }>;
-    sourceDeliveryId?: number;
-  } | null>(null);
-  if (publishingInitialDataRef.current?.key !== publishingSelectionKey) {
-    const sourceCategories = (categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
-      category_id: category.category_id,
-      main_category: Boolean(category.main_category),
-    }));
-    publishingInitialDataRef.current = {
-      key: publishingSelectionKey,
-      selections: publishingSelections,
-      sourceCategories,
-      sourceDeliveryId: toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey]),
-    };
-  }
-  const publishingInitialData = publishingInitialDataRef.current;
   const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
@@ -657,11 +638,15 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
           />
 
           {!isXlMode ? (
-            <JvPublishingOptionsPanel
+            <ProductEditorJvPublishingOptions
+              key={publishingSelectionKey}
               sourceSiteKey={baselineSiteKey}
-              sourceCategories={publishingInitialData.sourceCategories}
-              sourceDeliveryId={publishingInitialData.sourceDeliveryId}
-              initialSelections={publishingInitialData.selections}
+              sourceCategories={(categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
+                category_id: category.category_id,
+                main_category: Boolean(category.main_category),
+              }))}
+              sourceDeliveryId={toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey])}
+              initialSelections={publishingSelections}
               initialSelectionKey={publishingSelectionKey}
               onSelectionsChange={applyPublishingSelections}
             />
@@ -910,6 +895,34 @@ function collectAllCategoryIds(nodes: ProductEditorJvRubricNode[]): Set<number> 
 function toNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+type ProductEditorJvPublishingOptionsProps = {
+  sourceSiteKey: ProductEditorJvSiteKey;
+  sourceCategories: Array<{ category_id: number; main_category: boolean }>;
+  sourceDeliveryId?: number;
+  initialSelections: JvPublishingSelections;
+  initialSelectionKey: string;
+  onSelectionsChange: (selections: JvPublishingSelections) => void;
+};
+
+function ProductEditorJvPublishingOptions(props: ProductEditorJvPublishingOptionsProps) {
+  const [initialData] = useState(() => ({
+    sourceCategories: props.sourceCategories,
+    sourceDeliveryId: props.sourceDeliveryId,
+    selections: props.initialSelections,
+  }));
+
+  return (
+    <JvPublishingOptionsPanel
+      sourceSiteKey={props.sourceSiteKey}
+      sourceCategories={initialData.sourceCategories}
+      sourceDeliveryId={initialData.sourceDeliveryId}
+      initialSelections={initialData.selections}
+      initialSelectionKey={props.initialSelectionKey}
+      onSelectionsChange={props.onSelectionsChange}
+    />
+  );
 }
 
 function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {
