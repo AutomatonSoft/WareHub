@@ -41,6 +41,8 @@ const Map<String, String> appLabelsRu = <String, String>{
   'remove': 'Удалить',
   'return_to_stock': 'Вернуть на склад',
   'confirm_return_to_stock': 'Отметить {location} как возвращённый на склад?',
+  'confirm_remove_location':
+      'Удалить самый старый активный товар с места {location}?',
   'return_marked': 'Отмечено {count} шт. как возвращённые на склад.',
   'print': 'Печать',
   'print_now': 'Печатать',

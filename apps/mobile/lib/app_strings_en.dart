@@ -43,6 +43,8 @@ const Map<String, String> appLabelsEn = <String, String>{
   'remove': 'Remove',
   'return_to_stock': 'Return to stock',
   'confirm_return_to_stock': 'Mark {location} as returned to stock?',
+  'confirm_remove_location':
+      'Remove the oldest active product from location {location}?',
   'return_marked': 'Marked {count} part(s) as returned to stock.',
   'print': 'Print',
   'print_now': 'Print now',
