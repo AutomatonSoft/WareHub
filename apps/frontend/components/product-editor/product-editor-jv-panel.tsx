@@ -503,6 +503,16 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       }
       topLeft={<>
         <ProductEditorJvCreateForm draft={props.draft} onChange={props.onChange} />
+        <div className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
+            <p className="text-sm font-semibold text-foreground">{t.sofortLabel}</p>
+            <Switch checked={isSofortEnabled} onChange={(event) => patchIsSofortEnabled(event.target.checked)} aria-label={t.sofortLabel} />
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
+            <p className="text-sm font-semibold text-foreground">{t.inactive}</p>
+            <Switch checked={isInactiveDisabled} onChange={(event) => patchInaktivEnabled(!event.target.checked)} aria-label={t.inactive} />
+          </label>
+        </div>
         <div className="hidden flex h-full flex-col rounded-xl border border-border bg-card p-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
           <Input value={productName} onChange={(event) => patchPrimaryName(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
@@ -628,7 +638,8 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
           />
 
           {!isXlMode ? (
-            <JvPublishingOptionsPanel
+            <ProductEditorJvPublishingOptions
+              key={publishingSelectionKey}
               sourceSiteKey={baselineSiteKey}
               sourceCategories={(categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
                 category_id: category.category_id,
@@ -884,6 +895,34 @@ function collectAllCategoryIds(nodes: ProductEditorJvRubricNode[]): Set<number> 
 function toNumber(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+type ProductEditorJvPublishingOptionsProps = {
+  sourceSiteKey: ProductEditorJvSiteKey;
+  sourceCategories: Array<{ category_id: number; main_category: boolean }>;
+  sourceDeliveryId?: number;
+  initialSelections: JvPublishingSelections;
+  initialSelectionKey: string;
+  onSelectionsChange: (selections: JvPublishingSelections) => void;
+};
+
+function ProductEditorJvPublishingOptions(props: ProductEditorJvPublishingOptionsProps) {
+  const [initialData] = useState(() => ({
+    sourceCategories: props.sourceCategories,
+    sourceDeliveryId: props.sourceDeliveryId,
+    selections: props.initialSelections,
+  }));
+
+  return (
+    <JvPublishingOptionsPanel
+      sourceSiteKey={props.sourceSiteKey}
+      sourceCategories={initialData.sourceCategories}
+      sourceDeliveryId={initialData.sourceDeliveryId}
+      initialSelections={initialData.selections}
+      initialSelectionKey={props.initialSelectionKey}
+      onSelectionsChange={props.onSelectionsChange}
+    />
+  );
 }
 
 function resolveJvBaselineSiteKey(draft: ProductEditorJvDraft): ProductEditorJvSiteKey {

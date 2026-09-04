@@ -78,6 +78,42 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
     return confirmed ?? false;
   }
 
+  Future<bool> _confirmRemoveByLocationMinimal({
+    required String warehouseLocation,
+  }) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final AppStrings strings = AppStrings.of(dialogContext);
+        return AlertDialog(
+          title: Text('${strings.text('remove')}: $warehouseLocation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(strings.format(
+                'confirm_remove_location',
+                <String, String>{'location': warehouseLocation},
+              )),
+              Text(strings.text('remove_fifo_hint')),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(strings.text('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(strings.text('remove')),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
   Future<int> _markOldestIntakeByLocation({
     required int place,
     required String stockStatus,
@@ -175,23 +211,20 @@ extension _QrHomePageScanRemoveFlow on _QrHomePageState {
               ?.group(1) ??
           targetLocation;
 
+      // Do not gate removal on the locally downloaded/paginated `_items` list:
+      // the backend is the source of truth for what is active at a location, so
+      // a QR scan must be able to remove any active product there, not only the
+      // ones that happen to be loaded in the current page. When we do have local
+      // data for the location we show the richer confirmation; otherwise we fall
+      // back to a minimal confirmation and let the backend resolve the target.
       final List<IntakeData> targets =
           _findActiveTargetsByWarehouseLocation(placeText);
-      if (targets.isEmpty) {
-        _showMessage(
-          _strings.format(
-            'no_active_products_for_location',
-            <String, String>{'location': targetLocation},
-          ),
-          error: true,
-        );
-        return;
-      }
-
-      final bool confirmed = await _confirmRemoveByLocation(
-        warehouseLocation: placeText,
-        targets: targets,
-      );
+      final bool confirmed = targets.isEmpty
+          ? await _confirmRemoveByLocationMinimal(warehouseLocation: placeText)
+          : await _confirmRemoveByLocation(
+              warehouseLocation: placeText,
+              targets: targets,
+            );
       if (!confirmed) {
         return;
       }

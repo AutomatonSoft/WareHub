@@ -1705,6 +1705,23 @@ class DatabaseApiTests(APITestCase):
         self.kid.refresh_from_db()
         self.assertEqual(self.kid.stock_status, "out")
 
+    def test_mark_kid_out_of_stock_by_place_without_section(self):
+        self.kid.place = "123"
+        self.kid.section = "B"
+        self.kid.stock_status = "in_stock"
+        self.kid.save(update_fields=["place", "section", "stock_status"])
+
+        response = self.client.post(
+            "/api/v1/kids/mark-out-of-stock/",
+            {"place": "123", "stock_status": "out"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["kid_id"], self.kid.id)
+        self.kid.refresh_from_db()
+        self.assertEqual(self.kid.stock_status, "out")
+
     def test_mark_kid_out_of_stock_can_set_returned_status(self):
         self.kid.place = "A-122"
         self.kid.section = "B"

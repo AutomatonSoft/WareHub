@@ -153,7 +153,7 @@ class KidMarkOutOfStockAPIView(APIView):
 
         if not place:
             return Response({"detail": "place is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if len(section) != 1:
+        if section and len(section) != 1:
             return Response(
                 {"detail": "section must contain exactly one character."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -168,10 +168,14 @@ class KidMarkOutOfStockAPIView(APIView):
             )
 
         with transaction.atomic():
-            kid = Kid.objects.filter(place__iexact=place, section__iexact=section).first()
+            kids = Kid.objects.filter(place__iexact=place)
+            if section:
+                kids = kids.filter(section__iexact=section)
+            kid = kids.first()
             if kid is None:
+                location = "place and section" if section else "place"
                 return Response(
-                    {"detail": "Kid was not found for the specified place and section."},
+                    {"detail": f"Kid was not found for the specified {location}."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
