@@ -190,6 +190,25 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
     })),
   }), [categoriesBySiteKey, deliveryValuesBySiteKey]);
   const publishingSelectionKey = `${props.draft.target_id}:${props.draft.ean}:${baselineSiteKey}`;
+  const publishingInitialDataRef = useRef<{
+    key: string;
+    selections: JvPublishingSelections;
+    sourceCategories: Array<{ category_id: number; main_category: boolean }>;
+    sourceDeliveryId?: number;
+  } | null>(null);
+  if (publishingInitialDataRef.current?.key !== publishingSelectionKey) {
+    const sourceCategories = (categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
+      category_id: category.category_id,
+      main_category: Boolean(category.main_category),
+    }));
+    publishingInitialDataRef.current = {
+      key: publishingSelectionKey,
+      selections: publishingSelections,
+      sourceCategories,
+      sourceDeliveryId: toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey]),
+    };
+  }
+  const publishingInitialData = publishingInitialDataRef.current;
   const deliveryIdValue = normalizeDeliverySelectValue(deliveryValuesBySiteKey[activeSiteKey] ?? "", deliveryOptions);
   const jobStatus = String(props.jobResponse?.status || "").toLowerCase();
   const jobSummary = props.jobResponse?.summary ?? {};
@@ -503,6 +522,16 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
       }
       topLeft={<>
         <ProductEditorJvCreateForm draft={props.draft} onChange={props.onChange} />
+        <div className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
+            <p className="text-sm font-semibold text-foreground">{t.sofortLabel}</p>
+            <Switch checked={isSofortEnabled} onChange={(event) => patchIsSofortEnabled(event.target.checked)} aria-label={t.sofortLabel} />
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2.5">
+            <p className="text-sm font-semibold text-foreground">{t.inactive}</p>
+            <Switch checked={isInactiveDisabled} onChange={(event) => patchInaktivEnabled(!event.target.checked)} aria-label={t.inactive} />
+          </label>
+        </div>
         <div className="hidden flex h-full flex-col rounded-xl border border-border bg-card p-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productNameLabel}</p>
           <Input value={productName} onChange={(event) => patchPrimaryName(event.target.value)} className="h-11 rounded-xl border-border bg-white text-sm" />
@@ -630,12 +659,9 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
           {!isXlMode ? (
             <JvPublishingOptionsPanel
               sourceSiteKey={baselineSiteKey}
-              sourceCategories={(categoriesBySiteKey[baselineSiteKey] ?? props.draft.categories).map((category) => ({
-                category_id: category.category_id,
-                main_category: Boolean(category.main_category),
-              }))}
-              sourceDeliveryId={toOptionalDeliveryId(deliveryValuesBySiteKey[baselineSiteKey])}
-              initialSelections={publishingSelections}
+              sourceCategories={publishingInitialData.sourceCategories}
+              sourceDeliveryId={publishingInitialData.sourceDeliveryId}
+              initialSelections={publishingInitialData.selections}
               initialSelectionKey={publishingSelectionKey}
               onSelectionsChange={applyPublishingSelections}
             />

@@ -1036,6 +1036,37 @@ class JVBatchQueueingTest(TestCase):
 
 
 class JVSyncUtilsTest(TestCase):
+    def test_successful_jv_marker_sets_ean_and_status(self):
+        from database.models import Ean, EanStatus, Kid
+        from jv_services.create_service import _record_jv_ean_marker
+        from jv_services.models import ImportedProduct, JVBatchJob, JVBatchJobItem
+
+        kid = Kid.objects.create(kid_number=["565478849"])
+        Ean.objects.create(kid=kid, main_ean_jv="4067282256354")
+        ImportedProduct.all_objects.create(
+            site=ImportedProduct.Site.JV,
+            site_key="JV_DE",
+            source_product_id=490009,
+            ean="4067282256354",
+            source_model="JVM4067282256354",
+        )
+        job = JVBatchJob.objects.create(
+            ean="JVM4067282256354",
+            site_family=ImportedProduct.Site.JV,
+            operation=JVBatchJob.Operation.CREATE,
+        )
+        item = JVBatchJobItem.objects.create(
+            job=job,
+            site=ImportedProduct.Site.JV,
+            site_key="JV_DE",
+            effective_ean="JVM4067282256354",
+        )
+
+        _record_jv_ean_marker(item)
+
+        self.assertEqual(Ean.objects.get(kid=kid).jv, "JVM4067282256354")
+        self.assertTrue(EanStatus.objects.get(ean=kid).jv)
+
     def test_resolve_local_product_for_source_matches_by_artikelnr_before_ean(self):
         from jv_services.models import ImportedProduct
         from jv_services.sync_utils import resolve_local_product_for_source
