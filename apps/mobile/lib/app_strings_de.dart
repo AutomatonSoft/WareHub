@@ -47,6 +47,8 @@ const Map<String, String> appLabelsDe = <String, String>{
   'remove': 'Entfernen',
   'return_to_stock': 'Zurück auf Lager',
   'confirm_return_to_stock': '{location} als zurück auf Lager markieren?',
+  'confirm_remove_location':
+      'Das aelteste aktive Produkt vom Platz {location} entfernen?',
   'return_marked': '{count} Teil(e) als zurück auf Lager markiert.',
   'print': 'Drucken',
   'print_now': 'Jetzt drucken',
