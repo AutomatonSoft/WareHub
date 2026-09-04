@@ -70,7 +70,7 @@ struct DatabaseInventoryRowsRequest {
 #[derive(Debug, Deserialize)]
 pub(crate) struct MarkDatabaseInventoryOutOfStockRequest {
     place: String,
-    section: String,
+    section: Option<String>,
     stock_status: Option<String>,
 }
 
@@ -236,7 +236,12 @@ pub(crate) async fn mark_database_inventory_out_of_stock(
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     let _user = require_approved_user(&state, &headers).await?;
     let place = payload.place.trim();
-    let section = payload.section.trim().to_ascii_uppercase();
+    let section = payload
+        .section
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_uppercase);
     let stock_status = normalize_inventory_stock_status(payload.stock_status.as_deref()).ok_or_else(|| {
         database_inventory_error(
             StatusCode::BAD_REQUEST,
@@ -251,7 +256,7 @@ pub(crate) async fn mark_database_inventory_out_of_stock(
             "place is required",
         ));
     }
-    if section.chars().count() != 1 {
+    if section.as_deref().is_some_and(|value| value.chars().count() != 1) {
         return Err(database_inventory_error(
             StatusCode::BAD_REQUEST,
             "database_inventory_section_invalid",
@@ -273,8 +278,8 @@ pub(crate) async fn mark_database_inventory_out_of_stock(
         .header("x-warehub-service-token", &config.service_token)
         .json(&serde_json::json!({
             "place": place,
-            "section": section,
             "stock_status": stock_status,
+            "section": section,
         }))
         .timeout(Duration::from_secs(DATABASE_INVENTORY_TIMEOUT_SECONDS))
         .send()
@@ -951,6 +956,17 @@ mod tests {
         assert_eq!(normalize_inventory_stock_status(Some("IN_STOCK")).as_deref(), Some("in_stock"));
         assert_eq!(normalize_inventory_stock_status(None).as_deref(), Some("out"));
         assert_eq!(normalize_inventory_stock_status(Some("unknown")), None);
+    }
+
+    #[test]
+    fn accepts_mark_out_of_stock_request_without_section() {
+        let request: MarkDatabaseInventoryOutOfStockRequest = serde_json::from_value(json!({
+            "place": "123",
+            "stock_status": "out"
+        }))
+        .expect("request without section");
+
+        assert_eq!(request.section, None);
     }
 
     #[test]

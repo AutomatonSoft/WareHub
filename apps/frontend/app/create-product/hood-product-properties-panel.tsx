@@ -6,6 +6,11 @@ import { useLabels } from "../use-labels";
 import { DeferredInput } from "./deferred-form-fields";
 
 type Property = { name: string; value: string };
+const HOOD_PROPERTY_PRESETS = [
+  "Produktart", "Material", "Marke", "Farbe", "Breite", "Höhe", "Länge", "Form", "Zimmer", "Stil",
+  "Montage erforderlich", "Herstellungsjahr", "Herstellergarantie", "Maße",
+];
+const CUSTOM_PROPERTY = "__custom__";
 type Props = {
   initialValue: string;
   draftKey: string;
@@ -28,6 +33,7 @@ export function HoodProductPropertiesPanel({ initialValue, draftKey, onDraftChan
   const sourceValueRef = useRef(initialValue);
   const callbackRef = useRef(onDraftChange);
   const [properties, setProperties] = useState(() => parseProperties(initialValue));
+  const [selectedProperty, setSelectedProperty] = useState("");
 
   useEffect(() => { sourceValueRef.current = initialValue; }, [draftKey, initialValue]);
   useEffect(() => { callbackRef.current = onDraftChange; }, [onDraftChange]);
@@ -41,11 +47,20 @@ export function HoodProductPropertiesPanel({ initialValue, draftKey, onDraftChan
   useEffect(() => { callbackRef.current(serialized); }, [serialized]);
 
   const update = (next: Property[]) => setProperties(next);
+  const addProperty = (name: string) => {
+    if (!name) return;
+    update([...properties, { name: name === CUSTOM_PROPERTY ? "" : name, value: "" }]);
+    setSelectedProperty("");
+  };
   return (
     <section className="space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
       <div className="flex items-center justify-between gap-3">
         <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productProperties}</label>
-        <button type="button" onClick={() => update([...properties, { name: "", value: "" }])} className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40">{t.addProperty}</button>
+        <select value={selectedProperty} onChange={(event) => addProperty(event.target.value)} className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40">
+          <option value="">{t.addProperty}</option>
+          {HOOD_PROPERTY_PRESETS.map((name) => <option key={name} value={name}>{name}</option>)}
+          <option value={CUSTOM_PROPERTY}>Произвольное свойство</option>
+        </select>
       </div>
       {properties.length === 0 ? <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm text-muted-foreground">{t.noProductPropertiesYet}</div> : null}
       <div className="grid gap-2">

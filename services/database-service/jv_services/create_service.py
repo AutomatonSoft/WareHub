@@ -97,9 +97,7 @@ def _payload_for_item(job: JVBatchJob, item: JVBatchJobItem) -> dict | None:
 
 
 def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
-    """After a successful JV publish, store the article number (artikelnr) in the
-    linked Kid's Ean row (``database_ean.jv``), but only while it is still empty —
-    never overwrite an existing value."""
+    """Record successful JV publication on the linked Kid without replacing its EAN."""
     if str(item.site or "").strip().upper() != ImportedProduct.Site.JV:
         return
     ean_digits = "".join(ch for ch in str(item.effective_ean or "") if ch.isdigit())
@@ -116,11 +114,15 @@ def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
     try:
         from django.db.models import Q
 
-        from database.models import Ean
+        from database.models import Ean, EanStatus
 
-        Ean.objects.filter(main_ean_jv=ean_digits).filter(
-            Q(jv__isnull=True) | Q(jv="")
-        ).update(jv=artikelnr)
+        with transaction.atomic():
+            matching_eans = Ean.objects.filter(main_ean_jv=ean_digits)
+            matching_eans.filter(
+                Q(jv__isnull=True) | Q(jv="")
+            ).update(jv=artikelnr)
+            for kid_id in matching_eans.values_list("kid_id", flat=True):
+                EanStatus.objects.update_or_create(ean_id=kid_id, defaults={"jv": True})
     except Exception:  # noqa: BLE001
         logger.warning(
             "JV_EAN_MARKER_WRITE_FAILED code=jv_ean_marker_write_failed item_id=%s ean=%s",
