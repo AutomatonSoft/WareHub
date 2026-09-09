@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { bootstrapAuthSession, clearAuth, DEFAULT_API_BASE } from "../../app/client-api-shared";
 
 function isPublicPath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/register" || pathname === "/forgot-password" || pathname === "/docs/api";
+  return pathname === "/login" || pathname === "/register" || pathname === "/forgot-password" || pathname === "/docs/api" || pathname === "/privacy";
 }
 
 export function AuthBootstrap({ children }: { children: React.ReactNode }) {

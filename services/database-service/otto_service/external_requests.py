@@ -202,6 +202,13 @@ class OttoExternalProductsClient:
                 details=payload,
             )
 
+        if payload.get("success") is False:
+            raise OttoExternalAPIError(
+                "OTTO activate/deactivate API rejected the requested state change.",
+                status_code=response.status_code,
+                details=payload,
+            )
+
         return payload
 
     def fetch_categories(

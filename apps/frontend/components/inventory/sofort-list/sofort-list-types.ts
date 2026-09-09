@@ -17,6 +17,7 @@ export type SofortListRow = {
     kauflandXl: string;
     hoodJv: string;
     hoodXl: string;
+    temu: string;
   };
   siteEanStatuses: {
     jv: boolean | null;
@@ -29,6 +30,7 @@ export type SofortListRow = {
     kauflandXl: boolean | null;
     hoodJv: boolean | null;
     hoodXl: boolean | null;
+    temu: boolean | null;
   };
   photo: string;
   photoUrls: string[];

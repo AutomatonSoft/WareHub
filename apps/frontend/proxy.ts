@@ -7,6 +7,9 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/docs/api") {
     return true;
   }
+  if (pathname === "/privacy") {
+    return true;
+  }
   if (pathname === "/login") {
     return true;
   }
@@ -59,4 +62,3 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: "/:path*"
 };
-
