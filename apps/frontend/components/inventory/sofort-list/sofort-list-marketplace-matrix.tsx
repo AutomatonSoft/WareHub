@@ -73,6 +73,8 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
               <div
                 key={cell.key}
                 className={`wh-sofort-marketplace-matrix__value ${
+                  row.cells.length === 1 ? "wh-sofort-marketplace-matrix__value--single " : ""
+                }${
                   cell.matches
                     ? "wh-sofort-marketplace-matrix__value--matched"
                     : cell.isBWare
@@ -91,7 +93,7 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
                   checked={cell.status === true}
                   disabled={updatingMarketplace === cell.key}
                   aria-label={`${row.market} ${cell.key} status`}
-                  onCheckedChange={(value) => void handleStatusChange(cell.key, value === true)}
+                  onCheckedChange={(value) => void handleStatusChange(cell.key as MarketplaceStatusKey, value === true)}
                 />
               </div>
             );

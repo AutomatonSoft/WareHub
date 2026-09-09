@@ -73,6 +73,13 @@ from orders_pars.views import (
     CreateItemOrders,
 )
 from hood_service.views import HoodFetchByEANAPIView
+from ebay_service.views import (
+    EbayCategoryAspectsAPIView,
+    EbayCategorySuggestionsAPIView,
+    EbayOAuthAuthorizationUrlAPIView,
+    EbayOAuthCallbackAPIView,
+    EbayOAuthCodeExchangeAPIView,
+)
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
     OttoCategoriesAPIView,
@@ -275,6 +282,31 @@ api_v1_patterns = [
         "api/v1/hood/items/by-ean/<str:ean>/",
         HoodFetchByEANAPIView.as_view(),
         name="hood-fetch-by-ean-v1",
+    ),
+    path(
+        "api/v1/ebay/taxonomy/category-suggestions/",
+        EbayCategorySuggestionsAPIView.as_view(),
+        name="ebay-category-suggestions-v1",
+    ),
+    path(
+        "api/v1/ebay/taxonomy/category-aspects/",
+        EbayCategoryAspectsAPIView.as_view(),
+        name="ebay-category-aspects-v1",
+    ),
+    path(
+        "api/v1/ebay/oauth/authorization-url/",
+        EbayOAuthAuthorizationUrlAPIView.as_view(),
+        name="ebay-oauth-authorization-url-v1",
+    ),
+    path(
+        "api/v1/ebay/oauth/exchange-code/",
+        EbayOAuthCodeExchangeAPIView.as_view(),
+        name="ebay-oauth-exchange-code-v1",
+    ),
+    path(
+        "api/v1/ebay/oauth/callback/",
+        EbayOAuthCallbackAPIView.as_view(),
+        name="ebay-oauth-callback-v1",
     ),
     path(
         "api/v1/otto/attributes/",

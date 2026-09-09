@@ -91,6 +91,7 @@ class MarketplaceJobService:
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
+                    **actor_kwargs,
                 ),
             )
         )

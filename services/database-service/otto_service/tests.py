@@ -373,6 +373,15 @@ class OttoExternalProductsClientTests(SimpleTestCase):
         self.assertEqual(session.calls[1][1]["json"], {"ean": "4250123456789", "controller": "xl"})
         self.assertEqual(session.calls[0][1]["timeout"], (2, 5))
 
+    def test_set_active_state_rejects_unsuccessful_json_response(self):
+        client = OttoExternalProductsClient(
+            session=FakeSession(FakeResponse(payload={"success": False, "message": "not found"})),
+            base_url="https://otto.example.test",
+        )
+
+        with self.assertRaises(OttoExternalAPIError):
+            client.set_active_state(ean="4250123456789", controller="jv", active=False)
+
 
 class BuildOttoUrlTests(SimpleTestCase):
     def test_builds_url_for_moin(self):
