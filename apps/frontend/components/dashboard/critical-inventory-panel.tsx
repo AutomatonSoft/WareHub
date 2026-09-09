@@ -212,9 +212,10 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
       kauflandXl: firstText(row.kaufland_xl_ean, row.kfl_xl_ean, row.ean_kaufland_xl, row.kauflandXlEan),
       hoodJv: firstText(row.hood_jv_ean, row.ean_hood_jv, row.hoodJvEan),
       hoodXl: firstText(row.hood_xl_ean, row.ean_hood_xl, row.hoodXlEan),
+      temu: "",
     },
     siteEanStatuses: {
-      jv: null, xl: null, ottoJv: null, ottoXl: null, ebayJv: null, ebayXl: null, kauflandJv: null, kauflandXl: null, hoodJv: null, hoodXl: null,
+      jv: null, xl: null, ottoJv: null, ottoXl: null, ebayJv: null, ebayXl: null, kauflandJv: null, kauflandXl: null, hoodJv: null, hoodXl: null, temu: null,
     },
     photo: photos[0] ?? "-",
     photoUrls: photos,

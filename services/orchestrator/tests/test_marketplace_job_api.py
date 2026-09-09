@@ -132,6 +132,13 @@ class FakeMarketplaceGateway:
                             "status_code": 200,
                             "details": {"kid_number": kid_number, "inactive": inactive},
                         },
+                        {
+                            "ok": True,
+                            "site_key": "TEMU",
+                            "channel": "TEMU",
+                            "status_code": 200,
+                            "details": {"kid_number": kid_number, "inactive": inactive},
+                        },
                     ],
                 },
             },
@@ -181,7 +188,16 @@ class FakeMarketplaceGateway:
             },
         )()
 
-    def toggle_otto_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
+    def toggle_otto_by_kid(
+        self,
+        *,
+        kid_number: str,
+        inactive: bool,
+        request_id: str,
+        place: str | None = None,
+        actor_login: str = "",
+        actor_name: str = "",
+    ):
         return type(
             "R",
             (),
@@ -271,8 +287,8 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)
     assert result.status == "ok"
-    assert result.summary.total == 8
-    assert result.summary.success == 8
+    assert result.summary.total == 9
+    assert result.summary.success == 9
     assert result.summary.failed == 0
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
@@ -283,6 +299,7 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     assert site_keys["OTTO_XL"].ok is True
     assert site_keys["EBAY_JV"].ok is True
     assert site_keys["KAUFLAND_JV"].ok is True
+    assert site_keys["TEMU"].ok is True
 
 
 def test_marketplace_job_service_activate_combines_jv_and_local_channels():
@@ -298,6 +315,7 @@ def test_marketplace_job_service_activate_combines_jv_and_local_channels():
     assert site_keys["OTTO_XL"].ok is True
     assert site_keys["EBAY_JV"].ok is True
     assert site_keys["KAUFLAND_JV"].ok is True
+    assert site_keys["TEMU"].ok is True
 
 
 def test_marketplace_job_service_returns_partial_result_when_jv_times_out():

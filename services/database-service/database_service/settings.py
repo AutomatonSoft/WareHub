@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'jv_services',
     'xl_services',
     'kaufland',
+    'ebay_service',
     'create_products',
     'telegram_service',
 ]

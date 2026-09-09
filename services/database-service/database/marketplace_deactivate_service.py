@@ -80,6 +80,7 @@ DEACTIVATE_TARGET_ORDER = (
     "hood_xl",
     "ebay_jv",
     "ebay_xl",
+    "temu",
 )
 
 
@@ -248,6 +249,7 @@ def _resolve_kid_marketplace_targets(kid: Kid) -> tuple[list[dict], list[dict]]:
             "kaufland_xl": "KAUFLAND",
             "ebay_jv": "EBAY",
             "ebay_xl": "EBAY",
+            "temu": "TEMU",
         }.get(field_name, "UNKNOWN")
         targets.append(
             {
@@ -1576,7 +1578,7 @@ def deactivate_marketplaces_by_kid_number(
     for target in targets:
         source_field = target["source_field"]
         if target.get("unsupported"):
-            if inactive:
+            if source_field == "temu" or inactive:
                 setattr(status_row, source_field, desired_flag_value)
                 status_row.save(update_fields=[source_field])
                 results.append(
@@ -1590,7 +1592,7 @@ def deactivate_marketplaces_by_kid_number(
                             "detail": f"EanStatus.{source_field} updated locally without marketplace integration.",
                             "ean": target["ean"],
                             "field": source_field,
-                            "inactive": True,
+                            "inactive": bool(inactive),
                             "status": desired_flag_value,
                         },
                     }
@@ -1765,6 +1767,7 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     for field_name, channel in (
         ("ebay_jv", "EBAY"),
         ("ebay_xl", "EBAY"),
+        ("temu", "TEMU"),
     ):
         ean_value = str(getattr(ean_row, field_name, "") or "").strip()
         if not ean_value:
@@ -1801,7 +1804,7 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
                 "status_code": status.HTTP_200_OK,
                 "details": {
                     "code": "marketplace_local_status_no_targets",
-                    "detail": "Для этого Kid нет EBAY targets для локального обновления.",
+                    "detail": "Для этого Kid нет EBAY или TEMU targets для локального обновления.",
                 },
             }
         )

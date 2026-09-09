@@ -60,6 +60,7 @@ type EditDraftState = {
   kauflandXl: string;
   hoodJv: string;
   hoodXl: string;
+  temu: string;
   photoUrls: string[];
   photoFiles: File[];
 };
@@ -224,7 +225,7 @@ const MARKETPLACE_CONFIRM_TARGETS = [
   { key: "JV", state: "live" as const },
   { key: "XL", state: "live" as const },
   { key: "HOOD", state: "live" as const },
-  { key: "OTTO", state: "pending" as const },
+  { key: "OTTO", state: "live" as const },
   { key: "EBAY", state: "pending" as const },
   { key: "KAUFLAND", state: "pending" as const },
 ];
@@ -574,6 +575,7 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     kauflandXl: row.siteEans.kauflandXl,
     hoodJv: row.siteEans.hoodJv,
     hoodXl: row.siteEans.hoodXl,
+    temu: row.siteEans.temu,
     photoUrls: row.photoUrls,
     photoFiles: []
   };
@@ -970,6 +972,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
             kauflandXl: details.ean?.kaufland_xl ?? base.kauflandXl,
             hoodJv: details.ean?.hood_jv ?? base.hoodJv,
             hoodXl: details.ean?.hood_xl ?? base.hoodXl,
+            temu: details.ean?.temu ?? base.temu,
           };
         });
       })
@@ -1098,7 +1101,8 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
         kauflandJv: editDraft.kauflandJv.trim(),
         kauflandXl: editDraft.kauflandXl.trim(),
         hoodJv: editDraft.hoodJv.trim(),
-        hoodXl: editDraft.hoodXl.trim()
+        hoodXl: editDraft.hoodXl.trim(),
+        temu: editDraft.temu.trim()
       };
 
       await patchKidComposite({
@@ -1129,6 +1133,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
           kaufland_xl: normalizedSiteEans.kauflandXl || null,
           hood_jv: normalizedSiteEans.hoodJv || null,
           hood_xl: normalizedSiteEans.hoodXl || null,
+          temu: normalizedSiteEans.temu || null,
         },
         productAttributes: {
           quantity: editDraft.quantity.trim() || undefined,
@@ -2120,6 +2125,15 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                                   />
                                 </div>
                               ))}
+                              <div className="grid grid-cols-[88px_minmax(0,1fr)] items-end gap-3">
+                                <span className="truncate text-xs font-semibold text-muted-foreground">TEMU</span>
+                                <Input
+                                  className="h-10 min-w-0 rounded-[var(--radius-control)]"
+                                  value={editDraft.temu}
+                                  onChange={(event) => updateDraft("temu", event.target.value)}
+                                  placeholder="EAN"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>

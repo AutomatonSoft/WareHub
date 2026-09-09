@@ -333,6 +333,7 @@ export function CriticalInventoryEditDialog({
         kauflandXl: editDraft.kauflandXl.trim(),
         hoodJv: editDraft.hoodJv.trim(),
         hoodXl: editDraft.hoodXl.trim(),
+        temu: "",
       };
 
       await patchKidMarketplaceEans({

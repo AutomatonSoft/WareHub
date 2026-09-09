@@ -183,6 +183,17 @@ class DatabaseApiTests(APITestCase):
             ).exists()
         )
 
+    def test_kid_marketplace_status_update_supports_temu(self):
+        response = self.client.patch(
+            f"/api/v1/kids/{self.kid.id}/marketplace-status/",
+            {"marketplace": "temu", "status": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"kid_id": self.kid.id, "marketplace": "temu", "status": True})
+        self.assertTrue(EanStatus.objects.get(ean=self.kid).temu)
+
     def test_primary_kid_number_uses_last_list_item(self):
         self.kid.kid_number = ["OLD-001", "OLD-002", "NEW-003"]
         self.kid.save(update_fields=["kid_number"])
@@ -1985,6 +1996,38 @@ class DatabaseApiTests(APITestCase):
         self.assertTrue(status_row.ebay_jv)
         self.assertFalse(status_row.kaufland_jv)
 
+    def test_marketplace_local_statuses_by_kid_updates_temu_on_activate(self):
+        kid = Kid.objects.create(kid_number=["KID-TEMU-ACTIVATE"])
+        Ean.objects.create(kid=kid, temu="8062292028939")
+        EanStatus.objects.create(ean=kid, temu=False)
+
+        response = self.client.post(
+            "/api/v1/marketplace/local-statuses-by-kid/",
+            {"kid_number": "KID-TEMU-ACTIVATE", "inactive": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        temu_result = next(row for row in response.data["results"] if row["site_key"] == "TEMU")
+        self.assertEqual(temu_result["details"]["code"], "marketplace_local_status_updated")
+        self.assertTrue(EanStatus.objects.get(ean=kid).temu)
+
+    def test_marketplace_deactivate_by_kid_updates_temu_status_locally(self):
+        kid = Kid.objects.create(kid_number=["KID-TEMU-LOCAL"], place="4")
+        Ean.objects.create(kid=kid, temu="8062292028939")
+        EanStatus.objects.create(ean=kid, temu=True)
+
+        response = self.client.post(
+            "/api/v1/marketplace/deactivate-by-kid/",
+            {"kid_number": "KID-TEMU-LOCAL", "inactive": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        temu_result = next(row for row in response.data["results"] if row["site_key"] == "TEMU")
+        self.assertEqual(temu_result["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertFalse(EanStatus.objects.get(ean=kid).temu)
+
     def test_marketplace_local_statuses_by_kid_is_successful_noop_for_hood_only_mapping(self):
         kid = Kid.objects.create(kid_number=["KID-HOOD-ONLY"])
         Ean.objects.create(kid=kid, hood_jv="4062292028939")
@@ -3453,6 +3496,7 @@ class DatabaseApiTests(APITestCase):
             kaufland_xl="9999999999999",
             hood_jv="1212121212121",
             hood_xl="3434343434343",
+            temu="4545454545454",
         )
 
         cases = (

@@ -1063,6 +1063,7 @@ const MARKETPLACE_STATUS_FIELD_BY_ROW_KEY = {
   kauflandXl: "kaufland_xl",
   hoodJv: "hood_jv",
   hoodXl: "hood_xl",
+  temu: "temu",
 } as const;
 
 export type MarketplaceStatusRowKey = keyof typeof MARKETPLACE_STATUS_FIELD_BY_ROW_KEY;

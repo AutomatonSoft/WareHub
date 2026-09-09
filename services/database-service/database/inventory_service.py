@@ -26,6 +26,7 @@ MARKETPLACE_STATUS_FIELDS = (
     "kaufland_xl",
     "hood_jv",
     "hood_xl",
+    "temu",
 )
 
 
@@ -344,6 +345,7 @@ def build_inventory_rows() -> list[dict]:
         kaufland_xl_ean = _norm_ean(getattr(ean_row, "kaufland_xl", None))
         hood_jv_ean = _norm_ean(getattr(ean_row, "hood_jv", None))
         hood_xl_ean = _norm_ean(getattr(ean_row, "hood_xl", None))
+        temu_ean = _norm_ean(getattr(ean_row, "temu", None))
         order_entries = orders_by_kid_id.get(kid.id) or []
 
         order_db_id = None
@@ -432,6 +434,7 @@ def build_inventory_rows() -> list[dict]:
                 "kaufland_xl_ean": kaufland_xl_ean,
                 "hood_jv_ean": hood_jv_ean,
                 "hood_xl_ean": hood_xl_ean,
+                "temu_ean": temu_ean,
                 "ean_status": {
                     field_name: getattr(ean_status_row, field_name, False)
                     for field_name in MARKETPLACE_STATUS_FIELDS

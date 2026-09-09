@@ -13,7 +13,7 @@ export type MarketplaceMatrixCellState = {
 
 export type MarketplaceMatrixRowState = {
   market: string;
-  cells: [MarketplaceMatrixCellState, MarketplaceMatrixCellState];
+  cells: MarketplaceMatrixCellState[];
   hasMatch: boolean;
 };
 
@@ -54,33 +54,26 @@ export function buildMarketplaceMatrixRows(
   bWare: boolean
 ): MarketplaceMatrixRowState[] {
   const tokens = tokenizeQuery(query);
-  const rows: Array<{ market: string; keys: [MarketplaceKey, MarketplaceKey] }> = [
+  const rows: Array<{ market: string; keys: MarketplaceKey[] }> = [
     { market: "SITES", keys: ["jv", "xl"] },
     { market: "OTTO", keys: ["ottoJv", "ottoXl"] },
     { market: "EBAY", keys: ["ebayJv", "ebayXl"] },
     { market: "KAUF", keys: ["kauflandJv", "kauflandXl"] },
-    { market: "HOOD", keys: ["hoodJv", "hoodXl"] }
+    { market: "HOOD", keys: ["hoodJv", "hoodXl"] },
+    { market: "TEMU", keys: ["temu"] }
   ];
 
   return rows.map(({ market, keys }) => {
-    const cells: [MarketplaceMatrixCellState, MarketplaceMatrixCellState] = [
+    const cells = keys.map((key) =>
       buildCellState(
-        keys[0],
-        siteEans[keys[0]],
-        siteEanStatuses[keys[0]],
-        placeholderEan,
-        tokens,
-        bWare && market === "OTTO",
-      ),
-      buildCellState(
-        keys[1],
-        siteEans[keys[1]],
-        siteEanStatuses[keys[1]],
+        key,
+        siteEans[key],
+        siteEanStatuses[key as keyof typeof siteEanStatuses],
         placeholderEan,
         tokens,
         bWare && market === "OTTO",
       )
-    ];
+    );
     return {
       market,
       cells,

@@ -41,6 +41,7 @@ class KidMarketplaceStatusUpdateSerializer(serializers.Serializer):
             "kaufland_xl",
             "hood_jv",
             "hood_xl",
+            "temu",
         )
     )
     status = serializers.BooleanField()

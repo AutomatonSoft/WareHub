@@ -3546,6 +3546,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
 .wh-sofort-marketplace-matrix__value--b-ware { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
 .wh-sofort-marketplace-matrix__value--active { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .wh-sofort-marketplace-matrix__value--inactive { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+.wh-sofort-marketplace-matrix__value--single { grid-column: span 2; }
 .wh-sofort-marketplace-matrix__value code {
   flex: 1 1 auto;
   min-width: 0;

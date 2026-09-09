@@ -46,7 +46,8 @@ function extractSiteEans(item: Record<string, unknown>, fallback: string) {
     kauflandJv: normalizeEanValue(item.kaufland_jv_ean ?? item.kfl_jv_ean ?? item.ean_kaufland_jv ?? item.kauflandJvEan, fallback),
     kauflandXl: normalizeEanValue(item.kaufland_xl_ean ?? item.kfl_xl_ean ?? item.ean_kaufland_xl ?? item.kauflandXlEan, fallback),
     hoodJv: normalizeEanValue(item.hood_jv_ean ?? item.ean_hood_jv ?? item.hoodJvEan, fallback),
-    hoodXl: normalizeEanValue(item.hood_xl_ean ?? item.ean_hood_xl ?? item.hoodXlEan, fallback)
+    hoodXl: normalizeEanValue(item.hood_xl_ean ?? item.ean_hood_xl ?? item.hoodXlEan, fallback),
+    temu: normalizeEanValue(item.temu_ean ?? item.temuEan, fallback)
   };
 }
 
@@ -291,7 +292,8 @@ export function SofortListTable() {
         kauflandJv: siteEans.kauflandJv,
         kauflandXl: siteEans.kauflandXl,
         hoodJv: siteEans.hoodJv,
-        hoodXl: siteEans.hoodXl
+        hoodXl: siteEans.hoodXl,
+        temu: siteEans.temu
       };
       const normalizedSiteEanStatuses = {
         jv: typeof rawStatus.jv === "boolean" ? rawStatus.jv : null,
@@ -303,7 +305,8 @@ export function SofortListTable() {
         kauflandJv: typeof rawStatus.kaufland_jv === "boolean" ? rawStatus.kaufland_jv : null,
         kauflandXl: typeof rawStatus.kaufland_xl === "boolean" ? rawStatus.kaufland_xl : null,
         hoodJv: typeof rawStatus.hood_jv === "boolean" ? rawStatus.hood_jv : null,
-        hoodXl: typeof rawStatus.hood_xl === "boolean" ? rawStatus.hood_xl : null
+        hoodXl: typeof rawStatus.hood_xl === "boolean" ? rawStatus.hood_xl : null,
+        temu: typeof rawStatus.temu === "boolean" ? rawStatus.temu : null
       };
       const marketplaceActive = resolveMarketplaceActive(rawItem);
 
