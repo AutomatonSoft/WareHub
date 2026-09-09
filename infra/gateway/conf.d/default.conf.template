@@ -217,6 +217,20 @@ server {
     proxy_pass http://services_upstream;
   }
 
+  location = /api/v1/ebay {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
+  location /api/v1/ebay/ {
+    error_page 502 = @api_502;
+    error_page 503 = @api_503;
+    error_page 504 = @api_504;
+    proxy_pass http://services_upstream;
+  }
+
   location = /api/v1/uploads/images {
     error_page 502 = @api_502;
     error_page 503 = @api_503;
