@@ -162,6 +162,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: stage
+    permissions:
+      contents: read
+      packages: read
     env:
       STAGE_SSH_HOST: ${{ vars.STAGE_SSH_HOST }}
       STAGE_SSH_USER: ${{ vars.STAGE_SSH_USER }}
@@ -463,11 +466,18 @@ jobs:
 
       - name: Deploy stage remotely
         shell: bash
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           candidate_dir="${{ steps.candidate.outputs.candidate_dir }}"
 
-          tar -C "$candidate_dir" -cf - . | ssh \
+          {
+            printf '%s\n' "$GHCR_USERNAME"
+            printf '%s\n' "$GHCR_TOKEN"
+            tar -C "$candidate_dir" -cf - .
+          } | ssh \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
@@ -483,13 +493,32 @@ jobs:
           EXPECTED_GATEWAY_PORT="8940"
           EXPECTED_SERVICE_COUNT="10"
 
+          IFS= read -r GHCR_USERNAME
+          IFS= read -r GHCR_TOKEN
+
+          [ -n "${GHCR_USERNAME:-}" ] || { echo "GHCR username missing" >&2; exit 1; }
+          [ -n "${GHCR_TOKEN:-}" ] || { echo "GHCR token missing" >&2; exit 1; }
+
           candidate_dir="$(mktemp -d /tmp/warehub-stage-deploy.XXXXXXXX)"
+          docker_config_dir="$(mktemp -d /tmp/warehub-docker-auth.XXXXXXXX)"
           cleanup() {
             if [[ "${candidate_dir:-}" == /tmp/warehub-stage-deploy.* ]] && [ -d "$candidate_dir" ]; then
               rm -rf -- "$candidate_dir"
             fi
+            if [[ "${docker_config_dir:-}" == /tmp/warehub-docker-auth.* ]] && [ -d "$docker_config_dir" ]; then
+              rm -rf -- "$docker_config_dir"
+            fi
           }
           trap cleanup EXIT INT TERM HUP
+
+          export DOCKER_CONFIG="$docker_config_dir"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
+          unset GHCR_TOKEN
+          unset GHCR_USERNAME
+
+          if [ -f "$DOCKER_CONFIG/config.json" ]; then
+            chmod 600 "$DOCKER_CONFIG/config.json"
+          fi
 
           tar -xf - -C "$candidate_dir"
 
@@ -526,6 +555,27 @@ jobs:
           [ "${IMAGE_TAG:-}" != "" ] || { echo "IMAGE_TAG missing from metadata" >&2; exit 1; }
           [[ "$IMAGE_TAG" =~ ^stage-[0-9a-f]{7}$ ]] || { echo "Invalid IMAGE_TAG: $IMAGE_TAG" >&2; exit 1; }
           [[ "${SOURCE_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid SOURCE_COMMIT_SHA" >&2; exit 1; }
+
+          echo "=== VERIFY GHCR IMAGE ACCESS ==="
+          for ref in \
+            "$BACKEND_REF" \
+            "$FRONTEND_REF" \
+            "$GATEWAY_REF" \
+            "$MOBILE_REF" \
+            "$SERVICES_REF" \
+            "$ORCHESTRATOR_REF"
+          do
+            case "$ref" in
+              ghcr.io/automatonsoft/warehub/*:"$IMAGE_TAG") ;;
+              *)
+                echo "Unexpected GHCR image ref: $ref" >&2
+                exit 1
+                ;;
+            esac
+
+            echo "Checking $ref"
+            docker manifest inspect "$ref" >/dev/null
+          done
 
           cd "$DEPLOY_PATH"
 
