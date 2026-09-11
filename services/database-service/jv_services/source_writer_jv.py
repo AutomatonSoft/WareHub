@@ -39,6 +39,7 @@ from .source_values import (
 #    supplier liefernr in shopartikellieferanteninfo) is always "JVM<EAN>".
 # The plain article number (artikelnr / "Artikel-Nr.") stays user-controlled.
 _JV_HERSTELLER = "JVMOEBEL"
+_JV_INITIAL_STOCK_STORAGE = "default"
 
 
 def _jv_hersteller_artikelnr(product: ImportedProduct) -> str:
@@ -56,6 +57,23 @@ def _currency_for_product(product: ImportedProduct) -> str:
     # admin save fixes it. CH -> CHF, CO_UK -> GBP, DE/AT -> EUR.
     site_key = str(getattr(product, "site_key", "") or "").strip().upper()
     return DEFAULT_CURRENCY_BY_SITE_KEY.get(site_key, "EUR")
+
+
+def _create_jv_initial_stock(cur, artikelid: int, *, timestamp: datetime) -> None:
+    required_columns = {"artikelid", "bestand", "bestand_min", "bestand_ignore", "timestamp", "storage"}
+    if not _table_exists(cur, "shopartikelbestaende"):
+        raise RuntimeError("source JV table shopartikelbestaende not found")
+    missing_columns = [name for name in required_columns if not _table_has_column(cur, "shopartikelbestaende", name)]
+    if missing_columns:
+        raise RuntimeError(f"shopartikelbestaende is missing required columns: {', '.join(sorted(missing_columns))}")
+    cur.execute(
+        """
+        INSERT INTO `shopartikelbestaende`
+            (`artikelid`, `bestand`, `bestand_min`, `bestand_ignore`, `timestamp`, `storage`)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (artikelid, 1, 0, 0, timestamp, _JV_INITIAL_STOCK_STORAGE),
+    )
 
 
 def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
@@ -120,6 +138,7 @@ def _create_product_in_jv_source(cur, product: ImportedProduct) -> int:
     artikelid = int(cur.lastrowid or 0)
     if artikelid <= 0:
         raise RuntimeError("failed to obtain inserted JV artikelid")
+    _create_jv_initial_stock(cur, artikelid, timestamp=now)
 
     if _table_exists(cur, "shopartikelpreise"):
         price_defaults = {

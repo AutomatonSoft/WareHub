@@ -221,6 +221,23 @@ class JVRoutesSmokeTest(SimpleTestCase):
 
         self.assertEqual(_source_ean_for_jv_shopartikel(product), "4062292005305")
 
+    @patch("jv_services.source_writer_jv._table_has_column", return_value=True)
+    @patch("jv_services.source_writer_jv._table_exists", return_value=True)
+    def test_jv_source_writer_creates_initial_stock_of_one(self, _mock_table_exists, _mock_table_has_column):
+        from datetime import datetime
+        from unittest.mock import MagicMock
+
+        from jv_services.source_writer_jv import _create_jv_initial_stock
+
+        cursor = MagicMock()
+        timestamp = datetime(2026, 9, 11, 10, 0, 0)
+
+        _create_jv_initial_stock(cursor, 123, timestamp=timestamp)
+
+        sql, values = cursor.execute.call_args.args
+        self.assertIn("INSERT INTO `shopartikelbestaende`", sql)
+        self.assertEqual(values, (123, 1, 0, 0, timestamp, "default"))
+
     def test_jv_shopmedia_sync_supports_sortierung_schema(self):
         from types import SimpleNamespace
         from unittest.mock import MagicMock, call, patch

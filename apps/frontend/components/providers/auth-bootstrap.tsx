@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { API_V1_ROUTES, buildApiV1Url } from "../../app/api-v1-routes";
 import { bootstrapAuthSession, clearAuth, DEFAULT_API_BASE } from "../../app/client-api-shared";
 
 function isPublicPath(pathname: string): boolean {
@@ -30,6 +31,13 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
       }
       if (!auth) {
         clearAuth();
+        await fetch(buildApiV1Url(apiBase, API_V1_ROUTES.auth.logout), {
+          method: "POST",
+          credentials: "include"
+        }).catch(() => null);
+        if (!active) {
+          return;
+        }
         router.replace("/login");
         return;
       }
