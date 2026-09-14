@@ -33,8 +33,10 @@ export function createEmptyJvDraft() {
     image: "",
     descriptions: [],
     categories: [],
+    categories_by_site_key: {},
     images: [],
-    jv_fields: {}
+    jv_fields: {},
+    jv_fields_by_site_key: {}
   };
 }
 
@@ -98,8 +100,10 @@ export function buildJvChangedFields(initial, current) {
   if (Boolean(current.status) !== Boolean(initial.status)) changed.add("status");
   if (JSON.stringify(current.descriptions) !== JSON.stringify(initial.descriptions)) changed.add("descriptions");
   if (JSON.stringify(current.categories) !== JSON.stringify(initial.categories)) changed.add("categories");
+  if (JSON.stringify(current.categories_by_site_key) !== JSON.stringify(initial.categories_by_site_key)) changed.add("categories");
   if (JSON.stringify(current.images) !== JSON.stringify(initial.images)) changed.add("images");
   if (JSON.stringify(current.jv_fields) !== JSON.stringify(initial.jv_fields)) changed.add("jv_fields");
+  if (JSON.stringify(current.jv_fields_by_site_key) !== JSON.stringify(initial.jv_fields_by_site_key)) changed.add("jv_fields");
   return Array.from(changed);
 }
 

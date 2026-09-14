@@ -66,6 +66,17 @@ test("product editor jv model detects scalar and relation changes", () => {
   assert.deepEqual(buildJvChangedFields(initial, current).sort(), ["descriptions", "price"]);
 });
 
+test("product editor jv model detects per-site category and delivery changes", () => {
+  const initial = createEmptyJvDraft();
+  const current = {
+    ...initial,
+    categories_by_site_key: { JV_CH: [] },
+    jv_fields_by_site_key: { JV_CH: { lieferzeitid: "4" } }
+  };
+
+  assert.deepEqual(buildJvChangedFields(initial, current).sort(), ["categories", "jv_fields"]);
+});
+
 test("product editor description detection finds technical html tags", () => {
   assert.equal(containsTechnicalDescriptionHtml("<meta charset='utf-8'><p>Desk</p>"), true);
   assert.equal(containsTechnicalDescriptionHtml("<div><strong>Desk</strong></div>"), false);
