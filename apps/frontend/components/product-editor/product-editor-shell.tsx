@@ -157,8 +157,9 @@ function ProductEditorContent() {
   const [tabSearchStatuses, setTabSearchStatuses] = useState<Record<string, ProductEditorTabSearchStatus>>({});
   const [discovering, setDiscovering] = useState(false);
   const [discover, setDiscover] = useState<ProductEditorDiscoverResponse | null>(null);
-  const discoverRequestVersionRef = useRef(0);
+  const draftLoadVersionByTabRef = useRef<Record<string, number>>({});
   const jvPublishingSelectionsLoadKeyRef = useRef<string | null>(null);
+  const manuallyChangedJvPublishingSiteKeysRef = useRef<Set<string>>(new Set());
   const [activeTabKey, setActiveTabKey] = useState<string>("HOOD_JV");
   const activeGroupId = getGroupIdForTab(activeTabKey);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -206,8 +207,9 @@ function ProductEditorContent() {
   const kauflandLoadInFlightEanRef = useRef<string | null>(null);
   const autoSearchHandledEanRef = useRef<string | null>(null);
   const autoTabSearchHandledKeyRef = useRef<string | null>(null);
-  const globalPrefetchInFlightRef = useRef(false);
   const autoLoadHandledKeysRef = useRef<Set<string>>(new Set());
+  const autoLoadersRef = useRef({ loadHoodDraft, loadJvDraft, loadKauflandDraft, loadOttoDraft, refreshJob });
+  autoLoadersRef.current = { loadHoodDraft, loadJvDraft, loadKauflandDraft, loadOttoDraft, refreshJob };
   const autoSearchEan = (searchParams.get("ean") ?? "").trim();
   const tabEansFromSearchParams = useMemo(() => {
     return Object.fromEntries(
@@ -360,7 +362,6 @@ function ProductEditorContent() {
 
   useEffect(() => {
     if (!discover) return;
-    if (globalPrefetchInFlightRef.current) return;
     const preferredTargetId = getPreferredTargetIdForTab(discover, activeTabKey);
     if (
       activeGroupId === "HOOD" &&
@@ -370,7 +371,7 @@ function ProductEditorContent() {
       const autoLoadKey = `HOOD:${activeTabKey}:${discover.ean}`;
       if (autoLoadHandledKeysRef.current.has(autoLoadKey)) return;
       autoLoadHandledKeysRef.current.add(autoLoadKey);
-      void loadHoodDraft(discover, preferredTargetId ?? discover.recommended_baseline_target_id);
+      void autoLoadersRef.current.loadHoodDraft(discover, preferredTargetId ?? discover.recommended_baseline_target_id);
     }
     if (
       (activeGroupId === "JV" || activeGroupId === "XL") &&
@@ -393,7 +394,7 @@ function ProductEditorContent() {
       }
       autoLoadHandledKeysRef.current.add(autoLoadKey);
       jvAutoLoadInFlightKeyRef.current = autoLoadKey;
-      void loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
+      void autoLoadersRef.current.loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
     }
     if (activeGroupId === "KAUFLAND" && !hasLocalLoadedKaufland) {
       const autoLoadKey = `KAUFLAND:${activeTabKey}:${discover.ean}`;
@@ -401,22 +402,22 @@ function ProductEditorContent() {
       autoLoadHandledKeysRef.current.add(autoLoadKey);
       if (kauflandLoadInFlightEanRef.current === discover.ean) return;
       kauflandLoadInFlightEanRef.current = discover.ean;
-      void loadKauflandDraft(discover, preferredTargetId);
+      void autoLoadersRef.current.loadKauflandDraft(discover, preferredTargetId);
     }
     if (activeGroupId === "OTTO" && !ottoDraft.ean) {
       const autoLoadKey = `OTTO:${activeTabKey}:${discover.ean}`;
       if (autoLoadHandledKeysRef.current.has(autoLoadKey)) return;
       autoLoadHandledKeysRef.current.add(autoLoadKey);
-      void loadOttoDraft(discover, discover.recommended_baseline_target_id);
+      void autoLoadersRef.current.loadOttoDraft(discover, discover.recommended_baseline_target_id);
     }
-  }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland]);
+  }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland, ottoDraft.ean]);
 
   useEffect(() => {
     if (!jobResponse) return;
     if (!jobResponse.job_id) return;
     if (jobResponse.status !== "queued" && jobResponse.status !== "running") return;
     const timer = window.setTimeout(() => {
-      void refreshJob(jobResponse.job_id, false);
+      void autoLoadersRef.current.refreshJob(jobResponse.job_id, false);
     }, 2000);
     return () => window.clearTimeout(timer);
   }, [jobResponse]);
@@ -437,8 +438,6 @@ function ProductEditorContent() {
   }
 
   async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null, targetTabKey?: string): Promise<boolean> {
-    const requestVersion = ++discoverRequestVersionRef.current;
-    let backgroundPrefetchStarted = false;
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
@@ -454,15 +453,6 @@ function ProductEditorContent() {
         setTabSearchStatuses(Object.fromEntries(
           PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, getTabSearchStatus(normalizedResponse, tab.key)]),
         ));
-        backgroundPrefetchStarted = true;
-        globalPrefetchInFlightRef.current = true;
-        void Promise.all(
-          PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => preloadGlobalTab(tab.key, normalizedResponse, requestVersion)),
-        ).finally(() => {
-          if (discoverRequestVersionRef.current === requestVersion) {
-            globalPrefetchInFlightRef.current = false;
-          }
-        });
       }
       return activeGroup
         ? hasFoundTargetInGroup(normalizedResponse, nextActiveGroup)
@@ -473,9 +463,6 @@ function ProductEditorContent() {
       showToast(message, "error");
       return false;
     } finally {
-      if (!backgroundPrefetchStarted) {
-        globalPrefetchInFlightRef.current = false;
-      }
       setDiscovering(false);
     }
   }
@@ -513,33 +500,14 @@ function ProductEditorContent() {
 
   async function loadHoodDraft(currentDiscover: ProductEditorDiscoverResponse, preferredTargetId?: string | null) {
     const tabKey = getHoodTabKey(activeTabKey) ?? getHoodTabKeyForTargetId(preferredTargetId) ?? "HOOD_JV";
-    setHoodTabLoading(tabKey, true);
     try {
-      const account = getHoodAccountFromTab(tabKey);
-      const { response, payload } = await fetchHoodByEan(currentDiscover.ean, account);
-      if (!response.ok) {
-        throw new Error(payload.detail || t.productEditorHoodLoadFailedHttp.replace("{status}", String(response.status)));
-      }
-      const firstItem = extractFirstItemFromPayload(payload.external_payload);
-      const hydrated = buildHoodDraftFromApiItem({
-        account,
-        ean: currentDiscover.ean,
-        item: firstItem,
-        targetId: preferredTargetId || tabKey,
-        rawPayload: (payload.external_payload && typeof payload.external_payload === "object" ? payload.external_payload : {}) as Record<string, unknown>
-      });
-      if (!hydrated) {
-        throw new Error(t.productEditorNoHoodItemFound.replace("{ean}", currentDiscover.ean).replace("{account}", account.toUpperCase()));
-      }
-      setHoodTabDraft(tabKey, hydrated);
-      setInitialHoodTabDraft(tabKey, hydrated);
-      setHoodTabWarnings(tabKey, []);
-      clearPlanAndJobState();
-    } catch {
-      // Discovery status remains authoritative; a failed HOOD draft load must not replace it
-      // with a raw external-provider message in the Product Editor UI.
-    } finally {
-      setHoodTabLoading(tabKey, false);
+      const loaded = await loadHoodDraftByEan(currentDiscover.ean, tabKey);
+      if (!loaded) throw new Error(t.productEditorNoHoodItemFound.replace("{ean}", currentDiscover.ean));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t.productEditorHoodLoadFailedHttp.replace("{status}", "unknown");
+      setPageError(message);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
+      showToast(message, "error");
     }
   }
 
@@ -555,6 +523,7 @@ function ProductEditorContent() {
     } catch (error) {
       const message = error instanceof Error ? error.message : `${activeGroup} draft load failed.`;
       setPageError(message);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
     }
   }
@@ -633,6 +602,7 @@ function ProductEditorContent() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Kaufland draft load failed.";
       setPageError(message);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
     }
   }
@@ -656,6 +626,7 @@ function ProductEditorContent() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "OTTO draft load failed.";
       setPageError(message);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
     }
   }
@@ -669,6 +640,7 @@ function ProductEditorContent() {
 
   async function loadHoodDraftByEan(ean: string, tabKeyOverride?: HoodTabKey): Promise<boolean> {
     const tabKey = tabKeyOverride ?? getHoodTabKey(activeTabKey) ?? "HOOD_JV";
+    const loadVersion = beginDraftLoad(tabKey);
     setHoodTabLoading(tabKey, true);
     try {
       const account = getHoodAccountFromTab(tabKey);
@@ -685,36 +657,40 @@ function ProductEditorContent() {
         rawPayload: (payload.external_payload && typeof payload.external_payload === "object" ? payload.external_payload : {}) as Record<string, unknown>
       });
       if (!hydrated?.target_id) return false;
+      if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
       setHoodTabDraft(tabKey, hydrated);
       setInitialHoodTabDraft(tabKey, hydrated);
       setHoodTabWarnings(tabKey, []);
-      clearPlanAndJobState();
       return true;
     } finally {
-      setHoodTabLoading(tabKey, false);
+      if (isCurrentDraftLoad(tabKey, loadVersion)) setHoodTabLoading(tabKey, false);
     }
   }
 
   async function loadJvDraftForTab(ean: string, tabKey: JvTabKey, baselineTargetId?: string | null): Promise<boolean> {
     const activeGroup = tabKey === "XL" ? "XL" : "JV";
     const autoLoadKey = buildJvAutoLoadKey(ean, baselineTargetId);
+    const loadVersion = beginDraftLoad(tabKey);
     setJvTabLoading(tabKey, true);
     try {
       const response = await loadProductEditorGroup({ ean, activeGroup, baselineTargetId });
       const hydrated = hydrateJvDraft(response.draft as never);
       if (!response.supported || !hydrated.target_id) return false;
+      if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
+      for (const siteKey of ["JV_AT", "JV_CH", "JV_CO_UK"]) {
+        manuallyChangedJvPublishingSiteKeysRef.current.delete(`${tabKey}:${siteKey}`);
+      }
       setJvTabDraft(tabKey, hydrated);
       setInitialJvTabDraft(tabKey, hydrated);
       setJvTabWarnings(tabKey, response.warnings);
       loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(ean, baselineTargetId ?? response.baseline_target_id);
-      clearPlanAndJobState();
       if (activeGroup === "JV") {
         void loadJvPublishingSelections(ean, tabKey);
       }
       return true;
     } finally {
       if (jvAutoLoadInFlightKeyRef.current === autoLoadKey) jvAutoLoadInFlightKeyRef.current = null;
-      setJvTabLoading(tabKey, false);
+      if (isCurrentDraftLoad(tabKey, loadVersion)) setJvTabLoading(tabKey, false);
     }
   }
 
@@ -738,6 +714,7 @@ function ProductEditorContent() {
           const categoriesBySiteKey = publishingDraft.categories_by_site_key ?? {};
           const fieldsBySiteKey = publishingDraft.jv_fields_by_site_key ?? {};
           if (!Object.keys(categoriesBySiteKey).length && !Object.keys(fieldsBySiteKey).length) continue;
+          if (manuallyChangedJvPublishingSiteKeysRef.current.has(`${tabKey}:${publishingTargetId}`)) continue;
 
           setJvDraftsByTab((current) => {
             const draft = current[tabKey];
@@ -764,7 +741,17 @@ function ProductEditorContent() {
             };
           });
         } catch {
-          // The baseline stays usable if an optional per-site publishing lookup fails.
+          setJvWarningsByTab((current) => ({
+            ...current,
+            [tabKey]: [
+              ...current[tabKey],
+              {
+                code: "product_editor_jv_publishing_selection_load_failed",
+                message: `Failed to load JV categories or delivery options for ${publishingTargetId}.`,
+                level: "medium",
+              },
+            ],
+          }));
         }
       }
     } finally {
@@ -775,58 +762,37 @@ function ProductEditorContent() {
   }
 
   async function loadKauflandDraftForTab(ean: string, tabKey: KauflandTabKey, baselineTargetId?: string | null): Promise<boolean> {
+    const loadVersion = beginDraftLoad(tabKey);
     setKauflandTabLoading(tabKey, true);
     try {
       const response = await loadProductEditorGroup({ ean, activeGroup: "KAUFLAND", baselineTargetId });
       const hydrated = hydrateKauflandDraft(response.draft as unknown as ProductEditorKauflandDraft);
       if (!response.supported || !hydrated.target_id) return false;
+      if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
       setKauflandTabDraft(tabKey, hydrated);
       setInitialKauflandTabDraft(tabKey, hydrated);
       setKauflandTabWarnings(tabKey, response.warnings);
-      clearPlanAndJobState();
       return true;
     } finally {
       if (kauflandLoadInFlightEanRef.current === ean) kauflandLoadInFlightEanRef.current = null;
-      setKauflandTabLoading(tabKey, false);
+      if (isCurrentDraftLoad(tabKey, loadVersion)) setKauflandTabLoading(tabKey, false);
     }
   }
 
   async function loadOttoDraftForTab(ean: string, tabKey: OttoTabKey, baselineTargetId?: string | null): Promise<boolean> {
+    const loadVersion = beginDraftLoad(tabKey);
     setOttoTabLoading(tabKey, true);
     try {
       const response = await loadProductEditorGroup({ ean, activeGroup: "OTTO", baselineTargetId });
       const hydrated = hydrateOttoDraft(response.draft as unknown as ProductEditorOttoDraft);
       if (!response.supported || !hydrated.productReference) return false;
+      if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
       setOttoTabDraft(tabKey, hydrated);
       setInitialOttoTabDraft(tabKey, hydrated);
       setOttoTabWarnings(tabKey, response.warnings);
-      clearPlanAndJobState();
       return true;
     } finally {
-      setOttoTabLoading(tabKey, false);
-    }
-  }
-
-  async function preloadGlobalTab(
-    tabKey: string,
-    response: ProductEditorDiscoverResponse,
-    requestVersion: number,
-  ): Promise<void> {
-    if (discoverRequestVersionRef.current !== requestVersion || getTabSearchStatus(response, tabKey) !== "found") return;
-
-    try {
-      const baselineTargetId = getPreferredTargetIdForTab(response, tabKey);
-      if (tabKey === "JV" || tabKey === "XL") {
-        await loadJvDraftForTab(response.ean, tabKey, baselineTargetId);
-      } else if (tabKey === "HOOD_JV" || tabKey === "HOOD_XL") {
-        await loadHoodDraftByEan(response.ean, tabKey);
-      } else if (tabKey === "KAUFLAND_JV" || tabKey === "KAUFLAND_XL") {
-        await loadKauflandDraftForTab(response.ean, tabKey, baselineTargetId);
-      } else if (tabKey === "OTTO_JV" || tabKey === "OTTO_XL") {
-        await loadOttoDraftForTab(response.ean, tabKey, baselineTargetId);
-      }
-    } catch {
-      // The tab remains "found" because discovery succeeded; loading a draft is a separate concern.
+      if (isCurrentDraftLoad(tabKey, loadVersion)) setOttoTabLoading(tabKey, false);
     }
   }
 
@@ -865,6 +831,12 @@ function ProductEditorContent() {
   function patchJvDraft(patch: Partial<ProductEditorJvDraft>) {
     const tabKey = getJvTabKey(activeTabKey);
     if (!tabKey) return;
+    for (const siteKey of [
+      ...Object.keys(patch.categories_by_site_key ?? {}),
+      ...Object.keys(patch.jv_fields_by_site_key ?? {}),
+    ]) {
+      manuallyChangedJvPublishingSiteKeysRef.current.add(`${tabKey}:${siteKey}`);
+    }
     setJvDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
     markTabDirty(tabKey);
     clearPlanStateOnly();
@@ -1674,11 +1646,6 @@ function ProductEditorContent() {
     setGlobalApplyConfirmed(false);
   }
 
-  function clearPlanAndJobState() {
-    clearPlanStateOnly();
-    setJobResponse(null);
-  }
-
   function resetEditorState() {
     setDiscover(null);
     setTabSearchStatuses({});
@@ -1686,6 +1653,7 @@ function ProductEditorContent() {
     loadedJvAutoLoadKeyRef.current = null;
     kauflandLoadInFlightEanRef.current = null;
     autoLoadHandledKeysRef.current.clear();
+    manuallyChangedJvPublishingSiteKeysRef.current.clear();
     setDirtyTabKeys(new Set());
     setHoodDraftsByTab(createEmptyHoodDraftsByTab());
     setInitialHoodDraftsByTab(createEmptyHoodDraftsByTab());
@@ -1713,6 +1681,16 @@ function ProductEditorContent() {
 
   function setHoodTabDraft(tabKey: HoodTabKey, draft: ProductEditorHoodDraft) {
     setHoodDraftsByTab((current) => ({ ...current, [tabKey]: draft }));
+  }
+
+  function beginDraftLoad(tabKey: string): number {
+    const nextVersion = (draftLoadVersionByTabRef.current[tabKey] ?? 0) + 1;
+    draftLoadVersionByTabRef.current[tabKey] = nextVersion;
+    return nextVersion;
+  }
+
+  function isCurrentDraftLoad(tabKey: string, loadVersion: number): boolean {
+    return draftLoadVersionByTabRef.current[tabKey] === loadVersion;
   }
 
   function setInitialHoodTabDraft(tabKey: HoodTabKey, draft: ProductEditorHoodDraft) {
