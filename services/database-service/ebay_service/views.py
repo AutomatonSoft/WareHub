@@ -39,6 +39,23 @@ class EbayOAuthCallbackAPIView(APIView):
         return _exchange_code_response(code=request.query_params.get("code"), state=request.query_params.get("state"))
 
 
+class EbaySellerSetupAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
+        if account is None or not marketplace_id or len(marketplace_id) > 64:
+            return Response(
+                {"code": "ebay_seller_setup_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                status=400,
+            )
+        try:
+            return Response(EbayOAuthClient().seller_setup(account=account, marketplace_id=marketplace_id))
+        except EbayApiError as error:
+            return _seller_setup_error_response(error)
+
+
 class EbayCategorySuggestionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -89,6 +106,12 @@ def _oauth_error_response(error: EbayApiError) -> Response:
     return Response({"code": code, "detail": str(error)}, status=status_code)
 
 
+def _seller_setup_error_response(error: EbayApiError) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_seller_setup_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_setup_request_failed"
+    return Response({"code": code, "detail": str(error)}, status=status_code)
+
+
 def _exchange_code_response(*, code: object, state: object) -> Response:
     normalized_code = str(code or "").strip()
     normalized_state = str(state or "").strip()
@@ -110,7 +133,13 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
     refresh_token = str(token_payload.get("refresh_token") or "").strip()
     if not refresh_token:
         return Response({"code": "ebay_oauth_missing_refresh_token", "detail": "eBay did not return a refresh token."}, status=502)
-    response = Response({"account": account, "env_key": f"EBAY_{account.upper()}_REFRESH_TOKEN", "refresh_token": refresh_token})
+    response = Response(
+        {
+            "account": account,
+            "env_key": f"EBAY_{account.upper()}_REFRESH_TOKEN",
+            "status": "refresh_token_received_not_stored",
+        }
+    )
     response["Cache-Control"] = "no-store"
     return response
 
