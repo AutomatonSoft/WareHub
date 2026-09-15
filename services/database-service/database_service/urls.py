@@ -79,6 +79,7 @@ from ebay_service.views import (
     EbayOAuthAuthorizationUrlAPIView,
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
+    EbaySellerSetupAPIView,
 )
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
@@ -307,6 +308,11 @@ api_v1_patterns = [
         "api/v1/ebay/oauth/callback/",
         EbayOAuthCallbackAPIView.as_view(),
         name="ebay-oauth-callback-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/setup/",
+        EbaySellerSetupAPIView.as_view(),
+        name="ebay-seller-setup-v1",
     ),
     path(
         "api/v1/otto/attributes/",

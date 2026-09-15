@@ -159,6 +159,63 @@ class EbayOAuthClient:
             raise EbayApiError("eBay OAuth code exchange failed.") from error
         return _response_payload(response, "eBay OAuth")
 
+    def seller_setup(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
+        refresh_token = (os.getenv(f"EBAY_{account.upper()}_REFRESH_TOKEN") or "").strip()
+        if not refresh_token:
+            raise EbayApiError(f"EBAY_{account.upper()}_REFRESH_TOKEN is not configured.")
+
+        access_token = self._refresh_access_token(refresh_token=refresh_token)
+        return {
+            "account": account,
+            "marketplace_id": marketplace_id,
+            "locations": self._seller_get(token=access_token, path="/sell/inventory/v1/location", params={"limit": "100"}),
+            "fulfillment_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/fulfillment_policy",
+                params={"marketplace_id": marketplace_id},
+            ),
+            "payment_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/payment_policy",
+                params={"marketplace_id": marketplace_id},
+            ),
+            "return_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/return_policy",
+                params={"marketplace_id": marketplace_id},
+            ),
+        }
+
+    def _refresh_access_token(self, *, refresh_token: str) -> str:
+        try:
+            response = self._session.post(
+                self._config.token_url,
+                data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+                auth=(self._config.client_id, self._config.client_secret),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError("eBay OAuth refresh-token exchange failed.") from error
+
+        payload = _response_payload(response, "eBay OAuth")
+        token = str(payload.get("access_token") or "").strip()
+        if not token:
+            raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
+        return token
+
+    def _seller_get(self, *, token: str, path: str, params: dict[str, str]) -> dict[str, Any]:
+        try:
+            response = self._session.get(
+                f"{self._config.base_url}{path}",
+                params=params,
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError("eBay seller setup request failed.") from error
+        return _response_payload(response, "eBay seller setup")
+
 
 def _required(value: str, name: str) -> str:
     normalized = str(value or "").strip()

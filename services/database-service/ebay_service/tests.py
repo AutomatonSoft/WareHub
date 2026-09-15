@@ -1,9 +1,13 @@
+import os
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from django.urls import resolve
+from django.core import signing
 
 from .client import EbayApiConfig, EbayOAuthClient, EbayTaxonomyClient
+from .views import _OAUTH_STATE_SALT, _exchange_code_response
 
 
 class FakeResponse:
@@ -28,6 +32,14 @@ class FakeSession:
 
     def get(self, *args, **kwargs):
         self.calls.append(("get", args, kwargs))
+        if args[0].endswith("/sell/inventory/v1/location"):
+            return FakeResponse({"locations": []})
+        if args[0].endswith("/fulfillment_policy"):
+            return FakeResponse({"fulfillmentPolicies": []})
+        if args[0].endswith("/payment_policy"):
+            return FakeResponse({"paymentPolicies": []})
+        if args[0].endswith("/return_policy"):
+            return FakeResponse({"returnPolicies": []})
         if "get_default_category_tree_id" in args[0]:
             return FakeResponse({"categoryTreeId": "123"})
         return FakeResponse({"categorySuggestions": []})
@@ -38,6 +50,18 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-suggestions/").url_name, "ebay-category-suggestions-v1")
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-aspects/").url_name, "ebay-category-aspects-v1")
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
+        self.assertEqual(resolve("/api/v1/ebay/seller/setup/").url_name, "ebay-seller-setup-v1")
+
+    @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
+    def test_oauth_exchange_never_returns_refresh_token(self, _exchange_code):
+        response = _exchange_code_response(
+            code="one-time-code",
+            state=signing.dumps({"account": "jv"}, salt=_OAUTH_STATE_SALT, compress=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "refresh_token_received_not_stored")
+        self.assertNotIn("refresh_token", response.data)
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):
@@ -76,3 +100,21 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(params["redirect_uri"], ["sandbox-runame"])
         self.assertEqual(params["state"], ["signed-state"])
         self.assertEqual(client.exchange_code(code="one-time-code")["refresh_token"], "refresh-token")
+
+    def test_loads_seller_locations_and_policies_with_refresh_token(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch.dict(os.environ, {"EBAY_JV_REFRESH_TOKEN": "refresh-token"}):
+            response = client.seller_setup(account="jv", marketplace_id="EBAY_DE")
+
+        self.assertEqual(response["locations"], {"locations": []})
+        self.assertEqual(response["fulfillment_policies"], {"fulfillmentPolicies": []})
+        self.assertEqual(response["payment_policies"], {"paymentPolicies": []})
+        self.assertEqual(response["return_policies"], {"returnPolicies": []})
+        self.assertEqual(session.calls[0][2]["data"], {"grant_type": "refresh_token", "refresh_token": "refresh-token"})
+        self.assertEqual(session.calls[2][2]["params"], {"marketplace_id": "EBAY_DE"})
