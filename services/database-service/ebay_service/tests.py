@@ -30,6 +30,8 @@ class FakeSession:
         self.calls.append(("post", args, kwargs))
         if kwargs.get("data", {}).get("grant_type") == "authorization_code":
             return FakeResponse({"access_token": "access-token", "refresh_token": "refresh-token"})
+        if args[0].endswith("/sell/inventory/v1/location/jv-main"):
+            return FakeResponse({}, status_code=204)
         return FakeResponse({"access_token": "test-token"})
 
     def get(self, *args, **kwargs):
@@ -53,6 +55,7 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-aspects/").url_name, "ebay-category-aspects-v1")
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/setup/").url_name, "ebay-seller-setup-v1")
+        self.assertEqual(resolve("/api/v1/ebay/seller/locations/").url_name, "ebay-inventory-location-v1")
 
     @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
@@ -140,6 +143,34 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(response["return_policies"], {"returnPolicies": []})
         self.assertEqual(session.calls[0][2]["data"], {"grant_type": "refresh_token", "refresh_token": "refresh-token"})
         self.assertEqual(session.calls[2][2]["params"], {"marketplace_id": "EBAY_DE"})
+
+    def test_creates_inventory_location_with_seller_access_token(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig(
+                client_id="client-id",
+                client_secret="client-secret",
+                base_url="https://api.sandbox.ebay.com",
+                token_url="https://api.sandbox.ebay.com/identity/v1/oauth2/token",
+                connect_timeout=8,
+                read_timeout=20,
+            ),
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.create_inventory_location(
+                account="jv",
+                merchant_location_key="jv-main",
+                name="JV Main Warehouse",
+                postal_code="40210",
+                country="DE",
+            )
+
+        request = session.calls[1]
+        self.assertEqual(request[0], "post")
+        self.assertTrue(request[1][0].endswith("/sell/inventory/v1/location/jv-main"))
+        self.assertEqual(request[2]["json"]["location"]["address"], {"postalCode": "40210", "country": "DE"})
 
 
 class EbayCredentialStoreTests(SimpleTestCase):

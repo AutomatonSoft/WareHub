@@ -57,6 +57,40 @@ class EbaySellerSetupAPIView(APIView):
             return _seller_setup_error_response(error, account=account, marketplace_id=marketplace_id)
 
 
+class EbayInventoryLocationAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        merchant_location_key = str(payload.get("merchant_location_key") or "").strip()
+        name = str(payload.get("name") or "").strip()
+        postal_code = str(payload.get("postal_code") or "").strip()
+        country = str(payload.get("country") or "").strip().upper()
+        if account is None or not merchant_location_key or len(merchant_location_key) > 50 or not name or not postal_code or len(country) != 2 or not country.isalpha():
+            return Response(
+                {
+                    "code": "ebay_inventory_location_invalid_request",
+                    "detail": "account, merchant_location_key, name, postal_code, and two-letter country are required.",
+                },
+                status=400,
+            )
+        try:
+            EbayOAuthClient().create_inventory_location(
+                account=account,
+                merchant_location_key=merchant_location_key,
+                name=name,
+                postal_code=postal_code,
+                country=country,
+            )
+        except EbayApiError as error:
+            return _inventory_location_error_response(error, account=account, merchant_location_key=merchant_location_key)
+        return Response(
+            {"account": account, "merchant_location_key": merchant_location_key, "status": "created"},
+            status=201,
+        )
+
+
 class EbayCategorySuggestionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -117,6 +151,22 @@ def _seller_setup_error_response(error: EbayApiError, *, account: str | None = N
         payload["account"] = account
     if marketplace_id:
         payload["marketplace_id"] = marketplace_id
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _inventory_location_error_response(error: EbayApiError, *, account: str, merchant_location_key: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_inventory_location_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_inventory_location_request_failed"
+    payload = {
+        "code": code,
+        "detail": str(error),
+        "account": account,
+        "merchant_location_key": merchant_location_key,
+    }
+    if error.operation:
+        payload["operation"] = error.operation
     if error.details is not None:
         payload["details"] = error.details
     return Response(payload, status=status_code)
