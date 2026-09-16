@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -163,14 +163,7 @@ class EbayOAuthClient:
         return _response_payload(response, "eBay OAuth")
 
     def seller_setup(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
-        try:
-            refresh_token = load_refresh_token(account=account)
-        except EbayCredentialError as error:
-            raise EbayApiError(str(error)) from error
-        if not refresh_token:
-            raise EbayApiError(f"EBAY_{account.upper()}_REFRESH_TOKEN is not configured.")
-
-        access_token = self._refresh_access_token(refresh_token=refresh_token)
+        access_token = self._seller_access_token(account=account)
         return {
             "account": account,
             "marketplace_id": marketplace_id,
@@ -200,6 +193,38 @@ class EbayOAuthClient:
             ),
         }
 
+    def create_inventory_location(
+        self,
+        *,
+        account: str,
+        merchant_location_key: str,
+        name: str,
+        postal_code: str,
+        country: str,
+    ) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_post(
+            token=access_token,
+            path=f"/sell/inventory/v1/location/{quote(merchant_location_key, safe='')}",
+            payload={
+                "name": name,
+                "location": {"address": {"postalCode": postal_code, "country": country}},
+                "locationTypes": ["WAREHOUSE"],
+                "merchantLocationStatus": "ENABLED",
+            },
+            operation="create_inventory_location",
+        )
+
+    def _seller_access_token(self, *, account: str) -> str:
+        try:
+            refresh_token = load_refresh_token(account=account)
+        except EbayCredentialError as error:
+            raise EbayApiError(str(error)) from error
+        if not refresh_token:
+            raise EbayApiError(f"EBAY_{account.upper()}_REFRESH_TOKEN is not configured.")
+
+        return self._refresh_access_token(refresh_token=refresh_token)
+
     def _refresh_access_token(self, *, refresh_token: str) -> str:
         try:
             response = self._session.post(
@@ -228,6 +253,23 @@ class EbayOAuthClient:
             )
         except requests.RequestException as error:
             raise EbayApiError("eBay seller setup request failed.", operation=operation) from error
+        return self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_post(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> None:
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}{path}",
+                json=payload,
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError("eBay seller setup request failed.", operation=operation) from error
+        self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_response_payload(self, *, response: requests.Response, operation: str) -> dict[str, Any]:
+        if response.status_code == 204:
+            return {}
         try:
             return _response_payload(response, "eBay seller setup")
         except EbayApiError as error:
