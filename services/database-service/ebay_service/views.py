@@ -157,6 +157,45 @@ class EbayShippingServicesAPIView(APIView):
             return _shipping_services_error_response(error, account=account, marketplace_id=marketplace_id)
 
 
+class EbayInventoryItemAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        sku = str(payload.get("sku") or "").strip()
+        item = payload.get("item")
+        if account is None or not sku or len(sku) > 50 or not isinstance(item, dict):
+            return Response(
+                {"code": "ebay_inventory_item_invalid_request", "detail": "account, sku (up to 50 characters), and item object are required."},
+                status=400,
+            )
+        try:
+            EbayOAuthClient().create_or_replace_inventory_item(account=account, sku=sku, item=item)
+        except EbayApiError as error:
+            return _inventory_item_error_response(error, account=account, sku=sku)
+        return Response({"account": account, "sku": sku, "status": "created_or_replaced"})
+
+
+class EbayOfferAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        offer = payload.get("offer")
+        if account is None or not isinstance(offer, dict):
+            return Response(
+                {"code": "ebay_offer_invalid_request", "detail": "account and offer object are required."},
+                status=400,
+            )
+        try:
+            result = EbayOAuthClient().create_offer(account=account, offer=offer)
+        except EbayApiError as error:
+            return _offer_error_response(error, account=account)
+        return Response({"account": account, "status": "created", "data": result}, status=201)
+
+
 class EbayCategorySuggestionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -264,6 +303,26 @@ def _shipping_services_error_response(error: EbayApiError, *, account: str, mark
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     code = "ebay_shipping_services_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_shipping_services_request_failed"
     payload = {"code": code, "detail": str(error), "account": account, "marketplace_id": marketplace_id}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _inventory_item_error_response(error: EbayApiError, *, account: str, sku: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {"code": "ebay_inventory_item_request_failed", "detail": str(error), "account": account, "sku": sku}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _offer_error_response(error: EbayApiError, *, account: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {"code": "ebay_offer_request_failed", "detail": str(error), "account": account}
     if error.operation:
         payload["operation"] = error.operation
     if error.details is not None:

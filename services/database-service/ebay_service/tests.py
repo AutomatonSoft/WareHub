@@ -43,6 +43,8 @@ class FakeSession:
             return FakeResponse({"paymentPolicyId": "payment-policy-id"})
         if args[0].endswith("/sell/account/v1/return_policy"):
             return FakeResponse({"returnPolicyId": "return-policy-id"})
+        if args[0].endswith("/sell/inventory/v1/offer"):
+            return FakeResponse({"offerId": "offer-id"})
         if args[0].endswith("/ws/api.dll"):
             return FakeResponse(
                 {},
@@ -59,6 +61,10 @@ class FakeSession:
 </GeteBayDetailsResponse>''',
             )
         return FakeResponse({"access_token": "test-token"})
+
+    def put(self, *args, **kwargs):
+        self.calls.append(("put", args, kwargs))
+        return FakeResponse({}, status_code=204)
 
     def get(self, *args, **kwargs):
         self.calls.append(("get", args, kwargs))
@@ -88,6 +94,8 @@ class EbayRouteTests(SimpleTestCase):
         )
         self.assertEqual(resolve("/api/v1/ebay/seller/policies/").url_name, "ebay-seller-policy-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/shipping-services/").url_name, "ebay-shipping-services-v1")
+        self.assertEqual(resolve("/api/v1/ebay/inventory/items/").url_name, "ebay-inventory-item-v1")
+        self.assertEqual(resolve("/api/v1/ebay/offers/").url_name, "ebay-offer-v1")
 
     @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
@@ -271,6 +279,28 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertTrue(request[1][0].endswith("/ws/api.dll"))
         self.assertEqual(request[2]["headers"]["X-EBAY-API-SITEID"], "77")
         self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GeteBayDetails")
+
+    def test_creates_inventory_item_and_offer_with_seller_access_token(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.create_or_replace_inventory_item(
+                account="jv",
+                sku="sku-1",
+                item={"availability": {"shipToLocationAvailability": {"quantity": 1}}},
+            )
+            offer = client.create_offer(account="jv", offer={"sku": "sku-1", "marketplaceId": "EBAY_DE"})
+
+        self.assertEqual(session.calls[1][0], "put")
+        self.assertTrue(session.calls[1][1][0].endswith("/sell/inventory/v1/inventory_item/sku-1"))
+        self.assertEqual(session.calls[-1][0], "post")
+        self.assertTrue(session.calls[-1][1][0].endswith("/sell/inventory/v1/offer"))
+        self.assertEqual(offer, {"offerId": "offer-id"})
 
 
 class EbayCredentialStoreTests(SimpleTestCase):
