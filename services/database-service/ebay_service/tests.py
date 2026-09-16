@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
+import requests
 from django.test import SimpleTestCase
 from django.urls import resolve
 from django.core import signing
@@ -193,6 +194,18 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(request[0], "post")
         self.assertTrue(request[1][0].endswith("/sell/account/v1/program/opt_in"))
         self.assertEqual(request[2]["json"], {"programType": "SELLING_POLICY_MANAGEMENT"})
+
+    def test_seller_transport_error_is_safely_identified(self):
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=FakeSession(),
+        )
+
+        with patch.object(client._session, "post", side_effect=requests.ConnectionError), self.assertRaises(EbayApiError) as context:
+            client._seller_post(token="access-token", path="/sell/account/v1/program/opt_in", payload={}, operation="selling_policy_management_opt_in")
+
+        self.assertEqual(context.exception.details, {"kind": "ConnectionError"})
 
 
 class EbayCredentialStoreTests(SimpleTestCase):

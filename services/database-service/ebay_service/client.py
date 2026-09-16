@@ -261,7 +261,11 @@ class EbayOAuthClient:
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
-            raise EbayApiError("eBay seller setup request failed.", operation=operation) from error
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
         return self._seller_response_payload(response=response, operation=operation)
 
     def _seller_post(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> None:
@@ -273,7 +277,11 @@ class EbayOAuthClient:
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
-            raise EbayApiError("eBay seller setup request failed.", operation=operation) from error
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
         self._seller_response_payload(response=response, operation=operation)
 
     def _seller_response_payload(self, *, response: requests.Response, operation: str) -> dict[str, Any]:
