@@ -244,6 +244,24 @@ class EbayOAuthClient:
             operation=f"create_{policy_type}_policy",
         )
 
+    def create_or_replace_inventory_item(self, *, account: str, sku: str, item: dict[str, Any]) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_put(
+            token=access_token,
+            path=f"/sell/inventory/v1/inventory_item/{quote(sku, safe='')}",
+            payload=item,
+            operation="create_or_replace_inventory_item",
+        )
+
+    def create_offer(self, *, account: str, offer: dict[str, Any]) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_post(
+            token=access_token,
+            path="/sell/inventory/v1/offer",
+            payload=offer,
+            operation="create_offer",
+        )
+
     def shipping_services(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
         site_id = self._TRADING_SITE_IDS.get(marketplace_id)
         if site_id is None:
@@ -334,6 +352,22 @@ class EbayOAuthClient:
                 operation=operation,
             ) from error
         return self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_put(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> dict[str, Any]:
+        try:
+            response = self._session.put(
+                f"{self._config.base_url}{path}",
+                json=payload,
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
+        self._seller_response_payload(response=response, operation=operation)
 
     def _seller_response_payload(self, *, response: requests.Response, operation: str) -> dict[str, Any]:
         if response.status_code == 204:

@@ -80,6 +80,8 @@ from ebay_service.views import (
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
     EbayInventoryLocationAPIView,
+    EbayInventoryItemAPIView,
+    EbayOfferAPIView,
     EbaySellerPolicyAPIView,
     EbaySellingPolicyManagementAPIView,
     EbaySellerSetupAPIView,
@@ -337,6 +339,16 @@ api_v1_patterns = [
         "api/v1/ebay/seller/shipping-services/",
         EbayShippingServicesAPIView.as_view(),
         name="ebay-shipping-services-v1",
+    ),
+    path(
+        "api/v1/ebay/inventory/items/",
+        EbayInventoryItemAPIView.as_view(),
+        name="ebay-inventory-item-v1",
+    ),
+    path(
+        "api/v1/ebay/offers/",
+        EbayOfferAPIView.as_view(),
+        name="ebay-offer-v1",
     ),
     path(
         "api/v1/otto/attributes/",
