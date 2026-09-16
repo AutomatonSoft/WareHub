@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
@@ -6,8 +7,9 @@ from django.test import SimpleTestCase
 from django.urls import resolve
 from django.core import signing
 
-from .client import EbayApiConfig, EbayOAuthClient, EbayTaxonomyClient
-from .views import _OAUTH_STATE_SALT, _exchange_code_response
+from .client import EbayApiConfig, EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .credentials import load_refresh_token, store_refresh_token
+from .views import _OAUTH_STATE_SALT, _exchange_code_response, _seller_setup_error_response
 
 
 class FakeResponse:
@@ -52,16 +54,24 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/setup/").url_name, "ebay-seller-setup-v1")
 
+    @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
-    def test_oauth_exchange_never_returns_refresh_token(self, _exchange_code):
+    def test_oauth_exchange_stores_but_never_returns_refresh_token(self, _exchange_code, store_token):
         response = _exchange_code_response(
             code="one-time-code",
             state=signing.dumps({"account": "jv"}, salt=_OAUTH_STATE_SALT, compress=True),
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], "refresh_token_received_not_stored")
+        self.assertEqual(response.data["status"], "connected")
         self.assertNotIn("refresh_token", response.data)
+        store_token.assert_called_once_with(account="jv", refresh_token="refresh-token")
+
+    def test_seller_setup_error_includes_upstream_details(self):
+        response = _seller_setup_error_response(EbayApiError("upstream failed", status_code=500, details={"errors": ["temporary"]}))
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["details"], {"errors": ["temporary"]})
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):
@@ -109,7 +119,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
             session=session,
         )
 
-        with patch.dict(os.environ, {"EBAY_JV_REFRESH_TOKEN": "refresh-token"}):
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
             response = client.seller_setup(account="jv", marketplace_id="EBAY_DE")
 
         self.assertEqual(response["locations"], {"locations": []})
@@ -118,3 +128,16 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(response["return_policies"], {"returnPolicies": []})
         self.assertEqual(session.calls[0][2]["data"], {"grant_type": "refresh_token", "refresh_token": "refresh-token"})
         self.assertEqual(session.calls[2][2]["params"], {"marketplace_id": "EBAY_DE"})
+
+
+class EbayCredentialStoreTests(SimpleTestCase):
+    @patch.dict(os.environ, {"EBAY_TOKEN_ENCRYPTION_KEY": "xqVc7R-czLE_Gc7xEXbHlASAf2KIfxE9F_C1Tj0glBI="})
+    @patch("ebay_service.credentials.EbayOAuthCredential.objects.update_or_create")
+    @patch("ebay_service.credentials.EbayOAuthCredential.objects.filter")
+    def test_stores_encrypted_refresh_token(self, credential_filter, update_or_create):
+        store_refresh_token(account="jv", refresh_token="refresh-token")
+        encrypted = update_or_create.call_args.kwargs["defaults"]["refresh_token_encrypted"]
+        credential_filter.return_value.only.return_value.first.return_value = SimpleNamespace(refresh_token_encrypted=encrypted)
+
+        self.assertEqual(load_refresh_token(account="jv"), "refresh-token")
+        self.assertNotEqual(encrypted, "refresh-token")

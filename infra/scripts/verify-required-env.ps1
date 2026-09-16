@@ -165,7 +165,13 @@ $composePathByEnvironment = @{
   prod = Join-Path $PSScriptRoot '..\deploy\prod\docker-compose.yml'
 }
 
-$conditionallyRequiredKeySets = @()
+$conditionallyRequiredKeySets = @(
+  @{
+    TriggerKey = 'EBAY_API_ENV'
+    TriggerValues = @('sandbox', 'production')
+    RequiredKeys = @('EBAY_CLIENT_ID', 'EBAY_CLIENT_SECRET', 'EBAY_OAUTH_RU_NAME', 'EBAY_TOKEN_ENCRYPTION_KEY')
+  }
+)
 $stageComposeExternalKeys = @()
 
 $requiredKeysForEnvironment = $requiredKeysByEnvironment[$Environment]

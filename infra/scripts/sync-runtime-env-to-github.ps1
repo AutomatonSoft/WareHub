@@ -66,6 +66,19 @@ function Test-CommandExists {
   return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Get-CommandPath {
+  param([string[]]$Names)
+
+  foreach ($name in $Names) {
+    $command = Get-Command $name -ErrorAction SilentlyContinue
+    if ($command) {
+      return $command.Source
+    }
+  }
+
+  throw "None of the required commands are available: $($Names -join ', ')."
+}
+
 function Invoke-CheckedExternal {
   param(
     [Parameter(Mandatory = $true)]
@@ -84,6 +97,8 @@ function Invoke-CheckedExternal {
 $repoRoot = Get-RepoRoot
 $templatePath = Join-Path $repoRoot ("infra\deploy\{0}\env.{0}.sanitized.template" -f $Environment)
 $validatorPath = Join-Path $repoRoot 'infra\scripts\verify-required-env.ps1'
+$python = Get-CommandPath -Names @('python', 'python3')
+$powerShell = Get-CommandPath -Names @('pwsh', 'powershell')
 $secretName = if ($Environment -eq 'stage') { 'STAGE_ENV_FILE' } else { 'PROD_ENV_FILE' }
 if ([string]::IsNullOrWhiteSpace($GitHubEnvironment)) {
   $GitHubEnvironment = if ($Environment -eq 'prod') { 'production' } else { 'stage' }
@@ -133,14 +148,14 @@ try {
   Write-EnvFile -Path $overridePath -Values $overrideEntries
 
   Invoke-CheckedExternal -FailureMessage "Failed to build runtime env file." -Command {
-    & python (Join-Path $repoRoot 'infra\scripts\build-runtime-env.py') `
+    & $python (Join-Path $repoRoot 'infra\scripts\build-runtime-env.py') `
       --template $templatePath `
       --override $overridePath `
       --output $runtimePath
   }
 
   Invoke-CheckedExternal -FailureMessage "Runtime env validation failed for '$Environment'." -Command {
-    & powershell -ExecutionPolicy Bypass -File $validatorPath `
+    & $powerShell -ExecutionPolicy Bypass -File $validatorPath `
       -EnvFile $runtimePath `
       -Environment $Environment `
       -InputKind Runtime

@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from database.permissions import SessionRolePermission
 
 from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .credentials import EbayCredentialError, store_refresh_token
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
@@ -109,7 +110,10 @@ def _oauth_error_response(error: EbayApiError) -> Response:
 def _seller_setup_error_response(error: EbayApiError) -> Response:
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     code = "ebay_seller_setup_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_setup_request_failed"
-    return Response({"code": code, "detail": str(error)}, status=status_code)
+    payload = {"code": code, "detail": str(error)}
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
 
 
 def _exchange_code_response(*, code: object, state: object) -> Response:
@@ -133,11 +137,14 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
     refresh_token = str(token_payload.get("refresh_token") or "").strip()
     if not refresh_token:
         return Response({"code": "ebay_oauth_missing_refresh_token", "detail": "eBay did not return a refresh token."}, status=502)
+    try:
+        store_refresh_token(account=account, refresh_token=refresh_token)
+    except EbayCredentialError as error:
+        return Response({"code": "ebay_oauth_credential_store_unavailable", "detail": str(error)}, status=503)
     response = Response(
         {
             "account": account,
-            "env_key": f"EBAY_{account.upper()}_REFRESH_TOKEN",
-            "status": "refresh_token_received_not_stored",
+            "status": "connected",
         }
     )
     response["Cache-Control"] = "no-store"
