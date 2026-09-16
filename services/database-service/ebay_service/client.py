@@ -5,6 +5,8 @@ from urllib.parse import urlencode
 
 import requests
 
+from .credentials import EbayCredentialError, load_refresh_token
+
 
 class EbayApiError(Exception):
     def __init__(self, message: str, *, status_code: int | None = None, details: object = None):
@@ -160,7 +162,10 @@ class EbayOAuthClient:
         return _response_payload(response, "eBay OAuth")
 
     def seller_setup(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
-        refresh_token = (os.getenv(f"EBAY_{account.upper()}_REFRESH_TOKEN") or "").strip()
+        try:
+            refresh_token = load_refresh_token(account=account)
+        except EbayCredentialError as error:
+            raise EbayApiError(str(error)) from error
         if not refresh_token:
             raise EbayApiError(f"EBAY_{account.upper()}_REFRESH_TOKEN is not configured.")
 

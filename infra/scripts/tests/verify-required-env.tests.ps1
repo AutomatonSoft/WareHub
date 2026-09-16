@@ -449,6 +449,18 @@ try {
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'quoted-empty-value.env' $lines)) 1
   }
 
+  Test-Case 'eBay runtime requires encryption key' {
+    $ebayLines = @(New-ValidStageEnvLines) + @(
+      'EBAY_API_ENV=sandbox',
+      'EBAY_CLIENT_ID=test-client',
+      'EBAY_CLIENT_SECRET=test-secret',
+      'EBAY_OAUTH_RU_NAME=test-runame'
+    )
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'ebay-missing-key.env' $ebayLines)) 1
+    $ebayLines += 'EBAY_TOKEN_ENCRYPTION_KEY=test-encryption-key'
+    Assert-ExitCode (Invoke-Validator (Write-Fixture 'ebay-valid-key.env' $ebayLines)) 0
+  }
+
   Test-Case 'duplicate key' {
     $lines = @(New-ValidStageEnvLines) + @('BACKEND_IMAGE=duplicate')
     Assert-ExitCode (Invoke-Validator (Write-Fixture 'duplicate.env' $lines)) 1
