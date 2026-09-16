@@ -32,6 +32,8 @@ class FakeSession:
             return FakeResponse({"access_token": "access-token", "refresh_token": "refresh-token"})
         if args[0].endswith("/sell/inventory/v1/location/jv-main"):
             return FakeResponse({}, status_code=204)
+        if args[0].endswith("/sell/account/v1/program/opt_in"):
+            return FakeResponse({}, status_code=204)
         return FakeResponse({"access_token": "test-token"})
 
     def get(self, *args, **kwargs):
@@ -56,6 +58,10 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/setup/").url_name, "ebay-seller-setup-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/locations/").url_name, "ebay-inventory-location-v1")
+        self.assertEqual(
+            resolve("/api/v1/ebay/seller/programs/selling-policy-management/").url_name,
+            "ebay-selling-policy-management-v1",
+        )
 
     @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
@@ -171,6 +177,22 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(request[0], "post")
         self.assertTrue(request[1][0].endswith("/sell/inventory/v1/location/jv-main"))
         self.assertEqual(request[2]["json"]["location"]["address"], {"postalCode": "40210", "country": "DE"})
+
+    def test_opts_in_seller_to_business_policies(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.opt_in_to_selling_policy_management(account="jv")
+
+        request = session.calls[1]
+        self.assertEqual(request[0], "post")
+        self.assertTrue(request[1][0].endswith("/sell/account/v1/program/opt_in"))
+        self.assertEqual(request[2]["json"], {"programType": "SELLING_POLICY_MANAGEMENT"})
 
 
 class EbayCredentialStoreTests(SimpleTestCase):

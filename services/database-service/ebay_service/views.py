@@ -91,6 +91,24 @@ class EbayInventoryLocationAPIView(APIView):
         )
 
 
+class EbaySellingPolicyManagementAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        if account is None:
+            return Response(
+                {"code": "ebay_selling_policy_management_invalid_request", "detail": "account must be jv or xl."},
+                status=400,
+            )
+        try:
+            EbayOAuthClient().opt_in_to_selling_policy_management(account=account)
+        except EbayApiError as error:
+            return _selling_policy_management_error_response(error, account=account)
+        return Response({"account": account, "program_type": "SELLING_POLICY_MANAGEMENT", "status": "opted_in"}, status=201)
+
+
 class EbayCategorySuggestionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -165,6 +183,17 @@ def _inventory_location_error_response(error: EbayApiError, *, account: str, mer
         "account": account,
         "merchant_location_key": merchant_location_key,
     }
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _selling_policy_management_error_response(error: EbayApiError, *, account: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_selling_policy_management_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_selling_policy_management_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account}
     if error.operation:
         payload["operation"] = error.operation
     if error.details is not None:

@@ -215,6 +215,15 @@ class EbayOAuthClient:
             operation="create_inventory_location",
         )
 
+    def opt_in_to_selling_policy_management(self, *, account: str) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_post(
+            token=access_token,
+            path="/sell/account/v1/program/opt_in",
+            payload={"programType": "SELLING_POLICY_MANAGEMENT"},
+            operation="selling_policy_management_opt_in",
+        )
+
     def _seller_access_token(self, *, account: str) -> str:
         try:
             refresh_token = load_refresh_token(account=account)
