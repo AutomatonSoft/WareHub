@@ -109,6 +109,54 @@ class EbaySellingPolicyManagementAPIView(APIView):
         return Response({"account": account, "program_type": "SELLING_POLICY_MANAGEMENT", "status": "opted_in"}, status=201)
 
 
+class EbaySellerPolicyAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        policy_type = str(payload.get("policy_type") or "").strip().lower()
+        policy = payload.get("policy")
+        if account is None or policy_type not in {"fulfillment", "payment", "return"} or not isinstance(policy, dict):
+            return Response(
+                {
+                    "code": "ebay_seller_policy_invalid_request",
+                    "detail": "account, policy_type (fulfillment, payment, or return), and policy object are required.",
+                },
+                status=400,
+            )
+        if not str(policy.get("name") or "").strip() or not str(policy.get("marketplaceId") or "").strip() or not isinstance(policy.get("categoryTypes"), list):
+            return Response(
+                {
+                    "code": "ebay_seller_policy_invalid_request",
+                    "detail": "policy.name, policy.marketplaceId, and policy.categoryTypes are required.",
+                },
+                status=400,
+            )
+        try:
+            result = EbayOAuthClient().create_seller_policy(account=account, policy_type=policy_type, policy=policy)
+        except EbayApiError as error:
+            return _seller_policy_error_response(error, account=account, policy_type=policy_type)
+        return Response({"account": account, "policy_type": policy_type, "status": "created", "data": result}, status=201)
+
+
+class EbayShippingServicesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
+        if account is None or not marketplace_id:
+            return Response(
+                {"code": "ebay_shipping_services_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                status=400,
+            )
+        try:
+            return Response(EbayOAuthClient().shipping_services(account=account, marketplace_id=marketplace_id))
+        except EbayApiError as error:
+            return _shipping_services_error_response(error, account=account, marketplace_id=marketplace_id)
+
+
 class EbayCategorySuggestionsAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -194,6 +242,28 @@ def _selling_policy_management_error_response(error: EbayApiError, *, account: s
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     code = "ebay_selling_policy_management_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_selling_policy_management_request_failed"
     payload = {"code": code, "detail": str(error), "account": account}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _seller_policy_error_response(error: EbayApiError, *, account: str, policy_type: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_seller_policy_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_policy_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account, "policy_type": policy_type}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _shipping_services_error_response(error: EbayApiError, *, account: str, marketplace_id: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_shipping_services_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_shipping_services_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account, "marketplace_id": marketplace_id}
     if error.operation:
         payload["operation"] = error.operation
     if error.details is not None:

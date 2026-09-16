@@ -14,8 +14,9 @@ from .views import _OAUTH_STATE_SALT, _exchange_code_response, _seller_setup_err
 
 
 class FakeResponse:
-    def __init__(self, payload, *, ok=True, status_code=200):
+    def __init__(self, payload, *, content=b"", ok=True, status_code=200):
         self._payload = payload
+        self.content = content
         self.ok = ok
         self.status_code = status_code
 
@@ -29,12 +30,34 @@ class FakeSession:
 
     def post(self, *args, **kwargs):
         self.calls.append(("post", args, kwargs))
-        if kwargs.get("data", {}).get("grant_type") == "authorization_code":
+        data = kwargs.get("data", {})
+        if isinstance(data, dict) and data.get("grant_type") == "authorization_code":
             return FakeResponse({"access_token": "access-token", "refresh_token": "refresh-token"})
         if args[0].endswith("/sell/inventory/v1/location/jv-main"):
             return FakeResponse({}, status_code=204)
         if args[0].endswith("/sell/account/v1/program/opt_in"):
             return FakeResponse({}, status_code=204)
+        if args[0].endswith("/sell/account/v1/fulfillment_policy"):
+            return FakeResponse({"fulfillmentPolicyId": "fulfillment-policy-id"})
+        if args[0].endswith("/sell/account/v1/payment_policy"):
+            return FakeResponse({"paymentPolicyId": "payment-policy-id"})
+        if args[0].endswith("/sell/account/v1/return_policy"):
+            return FakeResponse({"returnPolicyId": "return-policy-id"})
+        if args[0].endswith("/ws/api.dll"):
+            return FakeResponse(
+                {},
+                content=b'''<?xml version="1.0" encoding="utf-8"?>
+<GeteBayDetailsResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+  <Ack>Success</Ack>
+  <ShippingServiceDetails>
+    <Description>Standard</Description><InternationalService>false</InternationalService>
+    <ServiceType>Flat</ServiceType><ShippingCarrier>DHL</ShippingCarrier>
+    <ShippingCategory>STANDARD</ShippingCategory><ShippingService>DE_DHLPaket</ShippingService>
+    <ValidForSellingFlow>true</ValidForSellingFlow>
+  </ShippingServiceDetails>
+  <ShippingServiceDetails><ShippingService>Deprecated</ShippingService><ValidForSellingFlow>false</ValidForSellingFlow></ShippingServiceDetails>
+</GeteBayDetailsResponse>''',
+            )
         return FakeResponse({"access_token": "test-token"})
 
     def get(self, *args, **kwargs):
@@ -63,6 +86,8 @@ class EbayRouteTests(SimpleTestCase):
             resolve("/api/v1/ebay/seller/programs/selling-policy-management/").url_name,
             "ebay-selling-policy-management-v1",
         )
+        self.assertEqual(resolve("/api/v1/ebay/seller/policies/").url_name, "ebay-seller-policy-v1")
+        self.assertEqual(resolve("/api/v1/ebay/seller/shipping-services/").url_name, "ebay-shipping-services-v1")
 
     @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
@@ -206,6 +231,46 @@ class EbayTaxonomyClientTests(SimpleTestCase):
             client._seller_post(token="access-token", path="/sell/account/v1/program/opt_in", payload={}, operation="selling_policy_management_opt_in")
 
         self.assertEqual(context.exception.details, {"kind": "ConnectionError"})
+
+    def test_creates_each_supported_seller_policy(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+        policy = {
+            "name": "Sandbox policy",
+            "marketplaceId": "EBAY_DE",
+            "categoryTypes": [{"name": "ALL_EXCLUDING_MOTORS_VEHICLES"}],
+        }
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            for policy_type, path, policy_id in (
+                ("fulfillment", "/sell/account/v1/fulfillment_policy", "fulfillmentPolicyId"),
+                ("payment", "/sell/account/v1/payment_policy", "paymentPolicyId"),
+                ("return", "/sell/account/v1/return_policy", "returnPolicyId"),
+            ):
+                result = client.create_seller_policy(account="jv", policy_type=policy_type, policy=policy)
+                self.assertIn(policy_id, result)
+                self.assertTrue(session.calls[-1][1][0].endswith(path))
+
+    def test_lists_only_valid_shipping_services_for_ebay_de(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            result = client.shipping_services(account="jv", marketplace_id="EBAY_DE")
+
+        self.assertEqual(result["services"], [{"shipping_service_code": "DE_DHLPaket", "shipping_carrier_code": "DHL", "description": "Standard", "international": False, "shipping_category": "STANDARD", "cost_types": ["Flat"]}])
+        request = session.calls[1]
+        self.assertTrue(request[1][0].endswith("/ws/api.dll"))
+        self.assertEqual(request[2]["headers"]["X-EBAY-API-SITEID"], "77")
+        self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GeteBayDetails")
 
 
 class EbayCredentialStoreTests(SimpleTestCase):
