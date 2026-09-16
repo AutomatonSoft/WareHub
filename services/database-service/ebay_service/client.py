@@ -124,6 +124,7 @@ class EbayTaxonomyClient:
 class EbayOAuthClient:
     _TRADING_COMPATIBILITY_LEVEL = "1477"
     _TRADING_SITE_IDS = {"EBAY_DE": "77"}
+    _MARKETPLACE_LOCALES = {"EBAY_DE": "de-DE"}
     _SELL_SCOPES = (
         "https://api.ebay.com/oauth/api_scope/sell.inventory",
         "https://api.ebay.com/oauth/api_scope/sell.account",
@@ -244,13 +245,21 @@ class EbayOAuthClient:
             operation=f"create_{policy_type}_policy",
         )
 
-    def create_or_replace_inventory_item(self, *, account: str, sku: str, item: dict[str, Any]) -> None:
+    def create_or_replace_inventory_item(
+        self,
+        *,
+        account: str,
+        sku: str,
+        item: dict[str, Any],
+        marketplace_id: str = "EBAY_DE",
+    ) -> None:
         access_token = self._seller_access_token(account=account)
         self._seller_put(
             token=access_token,
             path=f"/sell/inventory/v1/inventory_item/{quote(sku, safe='')}",
             payload=item,
             operation="create_or_replace_inventory_item",
+            content_language=self._marketplace_locale(marketplace_id),
         )
 
     def create_offer(self, *, account: str, offer: dict[str, Any]) -> dict[str, Any]:
@@ -260,7 +269,14 @@ class EbayOAuthClient:
             path="/sell/inventory/v1/offer",
             payload=offer,
             operation="create_offer",
+            content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
         )
+
+    def _marketplace_locale(self, marketplace_id: str) -> str:
+        locale = self._MARKETPLACE_LOCALES.get(marketplace_id)
+        if locale is None:
+            raise EbayApiError("eBay marketplace locale is not configured.")
+        return locale
 
     def shipping_services(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
         site_id = self._TRADING_SITE_IDS.get(marketplace_id)
@@ -337,12 +353,23 @@ class EbayOAuthClient:
             ) from error
         return self._seller_response_payload(response=response, operation=operation)
 
-    def _seller_post(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> dict[str, Any]:
+    def _seller_post(
+        self,
+        *,
+        token: str,
+        path: str,
+        payload: dict[str, Any],
+        operation: str,
+        content_language: str | None = None,
+    ) -> dict[str, Any]:
         try:
+            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+            if content_language:
+                headers["Content-Language"] = content_language
             response = self._session.post(
                 f"{self._config.base_url}{path}",
                 json=payload,
-                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                headers=headers,
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
@@ -353,12 +380,23 @@ class EbayOAuthClient:
             ) from error
         return self._seller_response_payload(response=response, operation=operation)
 
-    def _seller_put(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> dict[str, Any]:
+    def _seller_put(
+        self,
+        *,
+        token: str,
+        path: str,
+        payload: dict[str, Any],
+        operation: str,
+        content_language: str | None = None,
+    ) -> dict[str, Any]:
         try:
+            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+            if content_language:
+                headers["Content-Language"] = content_language
             response = self._session.put(
                 f"{self._config.base_url}{path}",
                 json=payload,
-                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                headers=headers,
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
