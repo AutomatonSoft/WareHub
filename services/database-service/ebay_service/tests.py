@@ -68,10 +68,22 @@ class EbayRouteTests(SimpleTestCase):
         store_token.assert_called_once_with(account="jv", refresh_token="refresh-token")
 
     def test_seller_setup_error_includes_upstream_details(self):
-        response = _seller_setup_error_response(EbayApiError("upstream failed", status_code=500, details={"errors": ["temporary"]}))
+        response = _seller_setup_error_response(
+            EbayApiError(
+                "upstream failed",
+                status_code=500,
+                operation="inventory_locations",
+                details={"errors": [{"errorId": 25001}]},
+            ),
+            account="jv",
+            marketplace_id="EBAY_DE",
+        )
 
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.data["details"], {"errors": ["temporary"]})
+        self.assertEqual(response.data["operation"], "inventory_locations")
+        self.assertEqual(response.data["account"], "jv")
+        self.assertEqual(response.data["marketplace_id"], "EBAY_DE")
+        self.assertEqual(response.data["details"]["errors"][0]["errorId"], 25001)
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):

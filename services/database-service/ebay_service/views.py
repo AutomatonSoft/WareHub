@@ -54,7 +54,7 @@ class EbaySellerSetupAPIView(APIView):
         try:
             return Response(EbayOAuthClient().seller_setup(account=account, marketplace_id=marketplace_id))
         except EbayApiError as error:
-            return _seller_setup_error_response(error)
+            return _seller_setup_error_response(error, account=account, marketplace_id=marketplace_id)
 
 
 class EbayCategorySuggestionsAPIView(APIView):
@@ -107,10 +107,16 @@ def _oauth_error_response(error: EbayApiError) -> Response:
     return Response({"code": code, "detail": str(error)}, status=status_code)
 
 
-def _seller_setup_error_response(error: EbayApiError) -> Response:
+def _seller_setup_error_response(error: EbayApiError, *, account: str | None = None, marketplace_id: str | None = None) -> Response:
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     code = "ebay_seller_setup_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_setup_request_failed"
     payload = {"code": code, "detail": str(error)}
+    if error.operation:
+        payload["operation"] = error.operation
+    if account:
+        payload["account"] = account
+    if marketplace_id:
+        payload["marketplace_id"] = marketplace_id
     if error.details is not None:
         payload["details"] = error.details
     return Response(payload, status=status_code)

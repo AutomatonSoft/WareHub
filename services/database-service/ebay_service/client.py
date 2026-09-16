@@ -9,10 +9,11 @@ from .credentials import EbayCredentialError, load_refresh_token
 
 
 class EbayApiError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None, details: object = None):
+    def __init__(self, message: str, *, status_code: int | None = None, details: object = None, operation: str | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.details = details
+        self.operation = operation
 
 
 @dataclass(frozen=True)
@@ -173,21 +174,29 @@ class EbayOAuthClient:
         return {
             "account": account,
             "marketplace_id": marketplace_id,
-            "locations": self._seller_get(token=access_token, path="/sell/inventory/v1/location", params={"limit": "100"}),
+            "locations": self._seller_get(
+                token=access_token,
+                path="/sell/inventory/v1/location",
+                params={"limit": "100"},
+                operation="inventory_locations",
+            ),
             "fulfillment_policies": self._seller_get(
                 token=access_token,
                 path="/sell/account/v1/fulfillment_policy",
                 params={"marketplace_id": marketplace_id},
+                operation="fulfillment_policies",
             ),
             "payment_policies": self._seller_get(
                 token=access_token,
                 path="/sell/account/v1/payment_policy",
                 params={"marketplace_id": marketplace_id},
+                operation="payment_policies",
             ),
             "return_policies": self._seller_get(
                 token=access_token,
                 path="/sell/account/v1/return_policy",
                 params={"marketplace_id": marketplace_id},
+                operation="return_policies",
             ),
         }
 
@@ -209,7 +218,7 @@ class EbayOAuthClient:
             raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
         return token
 
-    def _seller_get(self, *, token: str, path: str, params: dict[str, str]) -> dict[str, Any]:
+    def _seller_get(self, *, token: str, path: str, params: dict[str, str], operation: str) -> dict[str, Any]:
         try:
             response = self._session.get(
                 f"{self._config.base_url}{path}",
@@ -218,8 +227,16 @@ class EbayOAuthClient:
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
-            raise EbayApiError("eBay seller setup request failed.") from error
-        return _response_payload(response, "eBay seller setup")
+            raise EbayApiError("eBay seller setup request failed.", operation=operation) from error
+        try:
+            return _response_payload(response, "eBay seller setup")
+        except EbayApiError as error:
+            raise EbayApiError(
+                str(error),
+                status_code=error.status_code,
+                details=error.details,
+                operation=operation,
+            ) from error
 
 
 def _required(value: str, name: str) -> str:
