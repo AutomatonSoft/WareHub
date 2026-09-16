@@ -298,8 +298,10 @@ class EbayTaxonomyClientTests(SimpleTestCase):
 
         self.assertEqual(session.calls[1][0], "put")
         self.assertTrue(session.calls[1][1][0].endswith("/sell/inventory/v1/inventory_item/sku-1"))
+        self.assertEqual(session.calls[1][2]["headers"]["Content-Language"], "de-DE")
         self.assertEqual(session.calls[-1][0], "post")
         self.assertTrue(session.calls[-1][1][0].endswith("/sell/inventory/v1/offer"))
+        self.assertEqual(session.calls[-1][2]["headers"]["Content-Language"], "de-DE")
         self.assertEqual(offer, {"offerId": "offer-id"})
 
 

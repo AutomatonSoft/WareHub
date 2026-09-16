@@ -164,17 +164,23 @@ class EbayInventoryItemAPIView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         account = _account(payload.get("account"))
         sku = str(payload.get("sku") or "").strip()
+        marketplace_id = str(payload.get("marketplace_id") or "EBAY_DE").strip()
         item = payload.get("item")
-        if account is None or not sku or len(sku) > 50 or not isinstance(item, dict):
+        if account is None or not sku or len(sku) > 50 or not marketplace_id or not isinstance(item, dict):
             return Response(
-                {"code": "ebay_inventory_item_invalid_request", "detail": "account, sku (up to 50 characters), and item object are required."},
+                {"code": "ebay_inventory_item_invalid_request", "detail": "account, sku (up to 50 characters), marketplace_id, and item object are required."},
                 status=400,
             )
         try:
-            EbayOAuthClient().create_or_replace_inventory_item(account=account, sku=sku, item=item)
+            EbayOAuthClient().create_or_replace_inventory_item(
+                account=account,
+                sku=sku,
+                item=item,
+                marketplace_id=marketplace_id,
+            )
         except EbayApiError as error:
             return _inventory_item_error_response(error, account=account, sku=sku)
-        return Response({"account": account, "sku": sku, "status": "created_or_replaced"})
+        return Response({"account": account, "sku": sku, "marketplace_id": marketplace_id, "status": "created_or_replaced"})
 
 
 class EbayOfferAPIView(APIView):
