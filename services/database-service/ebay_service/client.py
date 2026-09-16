@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
+from xml.etree import ElementTree
 
 import requests
 
@@ -121,6 +122,8 @@ class EbayTaxonomyClient:
 
 
 class EbayOAuthClient:
+    _TRADING_COMPATIBILITY_LEVEL = "1477"
+    _TRADING_SITE_IDS = {"EBAY_DE": "77"}
     _SELL_SCOPES = (
         "https://api.ebay.com/oauth/api_scope/sell.inventory",
         "https://api.ebay.com/oauth/api_scope/sell.account",
@@ -224,6 +227,54 @@ class EbayOAuthClient:
             operation="selling_policy_management_opt_in",
         )
 
+    def create_seller_policy(self, *, account: str, policy_type: str, policy: dict[str, Any]) -> dict[str, Any]:
+        paths = {
+            "fulfillment": "/sell/account/v1/fulfillment_policy",
+            "payment": "/sell/account/v1/payment_policy",
+            "return": "/sell/account/v1/return_policy",
+        }
+        path = paths.get(policy_type)
+        if path is None:
+            raise EbayApiError("Unsupported eBay seller policy type.")
+        access_token = self._seller_access_token(account=account)
+        return self._seller_post(
+            token=access_token,
+            path=path,
+            payload=policy,
+            operation=f"create_{policy_type}_policy",
+        )
+
+    def shipping_services(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Shipping-service metadata is currently available only for EBAY_DE.")
+
+        access_token = self._seller_access_token(account=account)
+        xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<GeteBayDetailsRequest xmlns=\"urn:ebay:apis:eBLBaseComponents\">
+  <DetailName>ShippingServiceDetails</DetailName>
+</GeteBayDetailsRequest>"""
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GeteBayDetails",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay shipping-service metadata request failed.",
+                details={"kind": type(error).__name__},
+                operation="shipping_services",
+            ) from error
+        return _shipping_services_payload(response=response, marketplace_id=marketplace_id)
+
     def _seller_access_token(self, *, account: str) -> str:
         try:
             refresh_token = load_refresh_token(account=account)
@@ -268,7 +319,7 @@ class EbayOAuthClient:
             ) from error
         return self._seller_response_payload(response=response, operation=operation)
 
-    def _seller_post(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> None:
+    def _seller_post(self, *, token: str, path: str, payload: dict[str, Any], operation: str) -> dict[str, Any]:
         try:
             response = self._session.post(
                 f"{self._config.base_url}{path}",
@@ -282,7 +333,7 @@ class EbayOAuthClient:
                 details={"kind": type(error).__name__},
                 operation=operation,
             ) from error
-        self._seller_response_payload(response=response, operation=operation)
+        return self._seller_response_payload(response=response, operation=operation)
 
     def _seller_response_payload(self, *, response: requests.Response, operation: str) -> dict[str, Any]:
         if response.status_code == 204:
@@ -323,3 +374,53 @@ def _response_payload(response: requests.Response, source: str) -> dict[str, Any
     if not isinstance(payload, dict):
         raise EbayApiError(f"{source} response must be an object.", status_code=response.status_code, details=payload)
     return payload
+
+
+def _shipping_services_payload(*, response: requests.Response, marketplace_id: str) -> dict[str, Any]:
+    try:
+        root = ElementTree.fromstring(response.content)
+    except (AttributeError, ElementTree.ParseError) as error:
+        raise EbayApiError(
+            "eBay shipping-service metadata returned an invalid XML response.",
+            status_code=response.status_code,
+            operation="shipping_services",
+        ) from error
+
+    namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+    errors = [
+        {
+            "code": _xml_text(item, "ebay:ErrorCode", namespace),
+            "message": _xml_text(item, "ebay:LongMessage", namespace) or _xml_text(item, "ebay:ShortMessage", namespace),
+        }
+        for item in root.findall("ebay:Errors", namespace)
+    ]
+    if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+        raise EbayApiError(
+            "eBay shipping-service metadata returned an error response.",
+            status_code=response.status_code,
+            details={"errors": errors},
+            operation="shipping_services",
+        )
+
+    services = []
+    for item in root.findall("ebay:ShippingServiceDetails", namespace):
+        if _xml_text(item, "ebay:ValidForSellingFlow", namespace).lower() != "true":
+            continue
+        service_code = _xml_text(item, "ebay:ShippingService", namespace)
+        if not service_code:
+            continue
+        services.append(
+            {
+                "shipping_service_code": service_code,
+                "shipping_carrier_code": _xml_text(item, "ebay:ShippingCarrier", namespace),
+                "description": _xml_text(item, "ebay:Description", namespace),
+                "international": _xml_text(item, "ebay:InternationalService", namespace).lower() == "true",
+                "shipping_category": _xml_text(item, "ebay:ShippingCategory", namespace),
+                "cost_types": [entry.text for entry in item.findall("ebay:ServiceType", namespace) if entry.text],
+            }
+        )
+    return {"marketplace_id": marketplace_id, "services": services}
+
+
+def _xml_text(element: ElementTree.Element, path: str, namespace: dict[str, str]) -> str:
+    return str(element.findtext(path, default="", namespaces=namespace) or "").strip()

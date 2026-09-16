@@ -80,8 +80,10 @@ from ebay_service.views import (
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
     EbayInventoryLocationAPIView,
+    EbaySellerPolicyAPIView,
     EbaySellingPolicyManagementAPIView,
     EbaySellerSetupAPIView,
+    EbayShippingServicesAPIView,
 )
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
@@ -325,6 +327,16 @@ api_v1_patterns = [
         "api/v1/ebay/seller/programs/selling-policy-management/",
         EbaySellingPolicyManagementAPIView.as_view(),
         name="ebay-selling-policy-management-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/policies/",
+        EbaySellerPolicyAPIView.as_view(),
+        name="ebay-seller-policy-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/shipping-services/",
+        EbayShippingServicesAPIView.as_view(),
+        name="ebay-shipping-services-v1",
     ),
     path(
         "api/v1/otto/attributes/",
