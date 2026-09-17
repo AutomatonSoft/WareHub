@@ -281,6 +281,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         params = parse_qs(urlparse(client.authorization_url(state="signed-state")).query)
         self.assertEqual(params["client_id"], ["client-id"])
         self.assertEqual(params["redirect_uri"], ["sandbox-runame"])
+        self.assertEqual(params["prompt"], ["login"])
         self.assertEqual(params["state"], ["signed-state"])
         self.assertEqual(client.exchange_code(code="one-time-code")["refresh_token"], "refresh-token")
 

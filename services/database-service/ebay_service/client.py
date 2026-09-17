@@ -197,6 +197,7 @@ class EbayOAuthClient:
             'client_id': self._config.client_id,
             'redirect_uri': self._ru_name,
             'response_type': 'code',
+            'prompt': 'login',
             'scope': ' '.join(self._SELL_SCOPES),
             'state': state,
         })}"
