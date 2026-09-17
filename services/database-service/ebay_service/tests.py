@@ -17,7 +17,7 @@ from rest_framework.test import APIRequestFactory
 
 from .client import EbayApiConfig, EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import load_refresh_token, store_refresh_token
-from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _exchange_code_response, _seller_setup_error_response
+from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _account, _exchange_code_response, _seller_setup_error_response
 
 
 class FakeResponse:
@@ -103,6 +103,10 @@ class NotificationSession:
 
 
 class EbayRouteTests(SimpleTestCase):
+    def test_accepts_configured_seller_accounts(self):
+        self.assertEqual(_account("DEP"), "dep")
+        self.assertIsNone(_account("unknown"))
+
     def test_taxonomy_routes_are_registered(self):
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-suggestions/").url_name, "ebay-category-suggestions-v1")
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-aspects/").url_name, "ebay-category-aspects-v1")
