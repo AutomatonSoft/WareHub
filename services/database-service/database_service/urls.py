@@ -82,6 +82,7 @@ from ebay_service.views import (
     EbayOAuthCodeExchangeAPIView,
     EbayInventoryLocationAPIView,
     EbayInventoryItemAPIView,
+    EbayListingAPIView,
     EbayOfferAPIView,
     EbaySellerPolicyAPIView,
     EbaySellingPolicyManagementAPIView,
@@ -345,6 +346,11 @@ api_v1_patterns = [
         "api/v1/ebay/seller/shipping-services/",
         EbayShippingServicesAPIView.as_view(),
         name="ebay-shipping-services-v1",
+    ),
+    path(
+        "api/v1/ebay/listings/<str:item_id>/",
+        EbayListingAPIView.as_view(),
+        name="ebay-listing-v1",
     ),
     path(
         "api/v1/ebay/inventory/items/",

@@ -202,6 +202,25 @@ class EbayShippingServicesAPIView(APIView):
             return _shipping_services_error_response(error, account=account, marketplace_id=marketplace_id)
 
 
+class EbayListingAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request, item_id: str):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "EBAY_DE").strip()
+        normalized_item_id = str(item_id or "").strip()
+        if account is None or not marketplace_id or not normalized_item_id.isdigit() or len(normalized_item_id) > 19:
+            return Response(
+                {"code": "ebay_listing_invalid_request", "detail": "account, marketplace_id, and a numeric item_id up to 19 digits are required."},
+                status=400,
+            )
+        try:
+            listing = EbayOAuthClient().listing(account=account, item_id=normalized_item_id, marketplace_id=marketplace_id)
+        except EbayApiError as error:
+            return _listing_error_response(error, account=account, item_id=normalized_item_id, marketplace_id=marketplace_id)
+        return Response({"account": account, "listing": listing})
+
+
 class EbayInventoryItemAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -354,6 +373,22 @@ def _shipping_services_error_response(error: EbayApiError, *, account: str, mark
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     code = "ebay_shipping_services_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_shipping_services_request_failed"
     payload = {"code": code, "detail": str(error), "account": account, "marketplace_id": marketplace_id}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _listing_error_response(error: EbayApiError, *, account: str, item_id: str, marketplace_id: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {
+        "code": "ebay_listing_request_failed",
+        "detail": str(error),
+        "account": account,
+        "item_id": item_id,
+        "marketplace_id": marketplace_id,
+    }
     if error.operation:
         payload["operation"] = error.operation
     if error.details is not None:
