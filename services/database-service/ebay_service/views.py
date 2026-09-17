@@ -18,6 +18,7 @@ _OAUTH_STATE_SALT = "ebay-oauth-state"
 _MARKETPLACE_ACCOUNT_DELETION_ENDPOINT_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT"
 _MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN"
 _VERIFICATION_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,80}$")
+_EBAY_SELLER_ACCOUNTS = frozenset({"jv", "xl", "dep"})
 
 
 class EbayOAuthAuthorizationUrlAPIView(APIView):
@@ -26,7 +27,7 @@ class EbayOAuthAuthorizationUrlAPIView(APIView):
     def get(self, request):
         account = _account(request.query_params.get("account"))
         if account is None:
-            return Response({"code": "ebay_oauth_invalid_account", "detail": "account must be jv or xl."}, status=400)
+            return Response({"code": "ebay_oauth_invalid_account", "detail": "account must be jv, xl, or dep."}, status=400)
         try:
             state = signing.dumps({"account": account}, salt=_OAUTH_STATE_SALT, compress=True)
             return Response({"account": account, "authorization_url": EbayOAuthClient().authorization_url(state=state)})
@@ -92,7 +93,7 @@ class EbaySellerSetupAPIView(APIView):
         marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
         if account is None or not marketplace_id or len(marketplace_id) > 64:
             return Response(
-                {"code": "ebay_seller_setup_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                {"code": "ebay_seller_setup_invalid_request", "detail": "account (jv, xl, or dep) and marketplace_id are required."},
                 status=400,
             )
         try:
@@ -143,7 +144,7 @@ class EbaySellingPolicyManagementAPIView(APIView):
         account = _account(payload.get("account"))
         if account is None:
             return Response(
-                {"code": "ebay_selling_policy_management_invalid_request", "detail": "account must be jv or xl."},
+                {"code": "ebay_selling_policy_management_invalid_request", "detail": "account must be jv, xl, or dep."},
                 status=400,
             )
         try:
@@ -192,7 +193,7 @@ class EbayShippingServicesAPIView(APIView):
         marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
         if account is None or not marketplace_id:
             return Response(
-                {"code": "ebay_shipping_services_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                {"code": "ebay_shipping_services_invalid_request", "detail": "account (jv, xl, or dep) and marketplace_id are required."},
                 status=400,
             )
         try:
@@ -417,7 +418,7 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
 
 def _account(value: object) -> str | None:
     account = str(value or "").strip().lower()
-    return account if account in {"jv", "xl"} else None
+    return account if account in _EBAY_SELLER_ACCOUNTS else None
 
 
 def _marketplace_account_deletion_config() -> tuple[str | None, str | None]:
