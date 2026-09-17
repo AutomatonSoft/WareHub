@@ -1,3 +1,7 @@
+import base64
+import binascii
+import hashlib
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -5,6 +9,10 @@ from urllib.parse import quote, urlencode
 from xml.etree import ElementTree
 
 import requests
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from django.core.cache import cache
 
 from .credentials import EbayCredentialError, load_refresh_token
 
@@ -100,25 +108,65 @@ class EbayTaxonomyClient:
         return _response_payload(response, "eBay Taxonomy API")
 
     def _application_token(self) -> str:
+        return _application_token(config=self._config, session=self._session)
+
+
+class EbayNotificationClient:
+    _PUBLIC_KEY_CACHE_TIMEOUT_SECONDS = 3600
+
+    def __init__(
+        self,
+        *,
+        config: EbayApiConfig | None = None,
+        session: requests.Session | None = None,
+    ):
+        self._config = config or EbayApiConfig.from_env()
+        self._session = session or requests.Session()
+
+    def verify_marketplace_account_deletion_notification(self, *, raw_payload: bytes, signature_header: str) -> bool:
+        header = _notification_signature_header(signature_header)
+        key_id = str(header.get("kid") or "").strip()
+        encoded_signature = str(header.get("signature") or "").strip()
+        if not key_id or not encoded_signature:
+            raise EbayApiError("eBay notification signature is invalid.")
         try:
-            response = self._session.post(
-                self._config.token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "scope": "https://api.ebay.com/oauth/api_scope",
-                },
-                auth=(self._config.client_id, self._config.client_secret),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            signature = base64.b64decode(encoded_signature, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise EbayApiError("eBay notification signature is invalid.") from error
+
+        try:
+            public_key = serialization.load_pem_public_key(self._public_key(key_id).encode("ascii"))
+            public_key.verify(signature, raw_payload, ec.ECDSA(hashes.SHA1()))
+        except (TypeError, ValueError) as error:
+            raise EbayApiError("eBay notification public key is invalid.") from error
+        except InvalidSignature:
+            return False
+        return True
+
+    def _public_key(self, key_id: str) -> str:
+        cache_key = f"ebay:notification-public-key:{hashlib.sha256(key_id.encode('utf-8')).hexdigest()}"
+        cached_key = cache.get(cache_key)
+        if isinstance(cached_key, str) and cached_key:
+            return cached_key
+
+        token = _application_token(config=self._config, session=self._session)
+        try:
+            response = self._session.get(
+                f"{self._config.base_url}/commerce/notification/v1/public_key/{quote(key_id, safe='')}",
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
-            raise EbayApiError("eBay OAuth token request failed.") from error
+            raise EbayApiError("eBay notification public-key request failed.") from error
 
-        payload = _response_payload(response, "eBay OAuth")
-        token = str(payload.get("access_token") or "").strip()
-        if not token:
-            raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
-        return token
+        payload = _response_payload(response, "eBay notification public-key API")
+        public_key = str(payload.get("key") or "").strip()
+        algorithm = str(payload.get("algorithm") or "").strip().upper()
+        digest = str(payload.get("digest") or "").strip().upper()
+        if not public_key or algorithm != "ECDSA" or digest != "SHA1":
+            raise EbayApiError("eBay notification public-key response is invalid.", details=payload)
+        cache.set(cache_key, public_key, timeout=self._PUBLIC_KEY_CACHE_TIMEOUT_SECONDS)
+        return public_key
 
 
 class EbayOAuthClient:
@@ -426,6 +474,39 @@ def _required(value: str, name: str) -> str:
     if not normalized:
         raise EbayApiError(f"{name} is required.")
     return normalized
+
+
+def _application_token(*, config: EbayApiConfig, session: requests.Session) -> str:
+    try:
+        response = session.post(
+            config.token_url,
+            data={
+                "grant_type": "client_credentials",
+                "scope": "https://api.ebay.com/oauth/api_scope",
+            },
+            auth=(config.client_id, config.client_secret),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=(config.connect_timeout, config.read_timeout),
+        )
+    except requests.RequestException as error:
+        raise EbayApiError("eBay OAuth token request failed.") from error
+
+    payload = _response_payload(response, "eBay OAuth")
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
+    return token
+
+
+def _notification_signature_header(value: str) -> dict[str, Any]:
+    try:
+        decoded = base64.b64decode(str(value or ""), validate=True).decode("utf-8")
+        payload = json.loads(decoded)
+    except (UnicodeDecodeError, ValueError, binascii.Error) as error:
+        raise EbayApiError("eBay notification signature is invalid.") from error
+    if not isinstance(payload, dict):
+        raise EbayApiError("eBay notification signature is invalid.")
+    return payload
 
 
 def _response_payload(response: requests.Response, source: str) -> dict[str, Any]:

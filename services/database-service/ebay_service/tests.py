@@ -1,16 +1,23 @@
+import base64
+import hashlib
+import json
 import os
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 import requests
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from django.core.cache import cache
 from django.test import SimpleTestCase
 from django.urls import resolve
 from django.core import signing
+from rest_framework.test import APIRequestFactory
 
-from .client import EbayApiConfig, EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .client import EbayApiConfig, EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import load_refresh_token, store_refresh_token
-from .views import _OAUTH_STATE_SALT, _exchange_code_response, _seller_setup_error_response
+from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _exchange_code_response, _seller_setup_error_response
 
 
 class FakeResponse:
@@ -81,11 +88,29 @@ class FakeSession:
         return FakeResponse({"categorySuggestions": []})
 
 
+class NotificationSession:
+    def __init__(self, public_key: str):
+        self.public_key = public_key
+        self.calls = []
+
+    def post(self, *args, **kwargs):
+        self.calls.append(("post", args, kwargs))
+        return FakeResponse({"access_token": "application-token"})
+
+    def get(self, *args, **kwargs):
+        self.calls.append(("get", args, kwargs))
+        return FakeResponse({"key": self.public_key, "algorithm": "ECDSA", "digest": "SHA1"})
+
+
 class EbayRouteTests(SimpleTestCase):
     def test_taxonomy_routes_are_registered(self):
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-suggestions/").url_name, "ebay-category-suggestions-v1")
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-aspects/").url_name, "ebay-category-aspects-v1")
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
+        self.assertEqual(
+            resolve("/api/v1/ebay/notifications/marketplace-account-deletion/").url_name,
+            "ebay-marketplace-account-deletion-v1",
+        )
         self.assertEqual(resolve("/api/v1/ebay/seller/setup/").url_name, "ebay-seller-setup-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/locations/").url_name, "ebay-inventory-location-v1")
         self.assertEqual(
@@ -127,6 +152,91 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(response.data["account"], "jv")
         self.assertEqual(response.data["marketplace_id"], "EBAY_DE")
         self.assertEqual(response.data["details"]["errors"][0]["errorId"], 25001)
+
+
+class EbayMarketplaceAccountDeletionTests(SimpleTestCase):
+    endpoint = "https://warehub.automatonsoft.de/api/v1/ebay/notifications/marketplace-account-deletion/"
+    verification_token = "a" * 32
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    @patch.dict(
+        os.environ,
+        {
+            "EBAY_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT": endpoint,
+            "EBAY_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN": verification_token,
+        },
+        clear=False,
+    )
+    def test_challenge_response_uses_ebay_parameter_order(self):
+        request = self.factory.get("/api/v1/ebay/notifications/marketplace-account-deletion/?challenge_code=challenge")
+        response = EbayMarketplaceAccountDeletionAPIView.as_view()(request)
+
+        expected = hashlib.sha256(f"challenge{self.verification_token}{self.endpoint}".encode("utf-8")).hexdigest()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"challengeResponse": expected})
+
+    @patch("ebay_service.views.EbayNotificationClient.verify_marketplace_account_deletion_notification", return_value=True)
+    def test_valid_notification_is_acknowledged_without_exposing_payload(self, verify_notification):
+        request = self.factory.post(
+            "/api/v1/ebay/notifications/marketplace-account-deletion/",
+            {"metadata": {"topic": "MARKETPLACE_ACCOUNT_DELETION"}, "notification": {"notificationId": "event-1"}},
+            format="json",
+            HTTP_X_EBAY_SIGNATURE="signature",
+        )
+        response = EbayMarketplaceAccountDeletionAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 204)
+        verify_notification.assert_called_once()
+
+    def test_notification_without_signature_is_rejected(self):
+        request = self.factory.post(
+            "/api/v1/ebay/notifications/marketplace-account-deletion/",
+            {"metadata": {"topic": "MARKETPLACE_ACCOUNT_DELETION"}},
+            format="json",
+        )
+        response = EbayMarketplaceAccountDeletionAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 412)
+
+    @patch("ebay_service.views.EbayNotificationClient.verify_marketplace_account_deletion_notification", return_value=False)
+    def test_notification_with_invalid_signature_is_rejected(self, _verify_notification):
+        request = self.factory.post(
+            "/api/v1/ebay/notifications/marketplace-account-deletion/",
+            {"metadata": {"topic": "MARKETPLACE_ACCOUNT_DELETION"}},
+            format="json",
+            HTTP_X_EBAY_SIGNATURE="signature",
+        )
+        response = EbayMarketplaceAccountDeletionAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 412)
+
+    def test_notification_signature_is_verified_with_ebay_public_key(self):
+        cache.clear()
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        public_key = private_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+        raw_payload = b'{"metadata":{"topic":"MARKETPLACE_ACCOUNT_DELETION"},"notification":{"notificationId":"event-1"}}'
+        signature = base64.b64encode(private_key.sign(raw_payload, ec.ECDSA(hashes.SHA1()))).decode("ascii")
+        signature_header = base64.b64encode(json.dumps({"kid": "test-key", "signature": signature}).encode("utf-8")).decode("ascii")
+        config = EbayApiConfig(
+            client_id="client-id",
+            client_secret="client-secret",
+            base_url="https://api.sandbox.ebay.com",
+            token_url="https://api.sandbox.ebay.com/identity/v1/oauth2/token",
+            connect_timeout=1,
+            read_timeout=1,
+        )
+
+        is_valid = EbayNotificationClient(config=config, session=NotificationSession(public_key)).verify_marketplace_account_deletion_notification(
+            raw_payload=raw_payload,
+            signature_header=signature_header,
+        )
+
+        self.assertTrue(is_valid)
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):

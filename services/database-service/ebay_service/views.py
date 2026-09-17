@@ -1,3 +1,8 @@
+import hashlib
+import json
+import os
+import re
+
 from django.core import signing
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -5,11 +10,14 @@ from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
 
-from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import EbayCredentialError, store_refresh_token
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
+_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT"
+_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN"
+_VERIFICATION_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,80}$")
 
 
 class EbayOAuthAuthorizationUrlAPIView(APIView):
@@ -38,6 +46,42 @@ class EbayOAuthCallbackAPIView(APIView):
 
     def get(self, request):
         return _exchange_code_response(code=request.query_params.get("code"), state=request.query_params.get("state"))
+
+
+class EbayMarketplaceAccountDeletionAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        challenge_code = str(request.query_params.get("challenge_code") or "").strip()
+        if not challenge_code or len(challenge_code) > 2048:
+            return Response({"code": "ebay_notification_invalid_challenge", "detail": "challenge_code is required."}, status=400)
+        endpoint, verification_token = _marketplace_account_deletion_config()
+        if endpoint is None or verification_token is None:
+            return Response({"code": "ebay_notification_not_configured", "detail": "eBay notification endpoint is not configured."}, status=503)
+        challenge_response = hashlib.sha256(f"{challenge_code}{verification_token}{endpoint}".encode("utf-8")).hexdigest()
+        return Response({"challengeResponse": challenge_response})
+
+    def post(self, request):
+        signature_header = str(request.headers.get("X-EBAY-SIGNATURE") or "").strip()
+        if not signature_header:
+            return Response(status=412)
+        try:
+            is_valid = EbayNotificationClient().verify_marketplace_account_deletion_notification(
+                raw_payload=request.body,
+                signature_header=signature_header,
+            )
+        except EbayApiError:
+            return Response(status=503)
+        if not is_valid:
+            return Response(status=412)
+        try:
+            payload = json.loads(request.body)
+        except (TypeError, ValueError):
+            return Response(status=400)
+        topic = payload.get("metadata", {}).get("topic") if isinstance(payload, dict) else None
+        if topic != "MARKETPLACE_ACCOUNT_DELETION":
+            return Response(status=400)
+        return Response(status=204)
 
 
 class EbaySellerSetupAPIView(APIView):
@@ -374,3 +418,13 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
 def _account(value: object) -> str | None:
     account = str(value or "").strip().lower()
     return account if account in {"jv", "xl"} else None
+
+
+def _marketplace_account_deletion_config() -> tuple[str | None, str | None]:
+    endpoint = str(os.getenv(_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT_ENV) or "").strip()
+    verification_token = str(os.getenv(_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN_ENV) or "").strip()
+    if not endpoint.startswith("https://") or len(endpoint) > 2048:
+        return None, None
+    if not _VERIFICATION_TOKEN_PATTERN.fullmatch(verification_token):
+        return None, None
+    return endpoint, verification_token
