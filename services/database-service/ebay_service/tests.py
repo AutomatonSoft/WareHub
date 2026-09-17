@@ -53,6 +53,20 @@ class FakeSession:
             return FakeResponse({"returnPolicyId": "return-policy-id"})
         if args[0].endswith("/sell/inventory/v1/offer"):
             return FakeResponse({"offerId": "offer-id"})
+        if args[0].endswith("/ws/api.dll") and b"<GetItemRequest" in data:
+            return FakeResponse(
+                {},
+                content=b'''<?xml version="1.0" encoding="utf-8"?>
+<GetItemResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+  <Ack>Success</Ack>
+  <Item>
+    <ItemID>205926392508</ItemID><Title>Test chair</Title><SKU>JVM4062292372025</SKU>
+    <InventoryTrackingMethod>SKU</InventoryTrackingMethod><QuantityAvailable>2</QuantityAvailable>
+    <Seller><UserID>depotum</UserID></Seller><ListingDetails><ListingStatus>Active</ListingStatus></ListingDetails>
+    <ItemSpecifics><NameValueList><Name>EAN</Name><Value>4062292372025</Value></NameValueList></ItemSpecifics>
+  </Item>
+</GetItemResponse>''',
+            )
         if args[0].endswith("/ws/api.dll"):
             return FakeResponse(
                 {},
@@ -127,6 +141,7 @@ class EbayRouteTests(SimpleTestCase):
         )
         self.assertEqual(resolve("/api/v1/ebay/seller/policies/").url_name, "ebay-seller-policy-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/shipping-services/").url_name, "ebay-shipping-services-v1")
+        self.assertEqual(resolve("/api/v1/ebay/listings/205926392508/").url_name, "ebay-listing-v1")
         self.assertEqual(resolve("/api/v1/ebay/inventory/items/").url_name, "ebay-inventory-item-v1")
         self.assertEqual(resolve("/api/v1/ebay/offers/").url_name, "ebay-offer-v1")
 
@@ -422,6 +437,24 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertTrue(session.calls[-1][1][0].endswith("/sell/inventory/v1/offer"))
         self.assertEqual(session.calls[-1][2]["headers"]["Content-Language"], "de-DE")
         self.assertEqual(offer, {"offerId": "offer-id"})
+
+    def test_gets_listing_by_ebay_item_id(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            listing = client.listing(account="dep", item_id="205926392508", marketplace_id="EBAY_DE")
+
+        request = session.calls[1]
+        self.assertEqual(request[0], "post")
+        self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GetItem")
+        self.assertEqual(listing["sku"], "JVM4062292372025")
+        self.assertEqual(listing["seller"], "depotum")
+        self.assertEqual(listing["identifiers"], {"EAN": ["4062292372025"]})
 
 
 class EbayCredentialStoreTests(SimpleTestCase):

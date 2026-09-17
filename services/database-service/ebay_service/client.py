@@ -358,6 +358,38 @@ class EbayOAuthClient:
             ) from error
         return _shipping_services_payload(response=response, marketplace_id=marketplace_id)
 
+    def listing(self, *, account: str, item_id: str, marketplace_id: str) -> dict[str, Any]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Listing lookup is currently available only for EBAY_DE.")
+
+        access_token = self._seller_access_token(account=account)
+        xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <ItemID>{item_id}</ItemID>
+  <IncludeItemSpecifics>true</IncludeItemSpecifics>
+</GetItemRequest>'''
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GetItem",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay listing lookup failed.",
+                details={"kind": type(error).__name__},
+                operation="get_listing",
+            ) from error
+        return _listing_payload(response=response, marketplace_id=marketplace_id)
+
     def _seller_access_token(self, *, account: str) -> str:
         try:
             refresh_token = load_refresh_token(account=account)
@@ -574,6 +606,58 @@ def _shipping_services_payload(*, response: requests.Response, marketplace_id: s
             }
         )
     return {"marketplace_id": marketplace_id, "services": services}
+
+
+def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dict[str, Any]:
+    try:
+        root = ElementTree.fromstring(response.content)
+    except (AttributeError, ElementTree.ParseError) as error:
+        raise EbayApiError(
+            "eBay listing lookup returned an invalid XML response.",
+            status_code=response.status_code,
+            operation="get_listing",
+        ) from error
+
+    namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+    errors = [
+        {
+            "code": _xml_text(error, "ebay:ErrorCode", namespace),
+            "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace),
+        }
+        for error in root.findall("ebay:Errors", namespace)
+    ]
+    if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+        raise EbayApiError(
+            "eBay listing lookup returned an error response.",
+            status_code=response.status_code,
+            details={"errors": errors},
+            operation="get_listing",
+        )
+
+    item = root.find("ebay:Item", namespace)
+    if item is None:
+        raise EbayApiError("eBay listing lookup response has no item.", operation="get_listing")
+
+    identifiers: dict[str, list[str]] = {}
+    for entry in item.findall("ebay:ItemSpecifics/ebay:NameValueList", namespace):
+        name = _xml_text(entry, "ebay:Name", namespace)
+        if name.casefold() not in {"ean", "gtin", "upc", "isbn", "mpn"}:
+            continue
+        values = [str(value.text or "").strip() for value in entry.findall("ebay:Value", namespace) if str(value.text or "").strip()]
+        if values:
+            identifiers[name] = values
+
+    return {
+        "marketplace_id": marketplace_id,
+        "item_id": _xml_text(item, "ebay:ItemID", namespace),
+        "seller": _xml_text(item, "ebay:Seller/ebay:UserID", namespace),
+        "title": _xml_text(item, "ebay:Title", namespace),
+        "sku": _xml_text(item, "ebay:SKU", namespace),
+        "inventory_tracking_method": _xml_text(item, "ebay:InventoryTrackingMethod", namespace),
+        "listing_status": _xml_text(item, "ebay:ListingDetails/ebay:ListingStatus", namespace),
+        "quantity_available": _xml_text(item, "ebay:QuantityAvailable", namespace),
+        "identifiers": identifiers,
+    }
 
 
 def _xml_text(element: ElementTree.Element, path: str, namespace: dict[str, str]) -> str:
