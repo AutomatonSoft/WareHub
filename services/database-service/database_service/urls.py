@@ -76,6 +76,7 @@ from hood_service.views import HoodFetchByEANAPIView
 from ebay_service.views import (
     EbayCategoryAspectsAPIView,
     EbayCategorySuggestionsAPIView,
+    EbayMarketplaceAccountDeletionAPIView,
     EbayOAuthAuthorizationUrlAPIView,
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
@@ -314,6 +315,11 @@ api_v1_patterns = [
         "api/v1/ebay/oauth/callback/",
         EbayOAuthCallbackAPIView.as_view(),
         name="ebay-oauth-callback-v1",
+    ),
+    path(
+        "api/v1/ebay/notifications/marketplace-account-deletion/",
+        EbayMarketplaceAccountDeletionAPIView.as_view(),
+        name="ebay-marketplace-account-deletion-v1",
     ),
     path(
         "api/v1/ebay/seller/setup/",
