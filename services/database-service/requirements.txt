@@ -10,6 +10,7 @@ django-cors-headers>=4.4,<5.0
 inflection>=0.5,<1.0
 uritemplate>=4.1,<5.0
 requests>=2.31,<3.0
+cryptography>=43,<46
 pymongo>=4.10,<5.0
 redis>=6.4,<7.0
 playwright>=1.54,<2.0

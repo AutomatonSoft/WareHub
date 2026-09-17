@@ -76,9 +76,17 @@ from hood_service.views import HoodFetchByEANAPIView
 from ebay_service.views import (
     EbayCategoryAspectsAPIView,
     EbayCategorySuggestionsAPIView,
+    EbayMarketplaceAccountDeletionAPIView,
     EbayOAuthAuthorizationUrlAPIView,
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
+    EbayInventoryLocationAPIView,
+    EbayInventoryItemAPIView,
+    EbayOfferAPIView,
+    EbaySellerPolicyAPIView,
+    EbaySellingPolicyManagementAPIView,
+    EbaySellerSetupAPIView,
+    EbayShippingServicesAPIView,
 )
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
@@ -307,6 +315,46 @@ api_v1_patterns = [
         "api/v1/ebay/oauth/callback/",
         EbayOAuthCallbackAPIView.as_view(),
         name="ebay-oauth-callback-v1",
+    ),
+    path(
+        "api/v1/ebay/notifications/marketplace-account-deletion/",
+        EbayMarketplaceAccountDeletionAPIView.as_view(),
+        name="ebay-marketplace-account-deletion-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/setup/",
+        EbaySellerSetupAPIView.as_view(),
+        name="ebay-seller-setup-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/locations/",
+        EbayInventoryLocationAPIView.as_view(),
+        name="ebay-inventory-location-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/programs/selling-policy-management/",
+        EbaySellingPolicyManagementAPIView.as_view(),
+        name="ebay-selling-policy-management-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/policies/",
+        EbaySellerPolicyAPIView.as_view(),
+        name="ebay-seller-policy-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/shipping-services/",
+        EbayShippingServicesAPIView.as_view(),
+        name="ebay-shipping-services-v1",
+    ),
+    path(
+        "api/v1/ebay/inventory/items/",
+        EbayInventoryItemAPIView.as_view(),
+        name="ebay-inventory-item-v1",
+    ),
+    path(
+        "api/v1/ebay/offers/",
+        EbayOfferAPIView.as_view(),
+        name="ebay-offer-v1",
     ),
     path(
         "api/v1/otto/attributes/",

@@ -1,3 +1,8 @@
+import hashlib
+import json
+import os
+import re
+
 from django.core import signing
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -5,10 +10,14 @@ from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
 
-from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
+from .credentials import EbayCredentialError, store_refresh_token
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
+_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT"
+_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN_ENV = "EBAY_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN"
+_VERIFICATION_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,80}$")
 
 
 class EbayOAuthAuthorizationUrlAPIView(APIView):
@@ -37,6 +46,204 @@ class EbayOAuthCallbackAPIView(APIView):
 
     def get(self, request):
         return _exchange_code_response(code=request.query_params.get("code"), state=request.query_params.get("state"))
+
+
+class EbayMarketplaceAccountDeletionAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        challenge_code = str(request.query_params.get("challenge_code") or "").strip()
+        if not challenge_code or len(challenge_code) > 2048:
+            return Response({"code": "ebay_notification_invalid_challenge", "detail": "challenge_code is required."}, status=400)
+        endpoint, verification_token = _marketplace_account_deletion_config()
+        if endpoint is None or verification_token is None:
+            return Response({"code": "ebay_notification_not_configured", "detail": "eBay notification endpoint is not configured."}, status=503)
+        challenge_response = hashlib.sha256(f"{challenge_code}{verification_token}{endpoint}".encode("utf-8")).hexdigest()
+        return Response({"challengeResponse": challenge_response})
+
+    def post(self, request):
+        signature_header = str(request.headers.get("X-EBAY-SIGNATURE") or "").strip()
+        if not signature_header:
+            return Response(status=412)
+        try:
+            is_valid = EbayNotificationClient().verify_marketplace_account_deletion_notification(
+                raw_payload=request.body,
+                signature_header=signature_header,
+            )
+        except EbayApiError:
+            return Response(status=503)
+        if not is_valid:
+            return Response(status=412)
+        try:
+            payload = json.loads(request.body)
+        except (TypeError, ValueError):
+            return Response(status=400)
+        topic = payload.get("metadata", {}).get("topic") if isinstance(payload, dict) else None
+        if topic != "MARKETPLACE_ACCOUNT_DELETION":
+            return Response(status=400)
+        return Response(status=204)
+
+
+class EbaySellerSetupAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
+        if account is None or not marketplace_id or len(marketplace_id) > 64:
+            return Response(
+                {"code": "ebay_seller_setup_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                status=400,
+            )
+        try:
+            return Response(EbayOAuthClient().seller_setup(account=account, marketplace_id=marketplace_id))
+        except EbayApiError as error:
+            return _seller_setup_error_response(error, account=account, marketplace_id=marketplace_id)
+
+
+class EbayInventoryLocationAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        merchant_location_key = str(payload.get("merchant_location_key") or "").strip()
+        name = str(payload.get("name") or "").strip()
+        postal_code = str(payload.get("postal_code") or "").strip()
+        country = str(payload.get("country") or "").strip().upper()
+        if account is None or not merchant_location_key or len(merchant_location_key) > 50 or not name or not postal_code or len(country) != 2 or not country.isalpha():
+            return Response(
+                {
+                    "code": "ebay_inventory_location_invalid_request",
+                    "detail": "account, merchant_location_key, name, postal_code, and two-letter country are required.",
+                },
+                status=400,
+            )
+        try:
+            EbayOAuthClient().create_inventory_location(
+                account=account,
+                merchant_location_key=merchant_location_key,
+                name=name,
+                postal_code=postal_code,
+                country=country,
+            )
+        except EbayApiError as error:
+            return _inventory_location_error_response(error, account=account, merchant_location_key=merchant_location_key)
+        return Response(
+            {"account": account, "merchant_location_key": merchant_location_key, "status": "created"},
+            status=201,
+        )
+
+
+class EbaySellingPolicyManagementAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        if account is None:
+            return Response(
+                {"code": "ebay_selling_policy_management_invalid_request", "detail": "account must be jv or xl."},
+                status=400,
+            )
+        try:
+            EbayOAuthClient().opt_in_to_selling_policy_management(account=account)
+        except EbayApiError as error:
+            return _selling_policy_management_error_response(error, account=account)
+        return Response({"account": account, "program_type": "SELLING_POLICY_MANAGEMENT", "status": "opted_in"}, status=201)
+
+
+class EbaySellerPolicyAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        policy_type = str(payload.get("policy_type") or "").strip().lower()
+        policy = payload.get("policy")
+        if account is None or policy_type not in {"fulfillment", "payment", "return"} or not isinstance(policy, dict):
+            return Response(
+                {
+                    "code": "ebay_seller_policy_invalid_request",
+                    "detail": "account, policy_type (fulfillment, payment, or return), and policy object are required.",
+                },
+                status=400,
+            )
+        if not str(policy.get("name") or "").strip() or not str(policy.get("marketplaceId") or "").strip() or not isinstance(policy.get("categoryTypes"), list):
+            return Response(
+                {
+                    "code": "ebay_seller_policy_invalid_request",
+                    "detail": "policy.name, policy.marketplaceId, and policy.categoryTypes are required.",
+                },
+                status=400,
+            )
+        try:
+            result = EbayOAuthClient().create_seller_policy(account=account, policy_type=policy_type, policy=policy)
+        except EbayApiError as error:
+            return _seller_policy_error_response(error, account=account, policy_type=policy_type)
+        return Response({"account": account, "policy_type": policy_type, "status": "created", "data": result}, status=201)
+
+
+class EbayShippingServicesAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
+        if account is None or not marketplace_id:
+            return Response(
+                {"code": "ebay_shipping_services_invalid_request", "detail": "account (jv or xl) and marketplace_id are required."},
+                status=400,
+            )
+        try:
+            return Response(EbayOAuthClient().shipping_services(account=account, marketplace_id=marketplace_id))
+        except EbayApiError as error:
+            return _shipping_services_error_response(error, account=account, marketplace_id=marketplace_id)
+
+
+class EbayInventoryItemAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        sku = str(payload.get("sku") or "").strip()
+        marketplace_id = str(payload.get("marketplace_id") or "EBAY_DE").strip()
+        item = payload.get("item")
+        if account is None or not sku or len(sku) > 50 or not marketplace_id or not isinstance(item, dict):
+            return Response(
+                {"code": "ebay_inventory_item_invalid_request", "detail": "account, sku (up to 50 characters), marketplace_id, and item object are required."},
+                status=400,
+            )
+        try:
+            EbayOAuthClient().create_or_replace_inventory_item(
+                account=account,
+                sku=sku,
+                item=item,
+                marketplace_id=marketplace_id,
+            )
+        except EbayApiError as error:
+            return _inventory_item_error_response(error, account=account, sku=sku)
+        return Response({"account": account, "sku": sku, "marketplace_id": marketplace_id, "status": "created_or_replaced"})
+
+
+class EbayOfferAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        offer = payload.get("offer")
+        if account is None or not isinstance(offer, dict):
+            return Response(
+                {"code": "ebay_offer_invalid_request", "detail": "account and offer object are required."},
+                status=400,
+            )
+        try:
+            result = EbayOAuthClient().create_offer(account=account, offer=offer)
+        except EbayApiError as error:
+            return _offer_error_response(error, account=account)
+        return Response({"account": account, "status": "created", "data": result}, status=201)
 
 
 class EbayCategorySuggestionsAPIView(APIView):
@@ -89,6 +296,90 @@ def _oauth_error_response(error: EbayApiError) -> Response:
     return Response({"code": code, "detail": str(error)}, status=status_code)
 
 
+def _seller_setup_error_response(error: EbayApiError, *, account: str | None = None, marketplace_id: str | None = None) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_seller_setup_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_setup_request_failed"
+    payload = {"code": code, "detail": str(error)}
+    if error.operation:
+        payload["operation"] = error.operation
+    if account:
+        payload["account"] = account
+    if marketplace_id:
+        payload["marketplace_id"] = marketplace_id
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _inventory_location_error_response(error: EbayApiError, *, account: str, merchant_location_key: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_inventory_location_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_inventory_location_request_failed"
+    payload = {
+        "code": code,
+        "detail": str(error),
+        "account": account,
+        "merchant_location_key": merchant_location_key,
+    }
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _selling_policy_management_error_response(error: EbayApiError, *, account: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_selling_policy_management_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_selling_policy_management_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _seller_policy_error_response(error: EbayApiError, *, account: str, policy_type: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_seller_policy_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_seller_policy_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account, "policy_type": policy_type}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _shipping_services_error_response(error: EbayApiError, *, account: str, marketplace_id: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    code = "ebay_shipping_services_not_configured" if error.status_code is None and "not configured" in str(error).lower() else "ebay_shipping_services_request_failed"
+    payload = {"code": code, "detail": str(error), "account": account, "marketplace_id": marketplace_id}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _inventory_item_error_response(error: EbayApiError, *, account: str, sku: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {"code": "ebay_inventory_item_request_failed", "detail": str(error), "account": account, "sku": sku}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _offer_error_response(error: EbayApiError, *, account: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {"code": "ebay_offer_request_failed", "detail": str(error), "account": account}
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
 def _exchange_code_response(*, code: object, state: object) -> Response:
     normalized_code = str(code or "").strip()
     normalized_state = str(state or "").strip()
@@ -110,7 +401,16 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
     refresh_token = str(token_payload.get("refresh_token") or "").strip()
     if not refresh_token:
         return Response({"code": "ebay_oauth_missing_refresh_token", "detail": "eBay did not return a refresh token."}, status=502)
-    response = Response({"account": account, "env_key": f"EBAY_{account.upper()}_REFRESH_TOKEN", "refresh_token": refresh_token})
+    try:
+        store_refresh_token(account=account, refresh_token=refresh_token)
+    except EbayCredentialError as error:
+        return Response({"code": "ebay_oauth_credential_store_unavailable", "detail": str(error)}, status=503)
+    response = Response(
+        {
+            "account": account,
+            "status": "connected",
+        }
+    )
     response["Cache-Control"] = "no-store"
     return response
 
@@ -118,3 +418,13 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
 def _account(value: object) -> str | None:
     account = str(value or "").strip().lower()
     return account if account in {"jv", "xl"} else None
+
+
+def _marketplace_account_deletion_config() -> tuple[str | None, str | None]:
+    endpoint = str(os.getenv(_MARKETPLACE_ACCOUNT_DELETION_ENDPOINT_ENV) or "").strip()
+    verification_token = str(os.getenv(_MARKETPLACE_ACCOUNT_DELETION_VERIFICATION_TOKEN_ENV) or "").strip()
+    if not endpoint.startswith("https://") or len(endpoint) > 2048:
+        return None, None
+    if not _VERIFICATION_TOKEN_PATTERN.fullmatch(verification_token):
+        return None, None
+    return endpoint, verification_token

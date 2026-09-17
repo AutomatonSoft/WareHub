@@ -404,9 +404,7 @@ function normalizeCategoriesBySiteKey(input: Record<string, unknown> | undefined
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
-    if (rows.length > 0) {
-      normalized[siteKey as keyof ProductEditorJvDraft["categories_by_site_key"]] = rows;
-    }
+    normalized[siteKey as keyof ProductEditorJvDraft["categories_by_site_key"]] = rows;
   }
   return normalized;
 }

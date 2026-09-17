@@ -1,16 +1,28 @@
+import base64
+import binascii
+import hashlib
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
+from xml.etree import ElementTree
 
 import requests
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from django.core.cache import cache
+
+from .credentials import EbayCredentialError, load_refresh_token
 
 
 class EbayApiError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None, details: object = None):
+    def __init__(self, message: str, *, status_code: int | None = None, details: object = None, operation: str | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.details = details
+        self.operation = operation
 
 
 @dataclass(frozen=True)
@@ -96,28 +108,71 @@ class EbayTaxonomyClient:
         return _response_payload(response, "eBay Taxonomy API")
 
     def _application_token(self) -> str:
+        return _application_token(config=self._config, session=self._session)
+
+
+class EbayNotificationClient:
+    _PUBLIC_KEY_CACHE_TIMEOUT_SECONDS = 3600
+
+    def __init__(
+        self,
+        *,
+        config: EbayApiConfig | None = None,
+        session: requests.Session | None = None,
+    ):
+        self._config = config or EbayApiConfig.from_env()
+        self._session = session or requests.Session()
+
+    def verify_marketplace_account_deletion_notification(self, *, raw_payload: bytes, signature_header: str) -> bool:
+        header = _notification_signature_header(signature_header)
+        key_id = str(header.get("kid") or "").strip()
+        encoded_signature = str(header.get("signature") or "").strip()
+        if not key_id or not encoded_signature:
+            raise EbayApiError("eBay notification signature is invalid.")
         try:
-            response = self._session.post(
-                self._config.token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "scope": "https://api.ebay.com/oauth/api_scope",
-                },
-                auth=(self._config.client_id, self._config.client_secret),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            signature = base64.b64decode(encoded_signature, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise EbayApiError("eBay notification signature is invalid.") from error
+
+        try:
+            public_key = serialization.load_pem_public_key(self._public_key(key_id).encode("ascii"))
+            public_key.verify(signature, raw_payload, ec.ECDSA(hashes.SHA1()))
+        except (TypeError, ValueError) as error:
+            raise EbayApiError("eBay notification public key is invalid.") from error
+        except InvalidSignature:
+            return False
+        return True
+
+    def _public_key(self, key_id: str) -> str:
+        cache_key = f"ebay:notification-public-key:{hashlib.sha256(key_id.encode('utf-8')).hexdigest()}"
+        cached_key = cache.get(cache_key)
+        if isinstance(cached_key, str) and cached_key:
+            return cached_key
+
+        token = _application_token(config=self._config, session=self._session)
+        try:
+            response = self._session.get(
+                f"{self._config.base_url}/commerce/notification/v1/public_key/{quote(key_id, safe='')}",
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:
-            raise EbayApiError("eBay OAuth token request failed.") from error
+            raise EbayApiError("eBay notification public-key request failed.") from error
 
-        payload = _response_payload(response, "eBay OAuth")
-        token = str(payload.get("access_token") or "").strip()
-        if not token:
-            raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
-        return token
+        payload = _response_payload(response, "eBay notification public-key API")
+        public_key = str(payload.get("key") or "").strip()
+        algorithm = str(payload.get("algorithm") or "").strip().upper()
+        digest = str(payload.get("digest") or "").strip().upper()
+        if not public_key or algorithm != "ECDSA" or digest != "SHA1":
+            raise EbayApiError("eBay notification public-key response is invalid.", details=payload)
+        cache.set(cache_key, public_key, timeout=self._PUBLIC_KEY_CACHE_TIMEOUT_SECONDS)
+        return public_key
 
 
 class EbayOAuthClient:
+    _TRADING_COMPATIBILITY_LEVEL = "1477"
+    _TRADING_SITE_IDS = {"EBAY_DE": "77"}
+    _MARKETPLACE_LOCALES = {"EBAY_DE": "de-DE"}
     _SELL_SCOPES = (
         "https://api.ebay.com/oauth/api_scope/sell.inventory",
         "https://api.ebay.com/oauth/api_scope/sell.account",
@@ -159,12 +214,299 @@ class EbayOAuthClient:
             raise EbayApiError("eBay OAuth code exchange failed.") from error
         return _response_payload(response, "eBay OAuth")
 
+    def seller_setup(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return {
+            "account": account,
+            "marketplace_id": marketplace_id,
+            "locations": self._seller_get(
+                token=access_token,
+                path="/sell/inventory/v1/location",
+                params={"limit": "100"},
+                operation="inventory_locations",
+            ),
+            "fulfillment_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/fulfillment_policy",
+                params={"marketplace_id": marketplace_id},
+                operation="fulfillment_policies",
+            ),
+            "payment_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/payment_policy",
+                params={"marketplace_id": marketplace_id},
+                operation="payment_policies",
+            ),
+            "return_policies": self._seller_get(
+                token=access_token,
+                path="/sell/account/v1/return_policy",
+                params={"marketplace_id": marketplace_id},
+                operation="return_policies",
+            ),
+        }
+
+    def create_inventory_location(
+        self,
+        *,
+        account: str,
+        merchant_location_key: str,
+        name: str,
+        postal_code: str,
+        country: str,
+    ) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_post(
+            token=access_token,
+            path=f"/sell/inventory/v1/location/{quote(merchant_location_key, safe='')}",
+            payload={
+                "name": name,
+                "location": {"address": {"postalCode": postal_code, "country": country}},
+                "locationTypes": ["WAREHOUSE"],
+                "merchantLocationStatus": "ENABLED",
+            },
+            operation="create_inventory_location",
+        )
+
+    def opt_in_to_selling_policy_management(self, *, account: str) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_post(
+            token=access_token,
+            path="/sell/account/v1/program/opt_in",
+            payload={"programType": "SELLING_POLICY_MANAGEMENT"},
+            operation="selling_policy_management_opt_in",
+        )
+
+    def create_seller_policy(self, *, account: str, policy_type: str, policy: dict[str, Any]) -> dict[str, Any]:
+        paths = {
+            "fulfillment": "/sell/account/v1/fulfillment_policy",
+            "payment": "/sell/account/v1/payment_policy",
+            "return": "/sell/account/v1/return_policy",
+        }
+        path = paths.get(policy_type)
+        if path is None:
+            raise EbayApiError("Unsupported eBay seller policy type.")
+        access_token = self._seller_access_token(account=account)
+        return self._seller_post(
+            token=access_token,
+            path=path,
+            payload=policy,
+            operation=f"create_{policy_type}_policy",
+        )
+
+    def create_or_replace_inventory_item(
+        self,
+        *,
+        account: str,
+        sku: str,
+        item: dict[str, Any],
+        marketplace_id: str = "EBAY_DE",
+    ) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_put(
+            token=access_token,
+            path=f"/sell/inventory/v1/inventory_item/{quote(sku, safe='')}",
+            payload=item,
+            operation="create_or_replace_inventory_item",
+            content_language=self._marketplace_locale(marketplace_id),
+        )
+
+    def create_offer(self, *, account: str, offer: dict[str, Any]) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_post(
+            token=access_token,
+            path="/sell/inventory/v1/offer",
+            payload=offer,
+            operation="create_offer",
+            content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
+        )
+
+    def _marketplace_locale(self, marketplace_id: str) -> str:
+        locale = self._MARKETPLACE_LOCALES.get(marketplace_id)
+        if locale is None:
+            raise EbayApiError("eBay marketplace locale is not configured.")
+        return locale
+
+    def shipping_services(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Shipping-service metadata is currently available only for EBAY_DE.")
+
+        access_token = self._seller_access_token(account=account)
+        xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<GeteBayDetailsRequest xmlns=\"urn:ebay:apis:eBLBaseComponents\">
+  <DetailName>ShippingServiceDetails</DetailName>
+</GeteBayDetailsRequest>"""
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GeteBayDetails",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay shipping-service metadata request failed.",
+                details={"kind": type(error).__name__},
+                operation="shipping_services",
+            ) from error
+        return _shipping_services_payload(response=response, marketplace_id=marketplace_id)
+
+    def _seller_access_token(self, *, account: str) -> str:
+        try:
+            refresh_token = load_refresh_token(account=account)
+        except EbayCredentialError as error:
+            raise EbayApiError(str(error)) from error
+        if not refresh_token:
+            raise EbayApiError(f"EBAY_{account.upper()}_REFRESH_TOKEN is not configured.")
+
+        return self._refresh_access_token(refresh_token=refresh_token)
+
+    def _refresh_access_token(self, *, refresh_token: str) -> str:
+        try:
+            response = self._session.post(
+                self._config.token_url,
+                data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+                auth=(self._config.client_id, self._config.client_secret),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError("eBay OAuth refresh-token exchange failed.") from error
+
+        payload = _response_payload(response, "eBay OAuth")
+        token = str(payload.get("access_token") or "").strip()
+        if not token:
+            raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
+        return token
+
+    def _seller_get(self, *, token: str, path: str, params: dict[str, str], operation: str) -> dict[str, Any]:
+        try:
+            response = self._session.get(
+                f"{self._config.base_url}{path}",
+                params=params,
+                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
+        return self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_post(
+        self,
+        *,
+        token: str,
+        path: str,
+        payload: dict[str, Any],
+        operation: str,
+        content_language: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+            if content_language:
+                headers["Content-Language"] = content_language
+            response = self._session.post(
+                f"{self._config.base_url}{path}",
+                json=payload,
+                headers=headers,
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
+        return self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_put(
+        self,
+        *,
+        token: str,
+        path: str,
+        payload: dict[str, Any],
+        operation: str,
+        content_language: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+            if content_language:
+                headers["Content-Language"] = content_language
+            response = self._session.put(
+                f"{self._config.base_url}{path}",
+                json=payload,
+                headers=headers,
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay seller request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
+        self._seller_response_payload(response=response, operation=operation)
+
+    def _seller_response_payload(self, *, response: requests.Response, operation: str) -> dict[str, Any]:
+        if response.status_code == 204:
+            return {}
+        try:
+            return _response_payload(response, "eBay seller setup")
+        except EbayApiError as error:
+            raise EbayApiError(
+                str(error),
+                status_code=error.status_code,
+                details=error.details,
+                operation=operation,
+            ) from error
+
 
 def _required(value: str, name: str) -> str:
     normalized = str(value or "").strip()
     if not normalized:
         raise EbayApiError(f"{name} is required.")
     return normalized
+
+
+def _application_token(*, config: EbayApiConfig, session: requests.Session) -> str:
+    try:
+        response = session.post(
+            config.token_url,
+            data={
+                "grant_type": "client_credentials",
+                "scope": "https://api.ebay.com/oauth/api_scope",
+            },
+            auth=(config.client_id, config.client_secret),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=(config.connect_timeout, config.read_timeout),
+        )
+    except requests.RequestException as error:
+        raise EbayApiError("eBay OAuth token request failed.") from error
+
+    payload = _response_payload(response, "eBay OAuth")
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        raise EbayApiError("eBay OAuth response does not contain an access token.", details=payload)
+    return token
+
+
+def _notification_signature_header(value: str) -> dict[str, Any]:
+    try:
+        decoded = base64.b64decode(str(value or ""), validate=True).decode("utf-8")
+        payload = json.loads(decoded)
+    except (UnicodeDecodeError, ValueError, binascii.Error) as error:
+        raise EbayApiError("eBay notification signature is invalid.") from error
+    if not isinstance(payload, dict):
+        raise EbayApiError("eBay notification signature is invalid.")
+    return payload
 
 
 def _response_payload(response: requests.Response, source: str) -> dict[str, Any]:
@@ -185,3 +527,53 @@ def _response_payload(response: requests.Response, source: str) -> dict[str, Any
     if not isinstance(payload, dict):
         raise EbayApiError(f"{source} response must be an object.", status_code=response.status_code, details=payload)
     return payload
+
+
+def _shipping_services_payload(*, response: requests.Response, marketplace_id: str) -> dict[str, Any]:
+    try:
+        root = ElementTree.fromstring(response.content)
+    except (AttributeError, ElementTree.ParseError) as error:
+        raise EbayApiError(
+            "eBay shipping-service metadata returned an invalid XML response.",
+            status_code=response.status_code,
+            operation="shipping_services",
+        ) from error
+
+    namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+    errors = [
+        {
+            "code": _xml_text(item, "ebay:ErrorCode", namespace),
+            "message": _xml_text(item, "ebay:LongMessage", namespace) or _xml_text(item, "ebay:ShortMessage", namespace),
+        }
+        for item in root.findall("ebay:Errors", namespace)
+    ]
+    if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+        raise EbayApiError(
+            "eBay shipping-service metadata returned an error response.",
+            status_code=response.status_code,
+            details={"errors": errors},
+            operation="shipping_services",
+        )
+
+    services = []
+    for item in root.findall("ebay:ShippingServiceDetails", namespace):
+        if _xml_text(item, "ebay:ValidForSellingFlow", namespace).lower() != "true":
+            continue
+        service_code = _xml_text(item, "ebay:ShippingService", namespace)
+        if not service_code:
+            continue
+        services.append(
+            {
+                "shipping_service_code": service_code,
+                "shipping_carrier_code": _xml_text(item, "ebay:ShippingCarrier", namespace),
+                "description": _xml_text(item, "ebay:Description", namespace),
+                "international": _xml_text(item, "ebay:InternationalService", namespace).lower() == "true",
+                "shipping_category": _xml_text(item, "ebay:ShippingCategory", namespace),
+                "cost_types": [entry.text for entry in item.findall("ebay:ServiceType", namespace) if entry.text],
+            }
+        )
+    return {"marketplace_id": marketplace_id, "services": services}
+
+
+def _xml_text(element: ElementTree.Element, path: str, namespace: dict[str, str]) -> str:
+    return str(element.findtext(path, default="", namespaces=namespace) or "").strip()
