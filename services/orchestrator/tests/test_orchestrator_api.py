@@ -399,6 +399,40 @@ def test_orchestrator_supports_all_ebay_listing_operations(tmp_path, operation: 
     assert fake.calls == 1
 
 
+def test_orchestrator_preserves_ebay_legacy_identity_for_partial_update():
+    service = OrchestratorService(adapters=SuccessfulAdapters())
+    response = service.execute(
+        ean="4062292372025",
+        request_id="ebay-legacy-price-update",
+        command=OrchestrateRequest(
+            payload={
+                "sku": "4062292372025",
+                "ebay_listing_mode": "legacy",
+                "ebay_item_id": "205926392508",
+                "price": "748.99",
+                "ebay_currency": "EUR",
+            },
+            channels=[
+                ChannelTarget(
+                    marketplace=Marketplace.EBAY,
+                    account="dep",
+                    site="EBAY_DE",
+                    changed_fields=["price"],
+                )
+            ],
+        ),
+    )
+
+    assert response.status.value == "success"
+    assert response.results[0].data["payload"] == {
+        "sku": "4062292372025",
+        "ebay_listing_mode": "legacy",
+        "ebay_item_id": "205926392508",
+        "price": "748.99",
+        "ebay_currency": "EUR",
+    }
+
+
 def test_job_worker_executes_queued_ebay_fetch(tmp_path):
     fake = SuccessfulAdapters()
     service = OrchestratorService(adapters=fake)

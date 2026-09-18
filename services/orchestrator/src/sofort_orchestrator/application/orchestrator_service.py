@@ -21,6 +21,15 @@ from ..infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from ..infra.marketplace_adapters import MarketplaceAdapters
 
 
+_EBAY_IDENTITY_FIELDS = {
+    "sku",
+    "ebay_listing_mode",
+    "ebay_item_id",
+    "ebay_variation_sku",
+    "ebay_currency",
+}
+
+
 class OrchestratorService:
     def __init__(
         self,
@@ -83,6 +92,14 @@ class OrchestratorService:
             if channel.changed_fields:
                 selected = set(channel.changed_fields)
                 scoped_payload = {k: v for k, v in scoped_payload.items() if k in selected}
+                if channel.marketplace is Marketplace.EBAY:
+                    scoped_payload.update(
+                        {
+                            key: value
+                            for key, value in command.payload.model_dump(exclude_none=True).items()
+                            if key in _EBAY_IDENTITY_FIELDS
+                        }
+                    )
             scoped_payload.update(channel.overrides)
 
             # A pooled marketplace EAN is different from the source product
