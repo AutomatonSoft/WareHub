@@ -367,6 +367,7 @@ class EbayOAuthClient:
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
 <GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <ItemID>{item_id}</ItemID>
+  <DetailLevel>ReturnAll</DetailLevel>
   <IncludeItemSpecifics>true</IncludeItemSpecifics>
 </GetItemRequest>'''
         try:
