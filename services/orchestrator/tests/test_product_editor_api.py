@@ -539,6 +539,40 @@ def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_pa
     assert command.payload.quantity == 4
 
 
+def test_product_editor_ebay_plan_accepts_verified_explicit_legacy_item_outside_first_page(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4062292372025"
+    item_id = "205926392508"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_active_listings_by_account["dep"] = []
+    gateway.ebay_legacy_by_account["dep"] = {
+        "listing": {
+            "item_id": item_id,
+            "identifiers": {"EAN": [ean]},
+            "variations": [],
+        }
+    }
+
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": ean,
+            "active_group": "EBAY",
+            "changed_fields": ["price"],
+            "draft": {
+                "ebay_listing_mode": "legacy",
+                "ebay_item_id": item_id,
+                "ebay_currency": "EUR",
+                "price": "748.99",
+            },
+            "selected_target_ids": ["EBAY_DEP"],
+        },
+    )
+
+    assert planned.status_code == 200
+    assert planned.json()["targets"][0]["id"] == "EBAY_DEP"
+
+
 def test_product_editor_otto_apply_merges_price_change_with_current_target_payload(tmp_path):
     client, gateway = _client(tmp_path)
     gateway.otto_by_profile["jv"]["product_variations"][0].update(
