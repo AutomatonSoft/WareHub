@@ -647,6 +647,10 @@ def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dic
         if values:
             identifiers[name] = values
 
+    product_ean = _xml_text(item, "ebay:ProductListingDetails/ebay:EAN", namespace)
+    if product_ean and product_ean not in identifiers.get("EAN", []):
+        identifiers.setdefault("EAN", []).append(product_ean)
+
     return {
         "marketplace_id": marketplace_id,
         "item_id": _xml_text(item, "ebay:ItemID", namespace),
@@ -654,7 +658,10 @@ def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dic
         "title": _xml_text(item, "ebay:Title", namespace),
         "sku": _xml_text(item, "ebay:SKU", namespace),
         "inventory_tracking_method": _xml_text(item, "ebay:InventoryTrackingMethod", namespace),
-        "listing_status": _xml_text(item, "ebay:ListingDetails/ebay:ListingStatus", namespace),
+        "listing_status": _xml_text(item, "ebay:SellingStatus/ebay:ListingStatus", namespace)
+        or _xml_text(item, "ebay:ListingDetails/ebay:ListingStatus", namespace),
+        "quantity": _xml_text(item, "ebay:Quantity", namespace),
+        "quantity_sold": _xml_text(item, "ebay:SellingStatus/ebay:QuantitySold", namespace),
         "quantity_available": _xml_text(item, "ebay:QuantityAvailable", namespace),
         "identifiers": identifiers,
     }
