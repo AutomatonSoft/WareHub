@@ -573,6 +573,40 @@ def test_product_editor_ebay_plan_accepts_verified_explicit_legacy_item_outside_
     assert planned.json()["targets"][0]["id"] == "EBAY_DEP"
 
 
+def test_product_editor_ebay_loads_verified_explicit_legacy_item_outside_first_page(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4062292372025"
+    item_id = "205926392508"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_active_listings_by_account["dep"] = []
+    gateway.ebay_legacy_by_account["dep"] = {
+        "listing": {
+            "item_id": item_id,
+            "identifiers": {"EAN": [ean]},
+            "price": "749.00",
+            "currency": "EUR",
+            "quantity_available": "1",
+        }
+    }
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={
+            "ean": ean,
+            "active_group": "EBAY",
+            "baseline_target_id": "EBAY_DEP",
+            "legacy_item_id": item_id,
+        },
+    )
+
+    assert loaded.status_code == 200
+    draft = loaded.json()["draft"]
+    assert draft["ean"] == ean
+    assert draft["target_id"] == "EBAY_DEP"
+    assert draft["ebay_listing_mode"] == "legacy"
+    assert draft["ebay_item_id"] == item_id
+
+
 def test_product_editor_otto_apply_merges_price_change_with_current_target_payload(tmp_path):
     client, gateway = _client(tmp_path)
     gateway.otto_by_profile["jv"]["product_variations"][0].update(

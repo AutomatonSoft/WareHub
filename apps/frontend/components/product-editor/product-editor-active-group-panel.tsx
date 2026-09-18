@@ -4,6 +4,7 @@ import { ProductEditorHoodPanel } from "./product-editor-hood-panel";
 import { ProductEditorJvPanel } from "./product-editor-jv-panel";
 import { ProductEditorKauflandPanel } from "./product-editor-kaufland-panel";
 import { ProductEditorOttoPanel } from "./product-editor-otto-panel";
+import { ProductEditorEbayPanel } from "./product-editor-ebay-panel";
 import { ProductEditorXlPanel } from "./product-editor-xl-panel";
 import { getProductEditorPlaceholderDetails, getProductEditorTabCopy } from "./product-editor-copy";
 import { ProductEditorEmptyPanel, ProductEditorPlaceholderPanel } from "./product-editor-shared-panels";
@@ -14,6 +15,7 @@ import type {
   ProductEditorJvDraft,
   ProductEditorKauflandDraft,
   ProductEditorOttoDraft,
+  ProductEditorEbayDraft,
   ProductEditorJobResponse,
   ProductEditorPlanResponse,
   ProductEditorTarget
@@ -93,6 +95,13 @@ export function ProductEditorActiveGroupPanel(input: {
   ottoApplyLoading: boolean;
   onPatchOtto: (patch: Partial<ProductEditorOttoDraft>) => void;
   onApplyOttoEditedProducts: () => void;
+  ebayDraft: ProductEditorEbayDraft;
+  ebayWarnings: ProductEditorDiscoverResponse["warnings"];
+  ebayLoading: boolean;
+  ebayChangedFields: string[];
+  ebayApplyLoading: boolean;
+  onPatchEbay: (patch: Partial<ProductEditorEbayDraft>) => void;
+  onApplyEbayEditedProducts: () => void;
 }) {
   const t = useLabels();
   const PRODUCT_EDITOR_TAB_COPY = getProductEditorTabCopy(t);
@@ -267,6 +276,10 @@ export function ProductEditorActiveGroupPanel(input: {
     return <ProductEditorOttoPanel draft={input.ottoDraft} warnings={input.ottoWarnings} loading={input.ottoLoading} applyLoading={input.ottoApplyLoading} changedFields={input.ottoChangedFields} onChange={input.onPatchOtto} onApply={input.onApplyOttoEditedProducts} />;
   }
 
+  if (input.activeGroupId === "EBAY") {
+    return <ProductEditorEbayPanel draft={input.ebayDraft} accountLabel={input.activeTabLabel} warnings={input.ebayWarnings} loading={input.ebayLoading} applyLoading={input.ebayApplyLoading} changedFields={input.ebayChangedFields} onChange={input.onPatchEbay} onApply={input.onApplyEbayEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;
+  }
+
   const details =
     PRODUCT_EDITOR_PLACEHOLDER_DETAILS[input.activeGroupId as keyof typeof PRODUCT_EDITOR_PLACEHOLDER_DETAILS] ??
     [t.productEditorPlaceholderNonActionable];
@@ -278,7 +291,7 @@ export function ProductEditorActiveGroupPanel(input: {
   return (
     <ProductEditorEmptyPanel
       title={formatLabel(t.productEditorEmptyPanelTitle, input.activeTabLabel, input.activeTabLabel)}
-      body={body || PRODUCT_EDITOR_TAB_COPY[input.activeGroupId].subtitle}
+      body={body || t.productEditorPlaceholderNonActionable}
       eanValue={input.eanValue}
       isEanValid={input.isEanValid}
       searching={input.searching}

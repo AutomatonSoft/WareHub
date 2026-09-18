@@ -30,10 +30,12 @@ import {
 } from "./product-editor-batch-edit-dialog";
 import {
   buildHoodChangedFields,
+  buildEbayChangedFields,
   buildJvChangedFields,
   buildKauflandChangedFields,
   buildOttoChangedFields,
   createEmptyHoodDraft,
+  createEmptyEbayDraft,
   createEmptyJvDraft,
   createEmptyKauflandDraft,
   createEmptyOttoDraft,
@@ -42,6 +44,7 @@ import {
   hasActionableHoodTarget,
   hasActionableJvTarget,
   hydrateHoodDraft,
+  hydrateEbayDraft,
   hydrateJvDraft,
   hydrateKauflandDraft,
   hydrateOttoDraft,
@@ -65,6 +68,7 @@ import type {
   ProductEditorJvDraft,
   ProductEditorKauflandDraft,
   ProductEditorOttoDraft,
+  ProductEditorEbayDraft,
   ProductEditorPlanResponse,
   ProductEditorJvSiteKey,
   ProductEditorTarget
@@ -74,6 +78,7 @@ type HoodTabKey = "HOOD_JV" | "HOOD_XL";
 type JvTabKey = "JV" | "XL";
 type KauflandTabKey = "KAUFLAND_JV" | "KAUFLAND_XL";
 type OttoTabKey = "OTTO_JV" | "OTTO_XL";
+type EbayTabKey = "EBAY_JV" | "EBAY_XL" | "EBAY_DEP";
 type HoodDraftsByTab = Record<HoodTabKey, ProductEditorHoodDraft>;
 type HoodWarningsByTab = Record<HoodTabKey, ProductEditorDiscoverResponse["warnings"]>;
 type HoodLoadingByTab = Record<HoodTabKey, boolean>;
@@ -112,6 +117,7 @@ const PRODUCT_EDITOR_QUERY_PARAM_BY_TAB: Record<string, string> = {
   OTTO_XL: "otto_xl",
   EBAY_JV: "ebay_jv",
   EBAY_XL: "ebay_xl",
+  EBAY_DEP: "ebay_dep",
 };
 
 function isValidProductIdentifier(value: string): boolean {
@@ -185,6 +191,11 @@ function ProductEditorContent() {
   const [ottoDraftsByTab, setOttoDraftsByTab] = useState<DraftsByTab<ProductEditorOttoDraft, OttoTabKey>>(createEmptyOttoDraftsByTab());
   const [initialOttoDraftsByTab, setInitialOttoDraftsByTab] = useState<DraftsByTab<ProductEditorOttoDraft, OttoTabKey>>(createEmptyOttoDraftsByTab());
   const [ottoWarningsByTab, setOttoWarningsByTab] = useState<WarningsByTab<OttoTabKey>>(createEmptyOttoWarningsByTab());
+  const [ebayLoadingByTab, setEbayLoadingByTab] = useState<LoadingByTab<EbayTabKey>>(createEmptyEbayLoadingByTab());
+  const [ebayApplyLoading, setEbayApplyLoading] = useState(false);
+  const [ebayDraftsByTab, setEbayDraftsByTab] = useState<DraftsByTab<ProductEditorEbayDraft, EbayTabKey>>(createEmptyEbayDraftsByTab());
+  const [initialEbayDraftsByTab, setInitialEbayDraftsByTab] = useState<DraftsByTab<ProductEditorEbayDraft, EbayTabKey>>(createEmptyEbayDraftsByTab());
+  const [ebayWarningsByTab, setEbayWarningsByTab] = useState<WarningsByTab<EbayTabKey>>(createEmptyEbayWarningsByTab());
 
   const [planLoading, setPlanLoading] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -227,6 +238,7 @@ function ProductEditorContent() {
   const activeJvTabKey = getJvTabKey(activeTabKey);
   const activeKauflandTabKey = getKauflandTabKey(activeTabKey);
   const activeOttoTabKey = getOttoTabKey(activeTabKey);
+  const activeEbayTabKey = getEbayTabKey(activeTabKey);
   const hoodDraft = activeHoodTabKey ? hoodDraftsByTab[activeHoodTabKey] : createEmptyHoodDraft();
   const initialHoodDraft = activeHoodTabKey ? initialHoodDraftsByTab[activeHoodTabKey] : createEmptyHoodDraft();
   const hoodWarnings = activeHoodTabKey ? hoodWarningsByTab[activeHoodTabKey] : [];
@@ -245,6 +257,10 @@ function ProductEditorContent() {
   const initialOttoDraft = activeOttoTabKey ? initialOttoDraftsByTab[activeOttoTabKey] : createEmptyOttoDraft();
   const ottoWarnings = activeOttoTabKey ? ottoWarningsByTab[activeOttoTabKey] : [];
   const ottoLoading = activeOttoTabKey ? ottoLoadingByTab[activeOttoTabKey] : false;
+  const ebayDraft = activeEbayTabKey ? ebayDraftsByTab[activeEbayTabKey] : createEmptyEbayDraft();
+  const initialEbayDraft = activeEbayTabKey ? initialEbayDraftsByTab[activeEbayTabKey] : createEmptyEbayDraft();
+  const ebayWarnings = activeEbayTabKey ? ebayWarningsByTab[activeEbayTabKey] : [];
+  const ebayLoading = activeEbayTabKey ? ebayLoadingByTab[activeEbayTabKey] : false;
   const isGlobalEanValid = isValidProductIdentifier(eanInput);
   const isEffectiveTabEanValid = isValidProductIdentifier(effectiveTabEanInput);
   const hasLocalLoadedJv =
@@ -258,6 +274,7 @@ function ProductEditorContent() {
   const jvChangedFields = useMemo(() => buildJvChangedFields(initialJvDraft, jvDraft), [initialJvDraft, jvDraft]);
   const kauflandChangedFields = useMemo(() => buildKauflandChangedFields(initialKauflandDraft, kauflandDraft), [initialKauflandDraft, kauflandDraft]);
   const ottoChangedFields = useMemo(() => buildOttoChangedFields(initialOttoDraft, ottoDraft), [initialOttoDraft, ottoDraft]);
+  const ebayChangedFields = useMemo(() => buildEbayChangedFields(initialEbayDraft, ebayDraft), [initialEbayDraft, ebayDraft]);
   const changedMarketplacePlans = useMemo(() => {
     const changes: ProductEditorChangedMarketplace[] = [];
     const addChange = (input: ProductEditorChangedMarketplace) => {
@@ -317,6 +334,19 @@ function ProductEditorContent() {
       });
     });
 
+    (Object.keys(ebayDraftsByTab) as EbayTabKey[]).forEach((tabKey) => {
+      if (!dirtyTabKeys.has(tabKey)) return;
+      const draft = ebayDraftsByTab[tabKey];
+      addChange({
+        tabKey,
+        groupId: "EBAY",
+        ean: draft.ean.trim(),
+        changedFields: buildEbayChangedFields(initialEbayDraftsByTab[tabKey], draft),
+        draft: draft as unknown as Record<string, unknown>,
+        selectedTargetIds: draft.target_id ? [draft.target_id] : getTargetIdsForTab(discover, tabKey, ["found"]),
+      });
+    });
+
     return changes;
   }, [
     discover,
@@ -326,9 +356,11 @@ function ProductEditorContent() {
     initialJvDraftsByTab,
     initialKauflandDraftsByTab,
     initialOttoDraftsByTab,
+    initialEbayDraftsByTab,
     jvDraftsByTab,
     kauflandDraftsByTab,
     ottoDraftsByTab,
+    ebayDraftsByTab,
   ]);
   const batchEditSites = useMemo<ProductEditorBatchEditSite[]>(() => (
     changedMarketplacePlans.map((change) => {
@@ -566,7 +598,9 @@ function ProductEditorContent() {
               ? await loadKauflandDraftByEan(ean, tab.key)
               : tab.key === "OTTO_JV" || tab.key === "OTTO_XL"
                 ? await loadOttoDraftByEan(ean, tab.key)
-              : await runDiscover(ean, tab.groupId, tab.key);
+                : tab.key === "EBAY_JV" || tab.key === "EBAY_XL" || tab.key === "EBAY_DEP"
+                  ? await loadEbayDraftByEan(ean, tab.key)
+                  : await runDiscover(ean, tab.groupId, tab.key);
       setTabSearchStatuses((current) => ({ ...current, [tab.key]: found ? "found" : "missing" }));
       if (!found && notifyWhenMissing) {
         showToast(t.productEditorProductNotFound.replace("{tab}", getProductEditorDisplayTabLabel(tab.key, t)), "error");
@@ -636,6 +670,16 @@ function ProductEditorContent() {
     setDiscover(limitDiscoverToActiveGroup(discovered, "OTTO"));
     if (getTabSearchStatus(discovered, tabKey) !== "found") return false;
     return loadOttoDraftForTab(ean, tabKey, getPreferredTargetIdForTab(discovered, tabKey));
+  }
+
+  async function loadEbayDraftByEan(ean: string, tabKey: EbayTabKey = "EBAY_JV"): Promise<boolean> {
+    const discovered = await discoverProductEditor(ean, "EBAY");
+    setDiscover(limitDiscoverToActiveGroup(discovered, "EBAY"));
+    const legacyItemId = ebayDraftsByTab[tabKey].ebay_listing_mode === "legacy"
+      ? ebayDraftsByTab[tabKey].ebay_item_id.trim()
+      : "";
+    const baselineTargetId = getPreferredTargetIdForTab(discovered, tabKey) ?? tabKey;
+    return loadEbayDraftForTab(ean, tabKey, baselineTargetId, legacyItemId);
   }
 
   async function loadHoodDraftByEan(ean: string, tabKeyOverride?: HoodTabKey): Promise<boolean> {
@@ -796,6 +840,28 @@ function ProductEditorContent() {
     }
   }
 
+  async function loadEbayDraftForTab(
+    ean: string,
+    tabKey: EbayTabKey,
+    baselineTargetId?: string | null,
+    legacyItemId?: string,
+  ): Promise<boolean> {
+    const loadVersion = beginDraftLoad(tabKey);
+    setEbayTabLoading(tabKey, true);
+    try {
+      const response = await loadProductEditorGroup({ ean, activeGroup: "EBAY", baselineTargetId, legacyItemId });
+      const hydrated = hydrateEbayDraft(response.draft as unknown as ProductEditorEbayDraft);
+      if (!response.supported || !hydrated.target_id) return false;
+      if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
+      setEbayTabDraft(tabKey, hydrated);
+      setInitialEbayTabDraft(tabKey, hydrated);
+      setEbayTabWarnings(tabKey, response.warnings);
+      return true;
+    } finally {
+      if (isCurrentDraftLoad(tabKey, loadVersion)) setEbayTabLoading(tabKey, false);
+    }
+  }
+
   function patchActiveTabEan(value: string) {
     setTabEanInputs((current) => ({ ...current, [activeTabKey]: value }));
   }
@@ -854,6 +920,14 @@ function ProductEditorContent() {
     const tabKey = getOttoTabKey(activeTabKey);
     if (!tabKey) return;
     setOttoDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
+    markTabDirty(tabKey);
+    clearPlanStateOnly();
+  }
+
+  function patchEbayDraft(patch: Partial<ProductEditorEbayDraft>) {
+    const tabKey = getEbayTabKey(activeTabKey);
+    if (!tabKey) return;
+    setEbayDraftsByTab((current) => ({ ...current, [tabKey]: { ...current[tabKey], ...patch } }));
     markTabDirty(tabKey);
     clearPlanStateOnly();
   }
@@ -1410,6 +1484,49 @@ function ProductEditorContent() {
     }
   }
 
+  async function handleApplyEbayEditedProducts() {
+    const ean = ebayDraft.ean.trim();
+    if (!isValidProductIdentifier(ean) || ebayChangedFields.length === 0) {
+      showToast(!isValidProductIdentifier(ean) ? "eBay EAN is invalid." : "No edited eBay fields to apply.", "error");
+      return;
+    }
+    const selectedTargetIds = ebayDraft.target_id.trim()
+      ? [ebayDraft.target_id]
+      : getTargetIdsForTab(discover, activeTabKey, ["found"]);
+    if (selectedTargetIds.length === 0) {
+      showToast("No reachable eBay target is available for apply.", "error");
+      return;
+    }
+    setEbayApplyLoading(true);
+    setPageError(null);
+    try {
+      const plan = await planProductEditor({
+        ean,
+        activeGroup: "EBAY",
+        changedFields: ebayChangedFields,
+        draft: ebayDraft as unknown as Record<string, unknown>,
+        selectedTargetIds,
+      });
+      setPlanResponse(plan);
+      const response = await applyProductEditorPlan(plan.plan_id);
+      setApplyResponse(response);
+      const finalJob = await waitForOrchestratorJobToFinish(response.job_id);
+      if (String(finalJob.status).toLowerCase() === "completed") {
+        const tabKey = getEbayTabKey(activeTabKey);
+        if (tabKey) setInitialEbayTabDraft(tabKey, ebayDraft);
+        showToast("eBay changes applied.", "success");
+      } else {
+        showToast("eBay apply completed with failed targets.", "error");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "eBay apply failed.";
+      setPageError(message);
+      showToast(message, "error");
+    } finally {
+      setEbayApplyLoading(false);
+    }
+  }
+
   function handleRemoveHoodImage(imageUrl: string) {
     applyHoodImagesUpdate(removeHoodImage(hoodDraft.images, imageUrl));
   }
@@ -1761,6 +1878,22 @@ function ProductEditorContent() {
     setOttoLoadingByTab((current) => ({ ...current, [tabKey]: loading }));
   }
 
+  function setEbayTabDraft(tabKey: EbayTabKey, draft: ProductEditorEbayDraft) {
+    setEbayDraftsByTab((current) => ({ ...current, [tabKey]: draft }));
+  }
+
+  function setInitialEbayTabDraft(tabKey: EbayTabKey, draft: ProductEditorEbayDraft) {
+    setInitialEbayDraftsByTab((current) => ({ ...current, [tabKey]: draft }));
+  }
+
+  function setEbayTabWarnings(tabKey: EbayTabKey, warnings: ProductEditorDiscoverResponse["warnings"]) {
+    setEbayWarningsByTab((current) => ({ ...current, [tabKey]: warnings }));
+  }
+
+  function setEbayTabLoading(tabKey: EbayTabKey, loading: boolean) {
+    setEbayLoadingByTab((current) => ({ ...current, [tabKey]: loading }));
+  }
+
   return (
     <AppShell title={t.navProductEditor} subtitle={t.productEditorWorkspaceSubtitle}>
       <div className="wh-product-editor-page flex min-h-[calc(100dvh-1.5rem)] w-full flex-col gap-[12px]">
@@ -1783,7 +1916,7 @@ function ProductEditorContent() {
             canEdit={batchEditSites.length > 0 && !globalPlanLoading && !globalApplyLoading}
           >
             <Tabs value={activeTabKey} onValueChange={handleTabChange} className="w-full">
-              <TabsList className="grid h-auto w-full min-w-max grid-cols-10 gap-2 overflow-x-auto bg-transparent p-0 md:min-w-0">
+              <TabsList className="grid h-auto w-full min-w-max grid-cols-11 gap-2 overflow-x-auto bg-transparent p-0 md:min-w-0">
                 {PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => {
                   const searchStatus = tabSearchStatuses[tab.key] ?? "idle";
                   const statusLabel = searchStatus === "loading"
@@ -1910,6 +2043,13 @@ function ProductEditorContent() {
             ottoApplyLoading={ottoApplyLoading}
             onPatchOtto={patchOttoDraft}
             onApplyOttoEditedProducts={() => void handleApplyOttoEditedProducts()}
+            ebayDraft={ebayDraft}
+            ebayWarnings={ebayWarnings}
+            ebayLoading={ebayLoading}
+            ebayChangedFields={ebayChangedFields}
+            ebayApplyLoading={ebayApplyLoading}
+            onPatchEbay={patchEbayDraft}
+            onApplyEbayEditedProducts={() => void handleApplyEbayEditedProducts()}
               />
             </motion.div>
           </AnimatePresence>
@@ -2000,7 +2140,8 @@ const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGr
   { key: "OTTO_JV", groupId: "OTTO" },
   { key: "OTTO_XL", groupId: "OTTO" },
   { key: "EBAY_JV", groupId: "EBAY" },
-  { key: "EBAY_XL", groupId: "EBAY" }
+  { key: "EBAY_XL", groupId: "EBAY" },
+  { key: "EBAY_DEP", groupId: "EBAY" }
 ];
 
 function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof useLabels>): string {
@@ -2025,6 +2166,8 @@ function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof us
       return `${t.channelEbay} ${t.channelJv}`;
     case "EBAY_XL":
       return `${t.channelEbay} ${t.channelXl}`;
+    case "EBAY_DEP":
+      return `${t.channelEbay} DEP`;
     default:
       return tabKey;
   }
@@ -2087,6 +2230,22 @@ function createEmptyOttoLoadingByTab(): LoadingByTab<OttoTabKey> {
   return { OTTO_JV: false, OTTO_XL: false };
 }
 
+function createEmptyEbayDraftsByTab(): DraftsByTab<ProductEditorEbayDraft, EbayTabKey> {
+  return {
+    EBAY_JV: createEmptyEbayDraft(),
+    EBAY_XL: createEmptyEbayDraft(),
+    EBAY_DEP: createEmptyEbayDraft(),
+  };
+}
+
+function createEmptyEbayWarningsByTab(): WarningsByTab<EbayTabKey> {
+  return { EBAY_JV: [], EBAY_XL: [], EBAY_DEP: [] };
+}
+
+function createEmptyEbayLoadingByTab(): LoadingByTab<EbayTabKey> {
+  return { EBAY_JV: false, EBAY_XL: false, EBAY_DEP: false };
+}
+
 function getHoodTabKey(tabKey: string): HoodTabKey | null {
   if (tabKey === "HOOD_JV" || tabKey === "HOOD_XL") return tabKey;
   return null;
@@ -2102,6 +2261,10 @@ function getKauflandTabKey(tabKey: string): KauflandTabKey | null {
 
 function getOttoTabKey(tabKey: string): OttoTabKey | null {
   return tabKey === "OTTO_JV" || tabKey === "OTTO_XL" ? tabKey : null;
+}
+
+function getEbayTabKey(tabKey: string): EbayTabKey | null {
+  return tabKey === "EBAY_JV" || tabKey === "EBAY_XL" || tabKey === "EBAY_DEP" ? tabKey : null;
 }
 
 function getHoodTabKeyForTargetId(targetId?: string | null): HoodTabKey | null {
