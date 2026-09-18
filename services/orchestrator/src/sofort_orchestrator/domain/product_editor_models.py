@@ -105,6 +105,7 @@ class ProductEditorLoadRequest(BaseModel):
     active_group: ProductEditorGroupId
     baseline_target_id: str | None = None
     publishing_target_id: str | None = None
+    legacy_item_id: str | None = None
 
 
 class ProductEditorLoadResponse(BaseModel):

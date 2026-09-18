@@ -146,6 +146,17 @@ export type ProductEditorOttoDraft = {
   compliance: Record<string, unknown>;
 };
 
+export type ProductEditorEbayDraft = {
+  target_id: string;
+  ean: string;
+  ebay_listing_mode: "inventory" | "legacy";
+  ebay_item_id: string;
+  ebay_variation_sku: string;
+  price: string;
+  quantity: string;
+  ebay_currency: string;
+};
+
 export type ProductEditorJvDescription = {
   language_id: number;
   name: string;

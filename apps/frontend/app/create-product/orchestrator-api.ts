@@ -217,6 +217,7 @@ export async function createMainMarketplaceProductJob(input: {
   hoodPayload: Record<string, unknown>;
   kauflandPayload: Record<string, unknown>;
   ottoPayload: Record<string, unknown>;
+  ebayPayload?: Record<string, unknown>;
 }): Promise<{ jobId: string; raw: Record<string, unknown> }> {
   const xljvChangedFields = [
     "title", "description", "source_model", "source_sku", "source_ean_field", "price", "quantity", "status", "manufacturer_id", "stock_status_id", "tax_class_id", "image", "date_available", "images", "categories", "stores", "jv_fields",
@@ -229,6 +230,9 @@ export async function createMainMarketplaceProductJob(input: {
   ];
   const ottoChangedFields = [
     "productReference", "sku", "ean", "pzn", "mpn", "moin", "releaseDate", "productDescription", "mediaAssets", "delivery", "order", "pricing", "logistics", "compliance", "shippingProfileId",
+  ];
+  const ebayChangedFields = [
+    "sku", "ebay_listing_mode", "ebay_inventory_item", "ebay_offer", "quantity", "price", "ebay_currency",
   ];
   const primaryImage = input.imageUrls[0] || "";
   const payload = {
@@ -285,6 +289,17 @@ export async function createMainMarketplaceProductJob(input: {
         changed_fields: ottoChangedFields,
         overrides: input.ottoPayload,
         ean_source: "pool",
+      });
+      continue;
+    }
+    if (site.family === "EBAY") {
+      channels.push({
+        marketplace: Marketplace.ebay,
+        account: site.kind.toLowerCase(),
+        site: "EBAY_DE",
+        changed_fields: ebayChangedFields,
+        overrides: input.ebayPayload ?? {},
+        ean_source: "main",
       });
     }
   }

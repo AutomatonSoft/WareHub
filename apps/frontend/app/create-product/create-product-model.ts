@@ -22,6 +22,21 @@ export type NormalizedCreateProductInput = {
   imageUrls: string[];
 };
 
+export type EbayCreateFields = {
+  ean: string;
+  title: string;
+  description: string;
+  price: string;
+  quantity: string;
+  condition: string;
+  categoryId: string;
+  aspectsText: string;
+  merchantLocationKey: string;
+  fulfillmentPolicyId: string;
+  paymentPolicyId: string;
+  returnPolicyId: string;
+};
+
 export type HoodCreateFields = {
   description: string;
   quantity: string;

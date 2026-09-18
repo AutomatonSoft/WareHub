@@ -111,6 +111,7 @@ def product_editor_load(
             active_group=body.active_group,
             baseline_target_id=body.baseline_target_id,
             publishing_target_id=body.publishing_target_id,
+            legacy_item_id=body.legacy_item_id,
         )
     except ProductEditorServiceError as exc:
         return _error_response(status_code=exc.status_code, request_id=request_id, code=exc.code, message=exc.message, details=exc.details)

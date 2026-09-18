@@ -9,8 +9,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Healthz */
-        get: operations["healthz_api_v1_healthz_get"];
+        /**
+         * Healthz
+         * @description Lightweight liveness probe for the orchestrator process.
+         */
+        get: operations["orchestrator_get_api_v1_healthz"];
         put?: never;
         post?: never;
         delete?: never;
@@ -26,8 +29,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Metrics */
-        get: operations["metrics_api_v1_metrics_get"];
+        /**
+         * Metrics
+         * @description Returns in-memory request, job store, database pool and circuit-breaker metrics.
+         */
+        get: operations["orchestrator_get_api_v1_metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get orchestrator OpenAPI schema
+         * @description Returns the normalized OpenAPI document for the orchestrator service.
+         */
+        get: operations["orchestrator_get_api_v1_openapi.json"];
         put?: never;
         post?: never;
         delete?: never;
@@ -43,10 +69,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Orchestrator Jobs
+         * @description Queues one asynchronous orchestrator job and returns its job identifier.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_jobs"];
         put?: never;
-        /** Create Orchestrator Job */
-        post: operations["create_orchestrator_job_api_v1_orchestrator_jobs_post"];
+        /**
+         * Create Orchestrator Job
+         * @description Queues one asynchronous orchestrator job and returns its job identifier.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_jobs"];
         delete?: never;
         options?: never;
         head?: never;
@@ -60,8 +93,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Orchestrator Job */
-        get: operations["get_orchestrator_job_api_v1_orchestrator_jobs__job_id__get"];
+        /**
+         * Get Orchestrator Job
+         * @description Returns the current persisted status for one orchestrator job.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_jobs_job_id"];
         put?: never;
         post?: never;
         delete?: never;
@@ -77,8 +113,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Orchestrator Job Attempts */
-        get: operations["get_orchestrator_job_attempts_api_v1_orchestrator_jobs__job_id__attempts_get"];
+        /**
+         * Get Orchestrator Job Attempts
+         * @description Returns execution attempt history for one orchestrator job.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_jobs_job_id_attempts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -94,8 +133,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Orchestrator Job Events */
-        get: operations["get_orchestrator_job_events_api_v1_orchestrator_jobs__job_id__events_get"];
+        /**
+         * Get Orchestrator Job Events
+         * @description Returns recorded event history for one orchestrator job.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_jobs_job_id_events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -113,8 +155,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Orchestrator Jobs Batch */
-        post: operations["create_orchestrator_jobs_batch_api_v1_orchestrator_jobs_batch_post"];
+        /**
+         * Create Orchestrator Jobs Batch
+         * @description Queues multiple orchestrator jobs in a single request.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_jobs_batch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -130,8 +175,71 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get Orchestrator Jobs Status Batch */
-        post: operations["get_orchestrator_jobs_status_batch_api_v1_orchestrator_jobs_status_batch_post"];
+        /**
+         * Get Orchestrator Jobs Status Batch
+         * @description Loads status snapshots for multiple orchestrator job identifiers.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_jobs_status_batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orchestrator/marketplace/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Marketplace Toggle Jobs
+         * @description GET /api/v1/orchestrator/marketplace/jobs.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_marketplace_jobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orchestrator/marketplace/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Marketplace Toggle Job
+         * @description GET /api/v1/orchestrator/marketplace/jobs/{job_id}.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_marketplace_jobs_job_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orchestrator/marketplace/toggle-by-kid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Marketplace Toggle Job
+         * @description POST /api/v1/orchestrator/marketplace/toggle-by-kid.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_marketplace_toggle_by_kid"];
         delete?: never;
         options?: never;
         head?: never;
@@ -147,25 +255,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Product Editor Apply */
-        post: operations["product_editor_apply_api_v1_orchestrator_product_editor_apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/orchestrator/product-editor/apply/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Product Editor Apply */
-        post: operations["product_editor_apply_api_v1_orchestrator_product_editor_apply__post"];
+        /**
+         * Product Editor Apply
+         * @description Applies a previously generated Product Editor plan after explicit confirmation.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_product_editor_apply"];
         delete?: never;
         options?: never;
         head?: never;
@@ -181,25 +275,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Product Editor Discover */
-        post: operations["product_editor_discover_api_v1_orchestrator_product_editor_discover_post"];
+        /**
+         * Product Editor Discover
+         * @description Discovers Product Editor groups, capabilities and initial warnings for a given EAN.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_product_editor_discover"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/orchestrator/product-editor/discover/": {
+    "/api/v1/orchestrator/product-editor/jobs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Product Editor Jobs List
+         * @description Returns Product Editor job status, target execution state and warnings.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_product_editor_jobs"];
         put?: never;
-        /** Product Editor Discover */
-        post: operations["product_editor_discover_api_v1_orchestrator_product_editor_discover__post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -213,25 +313,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Product Editor Job Status */
-        get: operations["product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/orchestrator/product-editor/jobs/{job_id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Product Editor Job Status */
-        get: operations["product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id___get"];
+        /**
+         * Product Editor Job Status
+         * @description Returns Product Editor job status, target execution state and warnings.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id"];
         put?: never;
         post?: never;
         delete?: never;
@@ -249,25 +335,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Product Editor Load */
-        post: operations["product_editor_load_api_v1_orchestrator_product_editor_load_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/orchestrator/product-editor/load/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Product Editor Load */
-        post: operations["product_editor_load_api_v1_orchestrator_product_editor_load__post"];
+        /**
+         * Product Editor Load
+         * @description Loads Product Editor baseline data and current target state for a selected group.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_product_editor_load"];
         delete?: never;
         options?: never;
         head?: never;
@@ -283,25 +355,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Product Editor Plan */
-        post: operations["product_editor_plan_api_v1_orchestrator_product_editor_plan_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/orchestrator/product-editor/plan/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Product Editor Plan */
-        post: operations["product_editor_plan_api_v1_orchestrator_product_editor_plan__post"];
+        /**
+         * Product Editor Plan
+         * @description Builds a Product Editor execution plan from draft changes and selected targets.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_product_editor_plan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -317,8 +375,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Orchestrate Update */
-        post: operations["orchestrate_update_api_v1_orchestrator_products__ean__update_post"];
+        /**
+         * Orchestrate Update
+         * @description Executes a direct orchestrator product update request for the provided EAN across selected channels.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_products_ean_update"];
         delete?: never;
         options?: never;
         head?: never;
@@ -334,8 +395,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reconcile Orchestrator State */
-        post: operations["reconcile_orchestrator_state_api_v1_orchestrator_reconciliation_diff_post"];
+        /**
+         * Reconcile Orchestrator State
+         * @description Computes desired-versus-actual channel state differences for one EAN.
+         */
+        post: operations["orchestrator_post_api_v1_orchestrator_reconciliation_diff"];
         delete?: never;
         options?: never;
         head?: never;
@@ -349,8 +413,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Reconciliation Reports */
-        get: operations["list_reconciliation_reports_api_v1_orchestrator_reconciliation_reports_get"];
+        /**
+         * List Reconciliation Reports
+         * @description Lists stored reconciliation reports, optionally filtered by request parameters.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_reconciliation_reports"];
         put?: never;
         post?: never;
         delete?: never;
@@ -366,8 +433,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Reconciliation Report */
-        get: operations["get_reconciliation_report_api_v1_orchestrator_reconciliation_reports__report_id__get"];
+        /**
+         * Get Reconciliation Report
+         * @description Returns one persisted reconciliation report by identifier.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_reconciliation_reports_report_id"];
         put?: never;
         post?: never;
         delete?: never;
@@ -383,8 +453,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Readyz */
-        get: operations["readyz_api_v1_readyz_get"];
+        /**
+         * Readyz
+         * @description Readiness probe that validates the orchestrator idempotency store connection.
+         */
+        get: operations["orchestrator_get_api_v1_readyz"];
         put?: never;
         post?: never;
         delete?: never;
@@ -423,12 +496,20 @@ export interface components {
             categories?: {
                 [key: string]: unknown;
             }[] | null;
+            /** Categoryid */
+            categoryID?: string | null;
             /** Compliance */
             compliance?: {
                 [key: string]: unknown;
             } | null;
+            /** Condition */
+            condition?: string | null;
             /** Date Available */
             date_available?: string | null;
+            /** Delivery */
+            delivery?: {
+                [key: string]: unknown;
+            } | null;
             /** Description */
             description?: string | null;
             /** Descriptions */
@@ -437,10 +518,32 @@ export interface components {
             }[] | null;
             /** Ean */
             ean?: string | null;
+            /** Ebay Currency */
+            ebay_currency?: string | null;
+            /** Ebay Inventory Item */
+            ebay_inventory_item?: {
+                [key: string]: unknown;
+            } | null;
+            /** Ebay Item Id */
+            ebay_item_id?: string | null;
+            /** Ebay Listing Mode */
+            ebay_listing_mode?: CanonicalPayloadEbay_listing_modeAnyOf0 | null;
+            /** Ebay Offer */
+            ebay_offer?: {
+                [key: string]: unknown;
+            } | null;
+            /** Ebay Variation Sku */
+            ebay_variation_sku?: string | null;
             /** Image */
             image?: string | null;
             /** Images */
             images?: string[] | null;
+            /** Isbn */
+            isbn?: string | null;
+            /** Itemmode */
+            itemMode?: string | null;
+            /** Itemnumber */
+            itemNumber?: string | null;
             /** Jv Fields */
             jv_fields?: {
                 [key: string]: unknown;
@@ -451,6 +554,8 @@ export interface components {
             } | null;
             /** Manufacturer Id */
             manufacturer_id?: number | null;
+            /** Maxorderquantity */
+            maxOrderQuantity?: number | null;
             /** Mediaassets */
             mediaAssets?: {
                 [key: string]: unknown;
@@ -459,6 +564,8 @@ export interface components {
             moin?: string | null;
             /** Mpn */
             mpn?: string | null;
+            /** Offeringstartdate */
+            offeringStartDate?: string | null;
             /** Order */
             order?: {
                 [key: string]: unknown;
@@ -475,6 +582,10 @@ export interface components {
             productDescription?: {
                 [key: string]: unknown;
             } | null;
+            /** Productproperties */
+            productProperties?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Productreference */
             productReference?: string | null;
             /** Pzn */
@@ -483,6 +594,8 @@ export interface components {
             quantity?: number | null;
             /** Releasedate */
             releaseDate?: string | null;
+            /** Shippingprofileid */
+            shippingProfileId?: string | null;
             /** Sku */
             sku?: string | null;
             /** Source Ean Field */
@@ -511,6 +624,8 @@ export interface components {
             title?: string | null;
             /** Unit Id */
             unit_id?: number | null;
+            /** Upc */
+            upc?: string | null;
         };
         /** ChannelTarget */
         ChannelTarget: {
@@ -579,6 +694,88 @@ export interface components {
          * @enum {string}
          */
         Marketplace: Marketplace;
+        /** MarketplaceToggleCreateResponse */
+        MarketplaceToggleCreateResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Request Id */
+            request_id: string;
+            status: components["schemas"]["JobStatus"];
+        };
+        /** MarketplaceToggleJobListResponse */
+        MarketplaceToggleJobListResponse: {
+            /** Jobs */
+            jobs?: components["schemas"]["MarketplaceToggleJobResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Request Id */
+            request_id: string;
+            /** Total */
+            total: number;
+        };
+        /** MarketplaceToggleJobResponse */
+        MarketplaceToggleJobResponse: {
+            /** Created At Unix Ms */
+            created_at_unix_ms?: number | null;
+            error?: components["schemas"]["ErrorContract"] | null;
+            /** Inactive */
+            inactive: boolean;
+            /** Job Id */
+            job_id: string;
+            job_status: components["schemas"]["JobStatus"];
+            /** Kid Number */
+            kid_number: string;
+            /** Request Id */
+            request_id: string;
+            /** Results */
+            results?: components["schemas"]["MarketplaceToggleResultItem"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: MarketplaceToggleJobResponseStatus;
+            summary?: components["schemas"]["MarketplaceToggleSummary"] | null;
+            /** Updated At Unix Ms */
+            updated_at_unix_ms?: number | null;
+        };
+        /** MarketplaceToggleRequest */
+        MarketplaceToggleRequest: {
+            /**
+             * Inactive
+             * @default true
+             */
+            inactive: boolean;
+            /** Kid Number */
+            kid_number: string;
+            /** Place */
+            place?: string | null;
+        };
+        /** MarketplaceToggleResultItem */
+        MarketplaceToggleResultItem: {
+            /** Channel */
+            channel: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Ok */
+            ok: boolean;
+            /** Site Key */
+            site_key: string;
+            /** Status Code */
+            status_code: number;
+        };
+        /** MarketplaceToggleSummary */
+        MarketplaceToggleSummary: {
+            /** Failed */
+            failed: number;
+            /** Success */
+            success: number;
+            /** Total */
+            total: number;
+        };
         /**
          * Operation
          * @enum {string}
@@ -588,6 +785,8 @@ export interface components {
         OrchestrateRequest: {
             /** Channels */
             channels: components["schemas"]["ChannelTarget"][];
+            /** Kid Number */
+            kid_number?: string | null;
             /** @default update */
             operation: components["schemas"]["Operation"];
             payload: components["schemas"]["CanonicalPayload"];
@@ -697,9 +896,26 @@ export interface components {
          * @enum {string}
          */
         ProductEditorGroupId: ProductEditorGroupId;
+        /** ProductEditorJobListResponse */
+        ProductEditorJobListResponse: {
+            /** Jobs */
+            jobs?: components["schemas"]["ProductEditorJobResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Request Id */
+            request_id: string;
+            /** Total */
+            total: number;
+        };
         /** ProductEditorJobResponse */
         ProductEditorJobResponse: {
             active_group?: components["schemas"]["ProductEditorGroupId"] | null;
+            /** Created At Unix Ms */
+            created_at_unix_ms?: number | null;
+            /** Ean */
+            ean?: string | null;
             error?: components["schemas"]["ErrorContract"] | null;
             /** Job Id */
             job_id: string;
@@ -715,6 +931,8 @@ export interface components {
             targets?: {
                 [key: string]: unknown;
             }[];
+            /** Updated At Unix Ms */
+            updated_at_unix_ms?: number | null;
         };
         /** ProductEditorLoadRequest */
         ProductEditorLoadRequest: {
@@ -723,6 +941,10 @@ export interface components {
             baseline_target_id?: string | null;
             /** Ean */
             ean: string;
+            /** Legacy Item Id */
+            legacy_item_id?: string | null;
+            /** Publishing Target Id */
+            publishing_target_id?: string | null;
         };
         /** ProductEditorLoadResponse */
         ProductEditorLoadResponse: {
@@ -880,6 +1102,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -896,7 +1122,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    healthz_api_v1_healthz_get: {
+    orchestrator_get_api_v1_healthz: {
         parameters: {
             query?: never;
             header?: never;
@@ -918,7 +1144,7 @@ export interface operations {
             };
         };
     };
-    metrics_api_v1_metrics_get: {
+    orchestrator_get_api_v1_metrics: {
         parameters: {
             query?: never;
             header?: never;
@@ -940,7 +1166,60 @@ export interface operations {
             };
         };
     };
-    create_orchestrator_job_api_v1_orchestrator_jobs_post: {
+    "orchestrator_get_api_v1_openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OpenAPI JSON document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    orchestrator_get_api_v1_orchestrator_jobs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                query?: string;
+            };
+            header?: {
+                "X-Request-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orchestrator_post_api_v1_orchestrator_jobs: {
         parameters: {
             query?: never;
             header?: {
@@ -976,7 +1255,7 @@ export interface operations {
             };
         };
     };
-    get_orchestrator_job_api_v1_orchestrator_jobs__job_id__get: {
+    orchestrator_get_api_v1_orchestrator_jobs_job_id: {
         parameters: {
             query?: never;
             header?: {
@@ -1009,7 +1288,7 @@ export interface operations {
             };
         };
     };
-    get_orchestrator_job_attempts_api_v1_orchestrator_jobs__job_id__attempts_get: {
+    orchestrator_get_api_v1_orchestrator_jobs_job_id_attempts: {
         parameters: {
             query?: never;
             header?: {
@@ -1042,7 +1321,7 @@ export interface operations {
             };
         };
     };
-    get_orchestrator_job_events_api_v1_orchestrator_jobs__job_id__events_get: {
+    orchestrator_get_api_v1_orchestrator_jobs_job_id_events: {
         parameters: {
             query?: never;
             header?: {
@@ -1075,7 +1354,7 @@ export interface operations {
             };
         };
     };
-    create_orchestrator_jobs_batch_api_v1_orchestrator_jobs_batch_post: {
+    orchestrator_post_api_v1_orchestrator_jobs_batch: {
         parameters: {
             query?: never;
             header?: {
@@ -1111,7 +1390,7 @@ export interface operations {
             };
         };
     };
-    get_orchestrator_jobs_status_batch_api_v1_orchestrator_jobs_status_batch_post: {
+    orchestrator_post_api_v1_orchestrator_jobs_status_batch: {
         parameters: {
             query?: never;
             header?: {
@@ -1146,7 +1425,112 @@ export interface operations {
             };
         };
     };
-    product_editor_apply_api_v1_orchestrator_product_editor_apply_post: {
+    orchestrator_get_api_v1_orchestrator_marketplace_jobs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                query?: string;
+            };
+            header?: {
+                "X-Request-Id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceToggleJobListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orchestrator_get_api_v1_orchestrator_marketplace_jobs_job_id: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Request-Id"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceToggleJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orchestrator_post_api_v1_orchestrator_marketplace_toggle_by_kid: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Request-Id"?: string | null;
+                "X-WareHub-Actor-Login"?: string | null;
+                "X-WareHub-Actor-Name"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketplaceToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceToggleCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orchestrator_post_api_v1_orchestrator_product_editor_apply: {
         parameters: {
             query?: never;
             header?: {
@@ -1181,42 +1565,7 @@ export interface operations {
             };
         };
     };
-    product_editor_apply_api_v1_orchestrator_product_editor_apply__post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Request-Id"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProductEditorApplyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductEditorApplyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    product_editor_discover_api_v1_orchestrator_product_editor_discover_post: {
+    orchestrator_post_api_v1_orchestrator_product_editor_discover: {
         parameters: {
             query?: never;
             header?: {
@@ -1251,20 +1600,20 @@ export interface operations {
             };
         };
     };
-    product_editor_discover_api_v1_orchestrator_product_editor_discover__post: {
+    orchestrator_get_api_v1_orchestrator_product_editor_jobs: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                query?: string;
+            };
             header?: {
                 "X-Request-Id"?: string | null;
             };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProductEditorDiscoverRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1272,7 +1621,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProductEditorDiscoverResponse"];
+                    "application/json": components["schemas"]["ProductEditorJobListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1286,7 +1635,7 @@ export interface operations {
             };
         };
     };
-    product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id__get: {
+    orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id: {
         parameters: {
             query?: never;
             header?: {
@@ -1319,40 +1668,7 @@ export interface operations {
             };
         };
     };
-    product_editor_job_status_api_v1_orchestrator_product_editor_jobs__job_id___get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Request-Id"?: string | null;
-            };
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductEditorJobResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    product_editor_load_api_v1_orchestrator_product_editor_load_post: {
+    orchestrator_post_api_v1_orchestrator_product_editor_load: {
         parameters: {
             query?: never;
             header?: {
@@ -1387,42 +1703,7 @@ export interface operations {
             };
         };
     };
-    product_editor_load_api_v1_orchestrator_product_editor_load__post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Request-Id"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProductEditorLoadRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductEditorLoadResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    product_editor_plan_api_v1_orchestrator_product_editor_plan_post: {
+    orchestrator_post_api_v1_orchestrator_product_editor_plan: {
         parameters: {
             query?: never;
             header?: {
@@ -1457,42 +1738,7 @@ export interface operations {
             };
         };
     };
-    product_editor_plan_api_v1_orchestrator_product_editor_plan__post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Request-Id"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProductEditorPlanRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProductEditorPlanResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    orchestrate_update_api_v1_orchestrator_products__ean__update_post: {
+    orchestrator_post_api_v1_orchestrator_products_ean_update: {
         parameters: {
             query?: never;
             header?: {
@@ -1530,7 +1776,7 @@ export interface operations {
             };
         };
     };
-    reconcile_orchestrator_state_api_v1_orchestrator_reconciliation_diff_post: {
+    orchestrator_post_api_v1_orchestrator_reconciliation_diff: {
         parameters: {
             query?: never;
             header?: {
@@ -1565,7 +1811,7 @@ export interface operations {
             };
         };
     };
-    list_reconciliation_reports_api_v1_orchestrator_reconciliation_reports_get: {
+    orchestrator_get_api_v1_orchestrator_reconciliation_reports: {
         parameters: {
             query: {
                 ean: string;
@@ -1598,7 +1844,7 @@ export interface operations {
             };
         };
     };
-    get_reconciliation_report_api_v1_orchestrator_reconciliation_reports__report_id__get: {
+    orchestrator_get_api_v1_orchestrator_reconciliation_reports_report_id: {
         parameters: {
             query?: never;
             header?: {
@@ -1631,7 +1877,7 @@ export interface operations {
             };
         };
     };
-    readyz_api_v1_readyz_get: {
+    orchestrator_get_api_v1_readyz: {
         parameters: {
             query?: never;
             header?: never;
@@ -1652,6 +1898,10 @@ export interface operations {
         };
     };
 }
+export enum CanonicalPayloadEbay_listing_modeAnyOf0 {
+    inventory = "inventory",
+    legacy = "legacy"
+}
 export enum ChannelTargetEan_source {
     main = "main",
     pool = "pool"
@@ -1668,12 +1918,21 @@ export enum JobStatus {
     failed = "failed"
 }
 export enum Marketplace {
+    ebay = "ebay",
     hood = "hood",
     kaufland = "kaufland",
     otto = "otto",
     xljv = "xljv"
 }
+export enum MarketplaceToggleJobResponseStatus {
+    queued = "queued",
+    running = "running",
+    ok = "ok",
+    partial = "partial",
+    failed = "failed"
+}
 export enum Operation {
+    fetch = "fetch",
     publish = "publish",
     update = "update",
     unpublish = "unpublish",
