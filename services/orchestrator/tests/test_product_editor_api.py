@@ -161,6 +161,13 @@ class FakeProductEditorGateway:
             },
             "xl": {"detail": "not found"},
         }
+        self.ebay_inventory_by_account = {
+            "jv": {"inventory_item": {"sku": "4012345678901", "availability": {"shipToLocationAvailability": {"quantity": 3}}}, "offers": [{"offerId": "offer-jv", "pricingSummary": {"price": {"value": "19.99", "currency": "EUR"}}}]},
+            "xl": {"detail": "not found"},
+            "dep": {"detail": "not found"},
+        }
+        self.ebay_legacy_by_account = {"jv": {}, "xl": {}, "dep": {}}
+        self.ebay_active_listings_by_account = {"jv": [], "xl": [], "dep": []}
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
         body = self.fetch_by_account[account]
@@ -189,6 +196,16 @@ class FakeProductEditorGateway:
     def fetch_otto_by_sku(self, *, sku: str, profile: str, request_id: str):
         body = self.otto_by_profile[profile]
         return type("R", (), {"status_code": 200 if "product_variations" in body else 404, "body": body})()
+
+    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", request_id: str):
+        if listing_mode == "legacy":
+            body = self.ebay_legacy_by_account[account]
+            return type("R", (), {"status_code": 200 if "listing" in body else 404, "body": body})()
+        body = self.ebay_inventory_by_account[account]
+        return type("R", (), {"status_code": 200 if "inventory_item" in body else 404, "body": body})()
+
+    def fetch_ebay_active_listings(self, *, account: str, request_id: str, page: int = 1, limit: int = 100):
+        return type("R", (), {"status_code": 200, "body": {"active_listings": {"listings": self.ebay_active_listings_by_account[account], "total_pages": "1"}}})()
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str):
         self.jv_sites_calls += 1
@@ -425,6 +442,101 @@ def test_product_editor_otto_load_and_plan_creates_orchestrator_job(tmp_path):
     applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
     assert applied.status_code == 200
     assert applied.json()["status"] == "queued"
+
+
+def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_path):
+    client, _ = _client(tmp_path)
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "EBAY"},
+    )
+    assert discovered.status_code == 200
+    assert discovered.json()["selected_target_ids"] == ["EBAY_JV"]
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "EBAY", "baseline_target_id": "EBAY_JV"},
+    )
+    assert loaded.status_code == 200
+    draft = loaded.json()["draft"]
+    assert draft["ebay_listing_mode"] == "inventory"
+    assert draft["price"] == "19.99"
+
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "EBAY",
+            "changed_fields": ["price"],
+            "draft": {**draft, "price": "18.99"},
+            "selected_target_ids": ["EBAY_JV"],
+        },
+    )
+    assert planned.status_code == 200
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    assert applied.status_code == 200
+    command = Deps.job_store.get_job_command(job_id=applied.json()["job_id"])
+    assert command is not None
+    assert command.operation.value == "update"
+    assert command.channels[0].marketplace.value == "ebay"
+    assert command.channels[0].account == "jv"
+    assert command.payload.price == "18.99"
+    assert command.payload.ebay_inventory_item is None
+
+
+def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4062292372025"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_active_listings_by_account["dep"] = [{
+        "item_id": "205926392508",
+        "identifiers": {"EAN": []},
+        "variations": [{"sku": "DEP-CHAIR-YELLOW", "identifiers": {"EAN": [ean]}}],
+    }]
+    gateway.ebay_legacy_by_account["dep"] = {"listing": {
+        "item_id": "205926392508",
+        "price": "99.99",
+        "quantity_available": 2,
+        "variations": [{
+            "sku": "DEP-CHAIR-YELLOW",
+            "price": "119.99",
+            "currency": "EUR",
+            "quantity": "7",
+            "quantity_sold": "3",
+        }],
+    }}
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": ean, "active_group": "EBAY", "baseline_target_id": "EBAY_DEP"},
+    )
+    assert loaded.status_code == 200
+    draft = loaded.json()["draft"]
+    assert draft["ebay_listing_mode"] == "legacy"
+    assert draft["ebay_item_id"] == "205926392508"
+    assert draft["ebay_variation_sku"] == "DEP-CHAIR-YELLOW"
+    assert draft["price"] == "119.99"
+    assert draft["quantity"] == 4
+
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": ean,
+            "active_group": "EBAY",
+            "changed_fields": ["quantity"],
+            "draft": {**draft, "quantity": 4},
+            "selected_target_ids": ["EBAY_DEP"],
+        },
+    )
+    assert planned.status_code == 200
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    assert applied.status_code == 200
+    command = Deps.job_store.get_job_command(job_id=applied.json()["job_id"])
+    assert command is not None
+    assert command.channels[0].account == "dep"
+    assert command.payload.ebay_item_id == "205926392508"
+    assert command.payload.ebay_variation_sku == "DEP-CHAIR-YELLOW"
+    assert command.payload.quantity == 4
 
 
 def test_product_editor_otto_apply_merges_price_change_with_current_target_payload(tmp_path):

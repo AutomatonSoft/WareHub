@@ -74,6 +74,7 @@ from orders_pars.views import (
 )
 from hood_service.views import HoodFetchByEANAPIView
 from ebay_service.views import (
+    EbayActiveListingsAPIView,
     EbayCategoryAspectsAPIView,
     EbayCategorySuggestionsAPIView,
     EbayMarketplaceAccountDeletionAPIView,
@@ -81,6 +82,8 @@ from ebay_service.views import (
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
     EbayInventoryLocationAPIView,
+    EbayLegacyListingReconciliationAPIView,
+    EbayListingOperationAPIView,
     EbayInventoryItemAPIView,
     EbayListingAPIView,
     EbayOfferAPIView,
@@ -348,9 +351,19 @@ api_v1_patterns = [
         name="ebay-shipping-services-v1",
     ),
     path(
+        "api/v1/ebay/listings/reconcile-legacy/",
+        EbayLegacyListingReconciliationAPIView.as_view(),
+        name="ebay-legacy-listing-reconciliation-v1",
+    ),
+    path(
         "api/v1/ebay/listings/<str:item_id>/",
         EbayListingAPIView.as_view(),
         name="ebay-listing-v1",
+    ),
+    path(
+        "api/v1/ebay/seller/active-listings/",
+        EbayActiveListingsAPIView.as_view(),
+        name="ebay-active-listings-v1",
     ),
     path(
         "api/v1/ebay/inventory/items/",
@@ -361,6 +374,11 @@ api_v1_patterns = [
         "api/v1/ebay/offers/",
         EbayOfferAPIView.as_view(),
         name="ebay-offer-v1",
+    ),
+    path(
+        "api/v1/ebay/listing-operations/",
+        EbayListingOperationAPIView.as_view(),
+        name="ebay-listing-operation-v1",
     ),
     path(
         "api/v1/otto/attributes/",

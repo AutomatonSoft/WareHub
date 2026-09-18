@@ -104,6 +104,47 @@ class EanStatus(Model):
     temu = BooleanField(default=False)
 
 
+class EbayListing(Model):
+    class ListingMode(TextChoices):
+        INVENTORY = "inventory", "Inventory API"
+        LEGACY = "legacy", "Trading API"
+
+    class ListingStatus(TextChoices):
+        ACTIVE = "active", "Active"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+        ENDED = "ended", "Ended"
+        UNKNOWN = "unknown", "Unknown"
+
+    account = CharField(max_length=16, db_index=True)
+    marketplace_id = CharField(max_length=32, default="EBAY_DE")
+    listing_mode = CharField(max_length=16, choices=ListingMode.choices)
+    source_ean = CharField(max_length=64, blank=True, default="", db_index=True)
+    sku = CharField(max_length=64, blank=True, default="")
+    offer_id = CharField(max_length=64, blank=True, default="")
+    item_id = CharField(max_length=64, blank=True, default="")
+    legacy_ean_to_variation_sku = JSONField(default=dict, blank=True)
+    merchant_location_key = CharField(max_length=50, blank=True, default="")
+    status = CharField(max_length=16, choices=ListingStatus.choices, default=ListingStatus.UNKNOWN)
+    last_operation = CharField(max_length=32, blank=True, default="")
+    last_error = JSONField(default=dict, blank=True)
+    created_at = DateTimeField(auto_now_add=True)
+    updated_at = DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=["account", "marketplace_id", "sku"],
+                condition=~Q(sku=""),
+                name="uniq_ebay_listing_account_marketplace_sku",
+            ),
+            UniqueConstraint(
+                fields=["account", "marketplace_id", "item_id"],
+                condition=~Q(item_id=""),
+                name="uniq_ebay_listing_account_marketplace_item_id",
+            ),
+        ]
+
+
 class Orders(Model):
     MEMO_SYNC_STATUS_CHOICES = (
         ("synced", "Synced"),

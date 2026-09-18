@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 import time
 import pytest
 from fastapi.testclient import TestClient
 
 from src.sofort_orchestrator.api.routes import Deps, _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS, _JOB_INTAKE_TIMESTAMPS_MS
 from src.sofort_orchestrator.application.orchestrator_service import OrchestratorService
+from src.sofort_orchestrator.application.job_worker import run_job_worker
 from src.sofort_orchestrator.domain.models import ChannelTarget, Marketplace
 from src.sofort_orchestrator.infra.channel_limiter import InMemoryChannelLimiter
 from src.sofort_orchestrator.infra.circuit_breaker import InMemoryCircuitBreaker
@@ -377,6 +380,58 @@ def test_orchestrator_returns_not_supported_for_non_update_operations(tmp_path, 
     assert payload["results"][0]["error"]["code"] == "orchestrator_operation_not_supported"
     assert payload["results"][0]["error"]["details"]["operation"] == operation
     assert fake.calls == 0
+
+
+@pytest.mark.parametrize("operation", ["fetch", "publish", "update", "unpublish", "relist"])
+def test_orchestrator_supports_all_ebay_listing_operations(tmp_path, operation: str):
+    fake = SuccessfulAdapters()
+    client = _client_with_fake_adapters(fake, tmp_path)
+    body = {
+        "operation": operation,
+        "payload": {"sku": "sku-1", "price": "199.99", "quantity": 1, "ebay_listing_mode": "inventory"},
+        "channels": [{"marketplace": "ebay", "account": "dep", "changed_fields": ["sku", "price", "quantity", "ebay_listing_mode"]}],
+    }
+
+    response = client.post("/api/v1/orchestrator/products/4012345678901/update", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert fake.calls == 1
+
+
+def test_job_worker_executes_queued_ebay_fetch(tmp_path):
+    fake = SuccessfulAdapters()
+    service = OrchestratorService(adapters=fake)
+    store = SqliteJobStore(db_path=str(tmp_path / "jobs.sqlite3"))
+    store.create_job(
+        job_id="ebay-fetch-job",
+        request_id="ebay-fetch-request",
+        ean="4012345678901",
+        command=OrchestrateRequest(
+            operation=Operation.FETCH,
+            payload={"sku": "sku-1", "ebay_listing_mode": "inventory"},
+            channels=[ChannelTarget(marketplace=Marketplace.EBAY, account="dep", site="EBAY_DE")],
+        ),
+    )
+
+    async def run_until_completed():
+        worker = asyncio.create_task(run_job_worker(service=service, job_store=store, poll_interval_seconds=0.001))
+        try:
+            for _ in range(100):
+                job = store.get_job(job_id="ebay-fetch-job")
+                if job and job.status.value == "completed":
+                    return job
+                await asyncio.sleep(0.01)
+            raise AssertionError("Queued eBay fetch job did not complete")
+        finally:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
+
+    job = asyncio.run(run_until_completed())
+
+    assert job.status.value == "completed"
+    assert fake.calls == 1
 
 
 def test_orchestrator_publishes_to_hood(tmp_path):

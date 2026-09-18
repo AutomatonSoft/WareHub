@@ -15,10 +15,11 @@ from django.urls import resolve
 from django.core import signing
 from rest_framework.test import APIRequestFactory
 
-from .client import EbayApiConfig, EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
+from .client import EbayApiConfig, EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient, _listing_payload, _raise_for_bulk_update_errors
 from .credentials import load_refresh_token, store_refresh_token
 from .models import EbayOAuthCredential
-from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _account, _exchange_code_response, _seller_setup_error_response
+from .listing_operations import _legacy_ean_matches, _merge_inventory_item, _merge_inventory_offer, _prepare_inventory_offer, _validate_inventory_publish_payload, execute_listing_operation
+from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _account, _exchange_code_response, _inventory_location_address, _seller_setup_error_response
 
 
 class FakeResponse:
@@ -53,6 +54,25 @@ class FakeSession:
             return FakeResponse({"returnPolicyId": "return-policy-id"})
         if args[0].endswith("/sell/inventory/v1/offer"):
             return FakeResponse({"offerId": "offer-id"})
+        if args[0].endswith("/ws/api.dll") and b"<GetMyeBaySellingRequest" in data:
+            return FakeResponse(
+                {},
+                content=b'''<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+  <Ack>Success</Ack>
+  <ActiveList>
+    <ItemArray>
+      <Item>
+        <ItemID>205926392508</ItemID><Title>Test chair</Title><SKU>JVM4062292372025</SKU>
+        <Quantity>4</Quantity><QuantityAvailable>2</QuantityAvailable>
+        <SellingStatus><ListingStatus>Active</ListingStatus><QuantitySold>2</QuantitySold></SellingStatus>
+        <ProductListingDetails><EAN>4062292372025</EAN></ProductListingDetails>
+      </Item>
+    </ItemArray>
+    <PaginationResult><TotalNumberOfEntries>1</TotalNumberOfEntries><TotalNumberOfPages>1</TotalNumberOfPages></PaginationResult>
+  </ActiveList>
+</GetMyeBaySellingResponse>''',
+            )
         if args[0].endswith("/ws/api.dll") and b"<GetItemRequest" in data:
             return FakeResponse(
                 {},
@@ -61,7 +81,7 @@ class FakeSession:
   <Ack>Success</Ack>
   <Item>
     <ItemID>205926392508</ItemID><Title>Test chair</Title><SKU>JVM4062292372025</SKU>
-    <InventoryTrackingMethod>SKU</InventoryTrackingMethod><Quantity>4</Quantity><QuantityAvailable>2</QuantityAvailable>
+    <InventoryTrackingMethod>SKU</InventoryTrackingMethod><Quantity>4</Quantity><QuantityAvailable>2</QuantityAvailable><StartPrice currencyID="EUR">199.99</StartPrice>
     <Seller><UserID>depotum</UserID></Seller><SellingStatus><ListingStatus>Active</ListingStatus><QuantitySold>2</QuantitySold></SellingStatus>
     <ProductListingDetails><EAN>4062292372025</EAN></ProductListingDetails>
     <ItemSpecifics><NameValueList><Name>EAN</Name><Value>4062292372025</Value></NameValueList></ItemSpecifics>
@@ -123,6 +143,33 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(_account("DEP"), "dep")
         self.assertIsNone(_account("unknown"))
 
+    def test_inventory_location_address_accepts_postal_or_city_state_country(self):
+        self.assertEqual(
+            _inventory_location_address({"postal_code": "40210", "country": "de"}),
+            {"postalCode": "40210", "country": "DE"},
+        )
+
+    def test_inventory_item_patch_preserves_unspecified_nested_fields(self):
+        merged = _merge_inventory_item(
+            current={
+                "condition": "NEW",
+                "product": {"title": "Original", "description": "Current", "aspects": {"Brand": ["Depotum"]}},
+                "availability": {"shipToLocationAvailability": {"quantity": 3}},
+            },
+            patch={"product": {"title": "Renamed"}},
+        )
+
+        self.assertEqual(merged["condition"], "NEW")
+        self.assertEqual(merged["product"]["title"], "Renamed")
+        self.assertEqual(merged["product"]["description"], "Current")
+        self.assertEqual(merged["availability"]["shipToLocationAvailability"]["quantity"], 3)
+        self.assertEqual(
+            _inventory_location_address(
+                {"address": {"address_line1": "Example 1", "city": "Dusseldorf", "state_or_province": "NRW", "country": "DE"}}
+            ),
+            {"addressLine1": "Example 1", "city": "Dusseldorf", "stateOrProvince": "NRW", "country": "DE"},
+        )
+
     def test_oauth_credential_account_field_allows_seller_account_names(self):
         self.assertEqual(EbayOAuthCredential._meta.get_field("account").max_length, 32)
 
@@ -143,8 +190,11 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/seller/policies/").url_name, "ebay-seller-policy-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/shipping-services/").url_name, "ebay-shipping-services-v1")
         self.assertEqual(resolve("/api/v1/ebay/listings/205926392508/").url_name, "ebay-listing-v1")
+        self.assertEqual(resolve("/api/v1/ebay/seller/active-listings/").url_name, "ebay-active-listings-v1")
+        self.assertEqual(resolve("/api/v1/ebay/listings/reconcile-legacy/").url_name, "ebay-legacy-listing-reconciliation-v1")
         self.assertEqual(resolve("/api/v1/ebay/inventory/items/").url_name, "ebay-inventory-item-v1")
         self.assertEqual(resolve("/api/v1/ebay/offers/").url_name, "ebay-offer-v1")
+        self.assertEqual(resolve("/api/v1/ebay/listing-operations/").url_name, "ebay-listing-operation-v1")
 
     @patch("ebay_service.views.store_refresh_token")
     @patch("ebay_service.views.EbayOAuthClient.exchange_code", return_value={"refresh_token": "refresh-token"})
@@ -338,8 +388,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
                 account="jv",
                 merchant_location_key="jv-main",
                 name="JV Main Warehouse",
-                postal_code="40210",
-                country="DE",
+                address={"postalCode": "40210", "country": "DE"},
             )
 
         request = session.calls[1]
@@ -439,6 +488,79 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(session.calls[-1][2]["headers"]["Content-Language"], "de-DE")
         self.assertEqual(offer, {"offerId": "offer-id"})
 
+    def test_reads_inventory_items_and_single_sku_with_seller_access_token(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.inventory_items(account="dep", limit=25, offset=50)
+            client.inventory_item(account="dep", sku="sku-1")
+            client.offer(account="dep", offer_id="offer-1")
+
+        inventory_calls = [call for call in session.calls if call[0] == "get" and "/sell/inventory/v1/inventory_item" in call[1][0]]
+        self.assertTrue(inventory_calls[0][1][0].endswith("/sell/inventory/v1/inventory_item"))
+        self.assertEqual(inventory_calls[0][2]["params"], {"limit": "25", "offset": "50"})
+        self.assertTrue(inventory_calls[1][1][0].endswith("/sell/inventory/v1/inventory_item/sku-1"))
+        self.assertEqual(inventory_calls[1][2]["params"], {})
+        self.assertTrue(session.calls[-1][1][0].endswith("/sell/inventory/v1/offer/offer-1"))
+
+    def test_updates_publishes_and_withdraws_inventory_offer(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.update_offer(account="jv", offer_id="offer-id", offer={"sku": "sku-1", "marketplaceId": "EBAY_DE"})
+            client.publish_offer(account="jv", offer_id="offer-id")
+            client.bulk_update_price_quantity(account="jv", sku="sku-1", offer_id="offer-id", quantity=2, price="19.99")
+            client.withdraw_offer(account="jv", offer_id="offer-id")
+
+        operation_calls = [call for call in session.calls if "/sell/inventory/" in call[1][0]]
+        self.assertTrue(operation_calls[0][1][0].endswith("/sell/inventory/v1/offer/offer-id"))
+        self.assertTrue(operation_calls[1][1][0].endswith("/sell/inventory/v1/offer/offer-id/publish"))
+        self.assertEqual(operation_calls[2][2]["json"]["requests"][0]["shipToLocationAvailability"], {"quantity": 2})
+        self.assertEqual(operation_calls[2][2]["json"]["requests"][0]["offers"][0]["price"], {"currency": "EUR", "value": "19.99"})
+        self.assertTrue(operation_calls[3][1][0].endswith("/sell/inventory/v1/offer/offer-id/withdraw"))
+
+    def test_uses_trading_api_item_id_for_legacy_operations(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            client.revise_legacy_fixed_price_listing(
+                account="dep", item_id="205926392508", marketplace_id="EBAY_DE", quantity=2, price="199.99"
+            )
+            client.revise_legacy_fixed_price_variation(
+                account="dep",
+                item_id="205926392508",
+                marketplace_id="EBAY_DE",
+                variation_sku="JVM4062292372025-YELLOW",
+                quantity=2,
+                price="199.99",
+            )
+            client.end_legacy_fixed_price_listing(account="dep", item_id="205926392508", marketplace_id="EBAY_DE")
+            client.relist_legacy_fixed_price_listing(
+                account="dep", item_id="205926392508", marketplace_id="EBAY_DE", quantity=2, price="199.99"
+            )
+
+        operation_calls = [call for call in session.calls if call[1][0].endswith("/ws/api.dll")]
+        self.assertEqual(operation_calls[0][2]["headers"]["X-EBAY-API-CALL-NAME"], "ReviseFixedPriceItem")
+        self.assertIn(b"<ItemID>205926392508</ItemID>", operation_calls[0][2]["data"])
+        self.assertIn(b"<Variations><Variation><SKU>JVM4062292372025-YELLOW</SKU>", operation_calls[1][2]["data"])
+        self.assertEqual(operation_calls[2][2]["headers"]["X-EBAY-API-CALL-NAME"], "EndFixedPriceItem")
+        self.assertEqual(operation_calls[3][2]["headers"]["X-EBAY-API-CALL-NAME"], "RelistFixedPriceItem")
+
     def test_gets_listing_by_ebay_item_id(self):
         session = FakeSession()
         client = EbayOAuthClient(
@@ -458,7 +580,171 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(listing["seller"], "depotum")
         self.assertEqual(listing["quantity"], "4")
         self.assertEqual(listing["quantity_sold"], "2")
+        self.assertEqual(listing["price"], "199.99")
+        self.assertEqual(listing["currency"], "EUR")
+        self.assertEqual(listing["listing_type"], "")
+        self.assertFalse(listing["has_variations"])
         self.assertEqual(listing["identifiers"], {"EAN": ["4062292372025"]})
+
+    def test_get_listing_exposes_variation_sku_price_and_available_quantity_inputs(self):
+        response = FakeResponse(
+            {},
+            content=b'''<?xml version="1.0" encoding="utf-8"?>
+<GetItemResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Success</Ack><Item>
+  <ItemID>205926392508</ItemID><ListingType>FixedPriceItem</ListingType>
+  <Variations><Variation><SKU>yellow</SKU><Quantity>5</Quantity><StartPrice currencyID="EUR">199.99</StartPrice>
+  <VariationProductListingDetails><EAN>4062292372025</EAN></VariationProductListingDetails>
+  <SellingStatus><QuantitySold>2</QuantitySold></SellingStatus></Variation></Variations>
+</Item></GetItemResponse>''',
+        )
+
+        listing = _listing_payload(response=response, marketplace_id="EBAY_DE")
+
+        self.assertTrue(listing["has_variations"])
+        self.assertEqual(
+            listing["variations"],
+            [{"sku": "yellow", "quantity": "5", "quantity_sold": "2", "price": "199.99", "currency": "EUR", "identifiers": {"EAN": ["4062292372025"]}}],
+        )
+
+    def test_get_listing_reads_variation_ean_from_variation_specifics(self):
+        response = FakeResponse(
+            {},
+            content=b'''<?xml version="1.0" encoding="utf-8"?>
+<GetItemResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Success</Ack><Item>
+  <ItemID>205926392508</ItemID><ListingType>FixedPriceItem</ListingType>
+  <Variations><Variation><SKU>yellow</SKU><Quantity>5</Quantity><StartPrice currencyID="EUR">199.99</StartPrice>
+  <VariationSpecifics><NameValueList><Name>EAN</Name><Value>4062292372025</Value></NameValueList></VariationSpecifics>
+  </Variation></Variations>
+</Item></GetItemResponse>''',
+        )
+
+        listing = _listing_payload(response=response, marketplace_id="EBAY_DE")
+
+        self.assertEqual(listing["variations"][0]["identifiers"], {"EAN": ["4062292372025"]})
+
+    def test_matches_legacy_variation_ean_to_its_variation_sku(self):
+        listing = {
+            "item_id": "205926392508",
+            "identifiers": {},
+            "variations": [{"sku": "yellow", "identifiers": {"EAN": ["4062292372025"]}}],
+        }
+
+        self.assertEqual(_legacy_ean_matches(listings=[listing], source_ean="4062292372025"), [(listing, "yellow")])
+
+    def test_gets_paginated_active_listings(self):
+        session = FakeSession()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=session,
+        )
+
+        with patch("ebay_service.client.load_refresh_token", return_value="refresh-token"):
+            result = client.active_listings(account="dep", marketplace_id="EBAY_DE", page=2, limit=50)
+
+        request = session.calls[1]
+        self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GetMyeBaySelling")
+        self.assertIn(b"<PageNumber>2</PageNumber>", request[2]["data"])
+        self.assertEqual(result["total"], "1")
+        self.assertEqual(result["listings"][0]["identifiers"], {"EAN": ["4062292372025"]})
+
+
+class EbayLegacyVariationOperationTests(SimpleTestCase):
+    @patch("ebay_service.listing_operations._save_listing", return_value={"status": "active"})
+    @patch("ebay_service.listing_operations._resolve_legacy_listing", return_value=("205926392508", None))
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_updates_selected_legacy_variation_with_current_price_and_available_quantity(self, client_class, _resolve, _save):
+        client = client_class.return_value
+        client.listing.return_value = {
+            "listing_type": "FixedPriceItem",
+            "has_variations": True,
+            "variations": [{"sku": "yellow", "quantity": "5", "quantity_sold": "2", "price": "199.99", "currency": "EUR"}],
+        }
+
+        execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="update",
+            listing_mode="legacy",
+            item_id="205926392508",
+            variation_sku="yellow",
+            price="189.99",
+        )
+
+        client.revise_legacy_fixed_price_variation.assert_called_once_with(
+            account="dep",
+            item_id="205926392508",
+            marketplace_id="EBAY_DE",
+            variation_sku="yellow",
+            quantity=3,
+            price="189.99",
+            currency="EUR",
+        )
+
+
+class EbayInventoryPublishValidationTests(SimpleTestCase):
+    def test_offer_merge_preserves_current_settings_and_removes_read_only_fields(self):
+        offer = _merge_inventory_offer(
+            current={
+                "offerId": "offer-1",
+                "listing": {"listingId": "123"},
+                "marketplaceId": "EBAY_DE",
+                "sku": "old-sku",
+                "listingPolicies": {"paymentPolicyId": "payment-1", "returnPolicyId": "return-1"},
+            },
+            patch={"listingPolicies": {"fulfillmentPolicyId": "fulfillment-1"}},
+            sku="4062292372025",
+            marketplace_id="EBAY_DE",
+        )
+
+        self.assertNotIn("offerId", offer)
+        self.assertNotIn("listing", offer)
+        self.assertEqual(offer["sku"], "4062292372025")
+        self.assertEqual(
+            offer["listingPolicies"],
+            {"paymentPolicyId": "payment-1", "returnPolicyId": "return-1", "fulfillmentPolicyId": "fulfillment-1"},
+        )
+
+    def test_prepare_publish_offer_applies_canonical_price_and_quantity(self):
+        offer = _prepare_inventory_offer(
+            offer={"categoryId": "123"},
+            sku="4062292372025",
+            marketplace_id="EBAY_DE",
+            quantity=2,
+            price="199.99",
+            currency="EUR",
+        )
+
+        self.assertEqual(offer["sku"], "4062292372025")
+        self.assertEqual(offer["marketplaceId"], "EBAY_DE")
+        self.assertEqual(offer["availableQuantity"], 2)
+        self.assertEqual(offer["pricingSummary"]["price"], {"currency": "EUR", "value": "199.99"})
+
+    def test_publish_validation_returns_missing_fields_before_ebay_call(self):
+        with self.assertRaises(EbayApiError) as error:
+            _validate_inventory_publish_payload(inventory_item={}, offer={})
+
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertEqual(error.exception.operation, "publish_offer")
+        self.assertIn("inventory_item.condition", error.exception.details["missing_fields"])
+        self.assertIn("offer.merchantLocationKey", error.exception.details["missing_fields"])
+
+    def test_bulk_update_rejects_failed_per_offer_result(self):
+        with self.assertRaises(EbayApiError) as error:
+            _raise_for_bulk_update_errors(
+                {
+                    "responses": [
+                        {
+                            "sku": "4062292372025",
+                            "offerResponses": [{"offerId": "offer-1", "statusCode": 400, "errors": [{"errorId": 25001}]}],
+                        }
+                    ]
+                }
+            )
+
+        self.assertEqual(error.exception.status_code, 422)
+        self.assertEqual(error.exception.operation, "bulk_update_price_quantity")
+        self.assertEqual(error.exception.details["responses"][0]["offerId"], "offer-1")
 
 
 class EbayCredentialStoreTests(SimpleTestCase):

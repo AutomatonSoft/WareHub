@@ -1,0 +1,220 @@
+from unittest.mock import patch
+
+from django.test import TestCase
+
+from database.models import EbayListing
+
+from .client import EbayApiError
+from .listing_operations import execute_listing_operation, reconcile_legacy_listing
+
+
+class EbayListingOperationTests(TestCase):
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class):
+        client = client_class.return_value
+        client.create_offer.return_value = {"offerId": "offer-1"}
+        client.publish_offer.return_value = {"listingId": "listing-1"}
+        client.offers_by_sku.return_value = []
+        payload = {
+            "account": "dep",
+            "marketplace_id": "EBAY_DE",
+            "operation": "publish",
+            "listing_mode": "inventory",
+            "sku": "4062292372025",
+            "source_ean": "4062292372025",
+            "inventory_item": {
+                "condition": "NEW",
+                "product": {
+                    "title": "Test chair",
+                    "description": "Test chair description",
+                    "aspects": {"Brand": ["Depotum"]},
+                    "imageUrls": ["https://example.test/chair.jpg"],
+                },
+            },
+            "offer": {
+                "format": "FIXED_PRICE",
+                "categoryId": "123",
+                "merchantLocationKey": "dep-main",
+                "listingDuration": "GTC",
+                "listingPolicies": {
+                    "fulfillmentPolicyId": "fulfillment-1",
+                    "paymentPolicyId": "payment-1",
+                    "returnPolicyId": "return-1",
+                },
+            },
+            "quantity": 2,
+            "price": "199.99",
+        }
+
+        first = execute_listing_operation(**payload)
+        second = execute_listing_operation(**payload)
+
+        self.assertEqual(first["offer_id"], "offer-1")
+        self.assertEqual(second["listing_id"], "listing-1")
+        self.assertEqual(client.create_offer.call_count, 1)
+        client.update_offer.assert_called_once()
+        listing = EbayListing.objects.get(account="dep", marketplace_id="EBAY_DE", sku="4062292372025")
+        self.assertEqual(listing.offer_id, "offer-1")
+        self.assertEqual(listing.item_id, "listing-1")
+        self.assertEqual(listing.status, EbayListing.ListingStatus.ACTIVE)
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_relist_replaces_persisted_item_id(self, client_class):
+        client = client_class.return_value
+        client.relist_legacy_fixed_price_listing.return_value = {"item_id": "new-item-id"}
+        EbayListing.objects.create(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            listing_mode=EbayListing.ListingMode.LEGACY,
+            item_id="205926392508",
+            status=EbayListing.ListingStatus.ENDED,
+        )
+
+        result = execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="relist",
+            listing_mode="legacy",
+            item_id="205926392508",
+        )
+
+        self.assertEqual(result["item_id"], "new-item-id")
+        listing = EbayListing.objects.get(account="dep", marketplace_id="EBAY_DE", item_id="new-item-id")
+        self.assertEqual(listing.status, EbayListing.ListingStatus.ACTIVE)
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_offer_update_reads_current_offer_before_full_replace(self, client_class):
+        client = client_class.return_value
+        EbayListing.objects.create(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            listing_mode=EbayListing.ListingMode.INVENTORY,
+            sku="4062292372025",
+            offer_id="offer-1",
+            merchant_location_key="dep-main",
+        )
+        client.offer.return_value = {
+            "offerId": "offer-1",
+            "listing": {"listingId": "listing-1"},
+            "sku": "4062292372025",
+            "marketplaceId": "EBAY_DE",
+            "merchantLocationKey": "dep-main",
+            "listingPolicies": {"paymentPolicyId": "payment-1", "returnPolicyId": "return-1"},
+        }
+
+        execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="update",
+            listing_mode="inventory",
+            sku="4062292372025",
+            offer={"merchantLocationKey": "dep-secondary", "listingPolicies": {"fulfillmentPolicyId": "fulfillment-1"}},
+        )
+
+        client.update_offer.assert_called_once_with(
+            account="dep",
+            offer_id="offer-1",
+            offer={
+                "sku": "4062292372025",
+                "marketplaceId": "EBAY_DE",
+                "merchantLocationKey": "dep-secondary",
+                "listingPolicies": {
+                    "paymentPolicyId": "payment-1",
+                    "returnPolicyId": "return-1",
+                    "fulfillmentPolicyId": "fulfillment-1",
+                },
+            },
+        )
+        self.assertEqual(EbayListing.objects.get(account="dep", marketplace_id="EBAY_DE", sku="4062292372025").merchant_location_key, "dep-secondary")
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_update_updates_single_variation_by_sku(self, client_class):
+        client = client_class.return_value
+        client.listing.return_value = {
+            "listing_type": "FixedPriceItem",
+            "has_variations": True,
+            "variations": [{"sku": "yellow", "quantity": "5", "quantity_sold": "2", "price": "199.99", "currency": "EUR"}],
+        }
+
+        execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="update",
+            listing_mode="legacy",
+            item_id="205926392508",
+            variation_sku="yellow",
+            quantity=2,
+        )
+
+        client.revise_legacy_fixed_price_variation.assert_called_once_with(
+            account="dep",
+            item_id="205926392508",
+            marketplace_id="EBAY_DE",
+            variation_sku="yellow",
+            quantity=2,
+            price="199.99",
+            currency="EUR",
+        )
+        client.revise_legacy_fixed_price_listing.assert_not_called()
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_variation_update_requires_sku(self, client_class):
+        client_class.return_value.listing.return_value = {"listing_type": "FixedPriceItem", "has_variations": True, "variations": []}
+
+        with self.assertRaises(EbayApiError) as raised:
+            execute_listing_operation(
+                account="dep",
+                marketplace_id="EBAY_DE",
+                operation="update",
+                listing_mode="legacy",
+                item_id="205926392508",
+                quantity=2,
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_reconciled_legacy_ean_resolves_item_id_for_update(self, client_class):
+        client = client_class.return_value
+        client.active_listings.return_value = {
+            "total_pages": "1",
+            "listings": [{"item_id": "205926392508", "identifiers": {"EAN": ["4062292372025"]}}],
+        }
+        client.listing.return_value = {"listing_type": "FixedPriceItem", "has_variations": False}
+
+        reconciled = reconcile_legacy_listing(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            source_ean="4062292372025",
+            page=1,
+            limit=100,
+        )
+        updated = execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="update",
+            listing_mode="legacy",
+            source_ean="4062292372025",
+            quantity=2,
+        )
+
+        self.assertEqual(reconciled["item_id"], "205926392508")
+        self.assertEqual(updated["item_id"], "205926392508")
+        client.revise_legacy_fixed_price_listing.assert_called_once()
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_fetches_inventory_item_and_offers(self, client_class):
+        client = client_class.return_value
+        client.inventory_item.return_value = {"sku": "4062292372025"}
+        client.offers_by_sku.return_value = [{"offerId": "offer-1"}]
+
+        result = execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="fetch",
+            listing_mode="inventory",
+            sku="4062292372025",
+        )
+
+        self.assertEqual(result["inventory_item"]["sku"], "4062292372025")
+        self.assertEqual(result["offers"], [{"offerId": "offer-1"}])

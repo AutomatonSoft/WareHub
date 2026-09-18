@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+from decimal import Decimal, InvalidOperation
 
 from django.core import signing
 from rest_framework.permissions import AllowAny
@@ -9,9 +10,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from database.permissions import SessionRolePermission
+from database.idempotency import build_request_hash, claim_or_replay, derive_idem_key, finalize_error, finalize_success
 
 from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import EbayCredentialError, store_refresh_token
+from .listing_operations import execute_listing_operation, reconcile_legacy_listing
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
@@ -110,13 +113,12 @@ class EbayInventoryLocationAPIView(APIView):
         account = _account(payload.get("account"))
         merchant_location_key = str(payload.get("merchant_location_key") or "").strip()
         name = str(payload.get("name") or "").strip()
-        postal_code = str(payload.get("postal_code") or "").strip()
-        country = str(payload.get("country") or "").strip().upper()
-        if account is None or not merchant_location_key or len(merchant_location_key) > 50 or not name or not postal_code or len(country) != 2 or not country.isalpha():
+        address = _inventory_location_address(payload)
+        if account is None or not merchant_location_key or len(merchant_location_key) > 50 or not name or address is None:
             return Response(
                 {
                     "code": "ebay_inventory_location_invalid_request",
-                    "detail": "account, merchant_location_key, name, postal_code, and two-letter country are required.",
+                    "detail": "account, merchant_location_key, name, and address are required. Address needs country plus postal_code, or city and state_or_province.",
                 },
                 status=400,
             )
@@ -125,8 +127,7 @@ class EbayInventoryLocationAPIView(APIView):
                 account=account,
                 merchant_location_key=merchant_location_key,
                 name=name,
-                postal_code=postal_code,
-                country=country,
+                address=address,
             )
         except EbayApiError as error:
             return _inventory_location_error_response(error, account=account, merchant_location_key=merchant_location_key)
@@ -221,8 +222,78 @@ class EbayListingAPIView(APIView):
         return Response({"account": account, "listing": listing})
 
 
+class EbayActiveListingsAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        marketplace_id = str(request.query_params.get("marketplace_id") or "EBAY_DE").strip()
+        page = _bounded_positive_int(request.query_params.get("page"), default=1, maximum=10_000)
+        limit = _bounded_positive_int(request.query_params.get("limit"), default=100, maximum=100)
+        if account is None or not marketplace_id or page is None or limit is None:
+            return Response(
+                {"code": "ebay_active_listings_invalid_request", "detail": "account, marketplace_id, page (1-10000), and limit (1-100) are required."},
+                status=400,
+            )
+        try:
+            listings = EbayOAuthClient().active_listings(account=account, marketplace_id=marketplace_id, page=page, limit=limit)
+        except EbayApiError as error:
+            return _active_listings_error_response(error, account=account, marketplace_id=marketplace_id)
+        return Response({"account": account, "active_listings": listings})
+
+
+class EbayLegacyListingReconciliationAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        marketplace_id = str(payload.get("marketplace_id") or "EBAY_DE").strip()
+        source_ean = str(payload.get("source_ean") or "").strip()
+        page = _bounded_positive_int(payload.get("page"), default=1, maximum=10_000)
+        limit = _bounded_positive_int(payload.get("limit"), default=100, maximum=100)
+        if account is None or marketplace_id != "EBAY_DE" or not source_ean or len(source_ean) > 64 or page is None or limit is None:
+            return Response(
+                {"code": "ebay_legacy_listing_reconciliation_invalid_request", "detail": "Valid account, EBAY_DE marketplace_id, source_ean, page, and limit are required."},
+                status=400,
+            )
+        try:
+            result = reconcile_legacy_listing(
+                account=account,
+                marketplace_id=marketplace_id,
+                source_ean=source_ean,
+                page=page,
+                limit=limit,
+            )
+        except EbayApiError as error:
+            return _listing_error_response(error, account=account, item_id="", marketplace_id=marketplace_id)
+        return Response(result)
+
+
 class EbayInventoryItemAPIView(APIView):
     permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        account = _account(request.query_params.get("account"))
+        sku = str(request.query_params.get("sku") or "").strip()
+        marketplace_id = str(request.query_params.get("marketplace_id") or "EBAY_DE").strip()
+        limit = _bounded_positive_int(request.query_params.get("limit"), default=100, maximum=100)
+        offset = _nonnegative_int(request.query_params.get("offset") or 0)
+        if account is None or marketplace_id != "EBAY_DE" or limit is None or offset is None or len(sku) > 50:
+            return Response(
+                {"code": "ebay_inventory_item_invalid_request", "detail": "Valid account, EBAY_DE marketplace_id, sku (up to 50 characters), limit, and offset are required."},
+                status=400,
+            )
+        try:
+            client = EbayOAuthClient()
+            result = (
+                client.inventory_item(account=account, sku=sku)
+                if sku
+                else client.inventory_items(account=account, limit=limit, offset=offset)
+            )
+        except EbayApiError as error:
+            return _inventory_item_error_response(error, account=account, sku=sku)
+        return Response({"account": account, "marketplace_id": marketplace_id, "inventory": result})
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
@@ -264,6 +335,135 @@ class EbayOfferAPIView(APIView):
         except EbayApiError as error:
             return _offer_error_response(error, account=account)
         return Response({"account": account, "status": "created", "data": result}, status=201)
+
+
+class EbayListingOperationAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        marketplace_id = str(payload.get("marketplace_id") or "EBAY_DE").strip()
+        operation = str(payload.get("operation") or "").strip().lower()
+        listing_mode = str(payload.get("listing_mode") or "").strip().lower()
+        sku = str(payload.get("sku") or "").strip()
+        item_id = str(payload.get("item_id") or "").strip()
+        source_ean = str(payload.get("source_ean") or "").strip()
+        variation_sku = str(payload.get("variation_sku") or "").strip()
+        inventory_item = payload.get("inventory_item")
+        offer = payload.get("offer")
+        quantity = _nonnegative_int(payload.get("quantity"))
+        price = _price(payload.get("price"))
+        currency = str(payload.get("currency") or "EUR").strip().upper()
+
+        if (
+            account is None
+            or marketplace_id != "EBAY_DE"
+            or operation not in {"fetch", "publish", "update", "unpublish", "relist"}
+            or listing_mode not in {"inventory", "legacy"}
+            or len(sku) > 50
+            or len(variation_sku) > 50
+            or (item_id and (not item_id.isdigit() or len(item_id) > 19))
+            or (quantity is None and payload.get("quantity") is not None)
+            or (price is None and payload.get("price") is not None)
+            or len(currency) != 3
+            or not currency.isalpha()
+            or (inventory_item is not None and not isinstance(inventory_item, dict))
+            or (offer is not None and not isinstance(offer, dict))
+        ):
+            return Response(
+                {
+                    "code": "ebay_listing_operation_invalid_request",
+                    "detail": "Valid account, EBAY_DE marketplace_id, operation, listing_mode, and operation payload are required.",
+                },
+                status=400,
+            )
+        if operation == "fetch":
+            try:
+                result = execute_listing_operation(
+                    account=account,
+                    marketplace_id=marketplace_id,
+                    operation=operation,
+                    listing_mode=listing_mode,
+                    sku=sku,
+                    item_id=item_id,
+                    source_ean=source_ean,
+                    variation_sku=variation_sku,
+                )
+            except EbayApiError as error:
+                return _listing_operation_error_response(
+                    error,
+                    account=account,
+                    marketplace_id=marketplace_id,
+                    operation=operation,
+                    listing_mode=listing_mode,
+                    sku=sku,
+                    item_id=item_id,
+                )
+            return Response(result)
+        request_hash = build_request_hash(
+            method=request.method,
+            path=request.path,
+            query=dict(request.query_params),
+            body=payload,
+        )
+        idempotency_state, idempotency_record = claim_or_replay(
+            scope="ebay.listing_operation",
+            idem_key=derive_idem_key(request, request_hash),
+            request_hash=request_hash,
+        )
+        if idempotency_state == "replay":
+            return Response(idempotency_record.response_payload, status=idempotency_record.status_code or 200)
+        if idempotency_state == "processing":
+            return Response(
+                {"code": "ebay_listing_operation_in_progress", "detail": "Request with same idempotency key is in progress."},
+                status=409,
+            )
+        if idempotency_state == "conflict":
+            return Response(
+                {"code": "ebay_listing_operation_idempotency_key_conflict", "detail": "Idempotency key was reused with a different payload."},
+                status=409,
+            )
+        if idempotency_state != "claimed" or idempotency_record is None:
+            return Response(
+                {"code": "ebay_listing_operation_idempotency_unavailable", "detail": "Could not claim idempotency key."},
+                status=503,
+            )
+        try:
+            result = execute_listing_operation(
+                account=account,
+                marketplace_id=marketplace_id,
+                operation=operation,
+                listing_mode=listing_mode,
+                sku=sku,
+                item_id=item_id,
+                source_ean=source_ean,
+                variation_sku=variation_sku,
+                inventory_item=inventory_item,
+                offer=offer,
+                quantity=quantity,
+                price=price,
+                currency=currency,
+            )
+        except EbayApiError as error:
+            response = _listing_operation_error_response(
+                error,
+                account=account,
+                marketplace_id=marketplace_id,
+                operation=operation,
+                listing_mode=listing_mode,
+                sku=sku,
+                item_id=item_id,
+            )
+            finalize_error(
+                idempotency_record,
+                status_code=response.status_code,
+                payload=response.data,
+                error_code=str(response.data.get("code") or "ebay_listing_operation_request_failed"),
+            )
+            return response
+        finalize_success(idempotency_record, status_code=200, payload=result)
+        return Response(result)
 
 
 class EbayCategorySuggestionsAPIView(APIView):
@@ -396,6 +596,21 @@ def _listing_error_response(error: EbayApiError, *, account: str, item_id: str, 
     return Response(payload, status=status_code)
 
 
+def _active_listings_error_response(error: EbayApiError, *, account: str, marketplace_id: str) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {
+        "code": "ebay_active_listings_request_failed",
+        "detail": str(error),
+        "account": account,
+        "marketplace_id": marketplace_id,
+    }
+    if error.operation:
+        payload["operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
 def _inventory_item_error_response(error: EbayApiError, *, account: str, sku: str) -> Response:
     status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
     payload = {"code": "ebay_inventory_item_request_failed", "detail": str(error), "account": account, "sku": sku}
@@ -414,6 +629,98 @@ def _offer_error_response(error: EbayApiError, *, account: str) -> Response:
     if error.details is not None:
         payload["details"] = error.details
     return Response(payload, status=status_code)
+
+
+def _listing_operation_error_response(
+    error: EbayApiError,
+    *,
+    account: str,
+    marketplace_id: str,
+    operation: str,
+    listing_mode: str,
+    sku: str,
+    item_id: str,
+) -> Response:
+    status_code = error.status_code if error.status_code and 400 <= error.status_code < 600 else 502
+    payload = {
+        "code": "ebay_listing_operation_request_failed",
+        "detail": str(error),
+        "account": account,
+        "marketplace_id": marketplace_id,
+        "operation": operation,
+        "listing_mode": listing_mode,
+    }
+    if sku:
+        payload["sku"] = sku
+    if item_id:
+        payload["item_id"] = item_id
+    if error.operation:
+        payload["ebay_operation"] = error.operation
+    if error.details is not None:
+        payload["details"] = error.details
+    return Response(payload, status=status_code)
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result >= 0 else None
+
+
+def _price(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized or len(normalized) > 20:
+        return None
+    try:
+        decimal = Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
+    return normalized if decimal.is_finite() and decimal >= 0 else None
+
+
+def _inventory_location_address(payload: dict) -> dict[str, str] | None:
+    raw_address = payload.get("address")
+    if raw_address is None:
+        raw_address = {
+            "postalCode": payload.get("postal_code"),
+            "country": payload.get("country"),
+        }
+    if not isinstance(raw_address, dict):
+        return None
+    aliases = {
+        "addressLine1": "addressLine1",
+        "address_line1": "addressLine1",
+        "addressLine2": "addressLine2",
+        "address_line2": "addressLine2",
+        "city": "city",
+        "stateOrProvince": "stateOrProvince",
+        "state_or_province": "stateOrProvince",
+        "postalCode": "postalCode",
+        "postal_code": "postalCode",
+        "country": "country",
+    }
+    address: dict[str, str] = {}
+    for source, target in aliases.items():
+        value = str(raw_address.get(source) or "").strip()
+        if value:
+            if len(value) > 128:
+                return None
+            address[target] = value
+    country = address.get("country", "").upper()
+    if len(country) != 2 or not country.isalpha():
+        return None
+    address["country"] = country
+    has_postal_address = bool(address.get("postalCode"))
+    has_city_address = bool(address.get("city") and address.get("stateOrProvince"))
+    return address if has_postal_address or has_city_address else None
 
 
 def _exchange_code_response(*, code: object, state: object) -> Response:
@@ -454,6 +761,17 @@ def _exchange_code_response(*, code: object, state: object) -> Response:
 def _account(value: object) -> str | None:
     account = str(value or "").strip().lower()
     return account if account in _EBAY_SELLER_ACCOUNTS else None
+
+
+def _bounded_positive_int(value: object, *, default: int, maximum: int) -> int | None:
+    normalized_value = str(value or "").strip()
+    if not normalized_value:
+        return default
+    try:
+        parsed_value = int(normalized_value)
+    except ValueError:
+        return None
+    return parsed_value if 1 <= parsed_value <= maximum else None
 
 
 def _marketplace_account_deletion_config() -> tuple[str | None, str | None]:

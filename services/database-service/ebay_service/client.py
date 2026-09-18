@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
+from xml.sax.saxutils import escape as xml_escape
 from xml.etree import ElementTree
 
 import requests
@@ -252,8 +253,7 @@ class EbayOAuthClient:
         account: str,
         merchant_location_key: str,
         name: str,
-        postal_code: str,
-        country: str,
+        address: dict[str, str],
     ) -> None:
         access_token = self._seller_access_token(account=account)
         self._seller_post(
@@ -261,7 +261,7 @@ class EbayOAuthClient:
             path=f"/sell/inventory/v1/location/{quote(merchant_location_key, safe='')}",
             payload={
                 "name": name,
-                "location": {"address": {"postalCode": postal_code, "country": country}},
+                "location": {"address": address},
                 "locationTypes": ["WAREHOUSE"],
                 "merchantLocationStatus": "ENABLED",
             },
@@ -311,6 +311,24 @@ class EbayOAuthClient:
             content_language=self._marketplace_locale(marketplace_id),
         )
 
+    def inventory_items(self, *, account: str, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_get(
+            token=access_token,
+            path="/sell/inventory/v1/inventory_item",
+            params={"limit": str(limit), "offset": str(offset)},
+            operation="get_inventory_items",
+        )
+
+    def inventory_item(self, *, account: str, sku: str) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_get(
+            token=access_token,
+            path=f"/sell/inventory/v1/inventory_item/{quote(_required(sku, 'sku'), safe='')}",
+            params={},
+            operation="get_inventory_item",
+        )
+
     def create_offer(self, *, account: str, offer: dict[str, Any]) -> dict[str, Any]:
         access_token = self._seller_access_token(account=account)
         return self._seller_post(
@@ -321,11 +339,227 @@ class EbayOAuthClient:
             content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
         )
 
+    def offers_by_sku(self, *, account: str, sku: str, marketplace_id: str) -> list[dict[str, Any]]:
+        access_token = self._seller_access_token(account=account)
+        payload = self._seller_get(
+            token=access_token,
+            path="/sell/inventory/v1/offer",
+            params={"sku": _required(sku, "sku"), "marketplace_id": _required(marketplace_id, "marketplace_id"), "limit": "100"},
+            operation="get_offers_by_sku",
+        )
+        offers = payload.get("offers")
+        return [entry for entry in offers if isinstance(entry, dict)] if isinstance(offers, list) else []
+
+    def offer(self, *, account: str, offer_id: str) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_get(
+            token=access_token,
+            path=f"/sell/inventory/v1/offer/{quote(_required(offer_id, 'offer_id'), safe='')}",
+            params={},
+            operation="get_offer",
+        )
+
+    def update_offer(self, *, account: str, offer_id: str, offer: dict[str, Any]) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_put(
+            token=access_token,
+            path=f"/sell/inventory/v1/offer/{quote(_required(offer_id, 'offer_id'), safe='')}",
+            payload=offer,
+            operation="update_offer",
+            content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
+        )
+
+    def publish_offer(self, *, account: str, offer_id: str) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_post(
+            token=access_token,
+            path=f"/sell/inventory/v1/offer/{quote(_required(offer_id, 'offer_id'), safe='')}/publish",
+            payload={},
+            operation="publish_offer",
+        )
+
+    def withdraw_offer(self, *, account: str, offer_id: str) -> None:
+        access_token = self._seller_access_token(account=account)
+        self._seller_post(
+            token=access_token,
+            path=f"/sell/inventory/v1/offer/{quote(_required(offer_id, 'offer_id'), safe='')}/withdraw",
+            payload={},
+            operation="withdraw_offer",
+        )
+
+    def bulk_update_price_quantity(
+        self,
+        *,
+        account: str,
+        sku: str,
+        offer_id: str,
+        quantity: int | None,
+        price: str | None,
+        currency: str = "EUR",
+    ) -> dict[str, Any]:
+        if quantity is None and price is None:
+            raise EbayApiError("At least one of quantity or price is required.")
+        offer: dict[str, Any] = {"offerId": _required(offer_id, "offer_id")}
+        if quantity is not None:
+            offer["availableQuantity"] = quantity
+        if price is not None:
+            offer["price"] = {"currency": currency, "value": price}
+        request: dict[str, Any] = {"sku": _required(sku, "sku"), "offers": [offer]}
+        if quantity is not None:
+            request["shipToLocationAvailability"] = {"quantity": quantity}
+        access_token = self._seller_access_token(account=account)
+        response = self._seller_post(
+            token=access_token,
+            path="/sell/inventory/v1/bulk_update_price_quantity",
+            payload={"requests": [request]},
+            operation="bulk_update_price_quantity",
+        )
+        _raise_for_bulk_update_errors(response)
+        return response
+
+    def revise_legacy_fixed_price_listing(
+        self,
+        *,
+        account: str,
+        item_id: str,
+        marketplace_id: str,
+        quantity: int | None,
+        price: str | None,
+        currency: str = "EUR",
+    ) -> dict[str, Any]:
+        if quantity is None and price is None:
+            raise EbayApiError("At least one of quantity or price is required.")
+        item_fields = [f"<ItemID>{xml_escape(_required(item_id, 'item_id'))}</ItemID>"]
+        if quantity is not None:
+            item_fields.append(f"<Quantity>{quantity}</Quantity>")
+        if price is not None:
+            item_fields.append(f'<StartPrice currencyID="{xml_escape(currency)}">{xml_escape(price)}</StartPrice>')
+        return self._trading_request(
+            account=account,
+            marketplace_id=marketplace_id,
+            call_name="ReviseFixedPriceItem",
+            operation="revise_legacy_fixed_price_listing",
+            request_xml=(
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
+                f"<Item>{''.join(item_fields)}</Item>"
+                "</ReviseFixedPriceItemRequest>"
+            ),
+        )
+
+    def revise_legacy_fixed_price_variation(
+        self,
+        *,
+        account: str,
+        item_id: str,
+        marketplace_id: str,
+        variation_sku: str,
+        quantity: int,
+        price: str,
+        currency: str = "EUR",
+    ) -> dict[str, Any]:
+        return self._trading_request(
+            account=account,
+            marketplace_id=marketplace_id,
+            call_name="ReviseFixedPriceItem",
+            operation="revise_legacy_fixed_price_variation",
+            request_xml=(
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
+                "<Item>"
+                f"<ItemID>{xml_escape(_required(item_id, 'item_id'))}</ItemID>"
+                "<Variations><Variation>"
+                f"<SKU>{xml_escape(_required(variation_sku, 'variation_sku'))}</SKU>"
+                f'<StartPrice currencyID="{xml_escape(currency)}">{xml_escape(price)}</StartPrice>'
+                f"<Quantity>{quantity}</Quantity>"
+                "</Variation></Variations>"
+                "</Item>"
+                "</ReviseFixedPriceItemRequest>"
+            ),
+        )
+
+    def end_legacy_fixed_price_listing(self, *, account: str, item_id: str, marketplace_id: str) -> dict[str, Any]:
+        return self._trading_request(
+            account=account,
+            marketplace_id=marketplace_id,
+            call_name="EndFixedPriceItem",
+            operation="end_legacy_fixed_price_listing",
+            request_xml=(
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<EndFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
+                f"<ItemID>{xml_escape(_required(item_id, 'item_id'))}</ItemID>"
+                "<EndingReason>NotAvailable</EndingReason>"
+                "</EndFixedPriceItemRequest>"
+            ),
+        )
+
+    def relist_legacy_fixed_price_listing(
+        self,
+        *,
+        account: str,
+        item_id: str,
+        marketplace_id: str,
+        quantity: int | None,
+        price: str | None,
+        currency: str = "EUR",
+    ) -> dict[str, Any]:
+        item_fields = [f"<ItemID>{xml_escape(_required(item_id, 'item_id'))}</ItemID>"]
+        if quantity is not None:
+            item_fields.append(f"<Quantity>{quantity}</Quantity>")
+        if price is not None:
+            item_fields.append(f'<StartPrice currencyID="{xml_escape(currency)}">{xml_escape(price)}</StartPrice>')
+        return self._trading_request(
+            account=account,
+            marketplace_id=marketplace_id,
+            call_name="RelistFixedPriceItem",
+            operation="relist_legacy_fixed_price_listing",
+            request_xml=(
+                '<?xml version="1.0" encoding="utf-8"?>'
+                '<RelistFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
+                f"<Item>{''.join(item_fields)}</Item>"
+                "</RelistFixedPriceItemRequest>"
+            ),
+        )
+
     def _marketplace_locale(self, marketplace_id: str) -> str:
         locale = self._MARKETPLACE_LOCALES.get(marketplace_id)
         if locale is None:
             raise EbayApiError("eBay marketplace locale is not configured.")
         return locale
+
+    def _trading_request(
+        self,
+        *,
+        account: str,
+        marketplace_id: str,
+        call_name: str,
+        operation: str,
+        request_xml: str,
+    ) -> dict[str, Any]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Trading listing operations are currently available only for EBAY_DE.")
+        access_token = self._seller_access_token(account=account)
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=request_xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": call_name,
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay Trading API request failed.",
+                details={"kind": type(error).__name__},
+                operation=operation,
+            ) from error
+        return _trading_operation_payload(response=response, operation=operation)
 
     def shipping_services(self, *, account: str, marketplace_id: str) -> dict[str, Any]:
         site_id = self._TRADING_SITE_IDS.get(marketplace_id)
@@ -390,6 +624,44 @@ class EbayOAuthClient:
                 operation="get_listing",
             ) from error
         return _listing_payload(response=response, marketplace_id=marketplace_id)
+
+    def active_listings(self, *, account: str, marketplace_id: str, page: int, limit: int) -> dict[str, Any]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Active listing lookup is currently available only for EBAY_DE.")
+
+        access_token = self._seller_access_token(account=account)
+        xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <DetailLevel>ReturnAll</DetailLevel>
+  <ActiveList>
+    <Include>true</Include>
+    <Pagination>
+      <EntriesPerPage>{limit}</EntriesPerPage>
+      <PageNumber>{page}</PageNumber>
+    </Pagination>
+  </ActiveList>
+</GetMyeBaySellingRequest>'''
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GetMyeBaySelling",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+        except requests.RequestException as error:
+            raise EbayApiError(
+                "eBay active listing lookup failed.",
+                details={"kind": type(error).__name__},
+                operation="get_active_listings",
+            ) from error
+        return _active_listings_payload(response=response, marketplace_id=marketplace_id, page=page, limit=limit)
 
     def _seller_access_token(self, *, account: str) -> str:
         try:
@@ -563,6 +835,35 @@ def _response_payload(response: requests.Response, source: str) -> dict[str, Any
     return payload
 
 
+def _raise_for_bulk_update_errors(payload: dict[str, Any]) -> None:
+    failures: list[dict[str, Any]] = []
+    top_level_errors = payload.get("errors")
+    if isinstance(top_level_errors, list) and top_level_errors:
+        failures.append({"errors": top_level_errors})
+    for entry in payload.get("responses", []):
+        if not isinstance(entry, dict):
+            continue
+        if _response_status_failed(entry):
+            failures.append(entry)
+        for offer_entry in entry.get("offerResponses", []):
+            if isinstance(offer_entry, dict) and _response_status_failed(offer_entry):
+                failures.append(offer_entry)
+    if failures:
+        raise EbayApiError(
+            "eBay bulk price and quantity update returned failed item results.",
+            status_code=422,
+            details={"responses": failures},
+            operation="bulk_update_price_quantity",
+        )
+
+
+def _response_status_failed(entry: dict[str, Any]) -> bool:
+    try:
+        return int(entry.get("statusCode")) >= 400
+    except (TypeError, ValueError):
+        return False
+
+
 def _shipping_services_payload(*, response: requests.Response, marketplace_id: str) -> dict[str, Any]:
     try:
         root = ElementTree.fromstring(response.content)
@@ -639,6 +940,88 @@ def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dic
     if item is None:
         raise EbayApiError("eBay listing lookup response has no item.", operation="get_listing")
 
+    return _listing_item_payload(item=item, marketplace_id=marketplace_id, namespace=namespace)
+
+
+def _trading_operation_payload(*, response: requests.Response, operation: str) -> dict[str, Any]:
+    try:
+        root = ElementTree.fromstring(response.content)
+    except (AttributeError, ElementTree.ParseError) as error:
+        raise EbayApiError(
+            "eBay Trading API returned an invalid XML response.",
+            status_code=response.status_code,
+            operation=operation,
+        ) from error
+
+    namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+    errors = [
+        {
+            "code": _xml_text(error, "ebay:ErrorCode", namespace),
+            "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace),
+        }
+        for error in root.findall("ebay:Errors", namespace)
+    ]
+    if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+        raise EbayApiError(
+            "eBay Trading API returned an error response.",
+            status_code=response.status_code,
+            details={"errors": errors},
+            operation=operation,
+        )
+    return {
+        "ack": _xml_text(root, "ebay:Ack", namespace),
+        "item_id": _xml_text(root, "ebay:ItemID", namespace),
+        "end_time": _xml_text(root, "ebay:EndTime", namespace),
+        "fees": [
+            {
+                "name": _xml_text(fee, "ebay:Name", namespace),
+                "fee": _xml_text(fee, "ebay:Fee", namespace),
+            }
+            for fee in root.findall("ebay:Fees/ebay:Fee", namespace)
+        ],
+    }
+
+
+def _active_listings_payload(*, response: requests.Response, marketplace_id: str, page: int, limit: int) -> dict[str, Any]:
+    try:
+        root = ElementTree.fromstring(response.content)
+    except (AttributeError, ElementTree.ParseError) as error:
+        raise EbayApiError(
+            "eBay active listing lookup returned an invalid XML response.",
+            status_code=response.status_code,
+            operation="get_active_listings",
+        ) from error
+
+    namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+    errors = [
+        {
+            "code": _xml_text(error, "ebay:ErrorCode", namespace),
+            "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace),
+        }
+        for error in root.findall("ebay:Errors", namespace)
+    ]
+    if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+        raise EbayApiError(
+            "eBay active listing lookup returned an error response.",
+            status_code=response.status_code,
+            details={"errors": errors},
+            operation="get_active_listings",
+        )
+
+    active_list = root.find("ebay:ActiveList", namespace)
+    items = [] if active_list is None else active_list.findall("ebay:ItemArray/ebay:Item", namespace)
+    pagination = active_list.find("ebay:PaginationResult", namespace) if active_list is not None else None
+    return {
+        "marketplace_id": marketplace_id,
+        "page": page,
+        "limit": limit,
+        "total": _xml_text(pagination, "ebay:TotalNumberOfEntries", namespace) if pagination is not None else "0",
+        "total_pages": _xml_text(pagination, "ebay:TotalNumberOfPages", namespace) if pagination is not None else "0",
+        "listings": [_listing_item_payload(item=item, marketplace_id=marketplace_id, namespace=namespace) for item in items],
+    }
+
+
+def _listing_item_payload(*, item: ElementTree.Element, marketplace_id: str, namespace: dict[str, str]) -> dict[str, Any]:
     identifiers: dict[str, list[str]] = {}
     for entry in item.findall("ebay:ItemSpecifics/ebay:NameValueList", namespace):
         name = _xml_text(entry, "ebay:Name", namespace)
@@ -652,6 +1035,7 @@ def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dic
     if product_ean and product_ean not in identifiers.get("EAN", []):
         identifiers.setdefault("EAN", []).append(product_ean)
 
+    start_price = item.find("ebay:StartPrice", namespace)
     return {
         "marketplace_id": marketplace_id,
         "item_id": _xml_text(item, "ebay:ItemID", namespace),
@@ -659,11 +1043,40 @@ def _listing_payload(*, response: requests.Response, marketplace_id: str) -> dic
         "title": _xml_text(item, "ebay:Title", namespace),
         "sku": _xml_text(item, "ebay:SKU", namespace),
         "inventory_tracking_method": _xml_text(item, "ebay:InventoryTrackingMethod", namespace),
+        "listing_type": _xml_text(item, "ebay:ListingType", namespace),
+        "has_variations": item.find("ebay:Variations", namespace) is not None,
+        "variations": [_variation_payload(variation=variation, namespace=namespace) for variation in item.findall("ebay:Variations/ebay:Variation", namespace)],
         "listing_status": _xml_text(item, "ebay:SellingStatus/ebay:ListingStatus", namespace)
         or _xml_text(item, "ebay:ListingDetails/ebay:ListingStatus", namespace),
         "quantity": _xml_text(item, "ebay:Quantity", namespace),
         "quantity_sold": _xml_text(item, "ebay:SellingStatus/ebay:QuantitySold", namespace),
         "quantity_available": _xml_text(item, "ebay:QuantityAvailable", namespace),
+        "price": _xml_text(item, "ebay:StartPrice", namespace),
+        "currency": str(start_price.attrib.get("currencyID") or "").strip() if start_price is not None else "",
+        "identifiers": identifiers,
+    }
+
+
+def _variation_payload(*, variation: ElementTree.Element, namespace: dict[str, str]) -> dict[str, Any]:
+    identifiers: dict[str, list[str]] = {}
+    for entry in variation.findall("ebay:VariationSpecifics/ebay:NameValueList", namespace):
+        name = _xml_text(entry, "ebay:Name", namespace)
+        if name.casefold() not in {"ean", "gtin", "upc", "isbn", "mpn"}:
+            continue
+        values = [str(value.text or "").strip() for value in entry.findall("ebay:Value", namespace) if str(value.text or "").strip()]
+        if values:
+            identifiers[name] = values
+    variation_ean = _xml_text(variation, "ebay:VariationProductListingDetails/ebay:EAN", namespace)
+    if variation_ean and variation_ean not in identifiers.get("EAN", []):
+        identifiers.setdefault("EAN", []).append(variation_ean)
+    return {
+        "sku": _xml_text(variation, "ebay:SKU", namespace),
+        "quantity": _xml_text(variation, "ebay:Quantity", namespace),
+        "quantity_sold": _xml_text(variation, "ebay:SellingStatus/ebay:QuantitySold", namespace),
+        "price": _xml_text(variation, "ebay:StartPrice", namespace),
+        "currency": str(variation.find("ebay:StartPrice", namespace).attrib.get("currencyID") or "").strip()
+        if variation.find("ebay:StartPrice", namespace) is not None
+        else "",
         "identifiers": identifiers,
     }
 
