@@ -128,6 +128,13 @@ class ProductEditorEbayFlow:
         found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
         target_ids = [target_id for target_id in selected_target_ids if target_id in found] if selected_target_ids else found
         if not target_ids:
+            target_ids = self._verified_explicit_legacy_targets(
+                ean=ean,
+                request_id=request_id,
+                draft=draft,
+                selected_target_ids=selected_target_ids,
+            )
+        if not target_ids:
             raise ProductEditorEbayFlowError("product_editor_no_ebay_targets", "No reachable eBay listing is available for this EAN.", 409)
         payload = _normalize_ebay_plan_payload(draft=draft, ean=ean, changed_fields=changed_fields)
         plan_id = str(uuid.uuid4())
@@ -186,6 +193,36 @@ class ProductEditorEbayFlow:
             created_at_unix_ms=details.created_at_unix_ms,
             updated_at_unix_ms=details.updated_at_unix_ms,
         )
+
+    def _verified_explicit_legacy_targets(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        draft: dict,
+        selected_target_ids: list[str],
+    ) -> list[str]:
+        if str(draft.get("ebay_listing_mode") or "").strip().lower() != "legacy":
+            return []
+        item_id = str(draft.get("ebay_item_id") or "").strip()
+        if not item_id or not selected_target_ids:
+            return []
+
+        verified_target_ids: list[str] = []
+        for target_id in selected_target_ids:
+            account = _EBAY_ACCOUNT_BY_TARGET.get(str(target_id).strip().upper())
+            if account is None:
+                continue
+            fetched = self.gateway.fetch_ebay_listing(
+                account=account,
+                listing_mode="legacy",
+                item_id=item_id,
+                request_id=request_id,
+            )
+            if not (200 <= fetched.status_code < 300) or not _legacy_listing_matches_identity(body=fetched.body, item_id=item_id, ean=ean):
+                continue
+            verified_target_ids.append(str(target_id).strip().upper())
+        return verified_target_ids
 
     def _resolve_target(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
         states = self.discover_targets(ean=ean, request_id=request_id)
@@ -279,6 +316,18 @@ def _legacy_ean_matches(*, listings: object, ean: str) -> list[tuple[dict, str]]
             if variation_sku:
                 matches.append((listing, variation_sku))
     return matches
+
+
+def _legacy_listing_matches_identity(*, body: dict, item_id: str, ean: str) -> bool:
+    listing = body.get("listing") if isinstance(body.get("listing"), dict) else {}
+    if str(listing.get("item_id") or "").strip() != item_id:
+        return False
+    if ean in (listing.get("identifiers") or {}).get("EAN", []):
+        return True
+    return any(
+        isinstance(variation, dict) and ean in (variation.get("identifiers") or {}).get("EAN", [])
+        for variation in listing.get("variations", [])
+    )
 
 
 def _legacy_variation(*, listing: dict, variation_sku: str) -> dict | None:
