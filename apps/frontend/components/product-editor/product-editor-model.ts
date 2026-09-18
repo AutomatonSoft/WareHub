@@ -7,6 +7,7 @@ import type {
   ProductEditorHoodDraft,
   ProductEditorHoodProperty,
   ProductEditorKauflandDraft,
+  ProductEditorEbayDraft,
   ProductEditorOttoDraft,
   ProductEditorJvDraft,
   ProductEditorPendingUpload,
@@ -79,6 +80,39 @@ export function createEmptyOttoDraft(): ProductEditorOttoDraft {
     target_id: "", profile: "jv", productReference: "", sku: "", ean: "", isbn: "", upc: "", pzn: "", mpn: "", moin: "", offeringStartDate: "", releaseDate: "", maxOrderQuantity: "", shippingProfileId: "",
     productDescription: {}, mediaAssets: [], delivery: {}, order: {}, pricing: {}, logistics: {}, compliance: {},
   };
+}
+
+export function createEmptyEbayDraft(): ProductEditorEbayDraft {
+  return {
+    target_id: "",
+    ean: "",
+    ebay_listing_mode: "inventory",
+    ebay_item_id: "",
+    ebay_variation_sku: "",
+    price: "",
+    quantity: "",
+    ebay_currency: "EUR",
+  };
+}
+
+export function hydrateEbayDraft(input?: Partial<ProductEditorEbayDraft>): ProductEditorEbayDraft {
+  const empty = createEmptyEbayDraft();
+  return {
+    ...empty,
+    ...input,
+    ebay_listing_mode: input?.ebay_listing_mode === "legacy" ? "legacy" : "inventory",
+    ean: String(input?.ean ?? ""),
+    ebay_item_id: String(input?.ebay_item_id ?? ""),
+    ebay_variation_sku: String(input?.ebay_variation_sku ?? ""),
+    price: formatPriceForInput(input?.price),
+    quantity: input?.quantity == null ? "" : String(input.quantity),
+    ebay_currency: String(input?.ebay_currency ?? "EUR").toUpperCase(),
+  };
+}
+
+export function buildEbayChangedFields(initial: ProductEditorEbayDraft, current: ProductEditorEbayDraft): string[] {
+  return (["price", "quantity"] as const)
+    .filter((key) => String(initial[key] ?? "").trim() !== String(current[key] ?? "").trim());
 }
 
 export function hydrateOttoDraft(input?: Partial<ProductEditorOttoDraft>): ProductEditorOttoDraft {

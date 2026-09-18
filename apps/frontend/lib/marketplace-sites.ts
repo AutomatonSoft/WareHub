@@ -1,4 +1,4 @@
-export type SiteKind = "JV" | "XL";
+export type SiteKind = "JV" | "XL" | "DEP";
 export type SiteFamily = "OTTO" | "KAUFLAND" | "HOOD" | "EBAY" | "JVMOEBEL" | "XL";
 export type SiteConnectionStatus = "CONNECTED" | "DISCONNECTED" | "NOT_FOUND";
 
@@ -50,6 +50,7 @@ const baseSites: MarketplaceSite[] = [
   { id: "hood-xl", logo: "HOOD", name: "HOOD XL", family: "HOOD", kind: "XL", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
   { id: "ebay-jv", logo: "EBAY", name: "EBAY JV", family: "EBAY", kind: "JV", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
   { id: "ebay-xl", logo: "EBAY", name: "EBAY XL", family: "EBAY", kind: "XL", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
+  { id: "ebay-dep", logo: "EBAY", name: "EBAY DEP", family: "EBAY", kind: "DEP", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
   { id: "jvmoebel-de", logo: "JVMOEBEL", name: "JVMOEBEL DE", family: "JVMOEBEL", kind: "JV", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
   { id: "jvmoebel-at", logo: "JVMOEBEL", name: "JVMOEBEL AT", family: "JVMOEBEL", kind: "JV", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },
   { id: "jvmoebel-ch", logo: "JVMOEBEL", name: "JVMOEBEL CH", family: "JVMOEBEL", kind: "JV", status: "DISCONNECTED", lastSync: "", productsInDb: 0 },

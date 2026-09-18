@@ -32,7 +32,7 @@ import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
 import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./otto-create-product-panel";
-import type { MainKauflandCreateFields } from "./create-product-model";
+import type { EbayCreateFields, MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
@@ -40,6 +40,7 @@ import { OttoCategoriesPanel } from "./otto-categories-panel";
 import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
 import { applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
 import { claimEanForKid } from "../../components/editor/ean-pool-api";
+import { EbaySellerSetupPanel } from "./ebay-seller-setup-panel";
 
 const CreateProductImageGallery = dynamic(
   () => import("../../components/product-forms").then((module) => module.CreateProductImageGallery),
@@ -84,10 +85,11 @@ const PAGE_TABS = [
   "otto_xl",
   "ebay_jv",
   "ebay_xl",
+  "ebay_dep",
 ] as const;
 type CreateProductTab = "main" | (typeof PAGE_TABS)[number];
 type OttoCreateProductTab = "otto_jv" | "otto_xl";
-type MarketplaceAccount = "JV" | "XL";
+type MarketplaceAccount = "JV" | "XL" | "DEP";
 type MarketplaceReservationFamily = "jv" | "xl";
 type CreateProductTabMeta = {
   label: string;
@@ -317,6 +319,8 @@ function getCreateProductTabLabel(
       return `${t.channelEbay} JV`;
     case "ebay_xl":
       return `${t.channelEbay} XL`;
+    case "ebay_dep":
+      return `${t.channelEbay} DEP`;
     default:
       return tab;
   }
@@ -424,6 +428,15 @@ function getCreateProductTabMeta(tab: CreateProductTab, t: ReturnType<typeof use
         marketplace: "EBAY",
         account: "XL",
       };
+    case "ebay_dep":
+      return {
+        label: `${t.channelEbay} DEP`,
+        sourceSite: "JV",
+        mainEanFamily: "jv",
+        targetSiteIds: getSiteIdsByFamilyAndKind("EBAY", "DEP"),
+        marketplace: "EBAY",
+        account: "DEP",
+      };
     default:
       return {
         label: String(tab),
@@ -448,7 +461,7 @@ function getSourceDiscoveryForTab(
     const message = ottoSearchErrors[profile];
     return message ? { status: "error", message } : { status: "missing" };
   }
-  if (tab === "ebay_jv" || tab === "ebay_xl") return null;
+  if (tab === "ebay_jv" || tab === "ebay_xl" || tab === "ebay_dep") return null;
   if (tab === "jv") {
     const jvStatuses = ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"]
       .map((siteKey) => sourceDiscoveryBySiteKey[siteKey])
@@ -1236,6 +1249,7 @@ export default function CreateProductPage() {
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
   const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft>>>>({});
+  const ebayDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<EbayCreateFields>>>>({});
   const [ottoCategoryByTab, setOttoCategoryByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoCategoryNameByTab, setOttoCategoryNameByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
@@ -1593,8 +1607,8 @@ export default function CreateProductPage() {
   const publishSiteOptions: PublishSiteOption[] = allMarketplaceSites
     .filter((site) => PUBLISHABLE_SITE_FAMILIES.has(site.family) && (site.family !== "XL" || site.id === PUBLISHABLE_XL_SITE_ID))
     .map((site) => ({ id: site.id, label: site.name, family: site.family as PublishSiteOption["family"] }));
-  const isComingSoonMarketplace = activeTabMeta.marketplace === "EBAY";
-  const canCreateProduct = !isComingSoonMarketplace && (activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0);
+  const isEbayMarketplace = activeTabMeta.marketplace === "EBAY";
+  const canCreateProduct = activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0;
   const primaryActionLoading = activeTab === "jv" ? sendAllSitesLoading : controller.submitting;
   const primaryActionLabel = primaryActionLoading ? t.createProductCreatingAction : t.createProductCreateAction;
   const tabGalleryItems = useMemo(
@@ -1626,6 +1640,23 @@ export default function CreateProductPage() {
   ].filter(Boolean).join(":") || "new-product";
   const activeXlSourceKey = activeDraftContextKey;
   const activeJvSourceKey = activeDraftContextKey;
+  const activeEbayDraftSnapshot = ebayDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+    ? ebayDraftRefByTab.current[activeTab]
+    : undefined;
+  const activeEbayInitialFields: EbayCreateFields = activeEbayDraftSnapshot?.draft ?? {
+    ean: controller.ean,
+    title: controller.productName,
+    description: "",
+    price: controller.price,
+    quantity: "1",
+    condition: "NEW",
+    categoryId: "",
+    aspectsText: "",
+    merchantLocationKey: "",
+    fulfillmentPolicyId: "",
+    paymentPolicyId: "",
+    returnPolicyId: "",
+  };
   const activeHoodSnapshot = controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
     ? controller.sourceSnapshot
     : null;
@@ -1710,6 +1741,7 @@ export default function CreateProductPage() {
     hoodDraftRefByTab.current = {};
     kauflandDraftRefByTab.current = {};
     ottoDraftRefByTab.current = {};
+    ebayDraftRefByTab.current = {};
     hoodPublishDraftRef.current = null;
     setReservedMarketplaceEans({});
     setOttoCategoryByTab({});
@@ -2830,6 +2862,12 @@ export default function CreateProductPage() {
       return void handleMainCreate();
     }
 
+    if (isEbayMarketplace) {
+      return void controller.handleCreateProduct({}, activeMarketplaceSiteIds, {
+        ebayFields: activeEbayInitialFields,
+      }, getActiveTabLocalImageFiles());
+    }
+
     if (activeTabMeta.marketplace === "HOOD") {
       const draft = hoodPublishDraftRef.current?.draftKey === activeHoodSourceKey
         ? hoodPublishDraftRef.current.draft
@@ -3000,7 +3038,7 @@ export default function CreateProductPage() {
       <div
         className={[
           "rounded-[var(--radius-card)] border border-border/70 bg-card p-4",
-          isComingSoonMarketplace ? "flex h-[calc(100vh-24px)] flex-col" : "",
+          isEbayMarketplace ? "flex h-[calc(100vh-24px)] flex-col" : "",
         ].join(" ")}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3037,7 +3075,7 @@ export default function CreateProductPage() {
             <CreateProductEanPoolPanel />
             <button
               type="button"
-              onClick={openPublishSitesDialog}
+              onClick={isEbayMarketplace ? handlePrimaryCreateAction : openPublishSitesDialog}
               disabled={primaryActionLoading || !canCreateProduct}
               className="flex min-h-10 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               title={
@@ -3133,7 +3171,7 @@ export default function CreateProductPage() {
           </div>
         ) : null}
 
-        {activeTab !== "jv" && !isComingSoonMarketplace ? (
+        {activeTab !== "jv" && !isEbayMarketplace ? (
           <div className="mt-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
             <div className={[
               "flex flex-col gap-4 xl:flex-row",
@@ -3322,12 +3360,32 @@ export default function CreateProductPage() {
           </div>
         ) : null}
 
-        {isComingSoonMarketplace ? (
-          <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-[var(--radius-control)] border border-dashed border-border/70 bg-background px-6 text-center">
-            <div className="text-lg font-semibold text-foreground">{t.comingSoon}</div>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              {activeTabMeta.label} product creation is being prepared.
-            </p>
+        {isEbayMarketplace ? (
+          <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <EbaySellerSetupPanel
+              account={activeTabMeta.account ?? "JV"}
+              draftKey={activeDraftContextKey}
+              initialFields={activeEbayInitialFields}
+              onDraftChange={(draft) => {
+                ebayDraftRefByTab.current[activeTab] = { sourceKey: activeDraftContextKey, draft };
+              }}
+            />
+            <div className="mt-4 min-w-0 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
+              <CreateProductImageGallery
+                items={tabGalleryItems}
+                activeItemId={activeTabGalleryImageId}
+                previewAlt={t.createProductJvGalleryPreview}
+                emptyPreviewLabel={t.noImagesInGallery}
+                emptyGalleryLabel={t.createProductNoGalleryImages}
+                uploadLabel={t.productEditorUploadImagesAction}
+                thumbnailAlt={(index) => t.createProductJvGalleryThumbnail.replace("{index}", String(index + 1))}
+                deleteAlt={(index) => t.createProductDeleteImage.replace("{index}", String(index + 1))}
+                onActiveItemChange={(itemId) => setActiveTabGalleryImageIdByTab((current) => ({ ...current, [activeTab]: itemId }))}
+                onFilesSelected={handleTabGalleryUpload}
+                onDeleteItem={handleDeleteTabGalleryItem}
+                onMoveItem={handleMoveTabGalleryItem}
+              />
+            </div>
           </div>
         ) : null}
 

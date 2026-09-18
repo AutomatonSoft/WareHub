@@ -230,6 +230,7 @@ class ProductEditorService:
         active_group: ProductEditorGroupId,
         baseline_target_id: str | None,
         publishing_target_id: str | None = None,
+        legacy_item_id: str | None = None,
     ) -> ProductEditorLoadResponse:
         try:
             if active_group is ProductEditorGroupId.HOOD:
@@ -248,7 +249,12 @@ class ProductEditorService:
             if active_group is ProductEditorGroupId.OTTO:
                 return self.otto_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
             if active_group is ProductEditorGroupId.EBAY:
-                return self.ebay_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
+                return self.ebay_flow.load(
+                    ean=ean,
+                    request_id=request_id,
+                    baseline_target_id=baseline_target_id,
+                    legacy_item_id=legacy_item_id,
+                )
         except RetryExhaustedError as exc:
             raise _map_retry_exhausted_error(exc) from exc
         except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError, ProductEditorEbayFlowError) as exc:

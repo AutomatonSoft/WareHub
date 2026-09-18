@@ -50,6 +50,21 @@
         "description": "Readiness probe that validates the orchestrator idempotency store connection."
       }
     },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "Get orchestrator OpenAPI schema",
+        "description": "Returns the normalized OpenAPI document for the orchestrator service.",
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON document."
+          }
+        },
+        "tags": [
+          "System"
+        ],
+        "operationId": "orchestrator_get_api_v1_openapi.json"
+      }
+    },
     "/api/v1/metrics": {
       "get": {
         "summary": "Metrics",
@@ -122,6 +137,86 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ],
+        "description": "Queues one asynchronous orchestrator job and returns its job identifier."
+      },
+      "get": {
+        "summary": "List Orchestrator Jobs",
+        "operationId": "orchestrator_get_api_v1_orchestrator_jobs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -511,66 +606,6 @@
         "description": "Applies a previously generated Product Editor plan after explicit confirmation."
       }
     },
-    "/api/v1/orchestrator/product-editor/apply/": {
-      "post": {
-        "summary": "Product Editor Apply",
-        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_apply",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProductEditorApplyRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductEditorApplyResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Product Editor"
-        ],
-        "description": "Applies a previously generated Product Editor plan after explicit confirmation."
-      }
-    },
     "/api/v1/orchestrator/product-editor/discover": {
       "post": {
         "summary": "Product Editor Discover",
@@ -631,78 +666,43 @@
         "description": "Discovers Product Editor groups, capabilities and initial warnings for a given EAN."
       }
     },
-    "/api/v1/orchestrator/product-editor/discover/": {
-      "post": {
-        "summary": "Product Editor Discover",
-        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_discover",
+    "/api/v1/orchestrator/product-editor/jobs": {
+      "get": {
+        "summary": "Product Editor Jobs List",
+        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs",
         "parameters": [
           {
-            "name": "X-Request-Id",
-            "in": "header",
+            "name": "limit",
+            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProductEditorDiscoverRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductEditorDiscoverResponse"
-                }
-              }
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Product Editor"
-        ],
-        "description": "Discovers Product Editor groups, capabilities and initial warnings for a given EAN."
-      }
-    },
-    "/api/v1/orchestrator/product-editor/jobs/{job_id}": {
-      "get": {
-        "summary": "Product Editor Job Status",
-        "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
-        "parameters": [
           {
-            "name": "job_id",
-            "in": "path",
-            "required": true,
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string",
-              "title": "Job Id"
+              "maxLength": 100,
+              "default": "",
+              "title": "Query"
             }
           },
           {
@@ -728,7 +728,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductEditorJobResponse"
+                  "$ref": "#/components/schemas/ProductEditorJobListResponse"
                 }
               }
             }
@@ -750,7 +750,7 @@
         "description": "Returns Product Editor job status, target execution state and warnings."
       }
     },
-    "/api/v1/orchestrator/product-editor/jobs/{job_id}/": {
+    "/api/v1/orchestrator/product-editor/jobs/{job_id}": {
       "get": {
         "summary": "Product Editor Job Status",
         "operationId": "orchestrator_get_api_v1_orchestrator_product_editor_jobs_job_id",
@@ -869,127 +869,7 @@
         "description": "Loads Product Editor baseline data and current target state for a selected group."
       }
     },
-    "/api/v1/orchestrator/product-editor/load/": {
-      "post": {
-        "summary": "Product Editor Load",
-        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_load",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProductEditorLoadRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductEditorLoadResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Product Editor"
-        ],
-        "description": "Loads Product Editor baseline data and current target state for a selected group."
-      }
-    },
     "/api/v1/orchestrator/product-editor/plan": {
-      "post": {
-        "summary": "Product Editor Plan",
-        "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
-        "parameters": [
-          {
-            "name": "X-Request-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Request-Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProductEditorPlanRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductEditorPlanResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Product Editor"
-        ],
-        "description": "Builds a Product Editor execution plan from draft changes and selected targets."
-      }
-    },
-    "/api/v1/orchestrator/product-editor/plan/": {
       "post": {
         "summary": "Product Editor Plan",
         "operationId": "orchestrator_post_api_v1_orchestrator_product_editor_plan",
@@ -1303,6 +1183,241 @@
         ],
         "description": "Returns one persisted reconciliation report by identifier."
       }
+    },
+    "/api/v1/orchestrator/marketplace/jobs": {
+      "get": {
+        "summary": "List Marketplace Toggle Jobs",
+        "operationId": "orchestrator_get_api_v1_orchestrator_marketplace_jobs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceToggleJobListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Marketplace"
+        ],
+        "description": "GET /api/v1/orchestrator/marketplace/jobs."
+      }
+    },
+    "/api/v1/orchestrator/marketplace/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Marketplace Toggle Job",
+        "operationId": "orchestrator_get_api_v1_orchestrator_marketplace_jobs_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceToggleJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Marketplace"
+        ],
+        "description": "GET /api/v1/orchestrator/marketplace/jobs/{job_id}."
+      }
+    },
+    "/api/v1/orchestrator/marketplace/toggle-by-kid": {
+      "post": {
+        "summary": "Create Marketplace Toggle Job",
+        "operationId": "orchestrator_post_api_v1_orchestrator_marketplace_toggle_by_kid",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          },
+          {
+            "name": "X-WareHub-Actor-Login",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Warehub-Actor-Login"
+            }
+          },
+          {
+            "name": "X-WareHub-Actor-Name",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Warehub-Actor-Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketplaceToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceToggleCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Marketplace"
+        ],
+        "description": "POST /api/v1/orchestrator/marketplace/toggle-by-kid."
+      }
     }
   },
   "components": {
@@ -1431,6 +1546,65 @@
             ],
             "title": "Images"
           },
+          "categoryID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoryid"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "itemMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemmode"
+          },
+          "itemNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemnumber"
+          },
+          "productProperties": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Productproperties"
+          },
           "picture_urls": {
             "anyOf": [
               {
@@ -1500,6 +1674,28 @@
             ],
             "title": "Sku"
           },
+          "isbn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isbn"
+          },
+          "upc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upc"
+          },
           "pzn": {
             "anyOf": [
               {
@@ -1533,6 +1729,17 @@
             ],
             "title": "Moin"
           },
+          "offeringStartDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offeringstartdate"
+          },
           "releaseDate": {
             "anyOf": [
               {
@@ -1543,6 +1750,28 @@
               }
             ],
             "title": "Releasedate"
+          },
+          "maxOrderQuantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxorderquantity"
+          },
+          "shippingProfileId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shippingprofileid"
           },
           "productDescription": {
             "anyOf": [
@@ -1570,6 +1799,18 @@
               }
             ],
             "title": "Mediaassets"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery"
           },
           "order": {
             "anyOf": [
@@ -1789,6 +2030,78 @@
               }
             ],
             "title": "Jv Fields"
+          },
+          "ebay_listing_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "inventory",
+                  "legacy"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Listing Mode"
+          },
+          "ebay_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Item Id"
+          },
+          "ebay_variation_sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Variation Sku"
+          },
+          "ebay_inventory_item": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Inventory Item"
+          },
+          "ebay_offer": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Offer"
+          },
+          "ebay_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Currency"
           }
         },
         "additionalProperties": false,
@@ -1855,6 +2168,15 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Overrides"
+          },
+          "ean_source": {
+            "type": "string",
+            "enum": [
+              "main",
+              "pool"
+            ],
+            "title": "Ean Source",
+            "default": "main"
           }
         },
         "type": "object",
@@ -1958,6 +2280,7 @@
       "Marketplace": {
         "type": "string",
         "enum": [
+          "ebay",
           "hood",
           "kaufland",
           "otto",
@@ -1965,9 +2288,245 @@
         ],
         "title": "Marketplace"
       },
+      "MarketplaceToggleCreateResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "request_id",
+          "status"
+        ],
+        "title": "MarketplaceToggleCreateResponse"
+      },
+      "MarketplaceToggleJobListResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceToggleJobResponse"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "MarketplaceToggleJobListResponse"
+      },
+      "MarketplaceToggleJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "kid_number": {
+            "type": "string",
+            "title": "Kid Number"
+          },
+          "inactive": {
+            "type": "boolean",
+            "title": "Inactive"
+          },
+          "job_status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "ok",
+              "partial",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketplaceToggleSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceToggleResultItem"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorContract"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At Unix Ms"
+          },
+          "updated_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At Unix Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "request_id",
+          "kid_number",
+          "inactive",
+          "job_status",
+          "status"
+        ],
+        "title": "MarketplaceToggleJobResponse"
+      },
+      "MarketplaceToggleRequest": {
+        "properties": {
+          "kid_number": {
+            "type": "string",
+            "title": "Kid Number"
+          },
+          "inactive": {
+            "type": "boolean",
+            "title": "Inactive",
+            "default": true
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kid_number"
+        ],
+        "title": "MarketplaceToggleRequest"
+      },
+      "MarketplaceToggleResultItem": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "site_key": {
+            "type": "string",
+            "title": "Site Key"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "status_code": {
+            "type": "integer",
+            "title": "Status Code"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "site_key",
+          "channel",
+          "status_code"
+        ],
+        "title": "MarketplaceToggleResultItem"
+      },
+      "MarketplaceToggleSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "success": {
+            "type": "integer",
+            "title": "Success"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "success",
+          "failed"
+        ],
+        "title": "MarketplaceToggleSummary"
+      },
       "Operation": {
         "type": "string",
         "enum": [
+          "fetch",
           "publish",
           "update",
           "unpublish",
@@ -1990,6 +2549,17 @@
             },
             "type": "array",
             "title": "Channels"
+          },
+          "kid_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kid Number"
           }
         },
         "type": "object",
@@ -2217,6 +2787,41 @@
         ],
         "title": "ProductEditorGroupId"
       },
+      "ProductEditorJobListResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/ProductEditorJobResponse"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ProductEditorJobListResponse"
+      },
       "ProductEditorJobResponse": {
         "properties": {
           "request_id": {
@@ -2226,6 +2831,17 @@
           "job_id": {
             "type": "string",
             "title": "Job Id"
+          },
+          "ean": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ean"
           },
           "status": {
             "anyOf": [
@@ -2270,6 +2886,28 @@
                 "type": "null"
               }
             ]
+          },
+          "created_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At Unix Ms"
+          },
+          "updated_at_unix_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At Unix Ms"
           }
         },
         "type": "object",
@@ -2299,6 +2937,28 @@
               }
             ],
             "title": "Baseline Target Id"
+          },
+          "publishing_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishing Target Id"
+          },
+          "legacy_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Item Id"
           }
         },
         "type": "object",
@@ -2670,6 +3330,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",
@@ -2702,6 +3369,10 @@
     {
       "name": "Reconciliation",
       "description": "Reconciliation planning and report retrieval endpoints."
+    },
+    {
+      "name": "Marketplace",
+      "description": "Marketplace endpoints."
     }
   ],
   "x-tagGroups": [
@@ -2712,7 +3383,8 @@
         "Jobs",
         "Product Editor",
         "Products",
-        "Reconciliation"
+        "Reconciliation",
+        "Marketplace"
       ]
     }
   ]

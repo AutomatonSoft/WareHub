@@ -78,8 +78,27 @@ class ProductEditorEbayFlow:
             results[target_id] = {"status": ProductEditorTargetStatus.MISSING, "metadata": {"account": account}, "warnings": []}
         return results
 
-    def load(self, *, ean: str, request_id: str, baseline_target_id: str | None) -> ProductEditorLoadResponse:
-        target_id = self._resolve_target(ean=ean, request_id=request_id, preferred_target_id=baseline_target_id)
+    def load(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        baseline_target_id: str | None,
+        legacy_item_id: str | None = None,
+    ) -> ProductEditorLoadResponse:
+        states = self.discover_targets(ean=ean, request_id=request_id)
+        target_id: str | None = None
+        state: dict | None = None
+        if legacy_item_id:
+            target_id, state = self._load_explicit_legacy_target(
+                ean=ean,
+                request_id=request_id,
+                preferred_target_id=baseline_target_id,
+                legacy_item_id=legacy_item_id,
+            )
+        if target_id is None:
+            target_id = self._resolve_target(states=states, preferred_target_id=baseline_target_id)
+            state = states.get(target_id) if target_id else None
         if target_id is None:
             return ProductEditorLoadResponse(
                 request_id=request_id,
@@ -89,7 +108,15 @@ class ProductEditorEbayFlow:
                 supported=False,
                 warnings=[ProductEditorWarning(code="product_editor_ebay_target_not_found", message="No eBay listing was found for this EAN.")],
             )
-        state = self.discover_targets(ean=ean, request_id=request_id)[target_id]
+        if state is None:
+            return ProductEditorLoadResponse(
+                request_id=request_id,
+                ean=ean,
+                active_group=ProductEditorGroupId.EBAY,
+                baseline_target_id=target_id,
+                supported=False,
+                warnings=[ProductEditorWarning(code="product_editor_ebay_load_failed", message="eBay listing could not be loaded.")],
+            )
         metadata = state["metadata"]
         account = str(metadata["account"])
         listing_mode = str(metadata["listing_mode"])
@@ -224,8 +251,44 @@ class ProductEditorEbayFlow:
             verified_target_ids.append(str(target_id).strip().upper())
         return verified_target_ids
 
-    def _resolve_target(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
-        states = self.discover_targets(ean=ean, request_id=request_id)
+    def _load_explicit_legacy_target(
+        self,
+        *,
+        ean: str,
+        request_id: str,
+        preferred_target_id: str | None,
+        legacy_item_id: str,
+    ) -> tuple[str | None, dict | None]:
+        item_id = legacy_item_id.strip()
+        preferred_target = str(preferred_target_id or "").strip().upper()
+        target_ids = [preferred_target] if preferred_target in _EBAY_ACCOUNT_BY_TARGET else list(_EBAY_ACCOUNT_BY_TARGET)
+        for target_id in target_ids:
+            account = _EBAY_ACCOUNT_BY_TARGET[target_id]
+            fetched = self.gateway.fetch_ebay_listing(
+                account=account,
+                listing_mode="legacy",
+                item_id=item_id,
+                request_id=request_id,
+            )
+            if not (200 <= fetched.status_code < 300) or not _legacy_listing_matches_identity(body=fetched.body, item_id=item_id, ean=ean):
+                continue
+            listing = fetched.body.get("listing") if isinstance(fetched.body.get("listing"), dict) else {}
+            matches = _legacy_ean_matches(listings=[listing], ean=ean)
+            variation_sku = matches[0][1] if len(matches) == 1 else ""
+            return target_id, {
+                "status": ProductEditorTargetStatus.FOUND,
+                "metadata": {
+                    "account": account,
+                    "listing_mode": "legacy",
+                    "item_id": item_id,
+                    "variation_sku": variation_sku,
+                },
+                "warnings": [],
+            }
+        return None, None
+
+    @staticmethod
+    def _resolve_target(*, states: dict[str, dict], preferred_target_id: str | None) -> str | None:
         found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
         return preferred_target_id if preferred_target_id in found else (found[0] if found else None)
 
@@ -247,7 +310,7 @@ def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dic
         variation = _legacy_variation(listing=listing, variation_sku=str(metadata.get("variation_sku") or ""))
         current = variation or listing
         return {
-            "target_id": target_id, "ebay_listing_mode": "legacy", "ebay_item_id": str(listing.get("item_id") or metadata.get("item_id") or ""),
+            "target_id": target_id, "ean": ean, "ebay_listing_mode": "legacy", "ebay_item_id": str(listing.get("item_id") or metadata.get("item_id") or ""),
             "ebay_variation_sku": str(metadata.get("variation_sku") or ""),
             "price": str(current.get("price") or ""),
             "quantity": _legacy_available_quantity(current) if variation is not None else _as_int(listing.get("quantity_available")),
@@ -259,7 +322,7 @@ def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dic
     price = offer.get("pricingSummary", {}).get("price") if isinstance(offer.get("pricingSummary"), dict) else offer.get("price")
     quantity = item.get("availability", {}).get("shipToLocationAvailability", {}).get("quantity") if isinstance(item.get("availability"), dict) else None
     return {
-        "target_id": target_id, "ebay_listing_mode": "inventory", "sku": ean, "ebay_inventory_item": item, "ebay_offer": offer,
+        "target_id": target_id, "ean": ean, "ebay_listing_mode": "inventory", "sku": ean, "ebay_inventory_item": item, "ebay_offer": offer,
         "price": str(price.get("value") or "") if isinstance(price, dict) else "", "quantity": _as_int(quantity),
         "ebay_currency": str(price.get("currency") or "EUR") if isinstance(price, dict) else "EUR",
     }

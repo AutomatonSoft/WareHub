@@ -38,6 +38,7 @@ import {
   type CreateProductFieldKey,
   type HoodCreateFieldKey,
   type HoodCreateFields,
+  type EbayCreateFields,
   type MainKauflandCreateFieldKey,
   type MainKauflandCreateFields,
   type MainXljvCreateFieldKey,
@@ -767,10 +768,18 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       ottoPrice?: string;
       ottoImageUrls?: string[];
       ottoPayload?: Record<string, unknown>;
+      ebayFields?: EbayCreateFields;
     },
     uploadedImageFiles?: File[],
   ) {
-    const draftInput = publishDraft?.kauflandEan !== undefined
+    const draftInput = publishDraft?.ebayFields !== undefined
+      ? {
+          ean: publishDraft.ebayFields.ean,
+          price: publishDraft.ebayFields.price,
+          productName: publishDraft.ebayFields.title,
+          imagesText,
+        }
+      : publishDraft?.kauflandEan !== undefined
       ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
       : publishDraft?.ottoEan !== undefined
         ? {
@@ -793,6 +802,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     const hasHoodSelection = selectedSiteIds.some((siteId) => siteId.startsWith("hood-"));
     const hasKauflandSelection = selectedSiteIds.some((siteId) => siteId.startsWith("kaufland-"));
     const hasOttoSelection = selectedSiteIds.some((siteId) => siteId.startsWith("otto-"));
+    const hasEbaySelection = selectedSiteIds.some((siteId) => siteId.startsWith("ebay-"));
     const hasXljvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-") || siteId === "xlmoebel_de");
     const hoodErrors = hasHoodSelection ? validateHoodCreateFields(hoodFields) : {};
     const effectiveKauflandFields = publishDraft?.kauflandFields ?? mainKauflandFields;
@@ -814,6 +824,43 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     if ((hasHoodSelection || hasKauflandSelection) && !kidContext?.kidNumber.trim()) {
       showToast("Open Create Product from a Kid before publishing to HOOD or Kaufland.", "error");
       return;
+    }
+
+    const ebayFields = publishDraft?.ebayFields;
+    let ebayAspects: Record<string, string[]> | null = null;
+    if (hasEbaySelection) {
+      if (!ebayFields) {
+        showToast("Complete the eBay seller, category, and product fields before creating the job.", "error");
+        return;
+      }
+      if (!/^\d+$/.test(ebayFields.quantity.trim()) || Number(ebayFields.quantity) < 1) {
+        showToast("eBay quantity must be a positive whole number.", "error");
+        return;
+      }
+      const requiredEbayFields = [
+        ebayFields.description,
+        ebayFields.condition,
+        ebayFields.categoryId,
+        ebayFields.merchantLocationKey,
+        ebayFields.fulfillmentPolicyId,
+        ebayFields.paymentPolicyId,
+        ebayFields.returnPolicyId,
+      ];
+      if (requiredEbayFields.some((value) => !value.trim())) {
+        showToast("Complete all required eBay listing fields before creating the job.", "error");
+        return;
+      }
+      try {
+        const parsed = JSON.parse(ebayFields.aspectsText);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length === 0
+          || Object.values(parsed).some((value) => !Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim()))) {
+          throw new Error("invalid aspects");
+        }
+        ebayAspects = parsed as Record<string, string[]>;
+      } catch {
+        showToast("eBay category aspects must be a non-empty JSON object of string arrays.", "error");
+        return;
+      }
     }
 
     const normalized = normalizeCreateProductInput(draftInput);
@@ -946,6 +993,36 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           filename: location.split("/").pop() || normalized.ean,
         })),
       };
+      const ebayPayload = ebayFields && ebayAspects ? {
+        sku: normalized.ean,
+        ebay_listing_mode: "inventory",
+        ebay_currency: "EUR",
+        ebay_inventory_item: {
+          condition: ebayFields.condition.trim(),
+          product: {
+            title: normalized.productName,
+            description: ebayFields.description.trim(),
+            aspects: ebayAspects,
+            imageUrls,
+          },
+          availability: {
+            shipToLocationAvailability: { quantity: Number(ebayFields.quantity) },
+          },
+        },
+        ebay_offer: {
+          format: "FIXED_PRICE",
+          categoryId: ebayFields.categoryId.trim(),
+          merchantLocationKey: ebayFields.merchantLocationKey.trim(),
+          listingDuration: "GTC",
+          listingPolicies: {
+            fulfillmentPolicyId: ebayFields.fulfillmentPolicyId.trim(),
+            paymentPolicyId: ebayFields.paymentPolicyId.trim(),
+            returnPolicyId: ebayFields.returnPolicyId.trim(),
+          },
+        },
+        quantity: Number(ebayFields.quantity),
+        price: normalized.price,
+      } : undefined;
       const created = await createMainMarketplaceProductJob({
         ean: normalized.ean,
         productName: normalized.productName,
@@ -958,6 +1035,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         hoodPayload,
         kauflandPayload,
         ottoPayload,
+        ebayPayload,
       });
       setLatestJobId(created.jobId);
       showToast(`${t.orchestratorJobCreated}: ${created.jobId}`, "success");
