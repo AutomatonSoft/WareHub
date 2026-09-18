@@ -87,6 +87,41 @@ def test_ebay_contract_uses_listing_operations_endpoint_and_request_id_idempoten
     }
 
 
+def test_ebay_legacy_partial_update_preserves_listing_identity():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4062292372025",
+        request_id="ebay-legacy-price-update",
+        channel=ChannelTarget(marketplace=Marketplace.EBAY, account="dep", site="EBAY_DE"),
+        payload={
+            "sku": "4062292372025",
+            "ebay_listing_mode": "legacy",
+            "ebay_item_id": "205926392508",
+            "price": "748.99",
+            "ebay_currency": "EUR",
+        },
+        operation=Operation.UPDATE,
+    )
+
+    assert fake_http.calls[0]["json"] == {
+        "account": "dep",
+        "marketplace_id": "EBAY_DE",
+        "operation": "update",
+        "listing_mode": "legacy",
+        "sku": "4062292372025",
+        "item_id": "205926392508",
+        "variation_sku": "",
+        "source_ean": "4062292372025",
+        "inventory_item": None,
+        "offer": None,
+        "quantity": None,
+        "price": "748.99",
+        "currency": "EUR",
+    }
+
+
 def test_hood_publish_contract_uses_post():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
