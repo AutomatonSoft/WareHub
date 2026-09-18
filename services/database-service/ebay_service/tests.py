@@ -61,8 +61,9 @@ class FakeSession:
   <Ack>Success</Ack>
   <Item>
     <ItemID>205926392508</ItemID><Title>Test chair</Title><SKU>JVM4062292372025</SKU>
-    <InventoryTrackingMethod>SKU</InventoryTrackingMethod><QuantityAvailable>2</QuantityAvailable>
-    <Seller><UserID>depotum</UserID></Seller><ListingDetails><ListingStatus>Active</ListingStatus></ListingDetails>
+    <InventoryTrackingMethod>SKU</InventoryTrackingMethod><Quantity>4</Quantity><QuantityAvailable>2</QuantityAvailable>
+    <Seller><UserID>depotum</UserID></Seller><SellingStatus><ListingStatus>Active</ListingStatus><QuantitySold>2</QuantitySold></SellingStatus>
+    <ProductListingDetails><EAN>4062292372025</EAN></ProductListingDetails>
     <ItemSpecifics><NameValueList><Name>EAN</Name><Value>4062292372025</Value></NameValueList></ItemSpecifics>
   </Item>
 </GetItemResponse>''',
@@ -454,6 +455,8 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GetItem")
         self.assertEqual(listing["sku"], "JVM4062292372025")
         self.assertEqual(listing["seller"], "depotum")
+        self.assertEqual(listing["quantity"], "4")
+        self.assertEqual(listing["quantity_sold"], "2")
         self.assertEqual(listing["identifiers"], {"EAN": ["4062292372025"]})
 
 
