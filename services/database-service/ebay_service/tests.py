@@ -453,6 +453,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         request = session.calls[1]
         self.assertEqual(request[0], "post")
         self.assertEqual(request[2]["headers"]["X-EBAY-API-CALL-NAME"], "GetItem")
+        self.assertIn(b"<DetailLevel>ReturnAll</DetailLevel>", request[2]["data"])
         self.assertEqual(listing["sku"], "JVM4062292372025")
         self.assertEqual(listing["seller"], "depotum")
         self.assertEqual(listing["quantity"], "4")
