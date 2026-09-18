@@ -20,6 +20,7 @@ from .product_editor_jv_flow import ProductEditorJvFlow, ProductEditorJvFlowErro
 from .product_editor_kaufland_flow import ProductEditorKauflandFlow, ProductEditorKauflandFlowError
 from .product_editor_otto_flow import ProductEditorOttoFlow, ProductEditorOttoFlowError
 from .product_editor_xl_flow import ProductEditorXlFlow, ProductEditorXlFlowError
+from .product_editor_ebay_flow import ProductEditorEbayFlow, ProductEditorEbayFlowError
 
 
 class ProductEditorService:
@@ -31,11 +32,12 @@ class ProductEditorService:
         self.kaufland_flow = ProductEditorKauflandFlow(gateway=gateway, store=store)
         self.otto_flow = ProductEditorOttoFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
         self.xl_flow = ProductEditorXlFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
+        self.ebay_flow = ProductEditorEbayFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
 
     def discover(self, *, ean: str, request_id: str, active_group: ProductEditorGroupId | None = None) -> ProductEditorDiscoverResponse:
         groups = build_product_editor_groups()
         if active_group is None:
-            with ThreadPoolExecutor(max_workers=5, thread_name_prefix="product-editor-discover") as executor:
+            with ThreadPoolExecutor(max_workers=6, thread_name_prefix="product-editor-discover") as executor:
                 hood_future = executor.submit(
                     self._discover_targets_safely,
                     group_id=ProductEditorGroupId.HOOD,
@@ -61,11 +63,17 @@ class ProductEditorService:
                     group_id=ProductEditorGroupId.XL,
                     discover=lambda: self.xl_flow.discover_targets(ean=ean, request_id=request_id),
                 )
+                ebay_future = executor.submit(
+                    self._discover_targets_safely,
+                    group_id=ProductEditorGroupId.EBAY,
+                    discover=lambda: self.ebay_flow.discover_targets(ean=ean, request_id=request_id),
+                )
                 hood_results = hood_future.result()
                 jv_results = jv_future.result()
                 kaufland_results = kaufland_future.result()
                 otto_results = otto_future.result()
                 xl_results = xl_future.result()
+                ebay_results = ebay_future.result()
         else:
             hood_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.HOOD,
@@ -87,12 +95,17 @@ class ProductEditorService:
                 group_id=ProductEditorGroupId.XL,
                 discover=lambda: self.xl_flow.discover_targets(ean=ean, request_id=request_id),
             ) if active_group is ProductEditorGroupId.XL else {}
+            ebay_results = self._discover_targets_safely(
+                group_id=ProductEditorGroupId.EBAY,
+                discover=lambda: self.ebay_flow.discover_targets(ean=ean, request_id=request_id),
+            ) if active_group is ProductEditorGroupId.EBAY else {}
 
         hood_found_target_ids: list[str] = []
         jv_found_target_ids: list[str] = []
         kaufland_found_target_ids: list[str] = []
         xl_found_target_ids: list[str] = []
         otto_found_target_ids: list[str] = []
+        ebay_found_target_ids: list[str] = []
         for group in groups:
             current_results = (
                 hood_results if group.id is ProductEditorGroupId.HOOD
@@ -100,6 +113,7 @@ class ProductEditorService:
                 else kaufland_results if group.id is ProductEditorGroupId.KAUFLAND
                 else otto_results if group.id is ProductEditorGroupId.OTTO
                 else xl_results if group.id is ProductEditorGroupId.XL
+                else ebay_results if group.id is ProductEditorGroupId.EBAY
                 else None
             )
             if current_results is None:
@@ -122,6 +136,8 @@ class ProductEditorService:
                         xl_found_target_ids.append(target.id)
                     if group.id is ProductEditorGroupId.OTTO:
                         otto_found_target_ids.append(target.id)
+                    if group.id is ProductEditorGroupId.EBAY:
+                        ebay_found_target_ids.append(target.id)
 
         warnings = [
             ProductEditorWarning(
@@ -139,6 +155,8 @@ class ProductEditorService:
             selected_group_id = ProductEditorGroupId.KAUFLAND
         elif active_group is ProductEditorGroupId.OTTO:
             selected_group_id = ProductEditorGroupId.OTTO
+        elif active_group is ProductEditorGroupId.EBAY:
+            selected_group_id = ProductEditorGroupId.EBAY
         else:
             selected_group_id = ProductEditorGroupId.HOOD if hood_found_target_ids else ProductEditorGroupId.JV if jv_found_target_ids else ProductEditorGroupId.HOOD
         selected_target_ids = (
@@ -146,6 +164,7 @@ class ProductEditorService:
             else jv_found_target_ids if selected_group_id is ProductEditorGroupId.JV
             else kaufland_found_target_ids if selected_group_id is ProductEditorGroupId.KAUFLAND
             else otto_found_target_ids if selected_group_id is ProductEditorGroupId.OTTO
+            else ebay_found_target_ids if selected_group_id is ProductEditorGroupId.EBAY
             else xl_found_target_ids
         )
         if selected_group_id is ProductEditorGroupId.HOOD:
@@ -156,6 +175,8 @@ class ProductEditorService:
             recommended_baseline = kaufland_found_target_ids[0] if kaufland_found_target_ids else None
         elif selected_group_id is ProductEditorGroupId.OTTO:
             recommended_baseline = otto_found_target_ids[0] if otto_found_target_ids else None
+        elif selected_group_id is ProductEditorGroupId.EBAY:
+            recommended_baseline = ebay_found_target_ids[0] if ebay_found_target_ids else None
         else:
             recommended_baseline = self.jv_flow.recommended_baseline_from_results(jv_results) or "JV_DE"
         if active_group is ProductEditorGroupId.XL:
@@ -170,6 +191,8 @@ class ProductEditorService:
             groups = [group for group in groups if group.id is ProductEditorGroupId.KAUFLAND]
         if active_group is ProductEditorGroupId.OTTO:
             groups = [group for group in groups if group.id is ProductEditorGroupId.OTTO]
+        if active_group is ProductEditorGroupId.EBAY:
+            groups = [group for group in groups if group.id is ProductEditorGroupId.EBAY]
         return ProductEditorDiscoverResponse(
             request_id=request_id,
             ean=ean,
@@ -224,9 +247,11 @@ class ProductEditorService:
                 return self.kaufland_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
             if active_group is ProductEditorGroupId.OTTO:
                 return self.otto_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
+            if active_group is ProductEditorGroupId.EBAY:
+                return self.ebay_flow.load(ean=ean, request_id=request_id, baseline_target_id=baseline_target_id)
         except RetryExhaustedError as exc:
             raise _map_retry_exhausted_error(exc) from exc
-        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError) as exc:
+        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError, ProductEditorEbayFlowError) as exc:
             raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
         raise ProductEditorServiceError(
             "product_editor_group_not_supported_yet",
@@ -274,9 +299,11 @@ class ProductEditorService:
                 return self.kaufland_flow.plan(ean=ean, request_id=request_id, changed_fields=changed_fields, draft=draft, selected_target_ids=selected_target_ids)
             if active_group is ProductEditorGroupId.OTTO:
                 return self.otto_flow.plan(ean=ean, request_id=request_id, changed_fields=changed_fields, draft=draft, selected_target_ids=selected_target_ids)
+            if active_group is ProductEditorGroupId.EBAY:
+                return self.ebay_flow.plan(ean=ean, request_id=request_id, changed_fields=changed_fields, draft=draft, selected_target_ids=selected_target_ids)
         except RetryExhaustedError as exc:
             raise _map_retry_exhausted_error(exc) from exc
-        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError) as exc:
+        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError, ProductEditorEbayFlowError) as exc:
             raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
         raise ProductEditorServiceError(
             "product_editor_group_not_supported_yet",
@@ -300,9 +327,11 @@ class ProductEditorService:
                 return self.kaufland_flow.apply(plan_id=plan_id, request_id=request_id)
             if plan["active_group"] is ProductEditorGroupId.OTTO:
                 return self.otto_flow.apply(plan_id=plan_id, request_id=request_id)
+            if plan["active_group"] is ProductEditorGroupId.EBAY:
+                return self.ebay_flow.apply(plan_id=plan_id, request_id=request_id)
         except RetryExhaustedError as exc:
             raise _map_retry_exhausted_error(exc) from exc
-        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError) as exc:
+        except (ProductEditorHoodFlowError, ProductEditorJvFlowError, ProductEditorXlFlowError, ProductEditorKauflandFlowError, ProductEditorOttoFlowError, ProductEditorEbayFlowError) as exc:
             raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
         raise ProductEditorServiceError(
             "product_editor_group_not_supported_yet",
@@ -360,7 +389,10 @@ class ProductEditorService:
                         try:
                             return self.otto_flow.get_job(job_id=job_id, request_id=request_id)
                         except ProductEditorOttoFlowError:
-                            raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
+                            try:
+                                return self.ebay_flow.get_job(job_id=job_id, request_id=request_id)
+                            except ProductEditorEbayFlowError:
+                                raise ProductEditorServiceError(exc.code, exc.message, exc.status_code, details=exc.details) from exc
         return ProductEditorJobResponse(
             request_id=request_id,
             job_id=job_id,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Marketplace(str, Enum):
+    EBAY = "ebay"
     HOOD = "hood"
     KAUFLAND = "kaufland"
     OTTO = "otto"
@@ -20,6 +21,7 @@ class FinalStatus(str, Enum):
 
 
 class Operation(str, Enum):
+    FETCH = "fetch"
     PUBLISH = "publish"
     UPDATE = "update"
     UNPUBLISH = "unpublish"
@@ -77,6 +79,13 @@ class CanonicalPayload(BaseModel):
     stores: list[dict] | None = None
     specials: list[dict] | None = None
     jv_fields: dict | None = None
+
+    ebay_listing_mode: Literal["inventory", "legacy"] | None = None
+    ebay_item_id: str | None = None
+    ebay_variation_sku: str | None = None
+    ebay_inventory_item: dict | None = None
+    ebay_offer: dict | None = None
+    ebay_currency: str | None = None
 
 
 class ChannelTarget(BaseModel):

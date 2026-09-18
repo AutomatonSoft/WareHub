@@ -12,6 +12,20 @@ class MarketplaceFieldSpec:
 
 
 REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
+    Marketplace.EBAY: MarketplaceFieldSpec(
+        allowed_fields={
+            "price",
+            "quantity",
+            "sku",
+            "ebay_listing_mode",
+            "ebay_item_id",
+            "ebay_variation_sku",
+            "ebay_inventory_item",
+            "ebay_offer",
+            "ebay_currency",
+        },
+        required_fields=set(),
+    ),
     Marketplace.HOOD: MarketplaceFieldSpec(
         allowed_fields={
             "title", "description", "price", "quantity", "categoryID", "condition", "itemMode", "itemNumber", "images", "productProperties",

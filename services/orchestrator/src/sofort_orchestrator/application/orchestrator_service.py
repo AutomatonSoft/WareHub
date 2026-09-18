@@ -37,9 +37,6 @@ class OrchestratorService:
         self.marketplace_ean_mapping_gateway = marketplace_ean_mapping_gateway
 
     def execute(self, *, ean: str, request_id: str, command: OrchestrateRequest, job_id: str | None = None) -> OrchestrateResponse:
-        if command.operation not in {Operation.UPDATE, Operation.PUBLISH}:
-            return self._unsupported_operation_response(request_id=request_id, command=command)
-
         results: list[ChannelResult] = []
         pool_eans_by_reservation_id: dict[str, str] = {}
         used_pool_reservations: dict[str, str | None] = {}
@@ -47,12 +44,7 @@ class OrchestratorService:
 
         for channel in command.channels:
             target_label = _target_label(channel)
-            if command.operation is Operation.PUBLISH and channel.marketplace not in {
-                Marketplace.HOOD,
-                Marketplace.KAUFLAND,
-                Marketplace.OTTO,
-                Marketplace.XLJV,
-            }:
+            if not self._supports_operation(channel.marketplace, command.operation):
                 results.append(
                     ChannelResult(
                         marketplace=channel.marketplace,
@@ -61,7 +53,7 @@ class OrchestratorService:
                         status_code=501,
                         error=ErrorContract(
                             code="orchestrator_operation_not_supported",
-                            message="Publish is not supported for this marketplace.",
+                            message="Operation is not supported for this marketplace.",
                             request_id=request_id,
                             details={"operation": command.operation.value, "marketplace": channel.marketplace.value},
                         ),
@@ -356,7 +348,15 @@ class OrchestratorService:
         return account if account in {"jv", "xl"} else None
 
     @staticmethod
+    def _supports_operation(marketplace: Marketplace, operation: Operation) -> bool:
+        if marketplace is Marketplace.EBAY:
+            return operation in {Operation.FETCH, Operation.PUBLISH, Operation.UPDATE, Operation.UNPUBLISH, Operation.RELIST}
+        return operation in {Operation.PUBLISH, Operation.UPDATE}
+
+    @staticmethod
     def _marketplace_mapping_account(channel) -> str | None:
+        if channel.marketplace is Marketplace.EBAY:
+            return None
         if channel.marketplace is Marketplace.XLJV:
             account = str(channel.site or "").strip().lower()
         else:
