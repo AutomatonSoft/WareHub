@@ -75,6 +75,36 @@ class ProductEditorGateway:
         response = self.http.request("GET", url, headers=headers, timeout_seconds=self.discover_timeout_seconds)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
+    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", request_id: str) -> GatewayResult:
+        headers = self._headers(request_id, content_type="application/json")
+        response = self.http.request(
+            "POST",
+            f"{self.base_url}/api/v1/ebay/listing-operations/",
+            headers=headers,
+            json={
+                "account": account,
+                "marketplace_id": "EBAY_DE",
+                "operation": "fetch",
+                "listing_mode": listing_mode,
+                "sku": sku,
+                "item_id": item_id,
+                "source_ean": sku,
+            },
+            timeout_seconds=self.discover_timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
+    def fetch_ebay_active_listings(self, *, account: str, request_id: str, page: int = 1, limit: int = 100) -> GatewayResult:
+        headers = self._headers(request_id)
+        response = self.http.request(
+            "GET",
+            f"{self.base_url}/api/v1/ebay/seller/active-listings/",
+            headers=headers,
+            params={"account": account, "marketplace_id": "EBAY_DE", "page": page, "limit": limit},
+            timeout_seconds=self.discover_timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str) -> GatewayResult:
         headers = self._headers(request_id)
         url = f"{self.base_url}/api/v1/jv/sites/by-artikelnr/{ean}/"

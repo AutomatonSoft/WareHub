@@ -31,6 +31,32 @@ class MarketplaceAdapters:
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
 
+        if channel.marketplace is Marketplace.EBAY:
+            account = (channel.account or "").strip().lower()
+            marketplace_id = (channel.site or "EBAY_DE").strip().upper()
+            body = {
+                "account": account,
+                "marketplace_id": marketplace_id,
+                "operation": operation.value,
+                "listing_mode": str(payload.get("ebay_listing_mode") or "inventory").strip().lower(),
+                "sku": str(payload.get("sku") or ean).strip(),
+                "item_id": str(payload.get("ebay_item_id") or "").strip(),
+                "variation_sku": str(payload.get("ebay_variation_sku") or "").strip(),
+                "source_ean": ean,
+                "inventory_item": payload.get("ebay_inventory_item"),
+                "offer": payload.get("ebay_offer"),
+                "quantity": payload.get("quantity"),
+                "price": payload.get("price"),
+                "currency": str(payload.get("ebay_currency") or "EUR").strip().upper(),
+            }
+            response = self.http.request(
+                "POST",
+                f"{self.base_url}/api/v1/ebay/listing-operations/",
+                headers={**headers, "Idempotency-Key": request_id},
+                json=body,
+            )
+            return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
+
         if channel.marketplace is Marketplace.HOOD:
             account = (channel.account or "jv").strip().lower()
             url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"

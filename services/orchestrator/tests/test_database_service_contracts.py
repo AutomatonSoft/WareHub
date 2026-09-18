@@ -48,6 +48,45 @@ def test_hood_contract_path_and_params():
     assert call["params"] == {"account": "jv"}
 
 
+def test_ebay_contract_uses_listing_operations_endpoint_and_request_id_idempotency():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="ebay-job-1",
+        channel=ChannelTarget(marketplace=Marketplace.EBAY, account="dep", site="EBAY_DE"),
+        payload={
+            "ebay_listing_mode": "inventory",
+            "ebay_inventory_item": {"condition": "NEW"},
+            "ebay_offer": {"categoryId": "123", "merchantLocationKey": "dep-main"},
+            "price": "19.99",
+            "quantity": 2,
+        },
+        operation=Operation.PUBLISH,
+    )
+
+    call = fake_http.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://database-service:8000/api/v1/ebay/listing-operations/"
+    assert call["headers"]["Idempotency-Key"] == "ebay-job-1"
+    assert call["json"] == {
+        "account": "dep",
+        "marketplace_id": "EBAY_DE",
+        "operation": "publish",
+        "listing_mode": "inventory",
+        "sku": "4012345678901",
+        "item_id": "",
+        "variation_sku": "",
+        "source_ean": "4012345678901",
+        "inventory_item": {"condition": "NEW"},
+        "offer": {"categoryId": "123", "merchantLocationKey": "dep-main"},
+        "quantity": 2,
+        "price": "19.99",
+        "currency": "EUR",
+    }
+
+
 def test_hood_publish_contract_uses_post():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)

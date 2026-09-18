@@ -23,7 +23,7 @@ from ..domain.product_editor_models import (
 
 
 router = APIRouter()
-_SUPPORTED_GROUPS = {ProductEditorGroupId.HOOD, ProductEditorGroupId.JV, ProductEditorGroupId.XL, ProductEditorGroupId.OTTO, ProductEditorGroupId.KAUFLAND}
+_SUPPORTED_GROUPS = {ProductEditorGroupId.HOOD, ProductEditorGroupId.JV, ProductEditorGroupId.XL, ProductEditorGroupId.OTTO, ProductEditorGroupId.KAUFLAND, ProductEditorGroupId.EBAY}
 
 
 class ProductEditorDeps:
