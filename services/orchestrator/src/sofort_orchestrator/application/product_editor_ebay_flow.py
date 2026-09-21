@@ -41,6 +41,29 @@ class ProductEditorEbayFlow:
                 results[target_id] = _error_state(account=account, status_code=inventory.status_code)
                 continue
 
+            indexed_legacy = self.gateway.fetch_ebay_listing(
+                account=account,
+                listing_mode="legacy",
+                source_ean=ean,
+                request_id=request_id,
+            )
+            if 200 <= indexed_legacy.status_code < 300:
+                listing = indexed_legacy.body.get("listing") if isinstance(indexed_legacy.body.get("listing"), dict) else {}
+                results[target_id] = {
+                    "status": ProductEditorTargetStatus.FOUND,
+                    "metadata": {
+                        "account": account,
+                        "listing_mode": "legacy",
+                        "item_id": str(indexed_legacy.body.get("item_id") or "").strip(),
+                        "variation_sku": _indexed_legacy_variation_sku(listing=listing, ean=ean),
+                    },
+                    "warnings": [],
+                }
+                continue
+            if indexed_legacy.status_code not in {404, 409}:
+                results[target_id] = _error_state(account=account, status_code=indexed_legacy.status_code)
+                continue
+
             active = self.gateway.fetch_ebay_active_listings(account=account, request_id=request_id)
             if not (200 <= active.status_code < 300):
                 results[target_id] = _error_state(account=account, status_code=active.status_code)
@@ -312,6 +335,13 @@ def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dic
         return {
             "target_id": target_id, "ean": ean, "ebay_listing_mode": "legacy", "ebay_item_id": str(listing.get("item_id") or metadata.get("item_id") or ""),
             "ebay_variation_sku": str(metadata.get("variation_sku") or ""),
+            "ebay_legacy_item": {
+                "title": str(listing.get("title") or ""),
+                "description": str(listing.get("description") or ""),
+                "category_id": str(listing.get("category_id") or ""),
+                "item_specifics": listing.get("item_specifics") if isinstance(listing.get("item_specifics"), dict) else {},
+                "image_urls": listing.get("image_urls") if isinstance(listing.get("image_urls"), list) else [],
+            },
             "price": str(current.get("price") or ""),
             "quantity": _legacy_available_quantity(current) if variation is not None else _as_int(listing.get("quantity_available")),
             "ebay_currency": str(current.get("currency") or "EUR"),
@@ -379,6 +409,16 @@ def _legacy_ean_matches(*, listings: object, ean: str) -> list[tuple[dict, str]]
             if variation_sku:
                 matches.append((listing, variation_sku))
     return matches
+
+
+def _indexed_legacy_variation_sku(*, listing: dict, ean: str) -> str:
+    for variation in listing.get("variations", []):
+        if not isinstance(variation, dict):
+            continue
+        identifiers = variation.get("identifiers")
+        if ean in (identifiers.get("EAN", []) if isinstance(identifiers, dict) else []):
+            return str(variation.get("sku") or "").strip()
+    return ""
 
 
 def _legacy_listing_matches_identity(*, body: dict, item_id: str, ean: str) -> bool:

@@ -85,6 +85,7 @@ class CanonicalPayload(BaseModel):
     ebay_variation_sku: str | None = None
     ebay_inventory_item: dict | None = None
     ebay_offer: dict | None = None
+    ebay_legacy_item: dict | None = None
     ebay_currency: str | None = None
 
 

@@ -49,6 +49,8 @@ class MarketplaceAdapters:
                 "price": payload.get("price"),
                 "currency": str(payload.get("ebay_currency") or "EUR").strip().upper(),
             }
+            if payload.get("ebay_legacy_item") is not None:
+                body["legacy_item"] = payload["ebay_legacy_item"]
             response = self.http.request(
                 "POST",
                 f"{self.base_url}/api/v1/ebay/listing-operations/",

@@ -22,6 +22,7 @@ REGISTRY: dict[Marketplace, MarketplaceFieldSpec] = {
             "ebay_variation_sku",
             "ebay_inventory_item",
             "ebay_offer",
+            "ebay_legacy_item",
             "ebay_currency",
         },
         required_fields=set(),

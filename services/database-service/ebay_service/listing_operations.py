@@ -29,6 +29,7 @@ def execute_listing_operation(
     quantity: int | None = None,
     price: str | None = None,
     currency: str = "EUR",
+    legacy_item: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if listing_mode == EbayListing.ListingMode.INVENTORY:
         return _execute_inventory_operation(
@@ -54,6 +55,7 @@ def execute_listing_operation(
             quantity=quantity,
             price=price,
             currency=currency,
+            legacy_item=legacy_item,
         )
     raise EbayApiError("listing_mode must be inventory or legacy.", status_code=400)
 
@@ -118,6 +120,52 @@ def reconcile_legacy_listing(
     }
 
 
+def index_legacy_listing_page(
+    *,
+    account: str,
+    marketplace_id: str,
+    page: int,
+    limit: int,
+) -> dict[str, Any]:
+    client = EbayOAuthClient()
+    page_data = client.active_listings(account=account, marketplace_id=marketplace_id, page=page, limit=limit)
+    indexed_item_ids: list[str] = []
+    indexed_eans = 0
+
+    with transaction.atomic():
+        for raw_listing in page_data.get("listings", []):
+            if not isinstance(raw_listing, dict):
+                continue
+            item_id = str(raw_listing.get("item_id") or "").strip()
+            ean_mappings = _legacy_ean_mappings(raw_listing)
+            if not item_id or not ean_mappings:
+                continue
+            listing, _ = EbayListing.objects.get_or_create(
+                account=account,
+                marketplace_id=marketplace_id,
+                item_id=item_id,
+                defaults={"listing_mode": EbayListing.ListingMode.LEGACY},
+            )
+            listing.listing_mode = EbayListing.ListingMode.LEGACY
+            listing.source_ean = next(iter(ean_mappings))
+            listing.legacy_ean_to_variation_sku = ean_mappings
+            listing.status = EbayListing.ListingStatus.ACTIVE
+            listing.last_error = {}
+            listing.save()
+            indexed_item_ids.append(item_id)
+            indexed_eans += len(ean_mappings)
+
+    return {
+        "account": account,
+        "marketplace_id": marketplace_id,
+        "listing_mode": EbayListing.ListingMode.LEGACY,
+        "page": page,
+        "total_pages": page_data.get("total_pages", "0"),
+        "indexed_listings": len(indexed_item_ids),
+        "indexed_eans": indexed_eans,
+    }
+
+
 def _legacy_ean_matches(*, listings: object, source_ean: str) -> list[tuple[dict[str, Any], str]]:
     matches: list[tuple[dict[str, Any], str]] = []
     for listing in listings if isinstance(listings, list) else []:
@@ -141,6 +189,25 @@ def _legacy_ean_matches(*, listings: object, source_ean: str) -> list[tuple[dict
     return matches
 
 
+def _legacy_ean_mappings(listing: dict[str, Any]) -> dict[str, str]:
+    mappings: dict[str, str] = {}
+    identifiers = listing.get("identifiers")
+    for ean in identifiers.get("EAN", []) if isinstance(identifiers, dict) else []:
+        normalized_ean = str(ean).strip()
+        if normalized_ean:
+            mappings[normalized_ean] = ""
+    for variation in listing.get("variations", []):
+        if not isinstance(variation, dict):
+            continue
+        identifiers = variation.get("identifiers")
+        variation_sku = str(variation.get("sku") or "").strip()
+        for ean in identifiers.get("EAN", []) if isinstance(identifiers, dict) else []:
+            normalized_ean = str(ean).strip()
+            if normalized_ean and variation_sku:
+                mappings[normalized_ean] = variation_sku
+    return mappings
+
+
 def _execute_inventory_operation(
     *,
     account: str,
@@ -153,6 +220,7 @@ def _execute_inventory_operation(
     quantity: int | None,
     price: str | None,
     currency: str,
+    legacy_item: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if operation not in _INVENTORY_OPERATIONS:
         raise EbayApiError("Unsupported Inventory API listing operation.", status_code=400)
@@ -451,6 +519,7 @@ def _execute_legacy_operation(
     quantity: int | None,
     price: str | None,
     currency: str,
+    legacy_item: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if operation not in _LEGACY_OPERATIONS:
         raise EbayApiError("Legacy listings can only be fetched, updated, unpublished, or relisted.", status_code=400)
@@ -477,6 +546,8 @@ def _execute_legacy_operation(
         if current.get("listing_type") != "FixedPriceItem":
             raise EbayApiError("Only fixed-price legacy listings are supported for updates.", status_code=409)
         if current.get("has_variations"):
+            if legacy_item:
+                raise EbayApiError("Legacy title, description, category, item specifics, and images can only be updated for non-variation listings.", status_code=409)
             variation = _legacy_variation(current=current, variation_sku=variation_sku)
             current_quantity = _available_variation_quantity(variation)
             current_price = str(variation.get("price") or "").strip()
@@ -499,6 +570,7 @@ def _execute_legacy_operation(
                 quantity=quantity,
                 price=price,
                 currency=currency,
+                legacy_item=legacy_item,
             )
         status = EbayListing.ListingStatus.ACTIVE
         result = {"item_id": item_id}

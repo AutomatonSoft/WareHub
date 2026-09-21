@@ -186,8 +186,8 @@ class ProductEditorKauflandFlow:
     def _resolve_baseline_target_id(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
         states = self.discover_targets(ean=ean, request_id=request_id)
         available = [target_id for target_id, state in states.items() if state["status"] in {ProductEditorTargetStatus.FOUND, ProductEditorTargetStatus.MISSING}]
-        if preferred_target_id in available:
-            return preferred_target_id
+        if preferred_target_id is not None:
+            return preferred_target_id if preferred_target_id in available else None
         return available[0] if available else None
 
 
