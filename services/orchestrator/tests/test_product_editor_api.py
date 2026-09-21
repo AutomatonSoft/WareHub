@@ -169,6 +169,8 @@ class FakeProductEditorGateway:
         self.ebay_legacy_by_account = {"jv": {}, "xl": {}, "dep": {}}
         self.ebay_legacy_index_by_account = {"jv": {}, "xl": {}, "dep": {}}
         self.ebay_active_listings_by_account = {"jv": [], "xl": [], "dep": []}
+        self.ebay_active_listing_pages_by_account = {"jv": {}, "xl": {}, "dep": {}}
+        self.ebay_active_listing_page_calls: list[tuple[str, int]] = []
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
         body = self.fetch_by_account[account]
@@ -206,7 +208,11 @@ class FakeProductEditorGateway:
         return type("R", (), {"status_code": 200 if "inventory_item" in body else 404, "body": body})()
 
     def fetch_ebay_active_listings(self, *, account: str, request_id: str, page: int = 1, limit: int = 100):
-        return type("R", (), {"status_code": 200, "body": {"active_listings": {"listings": self.ebay_active_listings_by_account[account], "total_pages": "1"}}})()
+        self.ebay_active_listing_page_calls.append((account, page))
+        pages = self.ebay_active_listing_pages_by_account[account]
+        listings = pages.get(page, self.ebay_active_listings_by_account[account])
+        total_pages = max(pages, default=1)
+        return type("R", (), {"status_code": 200, "body": {"active_listings": {"listings": listings, "total_pages": str(total_pages)}}})()
 
     def fetch_jv_sites_by_ean(self, *, ean: str, request_id: str):
         self.jv_sites_calls += 1
@@ -648,6 +654,33 @@ def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_pa
     assert command.payload.ebay_item_id == "205926392508"
     assert command.payload.ebay_variation_sku == "DEP-CHAIR-YELLOW"
     assert command.payload.quantity == 4
+
+
+def test_product_editor_ebay_discovers_legacy_ean_on_later_active_listing_page(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4062292372025"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_active_listing_pages_by_account["dep"] = {
+        1: [],
+        2: [{
+            "item_id": "205926392508",
+            "identifiers": {"EAN": [ean]},
+            "variations": [],
+        }],
+    }
+
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": ean, "active_group": "EBAY"},
+    )
+
+    assert discovered.status_code == 200
+    dep = next(target for target in discovered.json()["groups"][0]["targets"] if target["id"] == "EBAY_DEP")
+    assert dep["status"] == "found"
+    assert dep["metadata"]["listing_mode"] == "legacy"
+    assert dep["metadata"]["item_id"] == "205926392508"
+    assert dep["metadata"]["page"] == 2
+    assert gateway.ebay_active_listing_page_calls[-2:] == [("dep", 1), ("dep", 2)]
 
 
 def test_product_editor_ebay_plan_accepts_verified_explicit_legacy_item_outside_first_page(tmp_path):
