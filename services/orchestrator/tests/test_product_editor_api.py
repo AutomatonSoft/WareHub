@@ -412,6 +412,31 @@ def test_product_editor_discover_respects_active_group_kaufland(tmp_path):
     assert gateway.kaufland_fetch_calls == ["jv", "xl"]
 
 
+def test_product_editor_kaufland_rejects_empty_upstream_response(tmp_path):
+    client, gateway = _client(tmp_path)
+    gateway.kaufland_by_controller["jv"] = {"response_data": {"price": [], "units": []}}
+
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND"},
+    )
+
+    assert discovered.status_code == 200
+    target = discovered.json()["groups"][0]["targets"][0]
+    assert target["id"] == "KAUFLAND_JV"
+    assert target["status"] == "error"
+    assert target["warnings"][0]["code"] == "product_editor_kaufland_incomplete_response"
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "KAUFLAND", "baseline_target_id": "KAUFLAND_JV"},
+    )
+
+    assert loaded.status_code == 200
+    assert loaded.json()["supported"] is False
+    assert loaded.json()["warnings"][0]["code"] == "product_editor_kaufland_incomplete_response"
+
+
 def test_product_editor_otto_load_and_plan_creates_orchestrator_job(tmp_path):
     client, _ = _client(tmp_path)
     discover = client.post(
@@ -456,6 +481,31 @@ def test_product_editor_otto_load_does_not_substitute_another_profile(tmp_path):
     assert response.status_code == 200
     assert response.json()["supported"] is False
     assert response.json()["baseline_target_id"] == "OTTO_XL"
+
+
+def test_product_editor_otto_rejects_empty_upstream_response(tmp_path):
+    client, gateway = _client(tmp_path)
+    gateway.otto_by_profile["jv"] = {"product_variations": [{}]}
+
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": "4012345678901", "active_group": "OTTO"},
+    )
+
+    assert discovered.status_code == 200
+    target = discovered.json()["groups"][0]["targets"][0]
+    assert target["id"] == "OTTO_JV"
+    assert target["status"] == "error"
+    assert target["warnings"][0]["code"] == "product_editor_otto_incomplete_response"
+
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "OTTO", "baseline_target_id": "OTTO_JV"},
+    )
+
+    assert loaded.status_code == 200
+    assert loaded.json()["supported"] is False
+    assert loaded.json()["warnings"][0]["code"] == "product_editor_otto_incomplete_response"
 
 
 def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_path):
