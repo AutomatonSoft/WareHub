@@ -9,9 +9,13 @@ from .listing_operations import execute_listing_operation, reconcile_legacy_list
 
 
 class EbayListingOperationTests(TestCase):
+    @patch("ebay_service.listing_operations.EbayTaxonomyClient")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
-    def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class):
+    def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class, taxonomy_client_class):
         client = client_class.return_value
+        taxonomy_client = taxonomy_client_class.return_value
+        taxonomy_client.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": True}}
+        taxonomy_client.category_aspects.return_value = {"aspects": []}
         client.create_offer.return_value = {"offerId": "offer-1"}
         client.publish_offer.return_value = {"listingId": "listing-1"}
         client.offers_by_sku.return_value = []
@@ -57,6 +61,28 @@ class EbayListingOperationTests(TestCase):
         self.assertEqual(listing.offer_id, "offer-1")
         self.assertEqual(listing.item_id, "listing-1")
         self.assertEqual(listing.status, EbayListing.ListingStatus.ACTIVE)
+
+    @patch("ebay_service.listing_operations.EbayTaxonomyClient")
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_publish_rejects_non_leaf_category_and_missing_required_aspects(self, _client_class, taxonomy_client_class):
+        payload = {
+            "account": "dep", "marketplace_id": "EBAY_DE", "operation": "publish", "listing_mode": "inventory", "sku": "4062292372025",
+            "inventory_item": {"condition": "NEW", "product": {"title": "Test chair", "description": "Test chair description", "aspects": {"Brand": ["Depotum"]}, "imageUrls": ["https://example.test/chair.jpg"]}},
+            "offer": {"format": "FIXED_PRICE", "categoryId": "123", "merchantLocationKey": "dep-main", "listingDuration": "GTC", "listingPolicies": {"fulfillmentPolicyId": "fulfillment-1", "paymentPolicyId": "payment-1", "returnPolicyId": "return-1"}},
+            "quantity": 2, "price": "199.99",
+        }
+        taxonomy_client = taxonomy_client_class.return_value
+        taxonomy_client.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": False}}
+        with self.assertRaises(EbayApiError) as non_leaf_error:
+            execute_listing_operation(**payload)
+        self.assertEqual(non_leaf_error.exception.operation, "validate_category")
+
+        taxonomy_client.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": True}}
+        taxonomy_client.category_aspects.return_value = {"aspects": [{"localizedAspectName": "Color", "aspectConstraint": {"aspectRequired": True}}]}
+        with self.assertRaises(EbayApiError) as aspects_error:
+            execute_listing_operation(**payload)
+        self.assertEqual(aspects_error.exception.operation, "validate_category_aspects")
+        self.assertEqual(aspects_error.exception.details["missing_aspects"], ["Color"])
 
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_legacy_relist_replaces_persisted_item_id(self, client_class):

@@ -25,14 +25,13 @@ Primary references:
 | kaufland | ACTIVE | BLOCKED | BLOCKED | BLOCKED | Direct legacy endpoints remain compatibility-only. |
 | xljv | ACTIVE | BLOCKED | BLOCKED | BLOCKED | Split legacy write endpoints still exist in `database_service`. |
 | otto | ACTIVE (controlled profile path) | BLOCKED | BLOCKED | BLOCKED | Use controlled channels only. |
-| ebay | PLANNED | BLOCKED | BLOCKED | BLOCKED | Not implemented in current runtime adapters. |
+| ebay | ACTIVE | ACTIVE | ACTIVE | ACTIVE | Inventory and legacy listing operations run through the eBay adapter; seller account setup is required per account. |
 
 ## 3. Runtime guardrail
 
-- Current orchestrator runtime path supports `update` only.
-- Requests for `publish`, `unpublish`, `relist` are expected to return channel-level:
-  - `error.code = orchestrator_operation_not_supported`
-- Frontend and service clients MUST treat this as a known capability gap, not as transport failure.
+- eBay runtime supports `fetch`, `publish`, `update`, `unpublish`, and `relist`.
+- Other marketplaces remain subject to their operation status in the matrix above.
+- Frontend and service clients MUST treat a channel-level `orchestrator_operation_not_supported` error as a known capability gap, not as a transport failure.
 
 ## 4. Integration policy for database_service
 
