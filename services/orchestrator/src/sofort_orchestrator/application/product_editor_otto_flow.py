@@ -33,8 +33,17 @@ class ProductEditorOttoFlow:
         results: dict[str, dict] = {}
         for target_id, profile in _OTTO_PROFILE_BY_TARGET.items():
             response = self.gateway.fetch_otto_by_sku(sku=ean, profile=profile, request_id=request_id)
-            if 200 <= response.status_code < 300:
+            if 200 <= response.status_code < 300 and _has_editable_otto_product(response.body):
                 results[target_id] = {"status": ProductEditorTargetStatus.FOUND, "metadata": {"profile": profile}, "warnings": []}
+            elif 200 <= response.status_code < 300:
+                results[target_id] = {
+                    "status": ProductEditorTargetStatus.ERROR,
+                    "metadata": {"profile": profile, "response_keys": sorted(response.body.keys())},
+                    "warnings": [ProductEditorWarning(
+                        code="product_editor_otto_incomplete_response",
+                        message="OTTO returned no editable product fields for this SKU.",
+                    )],
+                }
             elif response.status_code == 404:
                 results[target_id] = {"status": ProductEditorTargetStatus.MISSING, "metadata": {"profile": profile}, "warnings": []}
             else:
@@ -53,6 +62,18 @@ class ProductEditorOttoFlow:
         response = self.gateway.fetch_otto_by_sku(sku=ean, profile=profile, request_id=request_id)
         if not (200 <= response.status_code < 300):
             return ProductEditorLoadResponse(request_id=request_id, ean=ean, active_group=ProductEditorGroupId.OTTO, baseline_target_id=target_id, supported=False, warnings=[ProductEditorWarning(code="product_editor_otto_load_failed", message="Failed to load OTTO baseline draft.")])
+        if not _has_editable_otto_product(response.body):
+            return ProductEditorLoadResponse(
+                request_id=request_id,
+                ean=ean,
+                active_group=ProductEditorGroupId.OTTO,
+                baseline_target_id=target_id,
+                supported=False,
+                warnings=[ProductEditorWarning(
+                    code="product_editor_otto_incomplete_response",
+                    message="OTTO returned no editable product fields for this SKU.",
+                )],
+            )
         return ProductEditorLoadResponse(request_id=request_id, ean=ean, active_group=ProductEditorGroupId.OTTO, baseline_target_id=target_id, draft=_normalize_otto_draft(response.body, target_id, ean), supported=True)
 
     def plan(self, *, ean: str, request_id: str, changed_fields: list[str], draft: dict, selected_target_ids: list[str]) -> ProductEditorPlanResponse:
@@ -131,7 +152,7 @@ class ProductEditorOttoFlow:
         states = self.discover_targets(ean=ean, request_id=request_id)
         found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
         if preferred_target_id is not None:
-            return preferred_target_id if preferred_target_id in found else None
+            return preferred_target_id if preferred_target_id in _OTTO_PROFILE_BY_TARGET else None
         return found[0] if found else None
 
 
@@ -139,6 +160,19 @@ class ProductEditorOttoFlowError(RuntimeError):
     def __init__(self, code: str, message: str, status_code: int, details: dict | None = None) -> None:
         super().__init__(message)
         self.code, self.message, self.status_code, self.details = code, message, status_code, details or {}
+
+
+def _has_editable_otto_product(body: dict) -> bool:
+    variations = body.get("product_variations") if isinstance(body.get("product_variations"), list) else []
+    product = variations[0] if variations and isinstance(variations[0], dict) else {}
+    description = product.get("productDescription") if isinstance(product.get("productDescription"), dict) else {}
+    standard_price = product.get("pricing", {}).get("standardPrice", {}) if isinstance(product.get("pricing"), dict) else {}
+    return any((
+        str(description.get("productLine") or description.get("title") or description.get("description") or description.get("text") or "").strip(),
+        bool(description.get("bulletPoints")),
+        standard_price.get("amount") not in (None, ""),
+        bool(product.get("mediaAssets") or product.get("imageUrl") or product.get("image_url")),
+    ))
 
 
 def _normalize_otto_media_assets(product: dict) -> list[dict]:
