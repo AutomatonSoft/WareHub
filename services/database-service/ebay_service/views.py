@@ -5,6 +5,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from django.core import signing
+from django.core.cache import cache
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -499,6 +500,59 @@ class EbayCategoryAspectsAPIView(APIView):
             return Response(EbayTaxonomyClient().category_aspects(marketplace_id=marketplace_id, category_id=category_id))
         except EbayApiError as error:
             return _error_response(error)
+
+
+class EbayCategoryTreeAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        marketplace_id = str(request.query_params.get("marketplace_id") or "").strip()
+        category_id = str(request.query_params.get("category_id") or "").strip()
+        if not marketplace_id:
+            return Response({"code": "ebay_taxonomy_invalid_request", "detail": "marketplace_id is required."}, status=400)
+        if len(marketplace_id) > 64 or len(category_id) > 64:
+            return Response({"code": "ebay_taxonomy_invalid_request", "detail": "marketplace_id or category_id is too long."}, status=400)
+
+        cache_key = f"ebay:taxonomy:tree-node:{marketplace_id}:{category_id or 'root'}"
+        response_payload = cache.get(cache_key)
+        if response_payload is None:
+            try:
+                payload = EbayTaxonomyClient().category_tree(
+                    marketplace_id=marketplace_id,
+                    category_id=category_id or None,
+                )
+            except EbayApiError as error:
+                return _error_response(error)
+            node = payload.get("categorySubtreeNode") or payload.get("rootCategoryNode")
+            if not isinstance(node, dict):
+                return Response({"code": "ebay_taxonomy_invalid_response", "detail": "eBay taxonomy response does not contain a category node."}, status=502)
+            response_payload = {"marketplace_id": marketplace_id, "node": _taxonomy_tree_node(node)}
+            cache.set(cache_key, response_payload, timeout=3600)
+        return Response(response_payload)
+
+
+def _taxonomy_tree_node(node):
+    category = node.get("category") if isinstance(node.get("category"), dict) else {}
+    children = node.get("childCategoryTreeNodes") if isinstance(node.get("childCategoryTreeNodes"), list) else []
+    return {
+        "category_id": str(category.get("categoryId") or ""),
+        "category_name": str(category.get("categoryName") or ""),
+        "is_leaf": bool(node.get("leafCategoryTreeNode")),
+        "children": [
+            _taxonomy_tree_child(child)
+            for child in children
+            if isinstance(child, dict)
+        ],
+    }
+
+
+def _taxonomy_tree_child(node):
+    category = node.get("category") if isinstance(node.get("category"), dict) else {}
+    return {
+        "category_id": str(category.get("categoryId") or ""),
+        "category_name": str(category.get("categoryName") or ""),
+        "is_leaf": bool(node.get("leafCategoryTreeNode")),
+    }
 
 
 def _error_response(error: EbayApiError) -> Response:

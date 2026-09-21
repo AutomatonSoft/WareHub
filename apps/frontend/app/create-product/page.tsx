@@ -1255,7 +1255,9 @@ export default function CreateProductPage() {
   const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
   const [ottoSearchErrors, setOttoSearchErrors] = useState<Partial<Record<OttoProfile, string>>>({});
   const [reservedMarketplaceEans, setReservedMarketplaceEans] = useState<Partial<Record<MarketplaceReservationFamily, string>>>({});
+  const [ebayDraftVersionByTab, setEbayDraftVersionByTab] = useState<Partial<Record<CreateProductTab, number>>>({});
   const [ottoSearchLoading, setOttoSearchLoading] = useState(false);
+  const [ebaySourceLoading, setEbaySourceLoading] = useState(false);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [activeGalleryImageId, setActiveGalleryImageId] = useState("");
   const [tabGalleryItemsByTab, setTabGalleryItemsByTab] = useState<Partial<Record<CreateProductTab, GalleryItem[]>>>({});
@@ -1657,6 +1659,7 @@ export default function CreateProductPage() {
     paymentPolicyId: "",
     returnPolicyId: "",
   };
+  const activeEbayDraftVersion = ebayDraftVersionByTab[activeTab] ?? 0;
   const activeHoodSnapshot = controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
     ? controller.sourceSnapshot
     : null;
@@ -1742,6 +1745,7 @@ export default function CreateProductPage() {
     kauflandDraftRefByTab.current = {};
     ottoDraftRefByTab.current = {};
     ebayDraftRefByTab.current = {};
+    setEbayDraftVersionByTab({});
     hoodPublishDraftRef.current = null;
     setReservedMarketplaceEans({});
     setOttoCategoryByTab({});
@@ -2144,6 +2148,32 @@ export default function CreateProductPage() {
 
   function getActiveTabLocalImageFiles(): File[] {
     return getLocalImageFilesForTab(activeTab);
+  }
+
+  async function handleLoadEbaySourceProduct(ean: string) {
+    setEbaySourceLoading(true);
+    try {
+      const snapshot = await controller.loadSourceByEan(ean);
+      const current = ebayDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
+        ? ebayDraftRefByTab.current[activeTab].draft
+        : activeEbayInitialFields;
+      ebayDraftRefByTab.current[activeTab] = {
+        sourceKey: activeDraftContextKey,
+        draft: {
+          ...current,
+          ean: snapshot.ean,
+          title: snapshot.productName,
+          description: snapshot.description || current.description,
+          price: snapshot.price,
+        },
+      };
+      setEbayDraftVersionByTab((currentVersions) => ({
+        ...currentVersions,
+        [activeTab]: (currentVersions[activeTab] ?? 0) + 1,
+      }));
+    } finally {
+      setEbaySourceLoading(false);
+    }
   }
 
   function getLocalImageFilesForTab(tab: CreateProductTab): File[] {
@@ -3365,7 +3395,12 @@ export default function CreateProductPage() {
             <EbaySellerSetupPanel
               account={activeTabMeta.account ?? "JV"}
               draftKey={activeDraftContextKey}
+              draftVersion={activeEbayDraftVersion}
               initialFields={activeEbayInitialFields}
+              sourceLoading={ebaySourceLoading}
+              onLoadSource={(ean) => {
+                void handleLoadEbaySourceProduct(ean);
+              }}
               onDraftChange={(draft) => {
                 ebayDraftRefByTab.current[activeTab] = { sourceKey: activeDraftContextKey, draft };
               }}

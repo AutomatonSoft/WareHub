@@ -273,6 +273,57 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     return request;
   }, []);
 
+  const loadSourceByEan = useCallback(async (mainEan: string): Promise<CreateProductJvSourceSnapshot> => {
+    const normalizedEan = mainEan.trim();
+    if (!/^\d{13}$/.test(normalizedEan)) {
+      throw new Error("EAN must contain exactly 13 digits.");
+    }
+
+    const cacheKey = sourceCacheKey(normalizedEan, sourceSite, preferredSourceSiteKey);
+    setSourceSitesLoading(true);
+    setSourceSitesError(null);
+    setSourceSnapshotLoading(true);
+    setSourceSnapshotError(null);
+
+    try {
+      const sites = await fetchCreateProductSourceSitesByMainEan({
+        mainEan: normalizedEan,
+        site: sourceSite,
+        siteKey: preferredSourceSiteKey,
+      });
+      if (sites.length === 0) {
+        throw new Error("No source product was found for this EAN.");
+      }
+
+      const preferredSite = sites.find((site) => site.siteKey === preferredSourceSiteKey)
+        ?? (sourceSite === "JV" ? sites.find((site) => site.siteKey === "JV_DE") : undefined)
+        ?? sites[0];
+      const snapshot = await loadSourceSnapshot(normalizedEan, sourceSite, preferredSite.siteKey);
+
+      sourceCacheRef.current.sitesBySource.set(cacheKey, sites);
+      sourceCacheRef.current.selectedSiteKeyBySource.set(cacheKey, preferredSite.siteKey);
+      setSourceSites(sites);
+      setLoadedSourceSitesCacheKey(cacheKey);
+      setSelectedSourceSiteKey(preferredSite.siteKey);
+      if (sourceSite === "JV") {
+        setJvSourceSnapshotsBySiteKey((current) => ({ ...current, [preferredSite.siteKey]: snapshot }));
+      }
+      applySourceSnapshot(snapshot, normalizedEan, sourceSite);
+      return snapshot;
+    } catch (error) {
+      const message = normalizeCreateProductRuntimeError(error, `Failed to load ${sourceSite} source product.`);
+      setSourceSites([]);
+      setSourceSnapshot(null);
+      setSourceSitesError(message);
+      setSourceSnapshotError(message);
+      showToast(message, "error");
+      throw error;
+    } finally {
+      setSourceSitesLoading(false);
+      setSourceSnapshotLoading(false);
+    }
+  }, [applySourceSnapshot, loadSourceSnapshot, preferredSourceSiteKey, showToast, sourceSite]);
+
   const selectSourceSite = useCallback((siteKey: string) => {
     setSelectedSourceSiteKey(siteKey);
     if (activeMainEan) {
@@ -1369,6 +1420,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     setLatestJobId,
     setReconciliationReportId,
     selectSourceSite,
+    loadSourceByEan,
     toggleSite,
     selectAllSites,
     clearAllSites,
