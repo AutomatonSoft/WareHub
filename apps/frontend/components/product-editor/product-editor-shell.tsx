@@ -830,7 +830,14 @@ function ProductEditorContent() {
     try {
       const response = await loadProductEditorGroup({ ean, activeGroup: "OTTO", baselineTargetId });
       const hydrated = hydrateOttoDraft(response.draft as unknown as ProductEditorOttoDraft);
-      if (!response.supported || !hydrated.productReference) return false;
+      if (!response.supported || !hydrated.productReference) {
+        if (isCurrentDraftLoad(tabKey, loadVersion)) {
+          setOttoTabWarnings(tabKey, response.warnings.length > 0
+            ? response.warnings
+            : [{ code: "product_editor_otto_load_incomplete", message: "OTTO did not return a usable product draft.", level: "medium" }]);
+        }
+        return false;
+      }
       if (!isCurrentDraftLoad(tabKey, loadVersion)) return false;
       setOttoTabDraft(tabKey, hydrated);
       setInitialOttoTabDraft(tabKey, hydrated);
