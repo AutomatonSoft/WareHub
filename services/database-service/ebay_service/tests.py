@@ -193,6 +193,7 @@ class EbayRouteTests(SimpleTestCase):
         self.assertEqual(resolve("/api/v1/ebay/listings/205926392508/").url_name, "ebay-listing-v1")
         self.assertEqual(resolve("/api/v1/ebay/seller/active-listings/").url_name, "ebay-active-listings-v1")
         self.assertEqual(resolve("/api/v1/ebay/listings/reconcile-legacy/").url_name, "ebay-legacy-listing-reconciliation-v1")
+        self.assertEqual(resolve("/api/v1/ebay/listings/index-legacy/").url_name, "ebay-legacy-listing-index-v1")
         self.assertEqual(resolve("/api/v1/ebay/inventory/items/").url_name, "ebay-inventory-item-v1")
         self.assertEqual(resolve("/api/v1/ebay/offers/").url_name, "ebay-offer-v1")
         self.assertEqual(resolve("/api/v1/ebay/listing-operations/").url_name, "ebay-listing-operation-v1")

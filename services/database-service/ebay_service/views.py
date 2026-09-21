@@ -15,7 +15,7 @@ from database.idempotency import build_request_hash, claim_or_replay, derive_ide
 
 from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import EbayCredentialError, store_refresh_token
-from .listing_operations import execute_listing_operation, reconcile_legacy_listing
+from .listing_operations import execute_listing_operation, index_legacy_listing_page, reconcile_legacy_listing
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
@@ -271,6 +271,32 @@ class EbayLegacyListingReconciliationAPIView(APIView):
         return Response(result)
 
 
+class EbayLegacyListingIndexAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        account = _account(payload.get("account"))
+        marketplace_id = str(payload.get("marketplace_id") or "EBAY_DE").strip()
+        page = _bounded_positive_int(payload.get("page"), default=1, maximum=10_000)
+        limit = _bounded_positive_int(payload.get("limit"), default=100, maximum=100)
+        if account is None or marketplace_id != "EBAY_DE" or page is None or limit is None:
+            return Response(
+                {"code": "ebay_legacy_listing_index_invalid_request", "detail": "Valid account, EBAY_DE marketplace_id, page (1-10000), and limit (1-100) are required."},
+                status=400,
+            )
+        try:
+            result = index_legacy_listing_page(
+                account=account,
+                marketplace_id=marketplace_id,
+                page=page,
+                limit=limit,
+            )
+        except EbayApiError as error:
+            return _listing_error_response(error, account=account, item_id="", marketplace_id=marketplace_id)
+        return Response(result)
+
+
 class EbayInventoryItemAPIView(APIView):
     permission_classes = [SessionRolePermission]
 
@@ -326,6 +352,7 @@ class EbayOfferAPIView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         account = _account(payload.get("account"))
         offer = payload.get("offer")
+        legacy_item = payload.get("legacy_item")
         if account is None or not isinstance(offer, dict):
             return Response(
                 {"code": "ebay_offer_invalid_request", "detail": "account and offer object are required."},
@@ -371,6 +398,7 @@ class EbayListingOperationAPIView(APIView):
             or not currency.isalpha()
             or (inventory_item is not None and not isinstance(inventory_item, dict))
             or (offer is not None and not isinstance(offer, dict))
+            or (legacy_item is not None and not isinstance(legacy_item, dict))
         ):
             return Response(
                 {
@@ -445,6 +473,7 @@ class EbayListingOperationAPIView(APIView):
                 quantity=quantity,
                 price=price,
                 currency=currency,
+                legacy_item=legacy_item,
             )
         except EbayApiError as error:
             response = _listing_operation_error_response(

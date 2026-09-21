@@ -167,6 +167,7 @@ class FakeProductEditorGateway:
             "dep": {"detail": "not found"},
         }
         self.ebay_legacy_by_account = {"jv": {}, "xl": {}, "dep": {}}
+        self.ebay_legacy_index_by_account = {"jv": {}, "xl": {}, "dep": {}}
         self.ebay_active_listings_by_account = {"jv": [], "xl": [], "dep": []}
 
     def fetch_hood_by_ean(self, *, ean: str, account: str, request_id: str):
@@ -197,9 +198,9 @@ class FakeProductEditorGateway:
         body = self.otto_by_profile[profile]
         return type("R", (), {"status_code": 200 if "product_variations" in body else 404, "body": body})()
 
-    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", request_id: str):
+    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", source_ean: str = "", request_id: str):
         if listing_mode == "legacy":
-            body = self.ebay_legacy_by_account[account]
+            body = self.ebay_legacy_index_by_account[account] if source_ean else self.ebay_legacy_by_account[account]
             return type("R", (), {"status_code": 200 if "listing" in body else 404, "body": body})()
         body = self.ebay_inventory_by_account[account]
         return type("R", (), {"status_code": 200 if "inventory_item" in body else 404, "body": body})()
@@ -442,6 +443,19 @@ def test_product_editor_otto_load_and_plan_creates_orchestrator_job(tmp_path):
     applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
     assert applied.status_code == 200
     assert applied.json()["status"] == "queued"
+
+
+def test_product_editor_otto_load_does_not_substitute_another_profile(tmp_path):
+    client, _ = _client(tmp_path)
+
+    response = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "OTTO", "baseline_target_id": "OTTO_XL"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["supported"] is False
+    assert response.json()["baseline_target_id"] == "OTTO_XL"
 
 
 def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_path):

@@ -45,6 +45,7 @@ class MarketplaceAdapters:
                 "source_ean": ean,
                 "inventory_item": payload.get("ebay_inventory_item"),
                 "offer": payload.get("ebay_offer"),
+                "legacy_item": payload.get("ebay_legacy_item"),
                 "quantity": payload.get("quantity"),
                 "price": payload.get("price"),
                 "currency": str(payload.get("ebay_currency") or "EUR").strip().upper(),

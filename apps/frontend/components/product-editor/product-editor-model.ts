@@ -92,6 +92,7 @@ export function createEmptyEbayDraft(): ProductEditorEbayDraft {
     sku: "",
     ebay_inventory_item: {},
     ebay_offer: {},
+    ebay_legacy_item: {},
     price: "",
     quantity: "",
     ebay_currency: "EUR",
@@ -114,6 +115,9 @@ export function hydrateEbayDraft(input?: Partial<ProductEditorEbayDraft>): Produ
     ebay_offer: input?.ebay_offer && typeof input.ebay_offer === "object" && !Array.isArray(input.ebay_offer)
       ? input.ebay_offer
       : {},
+    ebay_legacy_item: input?.ebay_legacy_item && typeof input.ebay_legacy_item === "object" && !Array.isArray(input.ebay_legacy_item)
+      ? input.ebay_legacy_item
+      : {},
     price: formatPriceForInput(input?.price),
     quantity: input?.quantity == null ? "" : String(input.quantity),
     ebay_currency: String(input?.ebay_currency ?? "EUR").toUpperCase(),
@@ -128,6 +132,9 @@ export function buildEbayChangedFields(initial: ProductEditorEbayDraft, current:
   }
   if (current.ebay_listing_mode === "inventory" && JSON.stringify(initial.ebay_offer) !== JSON.stringify(current.ebay_offer)) {
     changed.push("ebay_offer");
+  }
+  if (current.ebay_listing_mode === "legacy" && JSON.stringify(initial.ebay_legacy_item) !== JSON.stringify(current.ebay_legacy_item)) {
+    changed.push("ebay_legacy_item");
   }
   return changed;
 }

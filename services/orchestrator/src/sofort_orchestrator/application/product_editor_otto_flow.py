@@ -130,7 +130,9 @@ class ProductEditorOttoFlow:
     def _resolve_target(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
         states = self.discover_targets(ean=ean, request_id=request_id)
         found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
-        return preferred_target_id if preferred_target_id in found else (found[0] if found else None)
+        if preferred_target_id is not None:
+            return preferred_target_id if preferred_target_id in found else None
+        return found[0] if found else None
 
 
 class ProductEditorOttoFlowError(RuntimeError):
