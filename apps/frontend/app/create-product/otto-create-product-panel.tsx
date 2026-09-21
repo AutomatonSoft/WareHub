@@ -72,11 +72,14 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
     setDraft(sourceDraftRef.current);
   }, [draftKey, initialDraftSignature]);
   useEffect(() => {
-    if (!categoryName || draft.category === categoryName) return;
-    const next = { ...draft, category: categoryName };
-    setDraft(next);
-    onDraftChangeRef.current(next);
-  }, [categoryName, draft]);
+    if (!categoryName) return;
+    setDraft((current) => {
+      if (current.category === categoryName) return current;
+      const next = { ...current, category: categoryName };
+      onDraftChangeRef.current(next);
+      return next;
+    });
+  }, [categoryName]);
   useEffect(() => {
     if (!categoryId) { setCategoryAttributes([]); return; }
     let active = true;
@@ -92,14 +95,16 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
       normalizeOttoProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
     );
     if (Object.keys(attributeNames).length === 0) return;
-    const missingNames = Object.fromEntries(
-      Object.entries(attributeNames).filter(([attributeId, name]) => draft.attributeNames[attributeId] !== name),
-    );
-    if (Object.keys(missingNames).length === 0) return;
-    const next = { ...draft, attributeNames: { ...draft.attributeNames, ...missingNames } };
-    setDraft(next);
-    onDraftChangeRef.current(next);
-  }, [draft, productAttributes]);
+    setDraft((current) => {
+      const missingNames = Object.fromEntries(
+        Object.entries(attributeNames).filter(([attributeId, name]) => current.attributeNames[attributeId] !== name),
+      );
+      if (Object.keys(missingNames).length === 0) return current;
+      const next = { ...current, attributeNames: { ...current.attributeNames, ...missingNames } };
+      onDraftChangeRef.current(next);
+      return next;
+    });
+  }, [productAttributes]);
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     const next = { ...draft, [key]: value };
