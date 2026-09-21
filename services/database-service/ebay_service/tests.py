@@ -176,6 +176,7 @@ class EbayRouteTests(SimpleTestCase):
     def test_taxonomy_routes_are_registered(self):
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-suggestions/").url_name, "ebay-category-suggestions-v1")
         self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-aspects/").url_name, "ebay-category-aspects-v1")
+        self.assertEqual(resolve("/api/v1/ebay/taxonomy/category-tree/").url_name, "ebay-category-tree-v1")
         self.assertEqual(resolve("/api/v1/ebay/oauth/callback/").url_name, "ebay-oauth-callback-v1")
         self.assertEqual(
             resolve("/api/v1/ebay/notifications/marketplace-account-deletion/").url_name,
@@ -335,6 +336,24 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(session.calls[2][0], "get")
         self.assertIn("get_category_suggestions", session.calls[2][1][0])
         self.assertEqual(session.calls[2][2]["params"], {"q": "Sofa"})
+
+    def test_fetches_category_subtree_with_application_token(self):
+        session = FakeSession()
+        client = EbayTaxonomyClient(
+            config=EbayApiConfig(
+                client_id="client-id",
+                client_secret="client-secret",
+                base_url="https://api.sandbox.ebay.com",
+                token_url="https://api.sandbox.ebay.com/identity/v1/oauth2/token",
+                connect_timeout=8,
+                read_timeout=20,
+            ),
+            session=session,
+        )
+
+        self.assertEqual(client.category_tree(marketplace_id="EBAY_DE", category_id="123"), {"categorySuggestions": []})
+        self.assertIn("get_category_subtree", session.calls[2][1][0])
+        self.assertEqual(session.calls[2][2]["params"], {"category_id": "123"})
 
     def test_builds_authorization_url_and_exchanges_code(self):
         session = FakeSession()

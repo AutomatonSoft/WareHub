@@ -7,7 +7,7 @@ from django.db.models import Q
 
 from database.models import EbayListing
 
-from .client import EbayApiError, EbayOAuthClient
+from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
 
 
 _INVENTORY_OPERATIONS = frozenset({"fetch", "publish", "update", "unpublish", "relist"})
@@ -185,6 +185,11 @@ def _execute_inventory_operation(
             currency=currency,
         )
         _validate_inventory_publish_payload(inventory_item=inventory_item, offer=normalized_offer)
+        _validate_inventory_publish_taxonomy(
+            inventory_item=inventory_item,
+            category_id=str(normalized_offer.get("categoryId") or ""),
+            marketplace_id=marketplace_id,
+        )
         client.create_or_replace_inventory_item(
             account=account,
             sku=sku,
@@ -370,6 +375,41 @@ def _validate_inventory_publish_payload(*, inventory_item: dict[str, Any], offer
             status_code=400,
             details={"missing_fields": missing},
             operation="publish_offer",
+        )
+
+
+def _validate_inventory_publish_taxonomy(*, inventory_item: dict[str, Any], category_id: str, marketplace_id: str) -> None:
+    taxonomy_client = EbayTaxonomyClient()
+    tree_payload = taxonomy_client.category_tree(marketplace_id=marketplace_id, category_id=category_id)
+    node = tree_payload.get("categorySubtreeNode") if isinstance(tree_payload, dict) else None
+    if not isinstance(node, dict) or not bool(node.get("leafCategoryTreeNode")):
+        raise EbayApiError(
+            "The selected eBay category must be a leaf category.",
+            status_code=400,
+            details={"category_id": category_id},
+            operation="validate_category",
+        )
+
+    aspects_payload = taxonomy_client.category_aspects(marketplace_id=marketplace_id, category_id=category_id)
+    taxonomy_aspects = aspects_payload.get("aspects", []) if isinstance(aspects_payload, dict) else []
+    required_names = {
+        str(aspect.get("localizedAspectName") or "").strip()
+        for aspect in taxonomy_aspects
+        if isinstance(aspect, dict)
+        if bool((aspect.get("aspectConstraint") or {}).get("aspectRequired"))
+    }
+    product = inventory_item.get("product") if isinstance(inventory_item.get("product"), dict) else {}
+    submitted_aspects = product.get("aspects") if isinstance(product.get("aspects"), dict) else {}
+    missing_aspects = sorted(
+        name for name in required_names
+        if not isinstance(submitted_aspects.get(name), list) or not any(str(value).strip() for value in submitted_aspects[name])
+    )
+    if missing_aspects:
+        raise EbayApiError(
+            "Inventory API publish payload is missing required eBay category aspects.",
+            status_code=400,
+            details={"category_id": category_id, "missing_aspects": missing_aspects},
+            operation="validate_category_aspects",
         )
 
 

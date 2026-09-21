@@ -484,6 +484,53 @@ def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_pat
     assert command.payload.ebay_inventory_item is None
 
 
+def test_product_editor_ebay_inventory_fields_are_queued_for_update(tmp_path):
+    client, gateway = _client(tmp_path)
+    gateway.ebay_inventory_by_account["jv"] = {
+        "inventory_item": {
+            "sku": "4012345678901",
+            "condition": "NEW",
+            "product": {"title": "Original", "description": "Original description", "aspects": {"Brand": ["Depotum"]}, "imageUrls": ["https://example.test/original.jpg"]},
+            "availability": {"shipToLocationAvailability": {"quantity": 3}},
+        },
+        "offers": [{
+            "offerId": "offer-jv",
+            "categoryId": "123",
+            "merchantLocationKey": "jv-main",
+            "listingPolicies": {"fulfillmentPolicyId": "fulfillment-1", "paymentPolicyId": "payment-1", "returnPolicyId": "return-1"},
+            "pricingSummary": {"price": {"value": "19.99", "currency": "EUR"}},
+        }],
+    }
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": "4012345678901", "active_group": "EBAY", "baseline_target_id": "EBAY_JV"},
+    )
+    assert loaded.status_code == 200
+    draft = loaded.json()["draft"]
+    inventory_item = draft["ebay_inventory_item"]
+    offer = draft["ebay_offer"]
+    inventory_item["product"]["title"] = "Updated title"
+    offer["categoryId"] = "456"
+
+    planned = client.post(
+        "/api/v1/orchestrator/product-editor/plan",
+        json={
+            "ean": "4012345678901",
+            "active_group": "EBAY",
+            "changed_fields": ["ebay_inventory_item", "ebay_offer"],
+            "draft": {**draft, "ebay_inventory_item": inventory_item, "ebay_offer": offer},
+            "selected_target_ids": ["EBAY_JV"],
+        },
+    )
+    assert planned.status_code == 200
+    applied = client.post("/api/v1/orchestrator/product-editor/apply", json={"plan_id": planned.json()["plan_id"], "confirmation": True})
+    assert applied.status_code == 200
+    command = Deps.job_store.get_job_command(job_id=applied.json()["job_id"])
+    assert command is not None
+    assert command.payload.ebay_inventory_item["product"]["title"] == "Updated title"
+    assert command.payload.ebay_offer["categoryId"] == "456"
+
+
 def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_path):
     client, gateway = _client(tmp_path)
     ean = "4062292372025"

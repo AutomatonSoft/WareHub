@@ -77,6 +77,7 @@ from ebay_service.views import (
     EbayActiveListingsAPIView,
     EbayCategoryAspectsAPIView,
     EbayCategorySuggestionsAPIView,
+    EbayCategoryTreeAPIView,
     EbayMarketplaceAccountDeletionAPIView,
     EbayOAuthAuthorizationUrlAPIView,
     EbayOAuthCallbackAPIView,
@@ -304,6 +305,11 @@ api_v1_patterns = [
         "api/v1/ebay/taxonomy/category-aspects/",
         EbayCategoryAspectsAPIView.as_view(),
         name="ebay-category-aspects-v1",
+    ),
+    path(
+        "api/v1/ebay/taxonomy/category-tree/",
+        EbayCategoryTreeAPIView.as_view(),
+        name="ebay-category-tree-v1",
     ),
     path(
         "api/v1/ebay/oauth/authorization-url/",

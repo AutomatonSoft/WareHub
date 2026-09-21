@@ -85,6 +85,21 @@ class EbayTaxonomyClient:
             params={"category_id": _required(category_id, "category_id")},
         )
 
+    def category_tree(self, *, marketplace_id: str, category_id: str | None = None) -> dict[str, Any]:
+        token = self._application_token()
+        category_tree_id = self._category_tree_id(token=token, marketplace_id=marketplace_id)
+        if category_id:
+            return self._get(
+                token=token,
+                path=f"/commerce/taxonomy/v1/category_tree/{category_tree_id}/get_category_subtree",
+                params={"category_id": _required(category_id, "category_id")},
+            )
+        return self._get(
+            token=token,
+            path=f"/commerce/taxonomy/v1/category_tree/{category_tree_id}",
+            params={},
+        )
+
     def _category_tree_id(self, *, token: str, marketplace_id: str) -> str:
         payload = self._get(
             token=token,
@@ -101,7 +116,7 @@ class EbayTaxonomyClient:
             response = self._session.get(
                 f"{self._config.base_url}{path}",
                 params=params,
-                headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+                headers={"Accept": "application/json", "Accept-Encoding": "gzip", "Authorization": f"Bearer {token}"},
                 timeout=(self._config.connect_timeout, self._config.read_timeout),
             )
         except requests.RequestException as error:

@@ -89,6 +89,9 @@ export function createEmptyEbayDraft(): ProductEditorEbayDraft {
     ebay_listing_mode: "inventory",
     ebay_item_id: "",
     ebay_variation_sku: "",
+    sku: "",
+    ebay_inventory_item: {},
+    ebay_offer: {},
     price: "",
     quantity: "",
     ebay_currency: "EUR",
@@ -104,6 +107,13 @@ export function hydrateEbayDraft(input?: Partial<ProductEditorEbayDraft>): Produ
     ean: String(input?.ean ?? ""),
     ebay_item_id: String(input?.ebay_item_id ?? ""),
     ebay_variation_sku: String(input?.ebay_variation_sku ?? ""),
+    sku: String(input?.sku ?? input?.ean ?? ""),
+    ebay_inventory_item: input?.ebay_inventory_item && typeof input.ebay_inventory_item === "object" && !Array.isArray(input.ebay_inventory_item)
+      ? input.ebay_inventory_item
+      : {},
+    ebay_offer: input?.ebay_offer && typeof input.ebay_offer === "object" && !Array.isArray(input.ebay_offer)
+      ? input.ebay_offer
+      : {},
     price: formatPriceForInput(input?.price),
     quantity: input?.quantity == null ? "" : String(input.quantity),
     ebay_currency: String(input?.ebay_currency ?? "EUR").toUpperCase(),
@@ -111,8 +121,15 @@ export function hydrateEbayDraft(input?: Partial<ProductEditorEbayDraft>): Produ
 }
 
 export function buildEbayChangedFields(initial: ProductEditorEbayDraft, current: ProductEditorEbayDraft): string[] {
-  return (["price", "quantity"] as const)
+  const changed: string[] = (["price", "quantity"] as const)
     .filter((key) => String(initial[key] ?? "").trim() !== String(current[key] ?? "").trim());
+  if (current.ebay_listing_mode === "inventory" && JSON.stringify(initial.ebay_inventory_item) !== JSON.stringify(current.ebay_inventory_item)) {
+    changed.push("ebay_inventory_item");
+  }
+  if (current.ebay_listing_mode === "inventory" && JSON.stringify(initial.ebay_offer) !== JSON.stringify(current.ebay_offer)) {
+    changed.push("ebay_offer");
+  }
+  return changed;
 }
 
 export function hydrateOttoDraft(input?: Partial<ProductEditorOttoDraft>): ProductEditorOttoDraft {
