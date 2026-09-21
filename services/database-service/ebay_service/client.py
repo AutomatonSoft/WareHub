@@ -441,14 +441,39 @@ class EbayOAuthClient:
         quantity: int | None,
         price: str | None,
         currency: str = "EUR",
+        legacy_item: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if quantity is None and price is None:
-            raise EbayApiError("At least one of quantity or price is required.")
+        legacy_item = legacy_item or {}
+        if quantity is None and price is None and not legacy_item:
+            raise EbayApiError("At least one legacy listing field is required.")
         item_fields = [f"<ItemID>{xml_escape(_required(item_id, 'item_id'))}</ItemID>"]
         if quantity is not None:
             item_fields.append(f"<Quantity>{quantity}</Quantity>")
         if price is not None:
             item_fields.append(f'<StartPrice currencyID="{xml_escape(currency)}">{xml_escape(price)}</StartPrice>')
+        title = str(legacy_item.get("title") or "").strip()
+        description = str(legacy_item.get("description") or "").strip()
+        category_id = str(legacy_item.get("category_id") or "").strip()
+        if title:
+            item_fields.append(f"<Title>{xml_escape(title)}</Title>")
+        if description:
+            item_fields.append(f"<Description>{xml_escape(description)}</Description>")
+        if category_id:
+            item_fields.append(f"<PrimaryCategory><CategoryID>{xml_escape(category_id)}</CategoryID></PrimaryCategory>")
+        item_specifics = legacy_item.get("item_specifics")
+        if isinstance(item_specifics, dict):
+            entries = []
+            for name, values in item_specifics.items():
+                value_list = values if isinstance(values, list) else [values]
+                rendered = "".join(f"<Value>{xml_escape(str(value).strip())}</Value>" for value in value_list if str(value).strip())
+                if str(name).strip() and rendered:
+                    entries.append(f"<NameValueList><Name>{xml_escape(str(name).strip())}</Name>{rendered}</NameValueList>")
+            item_fields.append(f"<ItemSpecifics>{''.join(entries)}</ItemSpecifics>")
+        image_urls = legacy_item.get("image_urls")
+        if isinstance(image_urls, list):
+            urls = "".join(f"<PictureURL>{xml_escape(str(url).strip())}</PictureURL>" for url in image_urls if str(url).strip())
+            if urls:
+                item_fields.append(f"<PictureDetails>{urls}</PictureDetails>")
         return self._trading_request(
             account=account,
             marketplace_id=marketplace_id,
@@ -1056,6 +1081,14 @@ def _listing_item_payload(*, item: ElementTree.Element, marketplace_id: str, nam
         "item_id": _xml_text(item, "ebay:ItemID", namespace),
         "seller": _xml_text(item, "ebay:Seller/ebay:UserID", namespace),
         "title": _xml_text(item, "ebay:Title", namespace),
+        "description": _xml_text(item, "ebay:Description", namespace),
+        "category_id": _xml_text(item, "ebay:PrimaryCategory/ebay:CategoryID", namespace),
+        "image_urls": [_xml_text(url, ".", namespace) for url in item.findall("ebay:PictureDetails/ebay:PictureURL", namespace) if _xml_text(url, ".", namespace)],
+        "item_specifics": {
+            _xml_text(entry, "ebay:Name", namespace): [str(value.text or "").strip() for value in entry.findall("ebay:Value", namespace) if str(value.text or "").strip()]
+            for entry in item.findall("ebay:ItemSpecifics/ebay:NameValueList", namespace)
+            if _xml_text(entry, "ebay:Name", namespace)
+        },
         "sku": _xml_text(item, "ebay:SKU", namespace),
         "inventory_tracking_method": _xml_text(item, "ebay:InventoryTrackingMethod", namespace),
         "listing_type": _xml_text(item, "ebay:ListingType", namespace),

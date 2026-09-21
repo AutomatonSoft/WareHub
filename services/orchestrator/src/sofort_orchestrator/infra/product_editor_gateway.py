@@ -75,7 +75,7 @@ class ProductEditorGateway:
         response = self.http.request("GET", url, headers=headers, timeout_seconds=self.discover_timeout_seconds)
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
-    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", request_id: str) -> GatewayResult:
+    def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", source_ean: str = "", request_id: str) -> GatewayResult:
         headers = self._headers(request_id, content_type="application/json")
         response = self.http.request(
             "POST",
@@ -88,7 +88,7 @@ class ProductEditorGateway:
                 "listing_mode": listing_mode,
                 "sku": sku,
                 "item_id": item_id,
-                "source_ean": sku,
+                "source_ean": source_ean or sku,
             },
             timeout_seconds=self.discover_timeout_seconds,
         )

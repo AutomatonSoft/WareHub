@@ -183,7 +183,7 @@ export function ProductEditorOttoPanel(props: Props) {
           <div className="min-w-0 flex-1">
             <OttoCreateProductPanel
               initialDraft={initialCreateDraft}
-              draftKey={`${props.draft.target_id}:${props.draft.profile}`}
+              draftKey={`${props.draft.target_id}:${props.draft.profile}:${props.draft.ean}`}
               showQuantity={false}
               profile={props.draft.profile}
               categoryId={selectedCategoryId}

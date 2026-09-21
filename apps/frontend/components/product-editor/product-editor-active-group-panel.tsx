@@ -24,10 +24,11 @@ import type {
 function hasFoundTargetForVariant(
   group: { targets: ProductEditorTarget[] } | null | undefined,
   variant: string | null,
+  allowedStatuses: ProductEditorTarget["status"][] = ["found"],
 ): boolean {
   const normalizedVariant = variant?.toUpperCase();
   return group?.targets.some((target) => {
-    if (target.status !== "found") return false;
+    if (!allowedStatuses.includes(target.status)) return false;
     if (!normalizedVariant) return true;
     return String(target.id).toUpperCase().includes(`_${normalizedVariant}`) ||
       String(target.account_family).toUpperCase() === normalizedVariant ||
@@ -259,7 +260,7 @@ export function ProductEditorActiveGroupPanel(input: {
         />
       );
     }
-    if (input.discover && !hasFoundTargetForVariant(kauflandGroup, activeVariant)) {
+    if (input.discover && !hasFoundTargetForVariant(kauflandGroup, activeVariant, ["found", "missing"])) {
       return <ProductEditorEmptyPanel title={t.productEditorKauflandTabTitle} body={formatLabel(t.productEditorTargetNotFoundBody, t.productEditorRunDiscoverFirst, input.activeTabLabel)} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} discoveryItems={input.discoveryItems} />;
     }
     return <ProductEditorKauflandPanel draft={input.kauflandDraft} warnings={input.kauflandWarnings} loading={input.kauflandLoading} applyLoading={input.kauflandApplyLoading} changedFields={input.kauflandChangedFields} onChange={input.onPatchKaufland} onApply={input.onApplyKauflandEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;

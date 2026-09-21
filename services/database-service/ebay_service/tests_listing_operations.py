@@ -5,10 +5,28 @@ from django.test import TestCase
 from database.models import EbayListing
 
 from .client import EbayApiError
-from .listing_operations import execute_listing_operation, reconcile_legacy_listing
+from .listing_operations import execute_listing_operation, index_legacy_listing_page, reconcile_legacy_listing
 
 
 class EbayListingOperationTests(TestCase):
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_index_page_persists_listing_and_variation_eans(self, client_class):
+        client_class.return_value.active_listings.return_value = {
+            "total_pages": "2",
+            "listings": [{
+                "item_id": "205926392508",
+                "identifiers": {"EAN": ["4062292372025"]},
+                "variations": [{"sku": "green", "identifiers": {"EAN": ["4062292372026"]}}],
+            }],
+        }
+
+        result = index_legacy_listing_page(account="dep", marketplace_id="EBAY_DE", page=1, limit=100)
+
+        listing = EbayListing.objects.get(account="dep", marketplace_id="EBAY_DE", item_id="205926392508")
+        self.assertEqual(result["indexed_listings"], 1)
+        self.assertEqual(result["indexed_eans"], 2)
+        self.assertEqual(listing.source_ean, "4062292372025")
+        self.assertEqual(listing.legacy_ean_to_variation_sku, {"4062292372025": "", "4062292372026": "green"})
     @patch("ebay_service.listing_operations.EbayTaxonomyClient")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class, taxonomy_client_class):

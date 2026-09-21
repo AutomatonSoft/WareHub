@@ -317,7 +317,7 @@ function ProductEditorContent() {
         ean: draft.ean.trim(),
         changedFields: buildKauflandChangedFields(initialKauflandDraftsByTab[tabKey], draft),
         draft: draft as unknown as Record<string, unknown>,
-        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found"]),
+        selectedTargetIds: getTargetIdsForTab(discover, tabKey, ["found", "missing"]),
       });
     });
 
@@ -440,7 +440,7 @@ function ProductEditorContent() {
       const autoLoadKey = `OTTO:${activeTabKey}:${discover.ean}`;
       if (autoLoadHandledKeysRef.current.has(autoLoadKey)) return;
       autoLoadHandledKeysRef.current.add(autoLoadKey);
-      void autoLoadersRef.current.loadOttoDraft(discover, discover.recommended_baseline_target_id);
+      void autoLoadersRef.current.loadOttoDraft(discover, preferredTargetId);
     }
   }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland, ottoDraft.ean]);
 
@@ -646,7 +646,8 @@ function ProductEditorContent() {
     try {
       const discovered = await discoverProductEditor(ean, "KAUFLAND");
       setDiscover(limitDiscoverToActiveGroup(discovered, "KAUFLAND"));
-      if (getTabSearchStatus(discovered, tabKey) !== "found") return false;
+      const status = getTabSearchStatus(discovered, tabKey);
+      if (status !== "found" && status !== "missing") return false;
       return loadKauflandDraftForTab(ean, tabKey, getPreferredTargetIdForTab(discovered, tabKey));
     } finally {
       if (kauflandLoadInFlightEanRef.current === ean) kauflandLoadInFlightEanRef.current = null;

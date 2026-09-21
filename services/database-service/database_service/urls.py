@@ -83,6 +83,7 @@ from ebay_service.views import (
     EbayOAuthCallbackAPIView,
     EbayOAuthCodeExchangeAPIView,
     EbayInventoryLocationAPIView,
+    EbayLegacyListingIndexAPIView,
     EbayLegacyListingReconciliationAPIView,
     EbayListingOperationAPIView,
     EbayInventoryItemAPIView,
@@ -360,6 +361,11 @@ api_v1_patterns = [
         "api/v1/ebay/listings/reconcile-legacy/",
         EbayLegacyListingReconciliationAPIView.as_view(),
         name="ebay-legacy-listing-reconciliation-v1",
+    ),
+    path(
+        "api/v1/ebay/listings/index-legacy/",
+        EbayLegacyListingIndexAPIView.as_view(),
+        name="ebay-legacy-listing-index-v1",
     ),
     path(
         "api/v1/ebay/listings/<str:item_id>/",

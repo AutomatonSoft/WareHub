@@ -155,6 +155,7 @@ export type ProductEditorEbayDraft = {
   sku: string;
   ebay_inventory_item: Record<string, unknown>;
   ebay_offer: Record<string, unknown>;
+  ebay_legacy_item: Record<string, unknown>;
   price: string;
   quantity: string;
   ebay_currency: string;
