@@ -31,11 +31,23 @@ class ProductEditorKauflandFlow:
         results: dict[str, dict] = {}
         for target_id, controller in _KAUFLAND_CONTROLLER_BY_TARGET.items():
             fetch = self.gateway.fetch_kaufland_by_ean(ean=ean, controller=controller, request_id=request_id)
-            if 200 <= fetch.status_code < 300:
+            if 200 <= fetch.status_code < 300 and _has_kaufland_product(fetch.body):
                 results[target_id] = {
                     "status": ProductEditorTargetStatus.FOUND,
                     "metadata": {"controller": controller},
                     "warnings": [],
+                }
+                continue
+            elif 200 <= fetch.status_code < 300:
+                results[target_id] = {
+                    "status": ProductEditorTargetStatus.ERROR,
+                    "metadata": {"controller": controller, "response_keys": sorted(fetch.body.keys())},
+                    "warnings": [
+                        ProductEditorWarning(
+                            code="product_editor_kaufland_incomplete_response",
+                            message="Kaufland returned no editable product fields for this EAN.",
+                        )
+                    ],
                 }
                 continue
             if fetch.status_code == 404:
@@ -70,6 +82,20 @@ class ProductEditorKauflandFlow:
             )
         controller = _KAUFLAND_CONTROLLER_BY_TARGET[target_id]
         fetch = self.gateway.fetch_kaufland_by_ean(ean=ean, controller=controller, request_id=request_id)
+        if 200 <= fetch.status_code < 300 and not _has_kaufland_product(fetch.body):
+            return ProductEditorLoadResponse(
+                request_id=request_id,
+                ean=ean,
+                active_group=ProductEditorGroupId.KAUFLAND,
+                baseline_target_id=target_id,
+                supported=False,
+                warnings=[
+                    ProductEditorWarning(
+                        code="product_editor_kaufland_incomplete_response",
+                        message="Kaufland returned no editable product fields for this EAN.",
+                    )
+                ],
+            )
         if fetch.status_code == 404:
             return ProductEditorLoadResponse(
                 request_id=request_id,
@@ -187,7 +213,7 @@ class ProductEditorKauflandFlow:
         states = self.discover_targets(ean=ean, request_id=request_id)
         available = [target_id for target_id, state in states.items() if state["status"] in {ProductEditorTargetStatus.FOUND, ProductEditorTargetStatus.MISSING}]
         if preferred_target_id is not None:
-            return preferred_target_id if preferred_target_id in available else None
+            return preferred_target_id if preferred_target_id in _KAUFLAND_CONTROLLER_BY_TARGET else None
         return available[0] if available else None
 
 
@@ -213,6 +239,13 @@ def _normalize_kaufland_draft(body: dict, target_id: str, fallback_ean: str) -> 
         "parts_of_animal_origin": text("parts_of_animal_origin"), "price": text("price"), "unit_id": text("unit_id"),
         "picture_urls": rows("picture_urls"), "size": text("size"), "color": text("color"), "delivery": text("delivery"),
     }
+
+
+def _has_kaufland_product(body: dict) -> bool:
+    data = body.get("response_data") if isinstance(body.get("response_data"), dict) else body
+    if not isinstance(data, dict):
+        return False
+    return any(_first_text(data.get(field)) for field in ("ean", "title", "mpn", "description"))
 
 
 def _empty_kaufland_draft(*, target_id: str, ean: str) -> dict:
