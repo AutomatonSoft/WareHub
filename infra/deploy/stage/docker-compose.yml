@@ -299,9 +299,19 @@ services:
       else
         echo 'RUN_MIGRATIONS_ON_STARTUP=false; skipping migrate on startup';
       fi;
-      python manage.py run_jv_batch_worker &
       python manage.py runserver 0.0.0.0:8000
       "
+
+  jv_batch_worker:
+    extends:
+      service: services
+    command: ["python", "manage.py", "run_jv_batch_worker"]
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'run_jv_batch_worker' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   telegram_notifier:
     image: ${SERVICES_IMAGE:?SERVICES_IMAGE is required}:${SERVICES_STAGE_TAG:?SERVICES_STAGE_TAG is required}

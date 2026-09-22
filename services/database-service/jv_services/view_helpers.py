@@ -12,6 +12,21 @@ from .models import ImportedProduct
 from .source_client import JV_LANGUAGE_ID_BY_CODE
 
 
+_JV_REGULAR_TEXT_H3 = re.compile(r"<h3(?P<attrs>\s[^>]*)?>(?P<body>.*?)</h3>", re.IGNORECASE | re.DOTALL)
+_INLINE_FONT_SIZE = re.compile(r"<span\b[^>]*\bstyle=(['\"])[^'\"]*\bfont-size\s*:", re.IGNORECASE)
+
+
+def normalize_jv_description_html(value: str) -> str:
+    """Keep regular text out of ``h3`` so the JV storefront does not bold it."""
+
+    def replace_regular_text_heading(match: re.Match) -> str:
+        if not _INLINE_FONT_SIZE.search(match.group("body")):
+            return match.group(0)
+        return f"<p{match.group('attrs') or ''}>{match.group('body')}</p>"
+
+    return _JV_REGULAR_TEXT_H3.sub(replace_regular_text_heading, str(value or ""))
+
+
 def normalize_site(site_raw: str | None) -> str | None:
     if site_raw in (None, ""):
         return None
@@ -193,7 +208,9 @@ def apply_jv_fields_to_payload(payload: dict, *, site: str, existing_description
         existing = existing_by_lang.get(int(lang_id))
         name = str(row.get("name") or "")
         keywords = str(row.get("keywords") or "")
-        description_html = str(row.get("description") or row.get("bezeichnung_html") or "")
+        description_html = normalize_jv_description_html(
+            str(row.get("description") or row.get("bezeichnung_html") or "")
+        )
         meta_title = str(row.get("meta_title") or "")
         meta_description = str(row.get("meta_description") or "")
         meta_keyword = str(row.get("meta_keyword") or "")

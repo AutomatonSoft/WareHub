@@ -64,41 +64,8 @@ class ProductEditorEbayFlow:
                 results[target_id] = _error_state(account=account, status_code=indexed_legacy.status_code)
                 continue
 
-            active = self.gateway.fetch_ebay_active_listings(account=account, request_id=request_id)
-            if not (200 <= active.status_code < 300):
-                results[target_id] = _error_state(account=account, status_code=active.status_code)
-                continue
-            active_data = active.body.get("active_listings") if isinstance(active.body.get("active_listings"), dict) else {}
-            matches = _legacy_ean_matches(listings=active_data.get("listings"), ean=ean)
-            if len(matches) == 1:
-                listing, variation_sku = matches[0]
-                results[target_id] = {
-                    "status": ProductEditorTargetStatus.FOUND,
-                    "metadata": {
-                        "account": account,
-                        "listing_mode": "legacy",
-                        "item_id": str(listing.get("item_id") or "").strip(),
-                        "variation_sku": variation_sku,
-                    },
-                    "warnings": [],
-                }
-                continue
-            if len(matches) > 1:
-                results[target_id] = {
-                    "status": ProductEditorTargetStatus.ERROR,
-                    "metadata": {"account": account, "item_ids": [str(match[0].get("item_id") or "").strip() for match in matches]},
-                    "warnings": [ProductEditorWarning(code="product_editor_ebay_legacy_ambiguous", message="More than one active legacy listing has this EAN; reconcile it with an explicit item ID.")],
-                }
-                continue
-            total_pages = str(active_data.get("total_pages") or "0")
-            if total_pages not in {"", "0", "1"}:
-                results[target_id] = {
-                    "status": ProductEditorTargetStatus.UNKNOWN,
-                    "metadata": {"account": account, "total_pages": total_pages},
-                    "warnings": [ProductEditorWarning(code="product_editor_ebay_legacy_page_not_scanned", message="The EAN was not on the first legacy listing page; use legacy reconciliation with the required page before updating.")],
-                }
-                continue
-            results[target_id] = {"status": ProductEditorTargetStatus.MISSING, "metadata": {"account": account}, "warnings": []}
+            legacy_state = self._discover_legacy_active_listing(account=account, ean=ean, request_id=request_id)
+            results[target_id] = legacy_state
         return results
 
     def load(
@@ -274,6 +241,51 @@ class ProductEditorEbayFlow:
             verified_target_ids.append(str(target_id).strip().upper())
         return verified_target_ids
 
+    def _discover_legacy_active_listing(self, *, account: str, ean: str, request_id: str) -> dict:
+        first_page = self.gateway.fetch_ebay_active_listings(account=account, request_id=request_id, page=1)
+        if not (200 <= first_page.status_code < 300):
+            return _error_state(account=account, status_code=first_page.status_code)
+
+        first_data = _active_listings_data(first_page.body)
+        total_pages = _active_listing_total_pages(first_data)
+        for page in range(1, total_pages + 1):
+            active = first_page if page == 1 else self.gateway.fetch_ebay_active_listings(
+                account=account,
+                request_id=request_id,
+                page=page,
+            )
+            if not (200 <= active.status_code < 300):
+                return _error_state(account=account, status_code=active.status_code, page=page)
+
+            matches = _legacy_ean_matches(listings=_active_listings_data(active.body).get("listings"), ean=ean)
+            if len(matches) == 1:
+                listing, variation_sku = matches[0]
+                return {
+                    "status": ProductEditorTargetStatus.FOUND,
+                    "metadata": {
+                        "account": account,
+                        "listing_mode": "legacy",
+                        "item_id": str(listing.get("item_id") or "").strip(),
+                        "variation_sku": variation_sku,
+                        "page": page,
+                    },
+                    "warnings": [],
+                }
+            if len(matches) > 1:
+                return {
+                    "status": ProductEditorTargetStatus.ERROR,
+                    "metadata": {
+                        "account": account,
+                        "page": page,
+                        "item_ids": [str(match[0].get("item_id") or "").strip() for match in matches],
+                    },
+                    "warnings": [ProductEditorWarning(
+                        code="product_editor_ebay_legacy_ambiguous",
+                        message="More than one active legacy listing has this EAN; reconcile it with an explicit item ID.",
+                    )],
+                }
+        return {"status": ProductEditorTargetStatus.MISSING, "metadata": {"account": account, "scanned_pages": total_pages}, "warnings": []}
+
     def _load_explicit_legacy_target(
         self,
         *,
@@ -322,8 +334,22 @@ class ProductEditorEbayFlowError(RuntimeError):
         self.code, self.message, self.status_code, self.details = code, message, status_code, details or {}
 
 
-def _error_state(*, account: str, status_code: int) -> dict:
-    return {"status": ProductEditorTargetStatus.ERROR, "metadata": {"account": account, "status_code": status_code}, "warnings": [ProductEditorWarning(code="product_editor_ebay_discover_error", message="eBay discovery request failed.")]}
+def _error_state(*, account: str, status_code: int, page: int | None = None) -> dict:
+    metadata = {"account": account, "status_code": status_code}
+    if page is not None:
+        metadata["page"] = page
+    return {"status": ProductEditorTargetStatus.ERROR, "metadata": metadata, "warnings": [ProductEditorWarning(code="product_editor_ebay_discover_error", message="eBay discovery request failed.")]}
+
+
+def _active_listings_data(body: dict) -> dict:
+    return body.get("active_listings") if isinstance(body.get("active_listings"), dict) else {}
+
+
+def _active_listing_total_pages(active_data: dict) -> int:
+    try:
+        return max(1, int(active_data.get("total_pages") or 1))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dict) -> dict:

@@ -45,6 +45,7 @@ def fetch_max_rate_last_period(
     end_date: date,
     api_url: str,
     request_retries: int = 1,
+    exchangerate_host_access_key: str = "",
 ) -> Decimal:
     start_date = end_date - timedelta(days=max(1, int(lookback_days)))
     errors: list[str] = []
@@ -79,7 +80,7 @@ def fetch_max_rate_last_period(
 
     try:
         resp = _get_with_retries(
-            url=f"https://api.frankfurter.app/{start_date.isoformat()}..{end_date.isoformat()}",
+            url=f"https://api.frankfurter.dev/v1/{start_date.isoformat()}..{end_date.isoformat()}",
             params={"from": from_code, "to": to_code},
             timeout=timeout,
             request_retries=request_retries,
@@ -103,18 +104,27 @@ def fetch_max_rate_last_period(
         errors.append(f"frankfurter_range_failed: {exc}")
 
     try:
+        params = {
+            "base": from_code,
+            "symbols": to_code,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+        if exchangerate_host_access_key:
+            params["access_key"] = exchangerate_host_access_key
         resp = _get_with_retries(
             url="https://api.exchangerate.host/timeseries",
-            params={
-                "base": from_code,
-                "symbols": to_code,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
+            params=params,
             timeout=timeout,
             request_retries=request_retries,
         )
         payload = resp.json() or {}
+        if payload.get("success") is False:
+            error = payload.get("error") or {}
+            raise RuntimeError(
+                "exchangerate.host rejected request: "
+                f"{error.get('type') or error.get('code') or 'unknown error'}"
+            )
         rates_by_day = payload.get("rates") or {}
         max_rate = None
         for day_rates in rates_by_day.values():
@@ -143,7 +153,7 @@ def convert_amount(*, amount, from_currency: str, to_currency: str, env_prefix: 
 
     timeout = (
         int(os.getenv(f"{env_prefix}_FX_CONNECT_TIMEOUT", "5")),
-        int(os.getenv(f"{env_prefix}_FX_READ_TIMEOUT", "15")),
+        int(os.getenv(f"{env_prefix}_FX_READ_TIMEOUT", "30")),
     )
     from_code = str(from_currency).upper().strip()
     to_code = str(to_currency).upper().strip()
@@ -151,7 +161,7 @@ def convert_amount(*, amount, from_currency: str, to_currency: str, env_prefix: 
         raise RuntimeError("Invalid currency code for conversion.")
 
     lookback_days = int(os.getenv(f"{env_prefix}_FX_LOOKBACK_DAYS", "365"))
-    request_retries = int(os.getenv(f"{env_prefix}_FX_REQUEST_RETRIES", "1"))
+    request_retries = int(os.getenv(f"{env_prefix}_FX_REQUEST_RETRIES", "3"))
     end_date = timezone.now().date()
     cache_key = (from_code, to_code, lookback_days, end_date.isoformat())
     max_rate = cache.get(cache_key)
@@ -164,6 +174,9 @@ def convert_amount(*, amount, from_currency: str, to_currency: str, env_prefix: 
             end_date=end_date,
             api_url=os.getenv(f"{env_prefix}_FX_API_URL", "").strip(),
             request_retries=request_retries,
+            exchangerate_host_access_key=os.getenv(
+                f"{env_prefix}_FX_EXCHANGERATE_HOST_ACCESS_KEY", ""
+            ).strip(),
         )
         cache[cache_key] = max_rate
 
