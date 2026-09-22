@@ -5,6 +5,7 @@ const STATUS_KEYS = [
   "otto_xl",
   "ebay_jv",
   "ebay_xl",
+  "ebay_dep",
   "kaufland_jv",
   "kaufland_xl",
   "hood_jv",

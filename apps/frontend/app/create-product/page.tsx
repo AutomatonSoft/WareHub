@@ -461,7 +461,13 @@ function getSourceDiscoveryForTab(
     const message = ottoSearchErrors[profile];
     return message ? { status: "error", message } : { status: "missing" };
   }
-  if (tab === "ebay_jv" || tab === "ebay_xl" || tab === "ebay_dep") return null;
+  const ebaySiteKeyByTab: Partial<Record<CreateProductTab, string>> = {
+    ebay_jv: "EBAY_JV",
+    ebay_xl: "EBAY_XL",
+    ebay_dep: "EBAY_DEP",
+  };
+  const ebaySiteKey = ebaySiteKeyByTab[tab];
+  if (ebaySiteKey) return sourceDiscoveryBySiteKey[ebaySiteKey] ?? null;
   if (tab === "jv") {
     const jvStatuses = ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"]
       .map((siteKey) => sourceDiscoveryBySiteKey[siteKey])

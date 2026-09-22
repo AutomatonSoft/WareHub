@@ -22,6 +22,7 @@ MARKETPLACE_STATUS_FIELDS = (
     "otto_xl",
     "ebay_jv",
     "ebay_xl",
+    "ebay_dep",
     "kaufland_jv",
     "kaufland_xl",
     "hood_jv",
@@ -136,7 +137,7 @@ def _critical_inventory_score(row: dict) -> tuple[int, int]:
     if isinstance(order_date, datetime):
         days = max(0, (datetime.now(timezone.utc) - order_date.astimezone(timezone.utc)).days)
     age = weights[23] if days is None else weights[0] if days >= 180 else weights[1] if days >= 120 else weights[2] if days >= 90 else weights[3] if days >= 45 else 0
-    marketplace_groups = (("jv_ean", "xl_ean"), ("otto_jv_ean", "otto_xl_ean"), ("ebay_jv_ean", "ebay_xl_ean"), ("kaufland_jv_ean", "kaufland_xl_ean"), ("hood_jv_ean", "hood_xl_ean"))
+    marketplace_groups = (("jv_ean", "xl_ean"), ("otto_jv_ean", "otto_xl_ean"), ("ebay_jv_ean", "ebay_xl_ean", "ebay_dep_ean"), ("kaufland_jv_ean", "kaufland_xl_ean"), ("hood_jv_ean", "hood_xl_ean"))
     score = age
     for weight, key in zip(weights[4:8], ("place", "section", "photo", "main_ean_jv"), strict=True):
         if missing(key): score += weight
@@ -341,6 +342,7 @@ def build_inventory_rows() -> list[dict]:
         otto_xl_ean = _norm_ean(getattr(ean_row, "otto_xl", None))
         ebay_jv_ean = _norm_ean(getattr(ean_row, "ebay_jv", None))
         ebay_xl_ean = _norm_ean(getattr(ean_row, "ebay_xl", None))
+        ebay_dep_ean = _norm_ean(getattr(ean_row, "ebay_dep", None))
         kaufland_jv_ean = _norm_ean(getattr(ean_row, "kaufland_jv", None))
         kaufland_xl_ean = _norm_ean(getattr(ean_row, "kaufland_xl", None))
         hood_jv_ean = _norm_ean(getattr(ean_row, "hood_jv", None))
@@ -430,6 +432,7 @@ def build_inventory_rows() -> list[dict]:
                 "otto_xl_ean": otto_xl_ean,
                 "ebay_jv_ean": ebay_jv_ean,
                 "ebay_xl_ean": ebay_xl_ean,
+                "ebay_dep_ean": ebay_dep_ean,
                 "kaufland_jv_ean": kaufland_jv_ean,
                 "kaufland_xl_ean": kaufland_xl_ean,
                 "hood_jv_ean": hood_jv_ean,

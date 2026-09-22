@@ -313,6 +313,17 @@ services:
       retries: 3
       start_period: 15s
 
+  ebay_legacy_indexer:
+    extends:
+      service: services
+    command: ["python", "manage.py", "run_ebay_legacy_indexer"]
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'run_ebay_legacy_indexer' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   telegram_notifier:
     image: ${SERVICES_IMAGE:?SERVICES_IMAGE is required}:${SERVICES_STAGE_TAG:?SERVICES_STAGE_TAG is required}
     restart: unless-stopped

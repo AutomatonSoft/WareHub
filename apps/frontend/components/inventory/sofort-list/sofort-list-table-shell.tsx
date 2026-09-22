@@ -56,6 +56,7 @@ type EditDraftState = {
   ottoXl: string;
   ebayJv: string;
   ebayXl: string;
+  ebayDep: string;
   kauflandJv: string;
   kauflandXl: string;
   hoodJv: string;
@@ -571,6 +572,7 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     ottoXl: row.siteEans.ottoXl,
     ebayJv: row.siteEans.ebayJv,
     ebayXl: row.siteEans.ebayXl,
+    ebayDep: row.siteEans.ebayDep,
     kauflandJv: row.siteEans.kauflandJv,
     kauflandXl: row.siteEans.kauflandXl,
     hoodJv: row.siteEans.hoodJv,
@@ -968,6 +970,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
             ottoXl: details.ean?.otto_xl ?? base.ottoXl,
             ebayJv: details.ean?.ebay_jv ?? base.ebayJv,
             ebayXl: details.ean?.ebay_xl ?? base.ebayXl,
+            ebayDep: details.ean?.ebay_dep ?? base.ebayDep,
             kauflandJv: details.ean?.kaufland_jv ?? base.kauflandJv,
             kauflandXl: details.ean?.kaufland_xl ?? base.kauflandXl,
             hoodJv: details.ean?.hood_jv ?? base.hoodJv,
@@ -1021,6 +1024,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
       otto_xl: row.siteEans.ottoXl,
       ebay_jv: row.siteEans.ebayJv,
       ebay_xl: row.siteEans.ebayXl,
+      ebay_dep: row.siteEans.ebayDep,
     };
     for (const [key, rawValue] of Object.entries(tabEans)) {
       const value = rawValue.trim();
@@ -1098,6 +1102,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
         ottoXl: editDraft.ottoXl.trim(),
         ebayJv: editDraft.ebayJv.trim(),
         ebayXl: editDraft.ebayXl.trim(),
+        ebayDep: editDraft.ebayDep.trim(),
         kauflandJv: editDraft.kauflandJv.trim(),
         kauflandXl: editDraft.kauflandXl.trim(),
         hoodJv: editDraft.hoodJv.trim(),
@@ -1129,6 +1134,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
           otto_xl: normalizedSiteEans.ottoXl || null,
           ebay_jv: normalizedSiteEans.ebayJv || null,
           ebay_xl: normalizedSiteEans.ebayXl || null,
+          ebay_dep: normalizedSiteEans.ebayDep || null,
           kaufland_jv: normalizedSiteEans.kauflandJv || null,
           kaufland_xl: normalizedSiteEans.kauflandXl || null,
           hood_jv: normalizedSiteEans.hoodJv || null,
@@ -2096,20 +2102,21 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
                           <div className="space-y-3">
                             <div className="space-y-3">
-                              <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 <span>{t.market}</span>
                                 <span>JV</span>
                                 <span>XL</span>
+                                <span>DEP</span>
                               </div>
 
                               {[
                                 { label: t.sites, jvKey: "jv", xlKey: "xl" },
                                 { label: "OTTO", jvKey: "ottoJv", xlKey: "ottoXl" },
-                                { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl" },
+                                { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl", depKey: "ebayDep" },
                                 { label: "KAUFLAND", jvKey: "kauflandJv", xlKey: "kauflandXl" },
                                 { label: "HOOD", jvKey: "hoodJv", xlKey: "hoodXl" }
                               ].map((market) => (
-                                <div key={market.label} className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
+                                <div key={market.label} className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
                                   <span className="truncate text-xs font-semibold text-muted-foreground">{market.label}</span>
                                   <Input
                                     className="h-10 min-w-0 rounded-[var(--radius-control)]"
@@ -2123,6 +2130,12 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                                     onChange={(event) => updateDraft(market.xlKey as keyof EditDraftState, event.target.value as never)}
                                     placeholder={t.xlEanPlaceholder}
                                   />
+                                  {market.depKey ? <Input
+                                    className="h-10 min-w-0 rounded-[var(--radius-control)]"
+                                    value={editDraft[market.depKey as keyof EditDraftState] as string}
+                                    onChange={(event) => updateDraft(market.depKey as keyof EditDraftState, event.target.value as never)}
+                                    placeholder="eBay DEP EAN"
+                                  /> : <div />}
                                 </div>
                               ))}
                               <div className="grid grid-cols-[88px_minmax(0,1fr)] items-end gap-3">
