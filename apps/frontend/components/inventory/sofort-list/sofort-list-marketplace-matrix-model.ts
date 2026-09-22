@@ -57,7 +57,7 @@ export function buildMarketplaceMatrixRows(
   const rows: Array<{ market: string; keys: MarketplaceKey[] }> = [
     { market: "SITES", keys: ["jv", "xl"] },
     { market: "OTTO", keys: ["ottoJv", "ottoXl"] },
-    { market: "EBAY", keys: ["ebayJv", "ebayXl"] },
+    { market: "EBAY", keys: ["ebayJv", "ebayXl", "ebayDep"] },
     { market: "KAUF", keys: ["kauflandJv", "kauflandXl"] },
     { market: "HOOD", keys: ["hoodJv", "hoodXl"] },
     { market: "TEMU", keys: ["temu"] }

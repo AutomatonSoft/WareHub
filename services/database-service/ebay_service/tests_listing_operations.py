@@ -5,7 +5,7 @@ from django.test import TestCase
 from database.models import EbayListing
 
 from .client import EbayApiError
-from .listing_operations import execute_listing_operation, index_legacy_listing_page, reconcile_legacy_listing
+from .listing_operations import execute_listing_operation, index_all_legacy_listings, index_legacy_listing_page, reconcile_legacy_listing
 
 
 class EbayListingOperationTests(TestCase):
@@ -27,6 +27,45 @@ class EbayListingOperationTests(TestCase):
         self.assertEqual(result["indexed_eans"], 2)
         self.assertEqual(listing.source_ean, "4062292372025")
         self.assertEqual(listing.legacy_ean_to_variation_sku, {"4062292372025": "", "4062292372026": "green"})
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_index_scans_all_reported_pages(self, client_class):
+        client_class.return_value.active_listings.side_effect = [
+            {"total_pages": "2", "listings": [{"item_id": "item-1", "identifiers": {"EAN": ["111"]}}]},
+            {"total_pages": "2", "listings": [{"item_id": "item-2", "identifiers": {"EAN": ["222"]}}]},
+        ]
+
+        result = index_all_legacy_listings(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            limit=100,
+            max_pages=10_000,
+        )
+
+        self.assertEqual(result["pages_scanned"], 2)
+        self.assertEqual(result["indexed_listings"], 2)
+        self.assertEqual(result["indexed_eans"], 2)
+        self.assertEqual(client_class.return_value.active_listings.call_count, 2)
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_index_preserves_known_inventory_listing(self, client_class):
+        EbayListing.objects.create(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            listing_mode=EbayListing.ListingMode.INVENTORY,
+            sku="4062292372025",
+            item_id="205926392508",
+        )
+        client_class.return_value.active_listings.return_value = {
+            "total_pages": "1",
+            "listings": [{"item_id": "205926392508", "identifiers": {"EAN": ["4062292372025"]}}],
+        }
+
+        result = index_legacy_listing_page(account="dep", marketplace_id="EBAY_DE", page=1, limit=100)
+
+        self.assertEqual(result["indexed_listings"], 0)
+        self.assertEqual(result["skipped_inventory_listings"], 1)
+        self.assertEqual(EbayListing.objects.get(item_id="205926392508").listing_mode, EbayListing.ListingMode.INVENTORY)
     @patch("ebay_service.listing_operations.EbayTaxonomyClient")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class, taxonomy_client_class):

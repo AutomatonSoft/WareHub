@@ -312,6 +312,7 @@ def _inventory_row_search_haystacks(row: dict) -> dict[str, str]:
             row.get("otto_xl_ean"),
             row.get("ebay_jv_ean"),
             row.get("ebay_xl_ean"),
+            row.get("ebay_dep_ean"),
             row.get("kaufland_jv_ean"),
             row.get("kaufland_xl_ean"),
             row.get("hood_jv_ean"),
@@ -1134,6 +1135,7 @@ class KidListCreateAPIView(generics.ListCreateAPIView):
             "hood_xl",
             "ebay_jv",
             "ebay_xl",
+            "ebay_dep",
         )
 
         update_fields: list[str] = []
@@ -1653,6 +1655,7 @@ class KidMarketplaceEansAPIView(APIView):
             "otto_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "otto_xl", None)),
             "ebay_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "ebay_jv", None)),
             "ebay_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "ebay_xl", None)),
+            "ebay_dep_ean": cls._normalize_ean_for_response(getattr(ean_row, "ebay_dep", None)),
             "kaufland_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "kaufland_jv", None)),
             "kaufland_xl_ean": cls._normalize_ean_for_response(getattr(ean_row, "kaufland_xl", None)),
             "hood_jv_ean": cls._normalize_ean_for_response(getattr(ean_row, "hood_jv", None)),
@@ -1682,6 +1685,7 @@ class KidMarketplaceEansAPIView(APIView):
             "otto_xl_ean",
             "ebay_jv_ean",
             "ebay_xl_ean",
+            "ebay_dep_ean",
             "kaufland_jv_ean",
             "kaufland_xl_ean",
             "hood_jv_ean",
@@ -1717,6 +1721,7 @@ class KidMarketplaceEansAPIView(APIView):
             "otto_xl_ean": "otto_xl",
             "ebay_jv_ean": "ebay_jv",
             "ebay_xl_ean": "ebay_xl",
+            "ebay_dep_ean": "ebay_dep",
             "kaufland_jv_ean": "kaufland_jv",
             "kaufland_xl_ean": "kaufland_xl",
             "hood_jv_ean": "hood_jv",

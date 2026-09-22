@@ -83,6 +83,14 @@ export type CreateProductHoodSourceFields = {
 export type CreateProductSourceSiteKind = "JV" | "XL" | "HOOD" | "KAUFLAND";
 export const CREATE_PRODUCT_XL_DEFAULT_SITE_KEY = "XLMOEBEL_DE";
 
+type EbayAccount = "jv" | "xl" | "dep";
+
+export type CreateProductEbaySourceDiscovery = {
+  siteKey: "EBAY_JV" | "EBAY_XL" | "EBAY_DEP";
+  status: "found" | "missing" | "error";
+  message?: string;
+};
+
 export type XlManufacturerOption = {
   manufacturerId: string;
   name: string;
@@ -525,6 +533,96 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   }
 
   return fetchCreateProductJvSitesByMainEan(normalizedMainEan);
+}
+
+async function findCreateProductEbayListing(ean: string, account: EbayAccount): Promise<"found" | "missing"> {
+  const request = async (listingMode: "inventory" | "legacy") => {
+    const response = await apiFetch("/api/v1/ebay/listing-operations/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        account,
+        marketplace_id: "EBAY_DE",
+        operation: "fetch",
+        listing_mode: listingMode,
+        ...(listingMode === "inventory" ? { sku: ean } : { source_ean: ean }),
+      }),
+    });
+    const payload = await response.json().catch(() => ({})) as { detail?: unknown };
+    return { response, payload };
+  };
+
+  const inventory = await request("inventory");
+  if (inventory.response.ok) return "found";
+  if (inventory.response.status !== 404) {
+    throw new Error(asTrimmedString(inventory.payload.detail) || `create_product_ebay_inventory_http:${inventory.response.status}`);
+  }
+
+  const legacy = await request("legacy");
+  if (legacy.response.ok) return "found";
+  if (legacy.response.status === 404 || legacy.response.status === 409) return "missing";
+  throw new Error(asTrimmedString(legacy.payload.detail) || `create_product_ebay_legacy_http:${legacy.response.status}`);
+}
+
+export async function discoverCreateProductEbaySources(input: {
+  mainEanJv: string;
+  mainEanXl: string;
+}): Promise<CreateProductEbaySourceDiscovery[]> {
+  const mainEanJv = normalizeEanOrEmpty(input.mainEanJv);
+  const mainEanXl = normalizeEanOrEmpty(input.mainEanXl);
+  const depRequests = new Map<string, Promise<"found" | "missing">>();
+
+  const findInDep = (ean: string) => {
+    const existing = depRequests.get(ean);
+    if (existing) return existing;
+    const request = findCreateProductEbayListing(ean, "dep");
+    depRequests.set(ean, request);
+    return request;
+  };
+
+  const discover = async (
+    ean: string,
+    account: Exclude<EbayAccount, "dep">,
+    siteKey: "EBAY_JV" | "EBAY_XL",
+  ): Promise<CreateProductEbaySourceDiscovery[]> => {
+    if (!ean) return [{ siteKey, status: "missing" }];
+    try {
+      if (await findCreateProductEbayListing(ean, account) === "found") {
+        return [{ siteKey, status: "found" }];
+      }
+    } catch (error) {
+      return [{
+        siteKey,
+        status: "error",
+        message: error instanceof Error ? error.message : "create_product_ebay_discovery_failed",
+      }];
+    }
+
+    try {
+      const depStatus = await findInDep(ean);
+      return [
+        { siteKey, status: "missing" },
+        { siteKey: "EBAY_DEP", status: depStatus },
+      ];
+    } catch (error) {
+      return [
+        { siteKey, status: "missing" },
+        {
+          siteKey: "EBAY_DEP",
+          status: "error",
+          message: error instanceof Error ? error.message : "create_product_ebay_discovery_failed",
+        },
+      ];
+    }
+  };
+
+  const [jv, xl] = await Promise.all([
+    discover(mainEanJv, "jv", "EBAY_JV"),
+    discover(mainEanXl, "xl", "EBAY_XL"),
+  ]);
+  const dep = [...jv, ...xl].filter((result) => result.siteKey === "EBAY_DEP");
+  const depResult = dep.find((result) => result.status === "found") ?? dep[0] ?? { siteKey: "EBAY_DEP" as const, status: "missing" as const };
+  return [...jv.filter((result) => result.siteKey !== "EBAY_DEP"), ...xl.filter((result) => result.siteKey !== "EBAY_DEP"), depResult];
 }
 
 export async function fetchCreateProductJvSourceSnapshot(input: {

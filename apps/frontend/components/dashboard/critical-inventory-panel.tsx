@@ -107,6 +107,10 @@ type CriticalInventorySourceRow = KidDto & {
   ebay_ean_xl?: string | null;
   ean_ebay_xl?: string | null;
   ebayXlEan?: string | null;
+  ebay_dep_ean?: string | null;
+  ebay_ean_dep?: string | null;
+  ean_ebay_dep?: string | null;
+  ebayDepEan?: string | null;
   kaufland_jv_ean?: string | null;
   kfl_jv_ean?: string | null;
   ean_kaufland_jv?: string | null;
@@ -208,6 +212,7 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
       ottoXl: firstText(row.otto_xl_ean, row.otto_ean_xl, row.ean_otto_xl, row.ottoXlEan),
       ebayJv: firstText(row.ebay_jv_ean, row.ebay_ean_jv, row.ean_ebay_jv, row.ebayJvEan),
       ebayXl: firstText(row.ebay_xl_ean, row.ebay_ean_xl, row.ean_ebay_xl, row.ebayXlEan),
+      ebayDep: firstText(row.ebay_dep_ean, row.ebay_ean_dep, row.ean_ebay_dep, row.ebayDepEan),
       kauflandJv: firstText(row.kaufland_jv_ean, row.kfl_jv_ean, row.ean_kaufland_jv, row.kauflandJvEan),
       kauflandXl: firstText(row.kaufland_xl_ean, row.kfl_xl_ean, row.ean_kaufland_xl, row.kauflandXlEan),
       hoodJv: firstText(row.hood_jv_ean, row.ean_hood_jv, row.hoodJvEan),
@@ -215,7 +220,7 @@ function buildEditRow(row: CriticalInventorySourceRow, photos: string[]): Sofort
       temu: "",
     },
     siteEanStatuses: {
-      jv: null, xl: null, ottoJv: null, ottoXl: null, ebayJv: null, ebayXl: null, kauflandJv: null, kauflandXl: null, hoodJv: null, hoodXl: null, temu: null,
+      jv: null, xl: null, ottoJv: null, ottoXl: null, ebayJv: null, ebayXl: null, ebayDep: null, kauflandJv: null, kauflandXl: null, hoodJv: null, hoodXl: null, temu: null,
     },
     photo: photos[0] ?? "-",
     photoUrls: photos,
@@ -262,7 +267,7 @@ function buildCriticalInventoryItem(row: CriticalInventorySourceRow, t: ReturnTy
   if (!hasText(row.main_ean_jv ?? row.main_ean_xl ?? row.ean)) reasons.push({ key: "ean", label: t.criticalInventoryReasonMissingEan, weight: CRITICAL_WEIGHTS.missingMainEan });
   if (!hasMarketplaceEans(row, ["jv_ean", "ean_jv", "jv_site_ean", "jvSiteEan", "xl_ean", "ean_xl", "xl_site_ean", "xlSiteEan"])) reasons.push({ key: "sites-ean", label: t.criticalInventoryReasonMissingSitesEan, weight: CRITICAL_WEIGHTS.missingSitesEan });
   if (!hasMarketplaceEans(row, ["otto_jv_ean", "otto_ean_jv", "ean_otto_jv", "ottoJvEan", "otto_xl_ean", "otto_ean_xl", "ean_otto_xl", "ottoXlEan"])) reasons.push({ key: "otto-ean", label: t.criticalInventoryReasonMissingOttoEan, weight: CRITICAL_WEIGHTS.missingOttoEan });
-  if (!hasMarketplaceEans(row, ["ebay_jv_ean", "ebay_ean_jv", "ean_ebay_jv", "ebayJvEan", "ebay_xl_ean", "ebay_ean_xl", "ean_ebay_xl", "ebayXlEan"])) reasons.push({ key: "ebay-ean", label: t.criticalInventoryReasonMissingEbayEan, weight: CRITICAL_WEIGHTS.missingEbayEan });
+  if (!hasMarketplaceEans(row, ["ebay_jv_ean", "ebay_ean_jv", "ean_ebay_jv", "ebayJvEan", "ebay_xl_ean", "ebay_ean_xl", "ean_ebay_xl", "ebayXlEan", "ebay_dep_ean", "ebay_ean_dep", "ean_ebay_dep", "ebayDepEan"])) reasons.push({ key: "ebay-ean", label: t.criticalInventoryReasonMissingEbayEan, weight: CRITICAL_WEIGHTS.missingEbayEan });
   if (!hasMarketplaceEans(row, ["kaufland_jv_ean", "kfl_jv_ean", "ean_kaufland_jv", "kauflandJvEan", "kaufland_xl_ean", "kfl_xl_ean", "ean_kaufland_xl", "kauflandXlEan"])) reasons.push({ key: "kaufland-ean", label: t.criticalInventoryReasonMissingKauflandEan, weight: CRITICAL_WEIGHTS.missingKauflandEan });
   if (!hasMarketplaceEans(row, ["hood_jv_ean", "ean_hood_jv", "hoodJvEan", "hood_xl_ean", "ean_hood_xl", "hoodXlEan"])) reasons.push({ key: "hood-ean", label: t.criticalInventoryReasonMissingHoodEan, weight: CRITICAL_WEIGHTS.missingHoodEan });
   if (!hasText(row.price ?? row.global_price)) reasons.push({ key: "price", label: t.criticalInventoryReasonMissingPrice, weight: CRITICAL_WEIGHTS.missingPrice });

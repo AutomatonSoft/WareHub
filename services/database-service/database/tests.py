@@ -528,6 +528,7 @@ class DatabaseApiTests(APITestCase):
                     "otto_xl": {"true_count": 0, "false_count": 1},
                     "ebay_jv": {"true_count": 0, "false_count": 1},
                     "ebay_xl": {"true_count": 1, "false_count": 0},
+                    "ebay_dep": {"true_count": 0, "false_count": 1},
                     "kaufland_jv": {"true_count": 1, "false_count": 0},
                     "kaufland_xl": {"true_count": 0, "false_count": 1},
                     "hood_jv": {"true_count": 0, "false_count": 1},
@@ -2763,6 +2764,7 @@ class DatabaseApiTests(APITestCase):
             hood_xl="0000000000000",
             ebay_jv="0000000000000",
             ebay_xl="0000000000000",
+            ebay_dep="0000000000000",
         )
 
         payload = {
@@ -2774,6 +2776,7 @@ class DatabaseApiTests(APITestCase):
             "otto_xl_ean": "4444444444444",
             "ebay_jv_ean": "4444444444444",
             "ebay_xl_ean": "4444444444444",
+            "ebay_dep_ean": "4444444444444",
             "kaufland_jv_ean": "4444444444444",
             "kaufland_xl_ean": "4444444444444",
             "hood_jv_ean": "4444444444444",
@@ -2790,6 +2793,8 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["main_ean_jv"], "4444444444444")
         self.assertEqual(response.data["main_ean_xl"], "5555555555555")
         self.assertEqual(response.data["cosmoshop_ean"], "4444444444444")
+        self.assertEqual(ean_row.ebay_dep, "4444444444444")
+        self.assertEqual(response.data["ebay_dep_ean"], "4444444444444")
 
     def test_marketplace_eans_patch_allows_b_ware_for_otto_only(self):
         response = self.client.patch(
@@ -2831,6 +2836,7 @@ class DatabaseApiTests(APITestCase):
             hood_xl="0000000000000",
             ebay_jv="0000000000000",
             ebay_xl="0000000000000",
+            ebay_dep="0000000000000",
         )
 
         response = self.client.get(f"/api/v1/kids/{self.kid.id}/marketplace-eans/")
@@ -2844,6 +2850,7 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.data["otto_xl_ean"], "")
         self.assertEqual(response.data["ebay_jv_ean"], "")
         self.assertEqual(response.data["ebay_xl_ean"], "")
+        self.assertEqual(response.data["ebay_dep_ean"], "")
         self.assertEqual(response.data["kaufland_jv_ean"], "")
         self.assertEqual(response.data["kaufland_xl_ean"], "")
         self.assertEqual(response.data["hood_jv_ean"], "")
