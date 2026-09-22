@@ -48,6 +48,7 @@ type EditDraftState = {
   ottoXl: string;
   ebayJv: string;
   ebayXl: string;
+  ebayDep: string;
   kauflandJv: string;
   kauflandXl: string;
   hoodJv: string;
@@ -133,6 +134,7 @@ function createEditDraft(row: SofortListRow): EditDraftState {
     ottoXl: row.siteEans.ottoXl,
     ebayJv: row.siteEans.ebayJv,
     ebayXl: row.siteEans.ebayXl,
+    ebayDep: row.siteEans.ebayDep,
     kauflandJv: row.siteEans.kauflandJv,
     kauflandXl: row.siteEans.kauflandXl,
     hoodJv: row.siteEans.hoodJv,
@@ -329,6 +331,7 @@ export function CriticalInventoryEditDialog({
         ottoXl: editDraft.ottoXl.trim(),
         ebayJv: editDraft.ebayJv.trim(),
         ebayXl: editDraft.ebayXl.trim(),
+        ebayDep: editDraft.ebayDep.trim(),
         kauflandJv: editDraft.kauflandJv.trim(),
         kauflandXl: editDraft.kauflandXl.trim(),
         hoodJv: editDraft.hoodJv.trim(),
@@ -416,18 +419,19 @@ export function CriticalInventoryEditDialog({
                         <CompactField label={t.mainEan} htmlFor="edit-main-ean"><Input id="edit-main-ean" className="h-10 rounded-[var(--radius-control)]" value={editDraft.ean} onChange={(event) => updateDraft("ean", event.target.value)} /></CompactField>
                       </div>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><span>{t.market}</span><span>JV</span><span>XL</span></div>
+                        <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><span>{t.market}</span><span>JV</span><span>XL</span><span>DEP</span></div>
                         {[
                           { label: t.sites, jvKey: "jv", xlKey: "xl" },
                           { label: "OTTO", jvKey: "ottoJv", xlKey: "ottoXl" },
-                          { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl" },
+                          { label: "EBAY", jvKey: "ebayJv", xlKey: "ebayXl", depKey: "ebayDep" },
                           { label: "KAUFLAND", jvKey: "kauflandJv", xlKey: "kauflandXl" },
                           { label: "HOOD", jvKey: "hoodJv", xlKey: "hoodXl" },
                         ].map((market) => (
-                          <div key={market.label} className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
+                          <div key={market.label} className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
                             <span className="truncate text-xs font-semibold text-muted-foreground">{market.label}</span>
                             <Input className="h-10 min-w-0 rounded-[var(--radius-control)]" value={editDraft[market.jvKey as keyof EditDraftState] as string} onChange={(event) => updateDraft(market.jvKey as keyof EditDraftState, event.target.value as never)} placeholder={t.jvEanPlaceholder} />
                             <Input className="h-10 min-w-0 rounded-[var(--radius-control)]" value={editDraft[market.xlKey as keyof EditDraftState] as string} onChange={(event) => updateDraft(market.xlKey as keyof EditDraftState, event.target.value as never)} placeholder={t.xlEanPlaceholder} />
+                            {market.depKey ? <Input className="h-10 min-w-0 rounded-[var(--radius-control)]" value={editDraft[market.depKey as keyof EditDraftState] as string} onChange={(event) => updateDraft(market.depKey as keyof EditDraftState, event.target.value as never)} placeholder="eBay DEP EAN" /> : <div />}
                           </div>
                         ))}
                       </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from django.db import transaction
@@ -126,11 +127,13 @@ def index_legacy_listing_page(
     marketplace_id: str,
     page: int,
     limit: int,
+    client: EbayOAuthClient | None = None,
 ) -> dict[str, Any]:
-    client = EbayOAuthClient()
+    client = client or EbayOAuthClient()
     page_data = client.active_listings(account=account, marketplace_id=marketplace_id, page=page, limit=limit)
     indexed_item_ids: list[str] = []
     indexed_eans = 0
+    skipped_inventory_listings = 0
 
     with transaction.atomic():
         for raw_listing in page_data.get("listings", []):
@@ -139,6 +142,14 @@ def index_legacy_listing_page(
             item_id = str(raw_listing.get("item_id") or "").strip()
             ean_mappings = _legacy_ean_mappings(raw_listing)
             if not item_id or not ean_mappings:
+                continue
+            if EbayListing.objects.filter(
+                account=account,
+                marketplace_id=marketplace_id,
+                item_id=item_id,
+                listing_mode=EbayListing.ListingMode.INVENTORY,
+            ).exists():
+                skipped_inventory_listings += 1
                 continue
             listing, _ = EbayListing.objects.get_or_create(
                 account=account,
@@ -163,7 +174,67 @@ def index_legacy_listing_page(
         "total_pages": page_data.get("total_pages", "0"),
         "indexed_listings": len(indexed_item_ids),
         "indexed_eans": indexed_eans,
+        "skipped_inventory_listings": skipped_inventory_listings,
     }
+
+
+def index_all_legacy_listings(
+    *,
+    account: str,
+    marketplace_id: str,
+    limit: int,
+    max_pages: int,
+    page_delay_seconds: float = 0.0,
+) -> dict[str, Any]:
+    """Index every reported active-listing page for one seller account."""
+    if max_pages < 1:
+        raise ValueError("max_pages must be at least 1.")
+
+    client = EbayOAuthClient()
+    page = 1
+    total_pages = 1
+    pages_scanned = 0
+    indexed_listings = 0
+    indexed_eans = 0
+    skipped_inventory_listings = 0
+
+    while page <= min(total_pages, max_pages):
+        page_result = index_legacy_listing_page(
+            account=account,
+            marketplace_id=marketplace_id,
+            page=page,
+            limit=limit,
+            client=client,
+        )
+        pages_scanned += 1
+        indexed_listings += int(page_result["indexed_listings"])
+        indexed_eans += int(page_result["indexed_eans"])
+        skipped_inventory_listings += int(page_result["skipped_inventory_listings"])
+        total_pages = _bounded_total_pages(page_result.get("total_pages"), fallback=page)
+        if page >= min(total_pages, max_pages):
+            break
+        if page_delay_seconds > 0:
+            time.sleep(page_delay_seconds)
+        page += 1
+
+    return {
+        "account": account,
+        "marketplace_id": marketplace_id,
+        "listing_mode": EbayListing.ListingMode.LEGACY,
+        "pages_scanned": pages_scanned,
+        "total_pages": total_pages,
+        "max_pages": max_pages,
+        "indexed_listings": indexed_listings,
+        "indexed_eans": indexed_eans,
+        "skipped_inventory_listings": skipped_inventory_listings,
+    }
+
+
+def _bounded_total_pages(value: object, *, fallback: int) -> int:
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return max(1, fallback)
 
 
 def _legacy_ean_matches(*, listings: object, source_ean: str) -> list[tuple[dict[str, Any], str]]:

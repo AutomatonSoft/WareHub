@@ -10,12 +10,13 @@ type MarketplaceRow = {
   label: string;
   jv: DashboardMarketplaceStatusKey;
   xl: DashboardMarketplaceStatusKey;
+  dep?: DashboardMarketplaceStatusKey;
 };
 
 const MARKETPLACES: MarketplaceRow[] = [
   { label: "SITES", jv: "jv", xl: "xl" },
   { label: "OTTO", jv: "otto_jv", xl: "otto_xl" },
-  { label: "EBAY", jv: "ebay_jv", xl: "ebay_xl" },
+  { label: "EBAY", jv: "ebay_jv", xl: "ebay_xl", dep: "ebay_dep" },
   { label: "KAUF", jv: "kaufland_jv", xl: "kaufland_xl" },
   { label: "HOOD", jv: "hood_jv", xl: "hood_xl" }
 ];
@@ -60,6 +61,10 @@ export function MarketplacePublicationSummary({
                   <span>XL</span>
                   <PublicationCounts counts={statuses?.[marketplace.xl] ?? { true_count: 0, false_count: 0 }} />
                 </div>
+                {marketplace.dep ? <div className="wh-marketplace-publication__channel">
+                  <span>DEP</span>
+                  <PublicationCounts counts={statuses?.[marketplace.dep] ?? { true_count: 0, false_count: 0 }} />
+                </div> : null}
               </section>
             ))}
           </div>

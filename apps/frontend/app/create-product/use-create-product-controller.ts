@@ -55,6 +55,7 @@ import {
 import { normalizeCreateProductRuntimeError } from "./create-product-api-errors";
 import {
   CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
+  discoverCreateProductEbaySources,
   fetchCreateProductSourceSitesByMainEan,
   fetchCreateProductSourceSnapshot,
   fetchCreateProductKidContext,
@@ -488,9 +489,25 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
     setSourceDiscoveryBySiteKey(
       Object.fromEntries(
-        sourceRequests.flatMap(({ siteKeys }) => siteKeys.map((siteKey) => [siteKey, { status: "loading" }])),
+        [
+          ...sourceRequests.flatMap(({ siteKeys }) => siteKeys.map((siteKey) => [siteKey, { status: "loading" }])),
+          ...(mainEanJv ? [["EBAY_JV", { status: "loading" }]] : []),
+          ...(mainEanXl ? [["EBAY_XL", { status: "loading" }]] : []),
+          ...((mainEanJv || mainEanXl) ? [["EBAY_DEP", { status: "loading" }]] : []),
+        ],
       ),
     );
+
+    void discoverCreateProductEbaySources({ mainEanJv, mainEanXl }).then((results) => {
+      if (!active) return;
+      setSourceDiscoveryBySiteKey((current) => ({
+        ...current,
+        ...Object.fromEntries(results.map((result) => [result.siteKey, {
+          status: result.status,
+          ...(result.message ? { message: result.message } : {}),
+        }])),
+      }));
+    });
 
     void Promise.allSettled(
       sourceRequests.map(async ({ mainEan, site, siteKey, siteKeys }) => {

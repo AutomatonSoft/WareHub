@@ -1059,6 +1059,7 @@ const MARKETPLACE_STATUS_FIELD_BY_ROW_KEY = {
   ottoXl: "otto_xl",
   ebayJv: "ebay_jv",
   ebayXl: "ebay_xl",
+  ebayDep: "ebay_dep",
   kauflandJv: "kaufland_jv",
   kauflandXl: "kaufland_xl",
   hoodJv: "hood_jv",
@@ -1458,6 +1459,7 @@ export async function patchKidMarketplaceEans(params: {
   ottoXl: string;
   ebayJv: string;
   ebayXl: string;
+  ebayDep: string;
   kauflandJv: string;
   kauflandXl: string;
   hoodJv: string;
@@ -1474,6 +1476,7 @@ export async function patchKidMarketplaceEans(params: {
       otto_xl_ean: params.ottoXl,
       ebay_jv_ean: params.ebayJv,
       ebay_xl_ean: params.ebayXl,
+      ebay_dep_ean: params.ebayDep,
       kaufland_jv_ean: params.kauflandJv,
       kaufland_xl_ean: params.kauflandXl,
       hood_jv_ean: params.hoodJv,

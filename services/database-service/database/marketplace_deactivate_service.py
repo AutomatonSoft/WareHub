@@ -80,6 +80,7 @@ DEACTIVATE_TARGET_ORDER = (
     "hood_xl",
     "ebay_jv",
     "ebay_xl",
+    "ebay_dep",
     "temu",
 )
 
@@ -249,6 +250,7 @@ def _resolve_kid_marketplace_targets(kid: Kid) -> tuple[list[dict], list[dict]]:
             "kaufland_xl": "KAUFLAND",
             "ebay_jv": "EBAY",
             "ebay_xl": "EBAY",
+            "ebay_dep": "EBAY",
             "temu": "TEMU",
         }.get(field_name, "UNKNOWN")
         targets.append(
@@ -1767,6 +1769,7 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
     for field_name, channel in (
         ("ebay_jv", "EBAY"),
         ("ebay_xl", "EBAY"),
+        ("ebay_dep", "EBAY"),
         ("temu", "TEMU"),
     ):
         ean_value = str(getattr(ean_row, field_name, "") or "").strip()

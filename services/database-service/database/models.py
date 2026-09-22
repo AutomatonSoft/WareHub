@@ -85,6 +85,7 @@ class Ean(Model):
     hood_xl = CharField(max_length=64, null=True, blank=True)
     ebay_jv = CharField(max_length=64, null=True, blank=True)
     ebay_xl = CharField(max_length=64, null=True, blank=True)
+    ebay_dep = CharField(max_length=64, null=True, blank=True)
     reserved_jv = CharField(max_length=64, null=True, blank=True)
     reserved_xl = CharField(max_length=64, null=True, blank=True)
     temu = CharField(max_length=64, null=True, blank=True)
@@ -101,6 +102,7 @@ class EanStatus(Model):
     hood_xl = BooleanField(default=False)
     ebay_jv = BooleanField(default=False)
     ebay_xl = BooleanField(default=False)
+    ebay_dep = BooleanField(default=False)
     temu = BooleanField(default=False)
 
 

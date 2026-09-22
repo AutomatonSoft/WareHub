@@ -13,6 +13,7 @@ export type SofortListRow = {
     ottoXl: string;
     ebayJv: string;
     ebayXl: string;
+    ebayDep: string;
     kauflandJv: string;
     kauflandXl: string;
     hoodJv: string;
@@ -26,6 +27,7 @@ export type SofortListRow = {
     ottoXl: boolean | null;
     ebayJv: boolean | null;
     ebayXl: boolean | null;
+    ebayDep: boolean | null;
     kauflandJv: boolean | null;
     kauflandXl: boolean | null;
     hoodJv: boolean | null;
