@@ -489,6 +489,10 @@ function normalizePlaceValue(value: string): string {
   return `${digits}${suffix}`;
 }
 
+function isNegativePlace(value: string): boolean {
+  return value.trim().startsWith("-");
+}
+
 function normalizeSectionValue(value: string): string {
   return stripCyrillic(value).toUpperCase().replace(/[^A-Z]/g, "");
 }
@@ -1314,7 +1318,10 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                   <td className="wh-sofort-cell py-3 align-middle">
                     <div className="wh-sofort-place-cell">
                       <span
-                        className="wh-sofort-place-cell__value"
+                        className={cn(
+                          "wh-sofort-place-cell__value",
+                          isNegativePlace(row.place) && "wh-sofort-place-cell__value--negative",
+                        )}
                         title={row.section ? `${row.section} ${row.place}` : row.place}
                       >
                         {props.highlightText(row.section ? `${row.section} ${row.place}` : row.place, props.query)}
@@ -1458,7 +1465,12 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                     />
                   </label>
                   <div className="wh-sofort-mobile-card__place">
-                    <span className="wh-sofort-place-cell__value">
+                    <span
+                      className={cn(
+                        "wh-sofort-place-cell__value",
+                        isNegativePlace(row.place) && "wh-sofort-place-cell__value--negative",
+                      )}
+                    >
                       {props.highlightText(row.section ? `${row.section} ${row.place}` : row.place, props.query)}
                     </span>
                     <span className="wh-sofort-place-cell__location">
