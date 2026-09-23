@@ -570,9 +570,10 @@ async function readJsonSafe(response: Response): Promise<Record<string, unknown>
   }
 }
 
-export async function createMarketplaceToggleJob(kidNumber: string, inactive = true, place?: string): Promise<{ jobId: string }> {
+export async function createMarketplaceToggleJob(kidNumber: string, kidId: number, inactive = true, place?: string): Promise<{ jobId: string }> {
   const body = {
     kid_number: kidNumber.trim(),
+    kid_id: kidId,
     inactive: Boolean(inactive),
     ...(place?.trim() ? { place: place.trim() } : {}),
   };
