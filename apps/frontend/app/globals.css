@@ -3063,6 +3063,11 @@ html[data-density="compact"] .ui-table-data-meta {
   line-height: 1.1;
   color: #0f172a;
 }
+.wh-sofort-place-cell__value--negative {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
+}
 .wh-sofort-place-cell__location {
   display: block;
   max-width: 100%;

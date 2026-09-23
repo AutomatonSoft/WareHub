@@ -19,7 +19,7 @@ from .client import EbayApiConfig, EbayApiError, EbayNotificationClient, EbayOAu
 from .credentials import load_refresh_token, store_refresh_token
 from .models import EbayOAuthCredential
 from .listing_operations import _legacy_ean_matches, _merge_inventory_item, _merge_inventory_offer, _prepare_inventory_offer, _validate_inventory_publish_payload, execute_listing_operation
-from .views import EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _account, _exchange_code_response, _inventory_location_address, _seller_setup_error_response
+from .views import EbayListingOperationAPIView, EbayMarketplaceAccountDeletionAPIView, _OAUTH_STATE_SALT, _account, _exchange_code_response, _inventory_location_address, _seller_setup_error_response
 
 
 class FakeResponse:
@@ -313,6 +313,31 @@ class EbayMarketplaceAccountDeletionTests(SimpleTestCase):
         )
 
         self.assertTrue(is_valid)
+
+
+class EbayListingOperationViewTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    @patch.object(EbayListingOperationAPIView, "permission_classes", [])
+    @patch("ebay_service.views.execute_listing_operation", return_value={"status": "active"})
+    def test_fetch_inventory_listing_accepts_missing_legacy_item(self, execute_operation):
+        request = self.factory.post(
+            "/api/v1/ebay/listing-operations/",
+            {
+                "account": "dep",
+                "marketplace_id": "EBAY_DE",
+                "operation": "fetch",
+                "listing_mode": "inventory",
+                "sku": "4069424182071",
+            },
+            format="json",
+        )
+
+        response = EbayListingOperationAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        execute_operation.assert_called_once()
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):

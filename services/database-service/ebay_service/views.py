@@ -380,6 +380,7 @@ class EbayListingOperationAPIView(APIView):
         variation_sku = str(payload.get("variation_sku") or "").strip()
         inventory_item = payload.get("inventory_item")
         offer = payload.get("offer")
+        legacy_item = payload.get("legacy_item")
         quantity = _nonnegative_int(payload.get("quantity"))
         price = _price(payload.get("price"))
         currency = str(payload.get("currency") or "EUR").strip().upper()
