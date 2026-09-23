@@ -1,11 +1,32 @@
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from database.models import EbayListing
 
 from .client import EbayApiError
 from .listing_operations import execute_listing_operation, index_all_legacy_listings, index_legacy_listing_page, reconcile_legacy_listing
+
+
+class EbayInventoryFetchTests(SimpleTestCase):
+    @patch("ebay_service.listing_operations.EbayListing.objects.filter")
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_fetch_does_not_require_legacy_item(self, client_class, filter_mock):
+        filter_mock.return_value.first.return_value = None
+        client = client_class.return_value
+        client.inventory_item.return_value = {"sku": "4062292372025"}
+        client.offers_by_sku.return_value = []
+
+        result = execute_listing_operation(
+            account="dep",
+            marketplace_id="EBAY_DE",
+            operation="fetch",
+            listing_mode="inventory",
+            sku="4062292372025",
+        )
+
+        self.assertEqual(result["inventory_item"]["sku"], "4062292372025")
+        self.assertEqual(result["offers"], [])
 
 
 class EbayListingOperationTests(TestCase):

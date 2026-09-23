@@ -1893,6 +1893,52 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertEqual(kid.place, "4")
 
+    @patch("database.marketplace_deactivate_service._apply_jv_sofort_deactivate")
+    def test_marketplace_toggle_selects_exact_kid_id_when_number_is_duplicated(self, mocked_apply):
+        old_kid = Kid.objects.create(kid_number=["KID-DUPLICATE"], place="-1133")
+        Ean.objects.create(kid=old_kid)
+        EanStatus.objects.create(ean=old_kid, jv=False)
+        target_kid = Kid.objects.create(kid_number=["KID-DUPLICATE"], place="1139")
+        Ean.objects.create(kid=target_kid, jv="4067282256354")
+        EanStatus.objects.create(ean=target_kid, jv=True)
+        mocked_apply.side_effect = lambda **kwargs: {
+            "ok": True,
+            "site_key": kwargs["site_key"],
+            "channel": "JV",
+            "status_code": status.HTTP_200_OK,
+            "details": {"ean": kwargs["ean"]},
+        }
+
+        ambiguous = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-DUPLICATE", "inactive": True},
+            format="json",
+        )
+        self.assertEqual(ambiguous.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(mocked_apply.call_count, 0)
+
+        mismatched = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "OTHER", "kid_id": target_kid.id, "inactive": True},
+            format="json",
+        )
+        self.assertEqual(mismatched.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(mocked_apply.call_count, 0)
+
+        response = self.client.post(
+            "/api/v1/marketplace/jv/deactivate-sofort-by-kid/",
+            {"kid_number": "KID-DUPLICATE", "kid_id": target_kid.id, "inactive": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mocked_apply.call_count, 4)
+        self.assertEqual({call.kwargs["ean"] for call in mocked_apply.call_args_list}, {"4067282256354"})
+        target_kid.refresh_from_db()
+        old_kid.refresh_from_db()
+        self.assertEqual(target_kid.place, "-1139")
+        self.assertEqual(old_kid.place, "-1133")
+        self.assertFalse(EanStatus.objects.get(ean=target_kid).jv)
+
     @patch("database.marketplace_deactivate_service._apply_jv_deactivate")
     def test_marketplace_deactivate_by_kid_without_status_uses_present_jv_ean(self, mocked_apply_jv):
         kid = Kid.objects.create(kid_number=["KID-JV-NO-STATUS"], place="4")

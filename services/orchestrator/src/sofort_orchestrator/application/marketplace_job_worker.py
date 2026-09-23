@@ -22,6 +22,7 @@ async def run_marketplace_job_worker(
         job_id = claimed["job_id"]
         request_id = claimed["request_id"]
         kid_number = claimed["kid_number"]
+        kid_id = claimed["kid_id"]
         inactive = bool(claimed["inactive"])
         place = str(claimed["place"]).strip() if claimed.get("place") is not None else None
         actor_login = str(claimed.get("actor_login") or "").strip()
@@ -29,6 +30,7 @@ async def run_marketplace_job_worker(
         try:
             result = service.execute(
                 kid_number=kid_number,
+                kid_id=kid_id,
                 inactive=inactive,
                 request_id=request_id,
                 place=place,

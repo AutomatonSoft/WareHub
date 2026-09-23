@@ -17,6 +17,7 @@ class MarketplaceJobService:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -25,6 +26,7 @@ class MarketplaceJobService:
     ) -> MarketplaceToggleExecutionResult:
         results: list[MarketplaceToggleResultItem] = []
         actor_kwargs = {"actor_login": actor_login, "actor_name": actor_name} if actor_login or actor_name else {}
+        identity_kwargs = {"kid_id": kid_id} if kid_id is not None else {}
         results.extend(
             self._call_channel(
                 fallback_site_key="JV",
@@ -32,6 +34,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_jv_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
@@ -46,6 +49,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_xl_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
@@ -60,6 +64,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_hood_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
@@ -74,6 +79,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_kaufland_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
@@ -88,6 +94,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_otto_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     place=place,
@@ -102,6 +109,7 @@ class MarketplaceJobService:
                 request_id=request_id,
                 call=lambda: self.gateway.toggle_local_statuses_by_kid(
                     kid_number=kid_number,
+                    **identity_kwargs,
                     inactive=inactive,
                     request_id=request_id,
                     **actor_kwargs,

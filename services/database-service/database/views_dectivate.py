@@ -26,8 +26,12 @@ from database.marketplace_deactivate_service import (
 from jv_services.view_helpers import session_actor
 
 
-def _record_marketplace_change(request, *, kid_number: str, inactive: bool, channel: str) -> None:
-    kid = Kid.objects.filter(kid_number__contains=[kid_number]).order_by("id").first()
+def _record_marketplace_change(request, *, kid_number: str, inactive: bool, channel: str, kid_id: int | None = None) -> None:
+    kid = (
+        Kid.objects.filter(pk=kid_id).first()
+        if kid_id is not None
+        else Kid.objects.filter(kid_number__contains=[kid_number]).order_by("id").first()
+    )
     if kid is None:
         return
     record_inventory_change(
@@ -51,6 +55,7 @@ class MarketplaceDeactivateByKidAPIView(APIView):
             validated = serializer.validated_data
             result = deactivate_marketplaces_by_kid_number(
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 actor=actor,
                 place=validated.get("place"),
@@ -60,6 +65,7 @@ class MarketplaceDeactivateByKidAPIView(APIView):
                 _record_marketplace_change(
                     request,
                     kid_number=str(validated["kid_number"]).strip(),
+                    kid_id=validated.get("kid_id"),
                     inactive=bool(validated.get("inactive", True)),
                     channel="MARKETPLACES",
                 )
@@ -88,6 +94,7 @@ class MarketplaceJVDeactivateSofortByKidAPIView(APIView):
         validated = serializer.validated_data
         result = deactivate_jv_sofort_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
             place=validated.get("place"),
@@ -96,6 +103,7 @@ class MarketplaceJVDeactivateSofortByKidAPIView(APIView):
             _record_marketplace_change(
                 request,
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 channel="JV",
             )
@@ -112,6 +120,7 @@ class MarketplaceHoodDeactivateByKidAPIView(APIView):
         validated = serializer.validated_data
         result = deactivate_hood_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
             place=validated.get("place"),
@@ -120,6 +129,7 @@ class MarketplaceHoodDeactivateByKidAPIView(APIView):
             _record_marketplace_change(
                 request,
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 channel="HOOD",
             )
@@ -136,6 +146,7 @@ class MarketplaceXLDeactivateByKidAPIView(APIView):
         validated = serializer.validated_data
         result = deactivate_xl_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
             place=validated.get("place"),
@@ -144,6 +155,7 @@ class MarketplaceXLDeactivateByKidAPIView(APIView):
             _record_marketplace_change(
                 request,
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 channel="XL",
             )
@@ -160,6 +172,7 @@ class MarketplaceKauflandToggleByKidAPIView(APIView):
         validated = serializer.validated_data
         result = deactivate_kaufland_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
             place=validated.get("place"),
@@ -177,6 +190,7 @@ class MarketplaceOttoToggleByKidAPIView(APIView):
         validated = serializer.validated_data
         result = deactivate_otto_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
             place=validated.get("place"),
@@ -185,6 +199,7 @@ class MarketplaceOttoToggleByKidAPIView(APIView):
             _record_marketplace_change(
                 request,
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 channel="OTTO",
             )
@@ -235,6 +250,7 @@ class MarketplaceLocalStatusesByKidAPIView(APIView):
         validated = serializer.validated_data
         result = toggle_local_marketplace_statuses_by_kid_number(
             kid_number=str(validated["kid_number"]).strip(),
+            kid_id=validated.get("kid_id"),
             inactive=bool(validated.get("inactive", True)),
             actor=actor,
         )
@@ -242,6 +258,7 @@ class MarketplaceLocalStatusesByKidAPIView(APIView):
             _record_marketplace_change(
                 request,
                 kid_number=str(validated["kid_number"]).strip(),
+                kid_id=validated.get("kid_id"),
                 inactive=bool(validated.get("inactive", True)),
                 channel="LOCAL",
             )

@@ -84,6 +84,7 @@ def create_marketplace_toggle_job(
         job_id=job_id,
         request_id=request_id,
         kid_number=kid_number,
+        kid_id=body.kid_id,
         inactive=body.inactive,
         place=place or None,
         actor_login=(x_warehub_actor_login or "").strip() or None,

@@ -1207,7 +1207,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
     setDeactivatingRowId(row.id);
     try {
-      const created = await createMarketplaceToggleJob(row.kidNumber, nextInactive, nextPlace);
+      const created = await createMarketplaceToggleJob(row.kidNumber, row.kidId, nextInactive, nextPlace);
       const result = await waitForMarketplaceJobToFinish(created.jobId);
       props.onRefresh();
       setMarketplaceResult(buildMarketplaceResultDialogState(result, row.kidNumber, props.labels));

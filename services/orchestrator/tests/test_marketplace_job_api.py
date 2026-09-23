@@ -14,6 +14,7 @@ from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
 from src.sofort_orchestrator.infra.http_client import RetryExhaustedError
 from src.sofort_orchestrator.infra.marketplace_job_store import SqliteMarketplaceJobStore
+from src.sofort_orchestrator.infra.marketplace_job_gateway import MarketplaceJobGateway
 from src.sofort_orchestrator.infra.product_editor_store import SqliteProductEditorStore
 from src.sofort_orchestrator.main import app
 
@@ -364,3 +365,52 @@ def test_marketplace_toggle_job_persists_verified_actor_for_worker(tmp_path):
     assert claimed is not None
     assert claimed["actor_login"] == "katerina"
     assert claimed["actor_name"] == "Katerina Krisling"
+
+
+def test_marketplace_toggle_job_persists_kid_id(tmp_path):
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/v1/orchestrator/marketplace/toggle-by-kid",
+        json={"kid_number": "565478849", "kid_id": 1606, "inactive": True},
+    )
+    assert created.status_code == 200
+    claimed = MarketplaceJobDeps.store.claim_next_queued_job()
+    assert claimed is not None
+    assert claimed["kid_number"] == "565478849"
+    assert claimed["kid_id"] == 1606
+
+
+def test_marketplace_toggle_store_adds_kid_id_to_existing_jobs(tmp_path):
+    db_path = tmp_path / "marketplace.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """CREATE TABLE marketplace_toggle_jobs (
+                job_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, kid_number TEXT NOT NULL,
+                inactive INTEGER NOT NULL, place TEXT NULL, actor_login TEXT NULL,
+                actor_name TEXT NULL, status TEXT NOT NULL, result_status TEXT NULL,
+                result_json TEXT NULL, error_json TEXT NULL,
+                created_at_unix_ms INTEGER NOT NULL, updated_at_unix_ms INTEGER NOT NULL
+            )"""
+        )
+    store = SqliteMarketplaceJobStore(db_path=str(db_path))
+    store.create_job(job_id="job-1", request_id="request-1", kid_number="565478849", kid_id=1606, inactive=True)
+    assert store.claim_next_queued_job()["kid_id"] == 1606
+
+
+def test_marketplace_toggle_sends_kid_id_to_every_channel():
+    class RecordingHttpClient:
+        def __init__(self):
+            self.requests = []
+
+        def request(self, method, url, **kwargs):
+            self.requests.append((method, url, kwargs["json"]))
+            return type("Response", (), {"status_code": 200, "json": lambda self: {"results": []}})()
+
+    http_client = RecordingHttpClient()
+    gateway = MarketplaceJobGateway(base_url="http://database-service", http_client=http_client)
+    MarketplaceJobService(gateway=gateway).execute(
+        kid_number="565478849", kid_id=1606, inactive=True, request_id="request-1"
+    )
+
+    assert len(http_client.requests) == 6
+    assert all(body["kid_id"] == 1606 and body["kid_number"] == "565478849" for _, _, body in http_client.requests)

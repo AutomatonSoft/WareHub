@@ -382,6 +382,7 @@ class MarketplaceDeactivateByEANSerializer(serializers.Serializer):
 
 class MarketplaceDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
+    kid_id = serializers.IntegerField(required=False, min_value=1)
     inactive = serializers.BooleanField(required=False, default=True)
     place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     payloads = serializers.DictField(required=False, default=dict)
@@ -400,6 +401,7 @@ class MarketplaceDeactivateByKidSerializer(serializers.Serializer):
 
 class MarketplaceJVDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
+    kid_id = serializers.IntegerField(required=False, min_value=1)
     inactive = serializers.BooleanField(required=False, default=True)
     place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
 
@@ -417,6 +419,7 @@ class MarketplaceJVDeactivateByKidSerializer(serializers.Serializer):
 
 class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
+    kid_id = serializers.IntegerField(required=False, min_value=1)
     inactive = serializers.BooleanField(required=False, default=True)
     place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
 
@@ -434,6 +437,7 @@ class MarketplaceHoodDeactivateByKidSerializer(serializers.Serializer):
 
 class MarketplaceXLDeactivateByKidSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=255)
+    kid_id = serializers.IntegerField(required=False, min_value=1)
     inactive = serializers.BooleanField(required=False, default=True)
     place = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
 
