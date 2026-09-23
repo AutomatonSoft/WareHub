@@ -896,6 +896,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
     const ebayFields = publishDraft?.ebayFields;
     let ebayAspects: Record<string, string[]> | null = null;
+    let ebayPackage: Record<string, unknown> | null = null;
+    let ebayRegulatory: Record<string, unknown> | null = null;
     if (hasEbaySelection) {
       if (!ebayFields) {
         showToast("Complete the eBay seller, category, and product fields before creating the job.", "error");
@@ -927,6 +929,18 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ebayAspects = parsed as Record<string, string[]>;
       } catch {
         showToast("eBay category aspects must be a non-empty JSON object of string arrays.", "error");
+        return;
+      }
+      try {
+        for (const [name, value] of [["package weight and size", ebayFields.packageWeightAndSizeText], ["regulatory", ebayFields.regulatoryText]] as const) {
+          if (!value.trim()) continue;
+          const parsed: unknown = JSON.parse(value);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(name);
+          if (name === "regulatory") ebayRegulatory = parsed as Record<string, unknown>;
+          else ebayPackage = parsed as Record<string, unknown>;
+        }
+      } catch {
+        showToast("eBay package weight/size and regulatory fields must be JSON objects.", "error");
         return;
       }
     }
@@ -1067,11 +1081,20 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ebay_currency: "EUR",
         ebay_inventory_item: {
           condition: ebayFields.condition.trim(),
+          ...(ebayFields.conditionDescription.trim() ? { conditionDescription: ebayFields.conditionDescription.trim() } : {}),
+          ...(ebayPackage ? { packageWeightAndSize: ebayPackage } : {}),
           product: {
             title: normalized.productName,
             description: ebayFields.description.trim(),
             aspects: ebayAspects,
             imageUrls,
+            ...(ebayFields.productEan.trim() ? { ean: [ebayFields.productEan.trim()] } : {}),
+            ...(ebayFields.brand.trim() ? { brand: ebayFields.brand.trim() } : {}),
+            ...(ebayFields.mpn.trim() ? { mpn: ebayFields.mpn.trim() } : {}),
+            ...(ebayFields.upc.trim() ? { upc: ebayFields.upc.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) } : {}),
+            ...(ebayFields.isbn.trim() ? { isbn: ebayFields.isbn.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) } : {}),
+            ...(ebayFields.epid.trim() ? { epid: ebayFields.epid.trim() } : {}),
+            ...(ebayFields.subtitle.trim() ? { subtitle: ebayFields.subtitle.trim() } : {}),
           },
           availability: {
             shipToLocationAvailability: { quantity: Number(ebayFields.quantity) },
@@ -1080,6 +1103,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ebay_offer: {
           format: "FIXED_PRICE",
           categoryId: ebayFields.categoryId.trim(),
+          ...(ebayFields.secondaryCategoryId.trim() ? { secondaryCategoryId: ebayFields.secondaryCategoryId.trim() } : {}),
+          ...(ebayFields.storeCategoryNamesText.trim() ? { storeCategoryNames: ebayFields.storeCategoryNamesText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) } : {}),
+          ...(ebayFields.listingDescription.trim() ? { listingDescription: ebayFields.listingDescription.trim() } : {}),
+          ...(ebayRegulatory ? { regulatory: ebayRegulatory } : {}),
           merchantLocationKey: ebayFields.merchantLocationKey.trim(),
           listingDuration: "GTC",
           listingPolicies: {

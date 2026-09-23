@@ -24,12 +24,25 @@ export type NormalizedCreateProductInput = {
 
 export type EbayCreateFields = {
   ean: string;
+  productEan: string;
+  brand: string;
+  mpn: string;
+  upc: string;
+  isbn: string;
+  epid: string;
+  subtitle: string;
   title: string;
   description: string;
+  listingDescription: string;
   price: string;
   quantity: string;
   condition: string;
+  conditionDescription: string;
+  packageWeightAndSizeText: string;
   categoryId: string;
+  secondaryCategoryId: string;
+  storeCategoryNamesText: string;
+  regulatoryText: string;
   aspectsText: string;
   merchantLocationKey: string;
   fulfillmentPolicyId: string;

@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { CreateProductImageGallery, type CreateProductGalleryItem } from "../../app/create-product/create-product-image-gallery";
 import { uploadProductImages } from "../editor/product-image-api";
+import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
 import type { ProductEditorEbayDraft, ProductEditorWarning } from "./product-editor-types";
 
 type Props = {
@@ -34,6 +35,18 @@ function stringArray(value: unknown): string[] {
 
 function FormField({ label, children }: { label: string; children: ReactNode }) {
   return <label className="space-y-1.5 text-sm font-medium"><span>{label}</span>{children}</label>;
+}
+
+function JsonObjectField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: Record<string, unknown>) => void }) {
+  const [error, setError] = useState("");
+  return <FormField label={label}><textarea className="min-h-24 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" key={JSON.stringify(value ?? {})} defaultValue={value ? JSON.stringify(value, null, 2) : ""} onBlur={(event) => {
+    try {
+      const parsed: unknown = event.target.value.trim() ? JSON.parse(event.target.value) : {};
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid JSON object");
+      onChange(parsed as Record<string, unknown>);
+      setError("");
+    } catch { setError("Enter a JSON object."); }
+  }} />{error ? <span className="text-xs text-destructive">{error}</span> : null}</FormField>;
 }
 
 function EbayImageGallery({ imageUrls, onChange }: { imageUrls: string[]; onChange: (next: string[]) => void }) {
@@ -80,11 +93,13 @@ export function ProductEditorEbayPanel(props: Props) {
   const [aspectsText, setAspectsText] = useState(() => JSON.stringify(asRecord(product.aspects), null, 2));
   const [legacyItemSpecificsText, setLegacyItemSpecificsText] = useState(() => JSON.stringify(asRecord(legacyItem.item_specifics), null, 2));
   const [aspectsError, setAspectsError] = useState("");
+  const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
 
   useEffect(() => {
     setAspectsText(JSON.stringify(asRecord(asRecord(props.draft.ebay_inventory_item).product).aspects, null, 2));
     setAspectsError("");
     setLegacyItemSpecificsText(JSON.stringify(asRecord(asRecord(props.draft.ebay_legacy_item).item_specifics), null, 2));
+    setDescriptionMode("preview");
   }, [props.draft.ean, props.draft.target_id]);
 
   function updateInventoryItem(patch: Record<string, unknown>) {
@@ -164,7 +179,7 @@ export function ProductEditorEbayPanel(props: Props) {
             <FormField label="Title"><Input value={String(legacyItem.title ?? "")} onChange={(event) => updateLegacyItem({ title: event.target.value })} /></FormField>
             <FormField label="Category ID"><Input value={String(legacyItem.category_id ?? "")} onChange={(event) => updateLegacyItem({ category_id: event.target.value })} /></FormField>
           </div>
-          <FormField label="Description"><textarea className="min-h-32 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={String(legacyItem.description ?? "")} onChange={(event) => updateLegacyItem({ description: event.target.value })} /></FormField>
+          <JvDescriptionEditor description={String(legacyItem.description ?? "")} previewHtml={String(legacyItem.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateLegacyItem({ description })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(legacyItem.image_urls).join("\n")} onChange={(event) => updateLegacyItem({ image_urls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(legacyItem.image_urls)} onChange={(image_urls) => updateLegacyItem({ image_urls })} />
           <FormField label="Item specifics (JSON)"><textarea className="min-h-36 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={legacyItemSpecificsText} onChange={(event) => setLegacyItemSpecificsText(event.target.value)} onBlur={commitLegacyItemSpecifics} /></FormField>
@@ -174,11 +189,24 @@ export function ProductEditorEbayPanel(props: Props) {
         <>
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Title"><Input value={String(product.title ?? "")} onChange={(event) => updateProduct({ title: event.target.value })} /></FormField>
+            <FormField label="Subtitle"><Input value={String(product.subtitle ?? "")} onChange={(event) => updateProduct({ subtitle: event.target.value })} /></FormField>
+            <FormField label="Product EAN"><Input value={stringArray(product.ean).join(", ")} onChange={(event) => updateProduct({ ean: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
+            <FormField label="Brand"><Input value={String(product.brand ?? "")} onChange={(event) => updateProduct({ brand: event.target.value })} /></FormField>
+            <FormField label="MPN"><Input value={String(product.mpn ?? "")} onChange={(event) => updateProduct({ mpn: event.target.value })} /></FormField>
+            <FormField label="ePID"><Input value={String(product.epid ?? "")} onChange={(event) => updateProduct({ epid: event.target.value })} /></FormField>
+            <FormField label="UPC (comma-separated)"><Input value={stringArray(product.upc).join(", ")} onChange={(event) => updateProduct({ upc: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
+            <FormField label="ISBN (comma-separated)"><Input value={stringArray(product.isbn).join(", ")} onChange={(event) => updateProduct({ isbn: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
             <FormField label="Condition"><Input value={String(inventoryItem.condition ?? "")} onChange={(event) => updateInventoryItem({ condition: event.target.value })} placeholder="NEW" /></FormField>
+            <FormField label="Condition description"><Input value={String(inventoryItem.conditionDescription ?? "")} onChange={(event) => updateInventoryItem({ conditionDescription: event.target.value })} /></FormField>
             <FormField label="Category ID"><Input value={String(offer.categoryId ?? "")} onChange={(event) => updateOffer({ categoryId: event.target.value })} /></FormField>
+            <FormField label="Secondary category ID"><Input value={String(offer.secondaryCategoryId ?? "")} onChange={(event) => updateOffer({ secondaryCategoryId: event.target.value })} /></FormField>
             <FormField label="Merchant location key"><Input value={String(offer.merchantLocationKey ?? "")} onChange={(event) => updateOffer({ merchantLocationKey: event.target.value })} /></FormField>
+            <FormField label="Store category names (comma-separated)"><Input value={stringArray(offer.storeCategoryNames).join(", ")} onChange={(event) => updateOffer({ storeCategoryNames: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
           </div>
-          <FormField label="Description"><textarea className="min-h-32 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={String(product.description ?? "")} onChange={(event) => updateProduct({ description: event.target.value })} /></FormField>
+          <JsonObjectField label="Package weight and size (JSON)" value={inventoryItem.packageWeightAndSize} onChange={(packageWeightAndSize) => updateInventoryItem({ packageWeightAndSize })} />
+          <JvDescriptionEditor description={String(product.description ?? "")} previewHtml={String(product.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateProduct({ description })} />
+          <FormField label="Listing description override"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={String(offer.listingDescription ?? "")} onChange={(event) => updateOffer({ listingDescription: event.target.value })} /></FormField>
+          <JsonObjectField label="Regulatory / GPSR (eBay JSON)" value={offer.regulatory} onChange={(regulatory) => updateOffer({ regulatory })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(product.imageUrls).join("\n")} onChange={(event) => updateProduct({ imageUrls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(product.imageUrls)} onChange={(imageUrls) => updateProduct({ imageUrls })} />
           <FormField label="Category aspects (JSON)"><textarea className="min-h-36 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={aspectsText} onChange={(event) => setAspectsText(event.target.value)} onBlur={commitAspects} /></FormField>
