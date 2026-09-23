@@ -37,7 +37,7 @@ jobs:
       PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
       PROD_PROJECT_NAME: warehub-prod
       PROD_EXPECTED_GATEWAY_PORT: "8950"
-      PROD_EXPECTED_SERVICE_COUNT: "10"
+      PROD_EXPECTED_SERVICE_COUNT: "12"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
       MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
@@ -493,7 +493,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/prod"
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
-          EXPECTED_SERVICE_COUNT="10"
+          EXPECTED_SERVICE_COUNT="12"
           MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           IFS= read -r GHCR_USERNAME
@@ -672,7 +672,10 @@ jobs:
           wait_health redis healthy
 
           echo "=== UP APP SERVICES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services telegram_notifier orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services jv_batch_worker ebay_legacy_indexer telegram_notifier orchestrator
+
+          wait_health jv_batch_worker healthy
+          wait_health ebay_legacy_indexer healthy
 
           echo "=== UP GATEWAY ==="
           docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --force-recreate --no-deps gateway
