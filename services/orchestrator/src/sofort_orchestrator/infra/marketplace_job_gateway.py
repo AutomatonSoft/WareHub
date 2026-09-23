@@ -42,6 +42,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -49,6 +50,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(
@@ -61,13 +64,23 @@ class MarketplaceJobGateway:
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
 
     def toggle_local_statuses_by_kid(
-        self, *, kid_number: str, inactive: bool, request_id: str, actor_login: str = "", actor_name: str = ""
+        self,
+        *,
+        kid_number: str,
+        inactive: bool,
+        request_id: str,
+        kid_id: int | None = None,
+        actor_login: str = "",
+        actor_name: str = "",
     ) -> GatewayResult:
+        body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         response = self.http.request(
             "POST",
             f"{self.base_url}/api/v1/marketplace/local-statuses-by-kid/",
             headers=self._headers(request_id, actor_login=actor_login, actor_name=actor_name),
-            json={"kid_number": kid_number, "inactive": inactive},
+            json=body,
             timeout_seconds=self.timeout_seconds,
         )
         return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
@@ -76,6 +89,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -83,6 +97,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(
@@ -98,6 +114,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -105,6 +122,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(
@@ -120,6 +139,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -127,6 +147,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(
@@ -142,6 +164,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -149,6 +172,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(
@@ -164,6 +189,7 @@ class MarketplaceJobGateway:
         self,
         *,
         kid_number: str,
+        kid_id: int | None = None,
         inactive: bool,
         request_id: str,
         place: str | None = None,
@@ -171,6 +197,8 @@ class MarketplaceJobGateway:
         actor_name: str = "",
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "inactive": inactive}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
         if place:
             body["place"] = place
         response = self.http.request(

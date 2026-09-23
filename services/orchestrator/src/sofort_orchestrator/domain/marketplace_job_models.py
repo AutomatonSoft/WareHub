@@ -9,6 +9,7 @@ from .models import ErrorContract, JobStatus
 
 class MarketplaceToggleRequest(BaseModel):
     kid_number: str
+    kid_id: int | None = Field(default=None, gt=0)
     inactive: bool = True
     place: str | None = None
 

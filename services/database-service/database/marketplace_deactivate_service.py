@@ -4,6 +4,7 @@ import re
 import requests
 from django.db import IntegrityError, transaction
 from rest_framework import status
+from rest_framework.exceptions import APIException
 
 from catalog_core.models import ImportedProduct
 from database.models import EanStatus, Kid
@@ -108,11 +109,25 @@ def _primary_kid_number_value(kid: Kid) -> str:
     return str(value or "").strip()
 
 
-def _find_kid_by_number(kid_number: str) -> Kid | None:
+class MarketplaceKidConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "marketplace_kid_ambiguous"
+
+
+def _find_kid_by_number(kid_number: str, kid_id: int | None = None) -> Kid | None:
     normalized = str(kid_number or "").strip()
     if not normalized:
         return None
-    return Kid.objects.filter(kid_number__contains=[normalized]).order_by("id").first()
+    matches = Kid.objects.filter(kid_number__contains=[normalized])
+    if kid_id is not None:
+        kid = matches.filter(pk=kid_id).first()
+        if kid is None:
+            raise MarketplaceKidConflict("kid_id does not match kid_number.")
+        return kid
+    candidates = list(matches.order_by("id")[:2])
+    if len(candidates) > 1:
+        raise MarketplaceKidConflict("Multiple Kid records match kid_number; specify kid_id.")
+    return candidates[0] if candidates else None
 
 
 def _normalized_kid_place_value(value) -> str:
@@ -1521,6 +1536,7 @@ def deactivate_marketplaces_by_explicit_sites(*, ean: str, site_keys: list[str],
 def deactivate_marketplaces_by_kid_number(
     *,
     kid_number: str,
+    kid_id: int | None = None,
     inactive: bool,
     actor: str,
     place: str | None = None,
@@ -1530,7 +1546,7 @@ def deactivate_marketplaces_by_kid_number(
         _normalize_target_site_key(key): value
         for key, value in (payloads_by_site_key or {}).items()
     }
-    kid = _find_kid_by_number(kid_number)
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -1738,8 +1754,8 @@ def deactivate_marketplaces_by_kid_number(
     return payload
 
 
-def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive: bool, actor: str):
-    kid = _find_kid_by_number(kid_number)
+def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive: bool, actor: str, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -1924,8 +1940,8 @@ def _apply_otto_active_state(*, ean: str, site_key: str, controller: str, inacti
     }
 
 
-def deactivate_otto_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
-    kid = _find_kid_by_number(kid_number)
+def deactivate_otto_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -2019,8 +2035,8 @@ def deactivate_otto_by_kid_number(*, kid_number: str, inactive: bool, actor: str
     return payload
 
 
-def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
-    kid = _find_kid_by_number(kid_number)
+def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -2115,8 +2131,8 @@ def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor:
     return payload
 
 
-def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
-    kid = _find_kid_by_number(kid_number)
+def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -2189,8 +2205,8 @@ def deactivate_jv_sofort_by_kid_number(*, kid_number: str, inactive: bool, actor
     return payload
 
 
-def deactivate_xl_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
-    kid = _find_kid_by_number(kid_number)
+def deactivate_xl_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
@@ -2261,8 +2277,8 @@ def deactivate_xl_by_kid_number(*, kid_number: str, inactive: bool, actor: str, 
     return payload
 
 
-def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None):
-    kid = _find_kid_by_number(kid_number)
+def deactivate_hood_by_kid_number(*, kid_number: str, inactive: bool, actor: str, place: str | None = None, kid_id: int | None = None):
+    kid = _find_kid_by_number(kid_number, kid_id)
     if kid is None:
         return {
             "payload": {
