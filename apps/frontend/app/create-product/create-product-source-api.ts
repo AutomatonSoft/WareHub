@@ -535,6 +535,54 @@ export async function fetchCreateProductSourceSitesByMainEan(input: {
   return fetchCreateProductJvSitesByMainEan(normalizedMainEan);
 }
 
+export async function fetchCreateProductEbayListingDetails(ean: string, account: Uppercase<EbayAccount>): Promise<Record<string, string> | null> {
+  const request = async (listingMode: "inventory" | "legacy", sourceAccount: EbayAccount) => {
+    const response = await apiFetch("/api/v1/ebay/listing-operations/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ account: sourceAccount, marketplace_id: "EBAY_DE", operation: "fetch", listing_mode: listingMode, ...(listingMode === "legacy" ? { source_ean: ean } : { sku: ean }) }),
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (response.status === 404 || response.status === 409) return null;
+    if (!response.ok) throw new Error(asTrimmedString(payload.detail) || `create_product_ebay_${listingMode}_http:${response.status}`);
+    return payload;
+  };
+  const primary = account.toLowerCase() as EbayAccount;
+  const primaryLegacy = await request("legacy", primary);
+  const primaryInventory = primaryLegacy ? null : await request("inventory", primary);
+  const legacy = primaryLegacy || primaryInventory ? primaryLegacy : (primary === "dep" ? null : await request("legacy", "dep"));
+  const inventory = primaryLegacy || primaryInventory ? primaryInventory : (legacy || primary === "dep" ? null : await request("inventory", "dep"));
+  if (!legacy && !inventory) return null;
+  const listing = sourceRecord(legacy?.listing);
+  const inventoryItem = sourceRecord(inventory?.inventory_item);
+  const product = sourceRecord(inventoryItem.product);
+  const offer = Array.isArray(inventory?.offers) ? inventory.offers[0] as Record<string, unknown> | undefined : undefined;
+  const specifics = listing?.item_specifics ?? product?.aspects;
+  const aspects = specifics && typeof specifics === "object" && !Array.isArray(specifics)
+    ? Object.fromEntries(Object.entries(specifics).filter(([, values]) => Array.isArray(values)))
+    : {};
+  const identifiers = sourceRecord(listing.identifiers);
+  const aspectText = (name: string) => firstText(aspects[name]);
+  const jsonText = (value: unknown) => value && typeof value === "object" ? JSON.stringify(value, null, 2) : "";
+  return {
+    categoryId: asTrimmedString(listing?.category_id ?? offer?.categoryId),
+    aspectsText: Object.keys(aspects).length ? JSON.stringify(aspects, null, 2) : "",
+    productEan: firstText(product.ean) || firstText(identifiers.EAN),
+    brand: asTrimmedString(product.brand) || aspectText("Brand") || aspectText("Marke"),
+    mpn: asTrimmedString(product.mpn) || aspectText("MPN") || aspectText("Herstellernummer"),
+    upc: stringList(product.upc).join("\n") || stringList(identifiers.UPC).join("\n"),
+    isbn: stringList(product.isbn).join("\n") || stringList(identifiers.ISBN).join("\n"),
+    epid: asTrimmedString(product.epid),
+    subtitle: asTrimmedString(product.subtitle),
+    conditionDescription: asTrimmedString(inventoryItem.conditionDescription),
+    packageWeightAndSizeText: jsonText(inventoryItem.packageWeightAndSize),
+    listingDescription: asTrimmedString(offer?.listingDescription),
+    secondaryCategoryId: asTrimmedString(offer?.secondaryCategoryId),
+    storeCategoryNamesText: stringList(offer?.storeCategoryNames).join("\n"),
+    regulatoryText: jsonText(offer?.regulatory),
+  };
+}
+
 async function findCreateProductEbayListing(ean: string, account: EbayAccount): Promise<"found" | "missing"> {
   const request = async (listingMode: "inventory" | "legacy") => {
     const response = await apiFetch("/api/v1/ebay/listing-operations/", {

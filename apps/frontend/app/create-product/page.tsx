@@ -23,7 +23,7 @@ import { decodeHtmlEntities } from "../../components/hood/hood-search-utils";
 import { useLabels } from "../use-labels";
 import { CreateProductEanPoolPanel } from "./create-product-ean-pool-panel";
 import type { CreateProductGalleryItem } from "./create-product-image-gallery";
-import { CREATE_PRODUCT_XL_DEFAULT_SITE_KEY } from "./create-product-source-api";
+import { CREATE_PRODUCT_XL_DEFAULT_SITE_KEY, fetchCreateProductEbayListingDetails } from "./create-product-source-api";
 import { useCreateProductController, type CreateProductSourceDiscovery } from "./use-create-product-controller";
 import { PublishSitesDialog, type PublishSiteOption } from "./publish-sites-dialog";
 import type { JvCreateProductFields } from "./jv-create-product-panel";
@@ -1630,9 +1630,7 @@ export default function CreateProductPage() {
     [sourcePayload],
   );
   const activeReservationFamily: MarketplaceReservationFamily | null =
-    activeTabMeta.marketplace && activeTabMeta.account
-      ? activeTabMeta.account.toLowerCase() as MarketplaceReservationFamily
-      : null;
+    activeTabMeta.marketplace ? activeTabMeta.mainEanFamily : null;
   const activeReservedMarketplaceEan = activeReservationFamily
     ? reservedMarketplaceEans[activeReservationFamily] ?? ""
     : "";
@@ -1663,12 +1661,20 @@ export default function CreateProductPage() {
       : null;
   const activeEbayInitialFields = useMemo<EbayCreateFields>(() => activeEbayDraftSnapshot?.draft ?? ({
     ean: controller.activeMainEan || controller.ean,
+    productEan: /^\d{13}$/.test(controller.activeMainEan || controller.ean) ? (controller.activeMainEan || controller.ean) : "",
+    brand: "", mpn: "", upc: "", isbn: "", epid: "", subtitle: "",
     title: activeEbaySourceSnapshot?.productName || (controller.activeMainEan ? "" : controller.productName),
     description: activeEbaySourceSnapshot?.description || "",
+    listingDescription: "",
     price: activeEbaySourceSnapshot?.price || (controller.activeMainEan ? "" : controller.price),
     quantity: "1",
     condition: "NEW",
+    conditionDescription: "",
+    packageWeightAndSizeText: "",
     categoryId: "",
+    secondaryCategoryId: "",
+    storeCategoryNamesText: "",
+    regulatoryText: "",
     aspectsText: "",
     merchantLocationKey: "",
     fulfillmentPolicyId: "",
@@ -1798,7 +1804,27 @@ export default function CreateProductPage() {
       ...current,
       [activeTab]: (current[activeTab] ?? 0) + 1,
     }));
-  }, [activeDraftContextKey, activeEbayInitialFields, activeEbaySourceSnapshot, activeTab, controller.activeMainEan]);
+    const tab = activeTab;
+    void fetchCreateProductEbayListingDetails(controller.activeMainEan, activeTabMeta.account ?? "JV")
+      .then((listing) => {
+        if (!listing || ebayAutofillSourceByTabRef.current[tab] !== sourceKey) return;
+        const saved = ebayDraftRefByTab.current[tab];
+        if (!saved || saved.sourceKey !== activeDraftContextKey) return;
+        const draft = saved.draft;
+        ebayDraftRefByTab.current[tab] = {
+          ...saved,
+          draft: {
+            ...draft,
+            ...Object.fromEntries(Object.entries(listing).filter(([key, value]) => !draft[key as keyof EbayCreateFields] && value)),
+            productEan: draft.productEan && draft.productEan !== controller.activeMainEan ? draft.productEan : (listing.productEan || draft.productEan),
+          },
+        };
+        setEbayDraftVersionByTab((current) => ({ ...current, [tab]: (current[tab] ?? 0) + 1 }));
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : "eBay category and aspects could not be loaded.", "error");
+      });
+  }, [activeDraftContextKey, activeEbayInitialFields, activeEbaySourceSnapshot, activeTab, activeTabMeta.account, controller.activeMainEan, showToast]);
 
   useEffect(() => {
     const kidNumber = controller.kidContext?.kidNumber.trim() || "";
@@ -2196,7 +2222,16 @@ export default function CreateProductPage() {
   async function handleLoadEbaySourceProduct(ean: string) {
     setEbaySourceLoading(true);
     try {
-      const snapshot = await controller.loadSourceByEan(ean);
+      const [snapshot, listingResult] = await Promise.all([
+        controller.loadSourceByEan(ean),
+        fetchCreateProductEbayListingDetails(ean, activeTabMeta.account ?? "JV")
+          .then((listing) => ({ listing, error: null }))
+          .catch((error: unknown) => ({ listing: null, error })),
+      ]);
+      if (listingResult.error) {
+        showToast(listingResult.error instanceof Error ? listingResult.error.message : "eBay listing details could not be loaded.", "error");
+      }
+      const listing = listingResult.listing;
       const current = ebayDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
         ? ebayDraftRefByTab.current[activeTab].draft
         : activeEbayInitialFields;
@@ -2208,6 +2243,10 @@ export default function CreateProductPage() {
           title: snapshot.productName,
           description: snapshot.description || current.description,
           price: snapshot.price,
+          categoryId: current.categoryId || listing?.categoryId || "",
+          aspectsText: current.aspectsText || listing?.aspectsText || "",
+          ...Object.fromEntries(Object.entries(listing ?? {}).filter(([key, value]) => key !== "categoryId" && key !== "aspectsText" && !current[key as keyof EbayCreateFields] && value)),
+          productEan: current.productEan && current.productEan !== ean ? current.productEan : (listing?.productEan || (/^\d{13}$/.test(snapshot.ean) ? snapshot.ean : current.productEan)),
         },
       };
       setEbayDraftVersionByTab((currentVersions) => ({
@@ -3108,12 +3147,7 @@ export default function CreateProductPage() {
       title={t.createProduct}
       subtitle={t.createProduct}
     >
-      <div
-        className={[
-          "rounded-[var(--radius-card)] border border-border/70 bg-card p-4",
-          isEbayMarketplace ? "flex h-[calc(100vh-24px)] flex-col" : "",
-        ].join(" ")}
-      >
+      <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             {PAGE_TABS.map((tab) => {
@@ -3434,7 +3468,7 @@ export default function CreateProductPage() {
         ) : null}
 
         {isEbayMarketplace ? (
-          <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <EbaySellerSetupPanel
               account={activeTabMeta.account ?? "JV"}
               draftKey={activeDraftContextKey}
