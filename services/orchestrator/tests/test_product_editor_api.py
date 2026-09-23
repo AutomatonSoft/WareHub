@@ -610,6 +610,10 @@ def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_pa
         "identifiers": {"EAN": []},
         "variations": [{"sku": "DEP-CHAIR-YELLOW", "identifiers": {"EAN": [ean]}}],
     }]
+    gateway.ebay_legacy_index_by_account["dep"] = {
+        "item_id": "205926392508",
+        "listing": gateway.ebay_active_listings_by_account["dep"][0],
+    }
     gateway.ebay_legacy_by_account["dep"] = {"listing": {
         "item_id": "205926392508",
         "price": "99.99",
@@ -656,7 +660,7 @@ def test_product_editor_ebay_legacy_variation_ean_queues_variation_update(tmp_pa
     assert command.payload.quantity == 4
 
 
-def test_product_editor_ebay_discovers_legacy_ean_on_later_active_listing_page(tmp_path):
+def test_product_editor_ebay_discovery_does_not_scan_active_listing_pages(tmp_path):
     client, gateway = _client(tmp_path)
     ean = "4062292372025"
     gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
@@ -676,11 +680,34 @@ def test_product_editor_ebay_discovers_legacy_ean_on_later_active_listing_page(t
 
     assert discovered.status_code == 200
     dep = next(target for target in discovered.json()["groups"][0]["targets"] if target["id"] == "EBAY_DEP")
+    assert dep["status"] == "missing"
+    assert dep["warnings"][0]["code"] == "product_editor_ebay_legacy_index_pending"
+    assert gateway.ebay_active_listing_page_calls == []
+
+
+def test_product_editor_ebay_discovers_indexed_legacy_ean(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4062292372025"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_legacy_index_by_account["dep"] = {
+        "item_id": "205926392508",
+        "listing": {
+            "item_id": "205926392508",
+            "identifiers": {"EAN": [ean]},
+            "variations": [],
+        },
+    }
+
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": ean, "active_group": "EBAY"},
+    )
+
+    assert discovered.status_code == 200
+    dep = next(target for target in discovered.json()["groups"][0]["targets"] if target["id"] == "EBAY_DEP")
     assert dep["status"] == "found"
-    assert dep["metadata"]["listing_mode"] == "legacy"
     assert dep["metadata"]["item_id"] == "205926392508"
-    assert dep["metadata"]["page"] == 2
-    assert gateway.ebay_active_listing_page_calls[-2:] == [("dep", 1), ("dep", 2)]
+    assert gateway.ebay_active_listing_page_calls == []
 
 
 def test_product_editor_ebay_plan_accepts_verified_explicit_legacy_item_outside_first_page(tmp_path):
