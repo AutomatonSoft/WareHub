@@ -291,7 +291,6 @@ def _execute_inventory_operation(
     quantity: int | None,
     price: str | None,
     currency: str,
-    legacy_item: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if operation not in _INVENTORY_OPERATIONS:
         raise EbayApiError("Unsupported Inventory API listing operation.", status_code=400)

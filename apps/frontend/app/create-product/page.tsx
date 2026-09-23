@@ -1256,6 +1256,7 @@ export default function CreateProductPage() {
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
   const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft>>>>({});
   const ebayDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<EbayCreateFields>>>>({});
+  const ebayAutofillSourceByTabRef = useRef<Partial<Record<CreateProductTab, string>>>({});
   const [ottoCategoryByTab, setOttoCategoryByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoCategoryNameByTab, setOttoCategoryNameByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
   const [ottoProductsByProfile, setOttoProductsByProfile] = useState<Partial<Record<OttoProfile, Record<string, unknown>>>>({});
@@ -1651,11 +1652,20 @@ export default function CreateProductPage() {
   const activeEbayDraftSnapshot = ebayDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
     ? ebayDraftRefByTab.current[activeTab]
     : undefined;
-  const activeEbayInitialFields: EbayCreateFields = activeEbayDraftSnapshot?.draft ?? {
-    ean: controller.ean,
-    title: controller.productName,
-    description: "",
-    price: controller.price,
+  const activeEbaySourceSnapshot = isEbayMarketplace
+    && controller.activeMainEan
+    && controller.ean === controller.activeMainEan
+    && controller.sourceSnapshot
+    && (activeTabMeta.sourceSite === "XL"
+      ? controller.sourceSnapshot.siteKey === CREATE_PRODUCT_XL_DEFAULT_SITE_KEY
+      : controller.sourceSnapshot.siteKey.startsWith("JV_"))
+      ? controller.sourceSnapshot
+      : null;
+  const activeEbayInitialFields = useMemo<EbayCreateFields>(() => activeEbayDraftSnapshot?.draft ?? ({
+    ean: controller.activeMainEan || controller.ean,
+    title: activeEbaySourceSnapshot?.productName || (controller.activeMainEan ? "" : controller.productName),
+    description: activeEbaySourceSnapshot?.description || "",
+    price: activeEbaySourceSnapshot?.price || (controller.activeMainEan ? "" : controller.price),
     quantity: "1",
     condition: "NEW",
     categoryId: "",
@@ -1664,7 +1674,7 @@ export default function CreateProductPage() {
     fulfillmentPolicyId: "",
     paymentPolicyId: "",
     returnPolicyId: "",
-  };
+  }), [activeEbayDraftSnapshot?.draft, activeEbaySourceSnapshot, controller.activeMainEan, controller.ean, controller.price, controller.productName]);
   const activeEbayDraftVersion = ebayDraftVersionByTab[activeTab] ?? 0;
   const activeHoodSnapshot = controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
     ? controller.sourceSnapshot
@@ -1751,6 +1761,7 @@ export default function CreateProductPage() {
     kauflandDraftRefByTab.current = {};
     ottoDraftRefByTab.current = {};
     ebayDraftRefByTab.current = {};
+    ebayAutofillSourceByTabRef.current = {};
     setEbayDraftVersionByTab({});
     hoodPublishDraftRef.current = null;
     setReservedMarketplaceEans({});
@@ -1762,6 +1773,32 @@ export default function CreateProductPage() {
     setActiveTabGalleryImageIdByTab({});
     removedSourceGalleryItemIdsByTabRef.current = {};
   }, [activeDraftContextKey]);
+
+  useEffect(() => {
+    if (!activeEbaySourceSnapshot) return;
+    const sourceKey = `${activeDraftContextKey}:${controller.activeMainEan}:${activeEbaySourceSnapshot.siteKey}:${activeEbaySourceSnapshot.sourceProductId ?? ""}`;
+    if (ebayAutofillSourceByTabRef.current[activeTab] === sourceKey) return;
+
+    const existingDraft = ebayDraftRefByTab.current[activeTab];
+    const current = existingDraft?.sourceKey === activeDraftContextKey
+      ? existingDraft.draft
+      : activeEbayInitialFields;
+    ebayDraftRefByTab.current[activeTab] = {
+      sourceKey: activeDraftContextKey,
+      draft: {
+        ...current,
+        ean: current.ean || controller.activeMainEan,
+        title: current.title || activeEbaySourceSnapshot.productName,
+        description: current.description || activeEbaySourceSnapshot.description,
+        price: current.price || activeEbaySourceSnapshot.price,
+      },
+    };
+    ebayAutofillSourceByTabRef.current[activeTab] = sourceKey;
+    setEbayDraftVersionByTab((current) => ({
+      ...current,
+      [activeTab]: (current[activeTab] ?? 0) + 1,
+    }));
+  }, [activeDraftContextKey, activeEbayInitialFields, activeEbaySourceSnapshot, activeTab, controller.activeMainEan]);
 
   useEffect(() => {
     const kidNumber = controller.kidContext?.kidNumber.trim() || "";
