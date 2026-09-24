@@ -176,6 +176,96 @@ class EbayLegacyUpdatePayloadTests(SimpleTestCase):
 
 class EbayListingOperationTests(TestCase):
     @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_fetch_discovers_missing_index_across_seller_search(self, client_class):
+        client = client_class.return_value
+        client.seller_user_id.return_value = "depotum-de"
+        client.search_listing_item_ids.return_value = ["318190872406"]
+        client.listing.return_value = {
+            "item_id": "318190872406", "seller": "depotum-de", "listing_status": "Active",
+            "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["4067282464896"]}, "variations": [],
+        }
+
+        result = execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="legacy",
+            source_ean="4067282464896",
+        )
+
+        self.assertEqual(result["item_id"], "318190872406")
+        listing = EbayListing.objects.get(account="dep", item_id="318190872406")
+        self.assertEqual(listing.source_ean, "4067282464896")
+        self.assertEqual(listing.legacy_ean_to_variation_sku, {"4067282464896": ""})
+        client.search_listing_item_ids.assert_called_once_with(
+            marketplace_id="EBAY_DE", seller_user_id="depotum-de", source_ean="4067282464896",
+        )
+
+        execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="legacy",
+            source_ean="4067282464896",
+        )
+        client.search_listing_item_ids.assert_called_once()
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_search_rejects_other_seller(self, client_class):
+        client = client_class.return_value
+        client.seller_user_id.return_value = "depotum-de"
+        client.search_listing_item_ids.return_value = ["318190872406"]
+        client.listing.return_value = {
+            "item_id": "318190872406", "seller": "another-seller", "listing_status": "Active",
+            "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["4067282464896"]}, "variations": [],
+        }
+
+        with self.assertRaises(EbayApiError) as error:
+            execute_listing_operation(
+                account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="legacy",
+                source_ean="4067282464896",
+            )
+
+        self.assertEqual(error.exception.status_code, 404)
+        self.assertFalse(EbayListing.objects.filter(item_id="318190872406").exists())
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_search_ignores_keyword_false_positive(self, client_class):
+        client = client_class.return_value
+        client.seller_user_id.return_value = "depotum-de"
+        client.search_listing_item_ids.return_value = ["206094766893", "318190872406"]
+        client.listing.side_effect = [
+            {"item_id": "206094766893", "seller": "depotum-de", "listing_status": "Active",
+             "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["other-ean"]}, "variations": []},
+            {"item_id": "318190872406", "seller": "depotum-de", "listing_status": "Active",
+             "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["4067282464896"]}, "variations": []},
+            {"item_id": "318190872406", "seller": "depotum-de", "listing_status": "Active",
+             "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["4067282464896"]}, "variations": []},
+        ]
+
+        result = execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="legacy",
+            source_ean="4067282464896",
+        )
+
+        self.assertEqual(result["item_id"], "318190872406")
+        self.assertFalse(EbayListing.objects.filter(item_id="206094766893").exists())
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_legacy_search_rejects_multiple_matching_listings(self, client_class):
+        client = client_class.return_value
+        client.seller_user_id.return_value = "depotum-de"
+        client.search_listing_item_ids.return_value = ["318190872406", "318190872407"]
+        client.listing.side_effect = [
+            {"item_id": item_id, "seller": "depotum-de", "listing_status": "Active",
+             "listing_type": "FixedPriceItem", "identifiers": {"EAN": ["4067282464896"]}, "variations": []}
+            for item_id in client.search_listing_item_ids.return_value
+        ]
+
+        with self.assertRaises(EbayApiError) as error:
+            execute_listing_operation(
+                account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="legacy",
+                source_ean="4067282464896",
+            )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertFalse(EbayListing.objects.filter(source_ean="4067282464896").exists())
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_legacy_index_page_persists_listing_and_variation_eans(self, client_class):
         client_class.return_value.active_listings.return_value = {
             "total_pages": "2",

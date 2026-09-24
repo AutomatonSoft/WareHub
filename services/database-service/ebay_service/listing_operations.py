@@ -641,14 +641,15 @@ def _execute_legacy_operation(
 ) -> dict[str, Any]:
     if operation not in _LEGACY_OPERATIONS:
         raise EbayApiError("Legacy listings can only be fetched, updated, unpublished, or relisted.", status_code=400)
+    client = EbayOAuthClient()
     item_id, listing = _resolve_legacy_listing(
         account=account,
         marketplace_id=marketplace_id,
         item_id=item_id,
         source_ean=source_ean,
+        client=client,
     )
     variation_sku = variation_sku or _reconciled_variation_sku(listing=listing, source_ean=source_ean)
-    client = EbayOAuthClient()
     if operation == "fetch":
         return {
             "account": account,
@@ -784,6 +785,7 @@ def _resolve_legacy_listing(
     marketplace_id: str,
     item_id: str,
     source_ean: str,
+    client: EbayOAuthClient,
 ) -> tuple[str, EbayListing | None]:
     if item_id:
         return item_id, EbayListing.objects.filter(account=account, marketplace_id=marketplace_id, item_id=item_id).first()
@@ -799,11 +801,7 @@ def _resolve_legacy_listing(
         .exclude(item_id="")[:2]
     )
     if not listings:
-        raise EbayApiError(
-            "No reconciled legacy listing exists for this EAN. Reconcile it before submitting the job.",
-            status_code=409,
-            details={"source_ean": source_ean},
-        )
+        return _discover_legacy_listing(account=account, marketplace_id=marketplace_id, source_ean=source_ean, client=client)
     if len(listings) > 1:
         raise EbayApiError(
             "Multiple reconciled legacy listings exist for this EAN; provide item_id explicitly.",
@@ -811,6 +809,58 @@ def _resolve_legacy_listing(
             details={"source_ean": source_ean, "item_ids": [listing.item_id for listing in listings]},
         )
     return listings[0].item_id, listings[0]
+
+
+def _discover_legacy_listing(
+    *, account: str, marketplace_id: str, source_ean: str, client: EbayOAuthClient,
+) -> tuple[str, EbayListing]:
+    seller_user_id = client.seller_user_id(account=account, marketplace_id=marketplace_id)
+    matches: list[tuple[dict[str, Any], str]] = []
+    for candidate_id in client.search_listing_item_ids(
+        marketplace_id=marketplace_id, seller_user_id=seller_user_id, source_ean=source_ean,
+    ):
+        if EbayListing.objects.filter(
+            account=account, marketplace_id=marketplace_id, item_id=candidate_id,
+            listing_mode=EbayListing.ListingMode.INVENTORY,
+        ).exists():
+            continue
+        candidate = client.listing(account=account, item_id=candidate_id, marketplace_id=marketplace_id)
+        if str(candidate.get("seller") or "").casefold() != seller_user_id.casefold():
+            continue
+        if candidate.get("listing_status") != "Active" or candidate.get("listing_type") != "FixedPriceItem":
+            continue
+        matches.extend(_legacy_ean_matches(listings=[candidate], source_ean=source_ean))
+    if not matches:
+        raise EbayApiError(
+            "No active legacy listing with this EAN was found for this seller.",
+            status_code=404,
+            details={"source_ean": source_ean},
+            operation="search_listings",
+        )
+    if len(matches) > 1:
+        raise EbayApiError(
+            "Multiple legacy listings match this EAN; select an item ID explicitly.",
+            status_code=409,
+            details={"source_ean": source_ean, "item_ids": [match[0]["item_id"] for match in matches]},
+            operation="search_listings",
+        )
+    candidate, variation_sku = matches[0]
+    candidate_id = str(candidate.get("item_id") or "").strip()
+    if not candidate_id:
+        raise EbayApiError("eBay listing search returned no item ID.", status_code=502, operation="search_listings")
+    with transaction.atomic():
+        listing, _ = EbayListing.objects.get_or_create(
+            account=account, marketplace_id=marketplace_id, item_id=candidate_id,
+            defaults={"listing_mode": EbayListing.ListingMode.LEGACY},
+        )
+        if listing.listing_mode != EbayListing.ListingMode.LEGACY:
+            raise EbayApiError("Matching listing is managed by the Inventory API.", status_code=409, operation="search_listings")
+        listing.source_ean = source_ean
+        listing.legacy_ean_to_variation_sku = {**(listing.legacy_ean_to_variation_sku or {}), source_ean: variation_sku}
+        listing.status = EbayListing.ListingStatus.ACTIVE
+        listing.last_error = {}
+        listing.save()
+    return candidate_id, listing
 
 
 def _save_listing(

@@ -3,6 +3,7 @@ import binascii
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -697,6 +698,71 @@ class EbayOAuthClient:
                 operation="get_listing",
             ) from error
         return _listing_payload(response=response, marketplace_id=marketplace_id)
+
+    def seller_user_id(self, *, account: str, marketplace_id: str) -> str:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("Seller lookup is currently available only for EBAY_DE.", status_code=400)
+        access_token = self._seller_access_token(account=account)
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=b'<?xml version="1.0" encoding="utf-8"?><GetUserRequest xmlns="urn:ebay:apis:eBLBaseComponents"/>',
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GetUser",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": access_token,
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+            root = ElementTree.fromstring(response.content)
+        except requests.RequestException as error:
+            raise EbayApiError("eBay seller lookup failed.", operation="get_user") from error
+        except ElementTree.ParseError as error:
+            raise EbayApiError("eBay seller lookup returned invalid XML.", status_code=502, operation="get_user") from error
+        namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+        if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+            raise EbayApiError("eBay seller lookup returned an error response.", status_code=response.status_code, operation="get_user")
+        user_id = _xml_text(root, "ebay:User/ebay:UserID", namespace)
+        if not user_id:
+            raise EbayApiError("eBay seller lookup returned no user ID.", status_code=502, operation="get_user")
+        return user_id
+
+    def search_listing_item_ids(self, *, marketplace_id: str, seller_user_id: str, source_ean: str) -> list[str]:
+        if marketplace_id not in self._TRADING_SITE_IDS:
+            raise EbayApiError("Listing search is currently available only for EBAY_DE.", status_code=400)
+        token = _application_token(config=self._config, session=self._session)
+        item_ids: list[str] = []
+        for search_parameter in ("gtin", "q"):
+            try:
+                response = self._session.get(
+                    f"{self._config.base_url}/buy/browse/v1/item_summary/search",
+                    params={search_parameter: source_ean, "filter": f"sellers:{{{seller_user_id}}}", "limit": "20"},
+                    headers={"Accept": "application/json", "Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": marketplace_id},
+                    timeout=(self._config.connect_timeout, self._config.read_timeout),
+                )
+            except requests.RequestException as error:
+                raise EbayApiError("eBay listing search failed.", operation="search_listings") from error
+            payload = _response_payload(response, "eBay listing search")
+            summaries = payload.get("itemSummaries") or []
+            try:
+                total = int(payload.get("total") or 0)
+            except (TypeError, ValueError) as error:
+                raise EbayApiError("eBay listing search returned an invalid total.", status_code=502, operation="search_listings") from error
+            if not isinstance(summaries, list) or total > 20:
+                raise EbayApiError("eBay listing search returned too many or invalid results.", status_code=502, operation="search_listings")
+            for summary in summaries:
+                if not isinstance(summary, dict):
+                    continue
+                item_id = str(summary.get("legacyItemId") or "").strip()
+                if not item_id:
+                    match = re.fullmatch(r"v1\|(\d+)\|[^|]+", str(summary.get("itemId") or ""))
+                    item_id = match.group(1) if match else ""
+                if item_id.isdecimal() and item_id not in item_ids:
+                    item_ids.append(item_id)
+        return item_ids
 
     def active_listings(self, *, account: str, marketplace_id: str, page: int, limit: int) -> dict[str, Any]:
         site_id = self._TRADING_SITE_IDS.get(marketplace_id)
