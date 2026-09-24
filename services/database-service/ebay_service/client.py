@@ -505,6 +505,21 @@ class EbayOAuthClient:
             ),
         )
 
+    def upload_image_from_url(self, *, account: str, image_url: str) -> str:
+        source_url = _required(image_url, "image_url")
+        if not source_url.startswith("https://"):
+            raise EbayApiError("eBay images must use HTTPS.", status_code=400)
+        payload = self._seller_post(
+            token=self._seller_access_token(account=account),
+            path="/commerce/media/v1_beta/image/create_image_from_url",
+            payload={"imageUrl": source_url},
+            operation="create_image_from_url",
+        )
+        eps_url = str(payload.get("imageUrl") or "").strip()
+        if not eps_url.startswith("https://"):
+            raise EbayApiError("eBay Media API did not return an EPS image URL.", status_code=502, operation="create_image_from_url")
+        return eps_url
+
     def revise_legacy_fixed_price_variation(
         self,
         *,

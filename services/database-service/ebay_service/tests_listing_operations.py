@@ -116,6 +116,64 @@ class EbayInventoryFetchTests(SimpleTestCase):
         self.assertEqual(result["offers"], [])
 
 
+class EbayLegacyUpdatePayloadTests(SimpleTestCase):
+    @patch("ebay_service.listing_operations._save_listing")
+    @patch("ebay_service.listing_operations._resolve_legacy_listing", return_value=("205926392508", None))
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_omits_unchanged_images(self, client_class, _resolve_listing, _save_listing):
+        client = client_class.return_value
+        client.listing.return_value = {
+            "listing_type": "FixedPriceItem",
+            "has_variations": False,
+            "title": "Chair",
+            "image_urls": ["https://i.ebayimg.com/images/g/chair/s-l1600.jpg"],
+            "item_specifics": {"Marke": ["Depotum"]},
+        }
+
+        execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="update", listing_mode="legacy",
+            item_id="205926392508", legacy_item={
+                "title": "Chair",
+                "image_urls": ["https://i.ebayimg.com/images/g/chair/s-l1600.jpg"],
+                "item_specifics": {"Marke": ["Depotum"], "Farbe": ["Gelb"]},
+            },
+        )
+
+        self.assertEqual(client.revise_legacy_fixed_price_listing.call_args.kwargs["legacy_item"], {
+            "item_specifics": {"Marke": ["Depotum"], "Farbe": ["Gelb"]},
+        })
+
+    @patch("ebay_service.listing_operations._save_listing")
+    @patch("ebay_service.listing_operations._resolve_legacy_listing", return_value=("205926392508", None))
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_keeps_changed_images(self, client_class, _resolve_listing, _save_listing):
+        client = client_class.return_value
+        client.upload_image_from_url.return_value = "https://i.ebayimg.com/images/g/new/s-l1600.jpg"
+        client.listing.return_value = {
+            "listing_type": "FixedPriceItem",
+            "has_variations": False,
+            "image_urls": ["https://i.ebayimg.com/images/g/old/s-l1600.jpg"],
+        }
+
+        execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="update", listing_mode="legacy",
+            item_id="205926392508", legacy_item={"image_urls": [
+                "https://i.ebayimg.com/images/g/old/s-l1600.jpg",
+                "https://warehub.example/chair.jpg",
+            ]},
+        )
+
+        self.assertEqual(client.revise_legacy_fixed_price_listing.call_args.kwargs["legacy_item"], {
+            "image_urls": [
+                "https://i.ebayimg.com/images/g/old/s-l1600.jpg",
+                "https://i.ebayimg.com/images/g/new/s-l1600.jpg",
+            ],
+        })
+        client.upload_image_from_url.assert_called_once_with(
+            account="dep", image_url="https://warehub.example/chair.jpg",
+        )
+
+
 class EbayListingOperationTests(TestCase):
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_legacy_index_page_persists_listing_and_variation_eans(self, client_class):

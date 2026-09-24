@@ -238,6 +238,53 @@ class JVRoutesSmokeTest(SimpleTestCase):
         self.assertIn("INSERT INTO `shopartikelbestaende`", sql)
         self.assertEqual(values, (123, 1, 0, 0, timestamp, "default"))
 
+    @patch("jv_services.source_writer_jv._sync_jv_supplier_liefernr")
+    @patch("jv_services.source_writer_jv._resolve_jv_lieferzeit_id", return_value=11)
+    @patch("jv_services.source_writer_jv._table_has_column", return_value=True)
+    @patch("jv_services.source_writer_jv._table_exists", return_value=True)
+    def test_jv_price_update_invalidates_only_its_article_preview(
+        self,
+        _mock_table_exists,
+        _mock_table_has_column,
+        _mock_lieferzeit,
+        _mock_supplier,
+    ):
+        from unittest.mock import MagicMock
+
+        from jv_services.source_writer_jv import _push_product_to_jv_source
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = (123,)
+        product = SimpleNamespace(
+            source_product_id=123,
+            source_model="4062292372025",
+            source_sku="4062292372025",
+            ean="4062292372025",
+            site_key="JV_DE",
+            image="",
+            status=True,
+            price="747",
+        )
+
+        _push_product_to_jv_source(cursor, product, changed_scalar_fields={"price"}, changed_relations=set())
+
+        statements = [call.args for call in cursor.execute.call_args_list]
+        price_insert = next(index for index, (sql, _) in enumerate(statements) if "INSERT INTO `shopartikelpreise`" in sql)
+        self.assertEqual(
+            statements[price_insert + 1],
+            ("DELETE FROM `shopcache2_article_preview` WHERE id = %s", (123,)),
+        )
+
+        cursor.reset_mock()
+        _push_product_to_jv_source(cursor, product, changed_scalar_fields={"status"}, changed_relations=set())
+        self.assertFalse(any("shopcache2_article_preview" in call.args[0] for call in cursor.execute.call_args_list))
+
+        cursor.reset_mock()
+        _mock_table_exists.side_effect = lambda _cursor, table: table != "shopcache2_article_preview"
+        _push_product_to_jv_source(cursor, product, changed_scalar_fields={"price"}, changed_relations=set())
+        self.assertTrue(any("INSERT INTO `shopartikelpreise`" in call.args[0] for call in cursor.execute.call_args_list))
+        self.assertFalse(any("shopcache2_article_preview" in call.args[0] for call in cursor.execute.call_args_list))
+
     def test_jv_shopmedia_sync_supports_sortierung_schema(self):
         from types import SimpleNamespace
         from unittest.mock import MagicMock, call, patch
