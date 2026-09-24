@@ -911,7 +911,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ebayFields.description,
         ebayFields.condition,
         ebayFields.categoryId,
-        ebayFields.merchantLocationKey,
+        ...(selectedSiteIds.includes("ebay-jv") ? [ebayFields.merchantLocationKey] : []),
         ebayFields.fulfillmentPolicyId,
         ebayFields.paymentPolicyId,
         ebayFields.returnPolicyId,
@@ -1103,11 +1103,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         ebay_offer: {
           format: "FIXED_PRICE",
           categoryId: ebayFields.categoryId.trim(),
+          ...(selectedSiteIds.includes("ebay-jv") ? { merchantLocationKey: ebayFields.merchantLocationKey.trim() } : {}),
           ...(ebayFields.secondaryCategoryId.trim() ? { secondaryCategoryId: ebayFields.secondaryCategoryId.trim() } : {}),
           ...(ebayFields.storeCategoryNamesText.trim() ? { storeCategoryNames: ebayFields.storeCategoryNamesText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) } : {}),
           ...(ebayFields.listingDescription.trim() ? { listingDescription: ebayFields.listingDescription.trim() } : {}),
           ...(ebayRegulatory ? { regulatory: ebayRegulatory } : {}),
-          merchantLocationKey: ebayFields.merchantLocationKey.trim(),
           listingDuration: "GTC",
           listingPolicies: {
             fulfillmentPolicyId: ebayFields.fulfillmentPolicyId.trim(),

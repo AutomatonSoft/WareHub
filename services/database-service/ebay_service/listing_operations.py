@@ -13,6 +13,49 @@ from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
 
 _INVENTORY_OPERATIONS = frozenset({"fetch", "publish", "update", "unpublish", "relist"})
 _LEGACY_OPERATIONS = frozenset({"fetch", "update", "unpublish", "relist"})
+_DEFAULT_WAREHOUSE_POSTAL_CODE = "88483"
+_DEFAULT_WAREHOUSE_COUNTRY = "DE"
+
+
+def _default_merchant_location_key(*, client: EbayOAuthClient, account: str) -> str:
+    key = f"warehub-{account}-de-{_DEFAULT_WAREHOUSE_POSTAL_CODE}"
+    payload = client.inventory_locations(account=account)
+    locations = payload.get("locations") if isinstance(payload, dict) else None
+    if not isinstance(locations, list):
+        raise EbayApiError("eBay inventory locations response is invalid.", status_code=502, operation="inventory_locations")
+    if int(payload.get("total") or 0) > len(locations):
+        raise EbayApiError("eBay inventory locations require pagination before choosing a warehouse.", status_code=409, operation="inventory_locations")
+    def matches_address(location: object) -> bool:
+        if not isinstance(location, dict) or not str(location.get("merchantLocationKey") or "").strip():
+            return False
+        details = location.get("location")
+        address = details.get("address") if isinstance(details, dict) else None
+        return isinstance(address, dict) and (
+            str(address.get("postalCode") or "").strip() == _DEFAULT_WAREHOUSE_POSTAL_CODE
+            and str(address.get("country") or "").strip().upper() == _DEFAULT_WAREHOUSE_COUNTRY
+        )
+
+    matching = [location for location in locations if matches_address(location)]
+    enabled = [
+        location for location in matching
+        if str(location.get("merchantLocationStatus") or "ENABLED").upper() == "ENABLED"
+        and (not location.get("locationTypes") or "WAREHOUSE" in location["locationTypes"])
+    ]
+    if len(enabled) == 1:
+        return str(enabled[0]["merchantLocationKey"]).strip()
+    if len(enabled) > 1:
+        for preferred_key in ("DE_88483", key):
+            if any(location["merchantLocationKey"] == preferred_key for location in enabled):
+                return preferred_key
+    if matching or enabled:
+        raise EbayApiError("eBay default warehouse is ambiguous or disabled.", status_code=409, operation="inventory_locations")
+    client.create_inventory_location(
+        account=account,
+        merchant_location_key=key,
+        name=f"WareHub {account.upper()} 88483",
+        address={"postalCode": _DEFAULT_WAREHOUSE_POSTAL_CODE, "country": _DEFAULT_WAREHOUSE_COUNTRY},
+    )
+    return key
 
 
 def execute_listing_operation(
@@ -322,12 +365,17 @@ def _execute_inventory_operation(
             price=price,
             currency=currency,
         )
+        use_default_location = account in {"xl", "dep"} and not str(normalized_offer.get("merchantLocationKey") or "").strip()
+        if use_default_location:
+            normalized_offer["merchantLocationKey"] = f"warehub-{account}-de-{_DEFAULT_WAREHOUSE_POSTAL_CODE}"
         _validate_inventory_publish_payload(inventory_item=inventory_item, offer=normalized_offer)
         _validate_inventory_publish_taxonomy(
             inventory_item=inventory_item,
             category_id=str(normalized_offer.get("categoryId") or ""),
             marketplace_id=marketplace_id,
         )
+        if use_default_location:
+            normalized_offer["merchantLocationKey"] = _default_merchant_location_key(client=client, account=account)
         client.create_or_replace_inventory_item(
             account=account,
             sku=sku,

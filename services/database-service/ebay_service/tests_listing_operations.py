@@ -5,10 +5,97 @@ from django.test import SimpleTestCase, TestCase
 from database.models import EbayListing
 
 from .client import EbayApiError
-from .listing_operations import execute_listing_operation, index_all_legacy_listings, index_legacy_listing_page, reconcile_legacy_listing
+from .listing_operations import _default_merchant_location_key, execute_listing_operation, index_all_legacy_listings, index_legacy_listing_page, reconcile_legacy_listing
 
 
 class EbayInventoryFetchTests(SimpleTestCase):
+    @patch("ebay_service.listing_operations._save_listing")
+    @patch("ebay_service.listing_operations.EbayListing.objects.filter")
+    @patch("ebay_service.listing_operations.EbayTaxonomyClient")
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_publish_supplies_hidden_default_warehouse(self, client_class, taxonomy_client_class, filter_mock, _save_listing):
+        client = client_class.return_value
+        filter_mock.return_value.first.return_value = None
+        client.inventory_locations.return_value = {"locations": [], "total": 0}
+        client.offers_by_sku.return_value = []
+        client.create_offer.return_value = {"offerId": "offer-1"}
+        client.publish_offer.return_value = {"listingId": "listing-1"}
+        taxonomy_client_class.return_value.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": True}}
+        taxonomy_client_class.return_value.category_aspects.return_value = {"aspects": []}
+
+        execute_listing_operation(
+            account="dep", marketplace_id="EBAY_DE", operation="publish", listing_mode="inventory",
+            sku="4062292372025", source_ean="4062292372025", quantity=1, price="749.00",
+            inventory_item={"condition": "NEW", "product": {
+                "title": "Chair", "description": "Chair description", "aspects": {"Brand": ["Depotum"]},
+                "imageUrls": ["https://example.test/chair.jpg"],
+            }},
+            offer={"format": "FIXED_PRICE", "categoryId": "123", "listingDuration": "GTC", "listingPolicies": {
+                "fulfillmentPolicyId": "fulfillment-1", "paymentPolicyId": "payment-1", "returnPolicyId": "return-1",
+            }},
+        )
+
+        self.assertEqual(client.create_offer.call_args.kwargs["offer"]["merchantLocationKey"], "warehub-dep-de-88483")
+
+    @patch("ebay_service.listing_operations.EbayListing.objects.filter")
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_inventory_publish_requires_jv_warehouse(self, client_class, filter_mock):
+        filter_mock.return_value.first.return_value = None
+
+        with self.assertRaises(EbayApiError):
+            execute_listing_operation(
+                account="jv", marketplace_id="EBAY_DE", operation="publish", listing_mode="inventory",
+                sku="4062292372025", source_ean="4062292372025", quantity=1, price="749.00",
+                inventory_item={"condition": "NEW", "product": {
+                    "title": "Chair", "description": "Chair description", "aspects": {"Brand": ["Depotum"]},
+                    "imageUrls": ["https://example.test/chair.jpg"],
+                }},
+                offer={"format": "FIXED_PRICE", "categoryId": "123", "listingDuration": "GTC", "listingPolicies": {
+                    "fulfillmentPolicyId": "fulfillment-1", "paymentPolicyId": "payment-1", "returnPolicyId": "return-1",
+                }},
+            )
+
+        client_class.return_value.inventory_locations.assert_not_called()
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_default_warehouse_reuses_matching_account_location(self, client_class):
+        client = client_class.return_value
+        client.inventory_locations.return_value = {"locations": [{
+            "merchantLocationKey": "xl-existing",
+            "merchantLocationStatus": "ENABLED",
+            "locationTypes": ["WAREHOUSE"],
+            "location": {"address": {"postalCode": "88483", "country": "DE"}},
+        }]}
+
+        self.assertEqual(_default_merchant_location_key(client=client, account="xl"), "xl-existing")
+        client.create_inventory_location.assert_not_called()
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_default_warehouse_creates_account_location_when_missing(self, client_class):
+        client = client_class.return_value
+        client.inventory_locations.return_value = {"locations": [], "total": 0}
+
+        self.assertEqual(_default_merchant_location_key(client=client, account="dep"), "warehub-dep-de-88483")
+        client.create_inventory_location.assert_called_once_with(
+            account="dep",
+            merchant_location_key="warehub-dep-de-88483",
+            name="WareHub DEP 88483",
+            address={"postalCode": "88483", "country": "DE"},
+        )
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    def test_default_warehouse_rejects_disabled_location(self, client_class):
+        client = client_class.return_value
+        client.inventory_locations.return_value = {"locations": [{
+            "merchantLocationKey": "dep-disabled",
+            "merchantLocationStatus": "DISABLED",
+            "location": {"address": {"postalCode": "88483", "country": "DE"}},
+        }]}
+
+        with self.assertRaises(EbayApiError):
+            _default_merchant_location_key(client=client, account="dep")
+        client.create_inventory_location.assert_not_called()
+
     @patch("ebay_service.listing_operations.EbayListing.objects.filter")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_inventory_fetch_does_not_require_legacy_item(self, client_class, filter_mock):
