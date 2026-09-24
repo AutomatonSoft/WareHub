@@ -6,6 +6,7 @@ from src.sofort_orchestrator.api.product_editor_routes import ProductEditorDeps
 from src.sofort_orchestrator.api.routes import Deps
 from src.sofort_orchestrator.domain.models import ChannelResult, ErrorContract, FinalStatus, JobStatus, OrchestrateResponse
 from src.sofort_orchestrator.application.orchestrator_service import OrchestratorService
+from src.sofort_orchestrator.application.product_editor_ebay_flow import _legacy_available_quantity
 from src.sofort_orchestrator.application.product_editor_service import ProductEditorService
 from src.sofort_orchestrator.infra.http_client import RetryExhaustedError
 from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
@@ -756,7 +757,9 @@ def test_product_editor_ebay_loads_verified_explicit_legacy_item_outside_first_p
             "identifiers": {"EAN": [ean]},
             "price": "749.00",
             "currency": "EUR",
-            "quantity_available": "1",
+            "quantity_available": "",
+            "quantity": "1",
+            "quantity_sold": "0",
         }
     }
 
@@ -776,6 +779,12 @@ def test_product_editor_ebay_loads_verified_explicit_legacy_item_outside_first_p
     assert draft["target_id"] == "EBAY_DEP"
     assert draft["ebay_listing_mode"] == "legacy"
     assert draft["ebay_item_id"] == item_id
+    assert draft["quantity"] == 1
+
+
+def test_product_editor_ebay_legacy_quantity_prefers_explicit_available():
+    assert _legacy_available_quantity({"quantity_available": "0", "quantity": "7", "quantity_sold": "3"}) == 0
+    assert _legacy_available_quantity({"quantity_available": "", "quantity": "7", "quantity_sold": "3"}) == 4
 
 
 def test_product_editor_otto_apply_merges_price_change_with_current_target_payload(tmp_path):

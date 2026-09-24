@@ -681,6 +681,17 @@ def _execute_legacy_operation(
                 currency=str(variation.get("currency") or currency).strip().upper(),
             )
         else:
+            legacy_changes = {
+                key: value for key, value in (legacy_item or {}).items()
+                if value != current.get(key)
+            }
+            image_urls = legacy_changes.get("image_urls")
+            if isinstance(image_urls, list) and image_urls:
+                current_urls = current.get("image_urls") or []
+                legacy_changes["image_urls"] = [
+                    url if url in current_urls else client.upload_image_from_url(account=account, image_url=url)
+                    for url in image_urls
+                ]
             client.revise_legacy_fixed_price_listing(
                 account=account,
                 item_id=item_id,
@@ -688,7 +699,7 @@ def _execute_legacy_operation(
                 quantity=quantity,
                 price=price,
                 currency=currency,
-                legacy_item=legacy_item,
+                legacy_item=legacy_changes,
             )
         status = EbayListing.ListingStatus.ACTIVE
         result = {"item_id": item_id}
