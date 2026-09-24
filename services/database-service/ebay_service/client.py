@@ -283,6 +283,24 @@ class EbayOAuthClient:
             operation="create_inventory_location",
         )
 
+    def inventory_locations(self, *, account: str, offset: int = 0) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_get(
+            token=access_token,
+            path="/sell/inventory/v1/location",
+            params={"limit": "100", "offset": str(offset)},
+            operation="inventory_locations",
+        )
+
+    def inventory_location(self, *, account: str, merchant_location_key: str) -> dict[str, Any]:
+        access_token = self._seller_access_token(account=account)
+        return self._seller_get(
+            token=access_token,
+            path=f"/sell/inventory/v1/location/{quote(merchant_location_key, safe='')}",
+            params={},
+            operation="inventory_location",
+        )
+
     def opt_in_to_selling_policy_management(self, *, account: str) -> None:
         access_token = self._seller_access_token(account=account)
         self._seller_post(
