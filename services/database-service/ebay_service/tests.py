@@ -4,7 +4,7 @@ import json
 import os
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
@@ -338,6 +338,51 @@ class EbayListingOperationViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         execute_operation.assert_called_once()
+
+
+class EbayLegacySearchClientTests(SimpleTestCase):
+    @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
+    def test_searches_gtin_and_keyword_for_authenticated_seller(self, _load_refresh_token):
+        session = MagicMock()
+        session.post.side_effect = [
+            FakeResponse({"access_token": "seller-token"}),
+            FakeResponse({}, content=b'''<GetUserResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+                <Ack>Success</Ack><User><UserID>depotum-de</UserID></User></GetUserResponse>'''),
+            FakeResponse({"access_token": "app-token"}),
+        ]
+        session.get.side_effect = [
+            FakeResponse({"total": 0, "itemSummaries": []}),
+            FakeResponse({"total": 1, "itemSummaries": [{"itemId": "v1|318190872406|0"}]}),
+        ]
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        seller_user_id = client.seller_user_id(account="dep", marketplace_id="EBAY_DE")
+        item_ids = client.search_listing_item_ids(
+            marketplace_id="EBAY_DE", seller_user_id=seller_user_id, source_ean="4067282464896",
+        )
+
+        self.assertEqual(seller_user_id, "depotum-de")
+        self.assertEqual(item_ids, ["318190872406"])
+        self.assertEqual(session.get.call_args_list[0].kwargs["params"]["gtin"], "4067282464896")
+        self.assertEqual(session.get.call_args_list[1].kwargs["params"]["q"], "4067282464896")
+        self.assertEqual(session.get.call_args_list[1].kwargs["params"]["filter"], "sellers:{depotum-de}")
+
+    @patch("ebay_service.client._application_token", return_value="app-token")
+    def test_search_does_not_treat_truncated_results_as_missing(self, _application_token):
+        session = MagicMock()
+        session.get.return_value = FakeResponse({"total": 21, "itemSummaries": []})
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        with self.assertRaises(EbayApiError) as error:
+            client.search_listing_item_ids(marketplace_id="EBAY_DE", seller_user_id="depotum-de", source_ean="4067282464896")
+
+        self.assertEqual(error.exception.status_code, 502)
 
 
 class EbayTaxonomyClientTests(SimpleTestCase):
