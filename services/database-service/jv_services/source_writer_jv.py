@@ -325,6 +325,8 @@ def _push_product_to_jv_source(
             vals_sql = ", ".join(["%s"] * len(cols))
             vals = [defaults[name] for name in cols]
             cur.execute(f"INSERT INTO `shopartikelpreise` ({cols_sql}) VALUES ({vals_sql})", tuple(vals))
+            if _table_exists(cur, "shopcache2_article_preview"):
+                cur.execute("DELETE FROM `shopcache2_article_preview` WHERE id = %s", (artikelid,))
 
     content_overrides = _extract_jv_content_overrides(jv_overrides)
     content_fields_changed = any(

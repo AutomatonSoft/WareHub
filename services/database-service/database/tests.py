@@ -162,6 +162,58 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(ean_record.kaufland_jv, "4012345678902")
         self.assertTrue(status_record.kaufland_jv)
 
+    def test_jv_mapping_confirmation_uses_kid_id_for_duplicate_numbers(self):
+        other_kid = Kid.objects.create(kid_number=["13234455"], place="OTHER-PLACE")
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "kid_id": other_kid.id,
+                "marketplace": "xljv",
+                "account": "jv",
+                "ean": "4012345678901",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(Ean.objects.filter(kid=self.kid).exists())
+        self.assertEqual(Ean.objects.get(kid=other_kid).jv, "4012345678901")
+        self.assertTrue(EanStatus.objects.get(ean=other_kid).jv)
+
+    def test_jv_mapping_confirmation_rejects_ambiguous_kid_number(self):
+        Kid.objects.create(kid_number=["13234455"], place="OTHER-PLACE")
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "marketplace": "xljv",
+                "account": "jv",
+                "ean": "4012345678901",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(Ean.objects.exists())
+
+    def test_jv_mapping_confirmation_rejects_wrong_kid_id(self):
+        other_kid = Kid.objects.create(kid_number=["OTHER"], place="OTHER-PLACE")
+        response = self.client.post(
+            "/api/v1/marketplace/ean-mappings/confirm/",
+            {
+                "kid_number": "13234455",
+                "kid_id": other_kid.id,
+                "marketplace": "xljv",
+                "account": "jv",
+                "ean": "4012345678901",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(Ean.objects.exists())
+
     def test_kid_marketplace_status_update_changes_only_requested_status(self):
         EanStatus.objects.create(ean=self.kid, jv=True, hood_xl=False)
 

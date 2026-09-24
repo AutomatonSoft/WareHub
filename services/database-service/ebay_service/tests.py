@@ -694,6 +694,23 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(result["listings"][0]["identifiers"], {"EAN": ["4062292372025"]})
 
 
+class EbayMediaImageTests(SimpleTestCase):
+    def test_upload_image_from_url_returns_eps_url(self):
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=FakeSession(),
+        )
+        with patch.object(client, "_seller_access_token", return_value="access-token"), patch.object(
+            client, "_seller_post", return_value={"imageUrl": "https://i.ebayimg.com/images/g/new/s-l1600.jpg"},
+        ) as seller_post:
+            image_url = client.upload_image_from_url(account="dep", image_url="https://warehub.example/chair.jpg")
+
+        self.assertEqual(image_url, "https://i.ebayimg.com/images/g/new/s-l1600.jpg")
+        self.assertEqual(seller_post.call_args.kwargs["path"], "/commerce/media/v1_beta/image/create_image_from_url")
+        self.assertEqual(seller_post.call_args.kwargs["payload"], {"imageUrl": "https://warehub.example/chair.jpg"})
+
+
 class EbayLegacyVariationOperationTests(SimpleTestCase):
     @patch("ebay_service.listing_operations._save_listing", return_value={"status": "active"})
     @patch("ebay_service.listing_operations._resolve_legacy_listing", return_value=("205926392508", None))

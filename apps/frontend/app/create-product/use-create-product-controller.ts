@@ -871,6 +871,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     const hasKauflandSelection = selectedSiteIds.some((siteId) => siteId.startsWith("kaufland-"));
     const hasOttoSelection = selectedSiteIds.some((siteId) => siteId.startsWith("otto-"));
     const hasEbaySelection = selectedSiteIds.some((siteId) => siteId.startsWith("ebay-"));
+    const hasJvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-"));
     const hasXljvSelection = selectedSiteIds.some((siteId) => siteId.startsWith("jvmoebel-") || siteId === "xlmoebel_de");
     const hoodErrors = hasHoodSelection ? validateHoodCreateFields(hoodFields) : {};
     const effectiveKauflandFields = publishDraft?.kauflandFields ?? mainKauflandFields;
@@ -891,6 +892,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
     if ((hasHoodSelection || hasKauflandSelection) && !kidContext?.kidNumber.trim()) {
       showToast("Open Create Product from a Kid before publishing to HOOD or Kaufland.", "error");
+      return;
+    }
+    if (hasJvSelection && (!kidContext?.kidId || !kidContext.kidNumber.trim())) {
+      showToast("Open Create Product from a Kid before publishing to JV so its EAN can be saved.", "error");
       return;
     }
 
@@ -1125,6 +1130,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         price: normalized.price,
         imageUrls,
         kidNumber: kidContext?.kidNumber,
+        kidId: kidContext?.kidId,
         selectedSiteIds,
         xljvPayload,
         hoodPayload,

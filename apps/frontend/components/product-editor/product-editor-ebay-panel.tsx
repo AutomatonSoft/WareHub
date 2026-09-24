@@ -7,6 +7,7 @@ import { Input } from "../ui/input";
 import { CreateProductImageGallery, type CreateProductGalleryItem } from "../../app/create-product/create-product-image-gallery";
 import { uploadProductImages } from "../editor/product-image-api";
 import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
+import { ProductEditorEbaySpecifics } from "./product-editor-ebay-specifics";
 import type { ProductEditorEbayDraft, ProductEditorWarning } from "./product-editor-types";
 
 type Props = {
@@ -84,21 +85,20 @@ function EbayImageGallery({ imageUrls, onChange }: { imageUrls: string[]; onChan
 }
 
 export function ProductEditorEbayPanel(props: Props) {
-  const canApply = props.isEanValid && props.changedFields.length > 0 && !props.loading && !props.applyLoading;
   const inventoryItem = asRecord(props.draft.ebay_inventory_item);
   const product = asRecord(inventoryItem.product);
   const offer = asRecord(props.draft.ebay_offer);
   const policies = asRecord(offer.listingPolicies);
   const legacyItem = asRecord(props.draft.ebay_legacy_item);
+  const invalidLegacySpecifics = props.draft.ebay_listing_mode === "legacy" && Object.values(asRecord(legacyItem.item_specifics)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
+  const canApply = props.isEanValid && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics;
   const [aspectsText, setAspectsText] = useState(() => JSON.stringify(asRecord(product.aspects), null, 2));
-  const [legacyItemSpecificsText, setLegacyItemSpecificsText] = useState(() => JSON.stringify(asRecord(legacyItem.item_specifics), null, 2));
   const [aspectsError, setAspectsError] = useState("");
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
 
   useEffect(() => {
     setAspectsText(JSON.stringify(asRecord(asRecord(props.draft.ebay_inventory_item).product).aspects, null, 2));
     setAspectsError("");
-    setLegacyItemSpecificsText(JSON.stringify(asRecord(asRecord(props.draft.ebay_legacy_item).item_specifics), null, 2));
     setDescriptionMode("preview");
   }, [props.draft.ean, props.draft.target_id]);
 
@@ -130,16 +130,6 @@ export function ProductEditorEbayPanel(props: Props) {
       setAspectsError("");
     } catch {
       setAspectsError("Aspects must be a JSON object, for example {\"Brand\":[\"Depotum\"]}.");
-    }
-  }
-
-  function commitLegacyItemSpecifics() {
-    try {
-      const parsed = JSON.parse(legacyItemSpecificsText);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid item specifics");
-      updateLegacyItem({ item_specifics: parsed });
-    } catch {
-      setAspectsError("Item specifics must be a JSON object, for example {\"Brand\":[\"Depotum\"]}.");
     }
   }
 
@@ -182,7 +172,7 @@ export function ProductEditorEbayPanel(props: Props) {
           <JvDescriptionEditor description={String(legacyItem.description ?? "")} previewHtml={String(legacyItem.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateLegacyItem({ description })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(legacyItem.image_urls).join("\n")} onChange={(event) => updateLegacyItem({ image_urls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(legacyItem.image_urls)} onChange={(image_urls) => updateLegacyItem({ image_urls })} />
-          <FormField label="Item specifics (JSON)"><textarea className="min-h-36 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={legacyItemSpecificsText} onChange={(event) => setLegacyItemSpecificsText(event.target.value)} onBlur={commitLegacyItemSpecifics} /></FormField>
+          <ProductEditorEbaySpecifics value={asRecord(legacyItem.item_specifics)} onChange={(item_specifics) => updateLegacyItem({ item_specifics })} />
           <p className="text-xs text-amber-700">eBay can reject title or category changes after a sale or close to the listing end time. Item specifics replace the complete current set, so keep all required values.</p>
         </>
       ) : (

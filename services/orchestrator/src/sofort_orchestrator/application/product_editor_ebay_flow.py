@@ -319,7 +319,7 @@ def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dic
                 "image_urls": listing.get("image_urls") if isinstance(listing.get("image_urls"), list) else [],
             },
             "price": str(current.get("price") or ""),
-            "quantity": _legacy_available_quantity(current) if variation is not None else _as_int(listing.get("quantity_available")),
+            "quantity": _legacy_available_quantity(current),
             "ebay_currency": str(current.get("currency") or "EUR"),
         }
     item = body.get("inventory_item") if isinstance(body.get("inventory_item"), dict) else {}
@@ -420,9 +420,12 @@ def _legacy_variation(*, listing: dict, variation_sku: str) -> dict | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _legacy_available_quantity(variation: dict) -> int | None:
-    quantity = _as_int(variation.get("quantity"))
-    quantity_sold = _as_int(variation.get("quantity_sold"))
+def _legacy_available_quantity(item: dict) -> int | None:
+    available = _as_int(item.get("quantity_available"))
+    if available is not None:
+        return max(available, 0)
+    quantity = _as_int(item.get("quantity"))
+    quantity_sold = _as_int(item.get("quantity_sold"))
     if quantity is None:
         return None
     return max(quantity - (quantity_sold or 0), 0)
