@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.sofort_orchestrator.domain.models import ChannelTarget, Marketplace, Operation
 from src.sofort_orchestrator.infra.marketplace_adapters import MarketplaceAdapters
+from src.sofort_orchestrator.infra.marketplace_ean_mapping_gateway import MarketplaceEanMappingGateway
 from src.sofort_orchestrator.infra.product_editor_gateway import ProductEditorGateway
 
 
@@ -31,6 +32,28 @@ class CapturingHttpClient:
             }
         )
         return FakeResponse()
+
+
+def test_marketplace_ean_confirmation_sends_exact_kid_id():
+    fake_http = CapturingHttpClient()
+    gateway = MarketplaceEanMappingGateway(base_url="http://database-service:8000", http_client=fake_http)
+
+    gateway.confirm(
+        request_id="request-1",
+        kid_number="13234455",
+        kid_id=42,
+        marketplace="xljv",
+        account="jv",
+        ean="4012345678901",
+    )
+
+    assert fake_http.calls[0]["json"] == {
+        "kid_number": "13234455",
+        "kid_id": 42,
+        "marketplace": "xljv",
+        "account": "jv",
+        "ean": "4012345678901",
+    }
 
 
 def test_hood_contract_path_and_params():

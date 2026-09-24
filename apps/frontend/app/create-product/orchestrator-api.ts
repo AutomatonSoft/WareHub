@@ -212,6 +212,7 @@ export async function createMainMarketplaceProductJob(input: {
   price: string;
   imageUrls: string[];
   kidNumber?: string;
+  kidId?: number;
   selectedSiteIds: string[];
   xljvPayload: Record<string, unknown>;
   hoodPayload: Record<string, unknown>;
@@ -317,6 +318,7 @@ export async function createMainMarketplaceProductJob(input: {
         payload,
         channels,
         ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+        ...(input.kidId && Number.isInteger(input.kidId) ? { kid_id: input.kidId } : {}),
       },
     }),
   });

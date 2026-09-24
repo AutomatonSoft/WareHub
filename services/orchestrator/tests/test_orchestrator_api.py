@@ -106,6 +106,7 @@ class FakeMarketplaceEanMappingGateway:
         *,
         request_id: str,
         kid_number: str,
+        kid_id: int | None = None,
         marketplace: str,
         account: str,
         ean: str,
@@ -114,6 +115,7 @@ class FakeMarketplaceEanMappingGateway:
             {
                 "request_id": request_id,
                 "kid_number": kid_number,
+                "kid_id": kid_id,
                 "marketplace": marketplace,
                 "account": account,
                 "ean": ean,
@@ -592,6 +594,7 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
         {
             "operation": "publish",
             "kid_number": "13234455",
+            "kid_id": 42,
             "payload": {
                 "title": "Desk",
                 "description": "Oak",
@@ -624,6 +627,7 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
         ("otto", "jv"),
     ]
     assert mapping_gateway.calls[0]["ean"] == "4012345678901"
+    assert all(call["kid_id"] == 42 for call in mapping_gateway.calls)
     assert mapping_gateway.calls[1]["ean"] == "4012345678901"
     assert mapping_gateway.calls[2]["ean"] == mapping_gateway.calls[3]["ean"]
     assert mapping_gateway.calls[2]["ean"] != mapping_gateway.calls[4]["ean"]

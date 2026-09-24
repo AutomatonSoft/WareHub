@@ -24,6 +24,7 @@ _MAPPING_FIELDS: dict[tuple[str, str], str] = {
 def confirm_marketplace_ean_mapping(
     *,
     kid_number: str,
+    kid_id: int | None = None,
     marketplace: str,
     account: str,
     ean: str,
@@ -42,13 +43,15 @@ def confirm_marketplace_ean_mapping(
         raise MarketplaceEanMappingError("Unsupported marketplace/account mapping.")
 
     with transaction.atomic():
-        kid = (
-            Kid.objects.select_for_update()
-            .filter(kid_number__contains=[normalized_kid_number])
-            .first()
-        )
-        if kid is None:
-            raise MarketplaceEanMappingError("Kid was not found for kid_number.")
+        kid_query = Kid.objects.select_for_update().filter(kid_number__contains=[normalized_kid_number])
+        if kid_id is not None:
+            kid_query = kid_query.filter(pk=kid_id)
+        matching_kids = list(kid_query.order_by("pk")[:2])
+        if not matching_kids:
+            raise MarketplaceEanMappingError("Kid was not found for the supplied identity.")
+        if len(matching_kids) > 1 and field_name == "jv":
+            raise MarketplaceEanMappingError("Multiple Kids have this kid_number; kid_id is required.")
+        kid = matching_kids[0]
 
         ean_record, _ = Ean.objects.select_for_update().get_or_create(kid=kid)
         status_record, _ = EanStatus.objects.select_for_update().get_or_create(ean=kid)
