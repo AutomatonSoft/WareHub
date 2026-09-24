@@ -105,6 +105,7 @@ class OrchestrateRequest(BaseModel):
     payload: CanonicalPayload
     channels: list[ChannelTarget]
     kid_number: str | None = None
+    kid_id: int | None = Field(default=None, ge=1)
 
 
 class ErrorContract(BaseModel):

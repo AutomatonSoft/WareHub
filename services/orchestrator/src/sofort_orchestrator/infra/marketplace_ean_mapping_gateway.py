@@ -20,6 +20,7 @@ class MarketplaceEanMappingGateway:
         *,
         request_id: str,
         kid_number: str,
+        kid_id: int | None = None,
         marketplace: str,
         account: str,
         ean: str,
@@ -33,6 +34,7 @@ class MarketplaceEanMappingGateway:
             headers=headers,
             json={
                 "kid_number": kid_number,
+                **({"kid_id": kid_id} if kid_id is not None else {}),
                 "marketplace": marketplace,
                 "account": account,
                 "ean": ean,

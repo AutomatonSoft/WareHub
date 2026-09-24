@@ -785,6 +785,8 @@ export interface components {
         OrchestrateRequest: {
             /** Channels */
             channels: components["schemas"]["ChannelTarget"][];
+            /** Kid Id */
+            kid_id?: number | null;
             /** Kid Number */
             kid_number?: string | null;
             /** @default update */

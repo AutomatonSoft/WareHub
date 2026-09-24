@@ -2560,6 +2560,18 @@
               }
             ],
             "title": "Kid Number"
+          },
+          "kid_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kid Id"
           }
         },
         "type": "object",

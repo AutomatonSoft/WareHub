@@ -350,6 +350,7 @@ class OrchestratorService:
             mapping = self.marketplace_ean_mapping_gateway.confirm(
                 request_id=request_id,
                 kid_number=kid_number,
+                kid_id=command.kid_id,
                 marketplace=channel.marketplace.value,
                 account=account,
                 ean=ean,
