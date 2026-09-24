@@ -1903,7 +1903,32 @@ def _apply_kaufland_active_state(*, ean: str, site_key: str, controller: str, in
 
 def _apply_otto_active_state(*, ean: str, site_key: str, controller: str, inactive: bool) -> dict:
     try:
-        upstream_payload = OttoExternalProductsClient().set_active_state(
+        client = OttoExternalProductsClient()
+        if not inactive:
+            products = client.fetch_products(sku=ean, controller=controller, page=0, limit=10)["productVariations"]
+            product = next(
+                (
+                    item for item in products
+                    if isinstance(item, dict) and ean in {
+                        str(item.get("sku") or "").strip(), str(item.get("ean") or "").strip()
+                    }
+                ),
+                None,
+            )
+            if product is None or not isinstance(product.get("quantity"), (int, str)) or isinstance(product.get("quantity"), bool):
+                raise OttoExternalAPIError("OTTO product or Quantity is unavailable for activation.")
+            try:
+                quantity = int(product["quantity"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise OttoExternalAPIError("OTTO Quantity is invalid for activation.") from exc
+            if quantity == 0:
+                update = client.create_or_update_products(
+                    controller=controller,
+                    products=[{**product, "quantity": 1}],
+                )
+                if isinstance(update, dict) and update.get("success") is False:
+                    raise OttoExternalAPIError("OTTO Quantity update was rejected.", details=update)
+        upstream_payload = client.set_active_state(
             ean=ean,
             controller=controller,
             active=not bool(inactive),
