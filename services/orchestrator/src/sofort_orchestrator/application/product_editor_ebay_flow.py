@@ -60,6 +60,23 @@ class ProductEditorEbayFlow:
                     "warnings": [],
                 }
                 continue
+            details = indexed_legacy.body.get("details") if isinstance(indexed_legacy.body, dict) else None
+            item_ids = details.get("item_ids") if isinstance(details, dict) else None
+            if indexed_legacy.status_code == 409 and isinstance(item_ids, list) and len(item_ids) > 1:
+                results[target_id] = {
+                    "status": ProductEditorTargetStatus.UNKNOWN,
+                    "metadata": {
+                        "account": account,
+                        "listing_mode": "legacy",
+                        "item_ids": [str(item_id) for item_id in item_ids],
+                        "listings": details.get("listings") if isinstance(details.get("listings"), list) else [],
+                    },
+                    "warnings": [ProductEditorWarning(
+                        code="product_editor_ebay_multiple_legacy_listings",
+                        message="Multiple eBay listings match this EAN. Choose an Item ID before editing.",
+                    )],
+                }
+                continue
             if indexed_legacy.status_code not in {404, 409}:
                 results[target_id] = _error_state(account=account, status_code=indexed_legacy.status_code)
                 continue
@@ -82,7 +99,6 @@ class ProductEditorEbayFlow:
         baseline_target_id: str | None,
         legacy_item_id: str | None = None,
     ) -> ProductEditorLoadResponse:
-        states = self.discover_targets(ean=ean, request_id=request_id)
         target_id: str | None = None
         state: dict | None = None
         if legacy_item_id:
@@ -93,6 +109,7 @@ class ProductEditorEbayFlow:
                 legacy_item_id=legacy_item_id,
             )
         if target_id is None:
+            states = self.discover_targets(ean=ean, request_id=request_id)
             target_id = self._resolve_target(states=states, preferred_target_id=baseline_target_id)
             state = states.get(target_id) if target_id else None
         if target_id is None:

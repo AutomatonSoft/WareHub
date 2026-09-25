@@ -72,7 +72,7 @@ export function ProductEditorActiveGroupPanel(input: {
   discoveryItems: Array<{
     label: string;
     ean: string;
-    status: "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+    status: "idle" | "loading" | "found" | "multiple" | "missing" | "unavailable" | "error";
   }>;
   hasLocalLoadedHood: boolean;
   hasLocalLoadedJv: boolean;
@@ -97,6 +97,8 @@ export function ProductEditorActiveGroupPanel(input: {
   onPatchOtto: (patch: Partial<ProductEditorOttoDraft>) => void;
   onApplyOttoEditedProducts: () => void;
   ebayDraft: ProductEditorEbayDraft;
+  ebayListingChoices: Array<{ item_id: string; title: string; price: string; currency: string }>;
+  onLoadEbayListing: (itemId: string) => void;
   ebayWarnings: ProductEditorDiscoverResponse["warnings"];
   ebayLoading: boolean;
   ebayChangedFields: string[];
@@ -278,7 +280,7 @@ export function ProductEditorActiveGroupPanel(input: {
   }
 
   if (input.activeGroupId === "EBAY") {
-    return <ProductEditorEbayPanel draft={input.ebayDraft} accountLabel={input.activeTabLabel} warnings={input.ebayWarnings} loading={input.ebayLoading} applyLoading={input.ebayApplyLoading} changedFields={input.ebayChangedFields} onChange={input.onPatchEbay} onApply={input.onApplyEbayEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;
+    return <ProductEditorEbayPanel draft={input.ebayDraft} listingChoices={input.ebayListingChoices} onLoadListing={input.onLoadEbayListing} accountLabel={input.activeTabLabel} warnings={input.ebayWarnings} loading={input.ebayLoading} applyLoading={input.ebayApplyLoading} changedFields={input.ebayChangedFields} onChange={input.onPatchEbay} onApply={input.onApplyEbayEditedProducts} eanValue={input.eanValue} isEanValid={input.isEanValid} searching={input.searching} onChangeEan={input.onChangeEan} onSearch={input.onSearch} />;
   }
 
   const details =

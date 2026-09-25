@@ -263,6 +263,8 @@ class EbayListingOperationTests(TestCase):
             )
 
         self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(error.exception.details["item_ids"], ["318190872406", "318190872407"])
+        self.assertEqual([listing["item_id"] for listing in error.exception.details["listings"]], ["318190872406", "318190872407"])
         self.assertFalse(EbayListing.objects.filter(source_ean="4067282464896").exists())
 
     @patch("ebay_service.listing_operations.EbayOAuthClient")
