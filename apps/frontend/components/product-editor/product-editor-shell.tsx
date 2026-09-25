@@ -87,7 +87,19 @@ type HoodImageUploadLoadingByTab = Record<HoodTabKey, boolean>;
 type DraftsByTab<TDraft, TTabKey extends string> = Record<TTabKey, TDraft>;
 type WarningsByTab<TTabKey extends string> = Record<TTabKey, ProductEditorDiscoverResponse["warnings"]>;
 type LoadingByTab<TTabKey extends string> = Record<TTabKey, boolean>;
-type ProductEditorTabSearchStatus = "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+type ProductEditorTabSearchStatus = "idle" | "loading" | "found" | "multiple" | "missing" | "unavailable" | "error";
+type EbayListingChoice = { item_id: string; title: string; price: string; currency: string };
+
+function getEbayListingChoices(response: ProductEditorDiscoverResponse | null, tabKey: string): EbayListingChoice[] {
+  const metadata = response?.groups.find((group) => group.id === "EBAY")?.targets.find((target) => target.id === tabKey)?.metadata;
+  const itemIds = Array.isArray(metadata?.item_ids) ? [...new Set(metadata.item_ids.map(String))] : [];
+  const listings = Array.isArray(metadata?.listings) ? metadata.listings : [];
+  return itemIds.map((value) => {
+    const itemId = String(value);
+    const listing = listings.find((entry) => entry && typeof entry === "object" && (entry as Record<string, unknown>).item_id === itemId) as Record<string, unknown> | undefined;
+    return { item_id: itemId, title: String(listing?.title ?? ""), price: String(listing?.price ?? ""), currency: String(listing?.currency ?? "") };
+  });
+}
 
 type ProductEditorChangedMarketplace = {
   tabKey: string;
@@ -145,6 +157,7 @@ function getTabSearchStatus(response: ProductEditorDiscoverResponse, tabKey: str
   });
   if (!targets) return "error";
   if (targets.some((target) => target.status === "found")) return "found";
+  if (tab.groupId === "EBAY" && getEbayListingChoices(response, tabKey).length > 1) return "multiple";
   if (targets.some((target) => target.status === "error")) return "error";
   if (targets.some((target) => target.status === "unknown" || target.status === "planned" || target.status === "unsupported" || target.status === "read_only")) {
     return "unavailable";
@@ -261,6 +274,7 @@ function ProductEditorContent() {
   const initialEbayDraft = activeEbayTabKey ? initialEbayDraftsByTab[activeEbayTabKey] : createEmptyEbayDraft();
   const ebayWarnings = activeEbayTabKey ? ebayWarningsByTab[activeEbayTabKey] : [];
   const ebayLoading = activeEbayTabKey ? ebayLoadingByTab[activeEbayTabKey] : false;
+  const ebayListingChoices = activeEbayTabKey ? getEbayListingChoices(discover, activeEbayTabKey) : [];
   const isGlobalEanValid = isValidProductIdentifier(eanInput);
   const isEffectiveTabEanValid = isValidProductIdentifier(effectiveTabEanInput);
   const hasLocalLoadedJv =
@@ -588,6 +602,7 @@ function ProductEditorContent() {
     setActiveTabKey(tab.key);
     setTabSearchStatuses((current) => ({ ...current, [tab.key]: "loading" }));
     try {
+      let ebaySearchStatus: ProductEditorTabSearchStatus | null = null;
       const found = tab.key === "JV"
         ? await loadJvDraftByEan(ean, "JV")
         : tab.key === "XL"
@@ -599,10 +614,13 @@ function ProductEditorContent() {
               : tab.key === "OTTO_JV" || tab.key === "OTTO_XL"
                 ? await loadOttoDraftByEan(ean, tab.key)
                 : tab.key === "EBAY_JV" || tab.key === "EBAY_XL" || tab.key === "EBAY_DEP"
-                  ? await loadEbayDraftByEan(ean, tab.key)
+                  ? await loadEbayDraftByEan(ean, tab.key).then((status) => {
+                    ebaySearchStatus = status;
+                    return status === "found";
+                  })
                   : await runDiscover(ean, tab.groupId, tab.key);
-      setTabSearchStatuses((current) => ({ ...current, [tab.key]: found ? "found" : "missing" }));
-      if (!found && notifyWhenMissing) {
+      setTabSearchStatuses((current) => ({ ...current, [tab.key]: ebaySearchStatus ?? (found ? "found" : "missing") }));
+      if (!found && ebaySearchStatus !== "multiple" && notifyWhenMissing) {
         showToast(t.productEditorProductNotFound.replace("{tab}", getProductEditorDisplayTabLabel(tab.key, t)), "error");
       }
       return found;
@@ -673,14 +691,31 @@ function ProductEditorContent() {
     return loadOttoDraftForTab(ean, tabKey, getPreferredTargetIdForTab(discovered, tabKey));
   }
 
-  async function loadEbayDraftByEan(ean: string, tabKey: EbayTabKey = "EBAY_JV"): Promise<boolean> {
+  async function loadEbayDraftByEan(ean: string, tabKey: EbayTabKey = "EBAY_JV"): Promise<"found" | "multiple" | "missing"> {
     const discovered = await discoverProductEditor(ean, "EBAY");
     setDiscover(limitDiscoverToActiveGroup(discovered, "EBAY"));
     const legacyItemId = ebayDraftsByTab[tabKey].ebay_listing_mode === "legacy"
-      ? ebayDraftsByTab[tabKey].ebay_item_id.trim()
+      && ebayDraftsByTab[tabKey].ean === ean ? ebayDraftsByTab[tabKey].ebay_item_id.trim()
       : "";
+    if (!legacyItemId && getEbayListingChoices(discovered, tabKey).length > 1) return "multiple";
     const baselineTargetId = getPreferredTargetIdForTab(discovered, tabKey) ?? tabKey;
-    return loadEbayDraftForTab(ean, tabKey, baselineTargetId, legacyItemId);
+    return await loadEbayDraftForTab(ean, tabKey, baselineTargetId, legacyItemId) ? "found" : "missing";
+  }
+
+  async function loadSelectedEbayListing(itemId: string): Promise<void> {
+    if (!activeEbayTabKey || !isValidProductIdentifier(effectiveTabEanInput)) return;
+    const tabKey = activeEbayTabKey;
+    setTabSearchStatuses((current) => ({ ...current, [tabKey]: "loading" }));
+    try {
+      const found = await loadEbayDraftForTab(effectiveTabEanInput, tabKey, tabKey, itemId);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: found ? "found" : "error" }));
+      if (!found) showToast("This eBay listing could not be loaded for this EAN.", "error");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "eBay listing load failed.";
+      setPageError(message);
+      setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
+      showToast(message, "error");
+    }
   }
 
   async function loadHoodDraftByEan(ean: string, tabKeyOverride?: HoodTabKey): Promise<boolean> {
@@ -1933,6 +1968,8 @@ function ProductEditorContent() {
                       ? "Product found"
                       : searchStatus === "missing"
                         ? "Product not found"
+                        : searchStatus === "multiple"
+                          ? "Choose listing"
                         : searchStatus === "unavailable"
                           ? "Search unavailable"
                         : searchStatus === "error"
@@ -1948,6 +1985,7 @@ function ProductEditorContent() {
                         searchStatus === "loading" && "border-amber-300/80 bg-amber-50 text-amber-800",
                         searchStatus === "found" && "border-emerald-300/80 bg-emerald-50 text-emerald-800",
                         searchStatus === "missing" && "border-rose-300/80 bg-rose-50 text-rose-800",
+                        searchStatus === "multiple" && "border-amber-300/80 bg-amber-50 text-amber-800",
                         searchStatus === "unavailable" && "border-amber-300/80 bg-amber-50 text-amber-800",
                         searchStatus === "error" && "border-rose-400 bg-rose-100 text-rose-950",
                       )}
@@ -1956,6 +1994,7 @@ function ProductEditorContent() {
                       {searchStatus === "loading" ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
                       {searchStatus === "found" ? <CircleCheck className="size-3.5" aria-hidden="true" /> : null}
                       {searchStatus === "missing" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
+                      {searchStatus === "multiple" ? <CircleCheck className="size-3.5" aria-hidden="true" /> : null}
                       {searchStatus === "unavailable" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
                       {searchStatus === "error" ? <CircleX className="size-3.5" aria-hidden="true" /> : null}
                       <span className="sr-only">{statusLabel}</span>
@@ -2052,6 +2091,8 @@ function ProductEditorContent() {
             onPatchOtto={patchOttoDraft}
             onApplyOttoEditedProducts={() => void handleApplyOttoEditedProducts()}
             ebayDraft={ebayDraft}
+            ebayListingChoices={ebayListingChoices}
+            onLoadEbayListing={(itemId) => void loadSelectedEbayListing(itemId)}
             ebayWarnings={ebayWarnings}
             ebayLoading={ebayLoading}
             ebayChangedFields={ebayChangedFields}

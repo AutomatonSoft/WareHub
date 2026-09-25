@@ -91,7 +91,7 @@ export function ProductEditorEmptyPanel({
   discoveryItems?: Array<{
     label: string;
     ean: string;
-    status: "idle" | "loading" | "found" | "missing" | "unavailable" | "error";
+    status: "idle" | "loading" | "found" | "multiple" | "missing" | "unavailable" | "error";
   }>;
 }) {
   const t = useLabels();
@@ -114,6 +114,7 @@ export function ProductEditorEmptyPanel({
     if (!item.ean) return t.productEditorDiscoveryNoEan;
     if (item.status === "loading") return t.productEditorDiscoverySearching.replace("{ean}", item.ean);
     if (item.status === "found") return t.productEditorDiscoveryFound;
+    if (item.status === "multiple") return "Multiple eBay listings match this EAN. Choose one to edit.";
     if (item.status === "missing") return t.productEditorDiscoveryNotFound.replace("{ean}", item.ean);
     if (item.status === "unavailable") return t.productEditorDiscoveryUnavailable;
     if (item.status === "error") return t.productEditorDiscoveryFailed;
@@ -128,6 +129,9 @@ export function ProductEditorEmptyPanel({
     }
     if (item.status === "found") {
       return { title: t.productEditorDiscoveryFoundTitle, badge: t.productEditorDiscoveryFoundBadge, icon: CircleCheckBig, iconClass: "bg-emerald-100 text-emerald-700", surfaceClass: "border-emerald-200 bg-emerald-50/60", badgeClass: "bg-emerald-100 text-emerald-800", dotClass: "bg-emerald-500" };
+    }
+    if (item.status === "multiple") {
+      return { title: "Choose listing", badge: "Multiple", icon: CircleAlert, iconClass: "bg-amber-100 text-amber-700", surfaceClass: "border-amber-200 bg-amber-50/60", badgeClass: "bg-amber-100 text-amber-800", dotClass: "bg-amber-500" };
     }
     if (item.status === "missing") {
       return { title: t.productEditorDiscoveryMissingTitle, badge: t.productEditorDiscoveryMissingBadge, icon: SearchX, iconClass: "bg-rose-100 text-rose-700", surfaceClass: "border-rose-200 bg-rose-50/60", badgeClass: "bg-rose-100 text-rose-800", dotClass: "bg-rose-500" };

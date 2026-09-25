@@ -841,7 +841,19 @@ def _discover_legacy_listing(
         raise EbayApiError(
             "Multiple legacy listings match this EAN; select an item ID explicitly.",
             status_code=409,
-            details={"source_ean": source_ean, "item_ids": [match[0]["item_id"] for match in matches]},
+            details={
+                "source_ean": source_ean,
+                "item_ids": [match[0]["item_id"] for match in matches],
+                "listings": [
+                    {
+                        "item_id": match[0]["item_id"],
+                        "title": match[0].get("title", ""),
+                        "price": match[0].get("price", ""),
+                        "currency": match[0].get("currency", ""),
+                    }
+                    for match in matches
+                ],
+            },
             operation="search_listings",
         )
     candidate, variation_sku = matches[0]
