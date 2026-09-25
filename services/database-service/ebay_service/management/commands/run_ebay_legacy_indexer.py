@@ -14,15 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Periodically index all active eBay legacy listing pages for configured accounts."
+    help = "Index eBay legacy listings only when explicitly requested; default process stays idle."
 
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true")
+        parser.add_argument("--continuous", action="store_true")
         parser.add_argument("--poll-interval", type=float, default=_env_float("EBAY_LEGACY_INDEXER_POLL_INTERVAL_SECONDS", 3600.0))
 
     def handle(self, *args, **options):
         poll_interval = max(1.0, float(options["poll_interval"]))
         run_once = bool(options["once"])
+        continuous = bool(options["continuous"])
+        if not run_once and not continuous:
+            self.stdout.write("eBay legacy indexer idle; on-demand listing lookup remains available")
+            while True:
+                time.sleep(poll_interval)
         self.stdout.write(self.style.SUCCESS(f"eBay legacy indexer started (poll_interval={poll_interval}s)"))
 
         while True:

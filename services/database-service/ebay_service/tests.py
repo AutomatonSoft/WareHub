@@ -341,6 +341,70 @@ class EbayListingOperationViewTests(SimpleTestCase):
 
 
 class EbayLegacySearchClientTests(SimpleTestCase):
+    def setUp(self):
+        cache.clear()
+
+    def test_sku_search_throttles_burst_before_network_call(self):
+        cache.set("ebay:seller_list:window:dep:EBAY_DE", 30, timeout=15)
+        session = MagicMock()
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        with self.assertRaises(EbayApiError) as error:
+            client.seller_listing_item_ids_by_sku(account="dep", marketplace_id="EBAY_DE", sku="4067282464896")
+
+        self.assertEqual(error.exception.status_code, 429)
+        session.post.assert_not_called()
+
+    @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
+    def test_sku_search_returns_item_ids_without_full_active_listing_scan(self, _load_refresh_token):
+        session = MagicMock()
+        session.post.side_effect = [
+            FakeResponse({"access_token": "seller-token"}),
+            FakeResponse({}, content=b'''<GetSellerListResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+                <Ack>Success</Ack><HasMoreItems>false</HasMoreItems><ItemArray>
+                <Item><ItemID>318190872406</ItemID></Item></ItemArray></GetSellerListResponse>'''),
+        ]
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        result = client.seller_listing_item_ids_by_sku(account="dep", marketplace_id="EBAY_DE", sku="4067282464896")
+
+        self.assertEqual(result, ["318190872406"])
+        request = session.post.call_args_list[1].kwargs
+        self.assertEqual(request["headers"]["X-EBAY-API-CALL-NAME"], "GetSellerList")
+        self.assertIn(b"<SKU>4067282464896</SKU>", request["data"])
+        self.assertIn(b"<EndTimeFrom>", request["data"])
+        self.assertIn(b"<EndTimeTo>", request["data"])
+
+    @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
+    def test_sku_search_does_not_misreport_upstream_failure_as_missing(self, _load_refresh_token):
+        session = MagicMock()
+        session.post.side_effect = [
+            FakeResponse({"access_token": "seller-token"}),
+            FakeResponse({}, content=b'''<GetSellerListResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+                <Ack>Failure</Ack><Errors><ErrorCode>518</ErrorCode><ShortMessage>Call limit reached</ShortMessage></Errors>
+                </GetSellerListResponse>'''),
+        ]
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        with self.assertRaises(EbayApiError) as error:
+            client.seller_listing_item_ids_by_sku(account="dep", marketplace_id="EBAY_DE", sku="4067282464896")
+
+        self.assertEqual(error.exception.operation, "get_seller_list")
+        self.assertEqual(error.exception.details["errors"][0]["code"], "518")
+        with self.assertRaises(EbayApiError) as cooldown_error:
+            client.seller_listing_item_ids_by_sku(account="dep", marketplace_id="EBAY_DE", sku="4067282464896")
+        self.assertEqual(cooldown_error.exception.status_code, 429)
+        self.assertEqual(session.post.call_count, 2)
+
     @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
     def test_seller_lookup_preserves_ebay_error_code(self, _load_refresh_token):
         session = MagicMock()
