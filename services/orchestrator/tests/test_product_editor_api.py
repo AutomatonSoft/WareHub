@@ -204,7 +204,7 @@ class FakeProductEditorGateway:
     def fetch_ebay_listing(self, *, account: str, listing_mode: str, sku: str = "", item_id: str = "", source_ean: str = "", request_id: str):
         if listing_mode == "legacy":
             body = self.ebay_legacy_index_by_account[account] if source_ean else self.ebay_legacy_by_account[account]
-            return type("R", (), {"status_code": 200 if "listing" in body else 404, "body": body})()
+            return type("R", (), {"status_code": body.get("status_code", 200 if "listing" in body else 404), "body": body})()
         body = self.ebay_inventory_by_account[account]
         return type("R", (), {"status_code": 200 if "inventory_item" in body else 404, "body": body})()
 
@@ -709,6 +709,53 @@ def test_product_editor_ebay_discovers_indexed_legacy_ean(tmp_path):
     assert dep["status"] == "found"
     assert dep["metadata"]["item_id"] == "205926392508"
     assert gateway.ebay_active_listing_page_calls == []
+
+
+def test_product_editor_ebay_reports_multiple_legacy_listings(tmp_path):
+    client, gateway = _client(tmp_path)
+    ean = "4067282464896"
+    gateway.ebay_inventory_by_account["dep"] = {"detail": "not found"}
+    gateway.ebay_legacy_index_by_account["dep"] = {
+        "status_code": 409,
+        "details": {
+            "source_ean": ean,
+            "item_ids": ["206094766893", "318190872406"],
+            "listings": [
+                {"item_id": "206094766893", "title": "First chair", "price": "749.00", "currency": "EUR"},
+                {"item_id": "318190872406", "title": "Second chair", "price": "748.99", "currency": "EUR"},
+            ],
+        },
+    }
+
+    discovered = client.post(
+        "/api/v1/orchestrator/product-editor/discover",
+        json={"ean": ean, "active_group": "EBAY"},
+    )
+
+    assert discovered.status_code == 200
+    dep = next(target for target in discovered.json()["groups"][0]["targets"] if target["id"] == "EBAY_DEP")
+    assert dep["status"] == "unknown"
+    assert dep["metadata"]["item_ids"] == ["206094766893", "318190872406"]
+    assert dep["metadata"]["listings"][0]["title"] == "First chair"
+    assert dep["warnings"][0]["code"] == "product_editor_ebay_multiple_legacy_listings"
+
+    gateway.ebay_legacy_by_account["dep"] = {
+        "listing": {
+            "item_id": "318190872406",
+            "identifiers": {"EAN": [ean]},
+            "price": "748.99",
+            "currency": "EUR",
+            "quantity": "1",
+            "quantity_sold": "0",
+        }
+    }
+    loaded = client.post(
+        "/api/v1/orchestrator/product-editor/load",
+        json={"ean": ean, "active_group": "EBAY", "baseline_target_id": "EBAY_DEP", "legacy_item_id": "318190872406"},
+    )
+    assert loaded.status_code == 200
+    assert loaded.json()["draft"]["ebay_item_id"] == "318190872406"
+    assert loaded.json()["draft"]["target_id"] == "EBAY_DEP"
 
 
 def test_product_editor_ebay_plan_accepts_verified_explicit_legacy_item_outside_first_page(tmp_path):

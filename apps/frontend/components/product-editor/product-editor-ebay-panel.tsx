@@ -12,6 +12,8 @@ import type { ProductEditorEbayDraft, ProductEditorWarning } from "./product-edi
 
 type Props = {
   draft: ProductEditorEbayDraft;
+  listingChoices: Array<{ item_id: string; title: string; price: string; currency: string }>;
+  onLoadListing: (itemId: string) => void;
   accountLabel: string;
   warnings: ProductEditorWarning[];
   loading: boolean;
@@ -91,7 +93,7 @@ export function ProductEditorEbayPanel(props: Props) {
   const policies = asRecord(offer.listingPolicies);
   const legacyItem = asRecord(props.draft.ebay_legacy_item);
   const invalidLegacySpecifics = props.draft.ebay_listing_mode === "legacy" && Object.values(asRecord(legacyItem.item_specifics)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
-  const canApply = props.isEanValid && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics;
+  const canApply = props.isEanValid && props.draft.ean === props.eanValue.trim() && Boolean(props.draft.target_id) && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics;
   const [aspectsText, setAspectsText] = useState(() => JSON.stringify(asRecord(product.aspects), null, 2));
   const [aspectsError, setAspectsError] = useState("");
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
@@ -144,6 +146,18 @@ export function ProductEditorEbayPanel(props: Props) {
           {props.searching ? "Loading" : "Load eBay listing"}
         </Button>
       </div>
+
+      {props.listingChoices.length > 1 ? (
+        <div className="space-y-2 rounded-[var(--radius-control)] border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <p>Multiple eBay listings match this EAN in this account. Choose the Item ID you want to edit.</p>
+          {props.listingChoices.map((listing) => (
+            <div key={listing.item_id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-background p-2">
+              <span><span className="font-medium">{listing.title || `Item ${listing.item_id}`}</span> · {listing.item_id}{listing.price ? ` · ${listing.price} ${listing.currency}` : ""}</span>
+              <Button type="button" variant="outline" onClick={() => props.onLoadListing(listing.item_id)} disabled={props.loading || props.searching}>Load listing</Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
         <FormField label="Account"><Input value={props.accountLabel} readOnly /></FormField>
