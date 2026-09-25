@@ -103,13 +103,20 @@ def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
     ean_digits = "".join(ch for ch in str(item.effective_ean or "") if ch.isdigit())
     if not ean_digits:
         return
-    product = (
-        ImportedProduct.all_objects.filter(site=item.site, site_key=item.site_key, ean=ean_digits)
-        .order_by("-id")
-        .first()
-    )
+    products = ImportedProduct.all_objects.filter(site=item.site, site_key=item.site_key)
+    if item.source_product_id is not None:
+        products = products.filter(source_product_id=item.source_product_id)
+    else:
+        products = products.filter(ean__in=(ean_digits, str(item.effective_ean or "").strip()))
+    product = products.order_by("-id").first()
     artikelnr = str(getattr(product, "source_model", "") or "").strip() if product else ""
     if not artikelnr:
+        logger.warning(
+            "JV_EAN_MARKER_PRODUCT_NOT_FOUND item_id=%s site_key=%s source_product_id=%s",
+            item.id,
+            item.site_key,
+            item.source_product_id,
+        )
         return
     try:
         from django.db.models import Q

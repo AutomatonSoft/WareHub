@@ -1131,6 +1131,38 @@ class JVSyncUtilsTest(TestCase):
         self.assertEqual(Ean.objects.get(kid=kid).jv, "JVM4067282256354")
         self.assertTrue(EanStatus.objects.get(ean=kid).jv)
 
+    def test_successful_jv_marker_links_prefixed_ean_by_source_product_id(self):
+        from database.models import Ean, EanStatus, Kid
+        from jv_services.create_service import _record_jv_ean_marker
+        from jv_services.models import ImportedProduct, JVBatchJob, JVBatchJobItem
+
+        kid = Kid.objects.create(kid_number=["453916645"])
+        Ean.objects.create(kid=kid, main_ean_jv="4062292293528")
+        ImportedProduct.all_objects.create(
+            site=ImportedProduct.Site.JV,
+            site_key="JV_DE",
+            source_product_id=490071,
+            ean="JVM4062292293528",
+            source_model="JVM4062292293528",
+        )
+        job = JVBatchJob.objects.create(
+            ean="JVM4062292293528",
+            site_family=ImportedProduct.Site.JV,
+            operation=JVBatchJob.Operation.CREATE,
+        )
+        item = JVBatchJobItem.objects.create(
+            job=job,
+            site=ImportedProduct.Site.JV,
+            site_key="JV_DE",
+            effective_ean="JVM4062292293528",
+            source_product_id=490071,
+        )
+
+        _record_jv_ean_marker(item)
+
+        self.assertEqual(Ean.objects.get(kid=kid).jv, "JVM4062292293528")
+        self.assertTrue(EanStatus.objects.get(ean=kid).jv)
+
     def test_resolve_local_product_for_source_matches_by_artikelnr_before_ean(self):
         from jv_services.models import ImportedProduct
         from jv_services.sync_utils import resolve_local_product_for_source
