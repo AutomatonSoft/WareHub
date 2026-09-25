@@ -2,9 +2,11 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from xml.sax.saxutils import escape as xml_escape
@@ -17,6 +19,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from django.core.cache import cache
 
 from .credentials import EbayCredentialError, load_refresh_token
+
+
+logger = logging.getLogger(__name__)
+_SELLER_LIST_WINDOW_SECONDS = 15
+_SELLER_LIST_MAX_CALLS_PER_WINDOW = 30
+_SELLER_LIST_QUOTA_COOLDOWN_SECONDS = 900
 
 
 class EbayApiError(Exception):
@@ -724,7 +732,19 @@ class EbayOAuthClient:
             raise EbayApiError("eBay seller lookup returned invalid XML.", status_code=502, operation="get_user") from error
         namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
         if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
-            raise EbayApiError("eBay seller lookup returned an error response.", status_code=response.status_code, operation="get_user")
+            errors = [
+                {
+                    "code": _xml_text(error, "ebay:ErrorCode", namespace),
+                    "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace),
+                }
+                for error in root.findall("ebay:Errors", namespace)
+            ]
+            raise EbayApiError(
+                "eBay seller lookup returned an error response.",
+                status_code=response.status_code,
+                details={"errors": errors},
+                operation="get_user",
+            )
         user_id = _xml_text(root, "ebay:User/ebay:UserID", namespace)
         if not user_id:
             raise EbayApiError("eBay seller lookup returned no user ID.", status_code=502, operation="get_user")
@@ -763,6 +783,70 @@ class EbayOAuthClient:
                 if item_id.isdecimal() and item_id not in item_ids:
                     item_ids.append(item_id)
         return item_ids
+
+    def seller_listing_item_ids_by_sku(self, *, account: str, marketplace_id: str, sku: str) -> list[str]:
+        site_id = self._TRADING_SITE_IDS.get(marketplace_id)
+        if site_id is None:
+            raise EbayApiError("SKU listing search is currently available only for EBAY_DE.", status_code=400)
+        if not sku or len(sku) > 50:
+            return []
+
+        cooldown_key = f"ebay:seller_list:cooldown:{account}:{marketplace_id}"
+        if cache.get(cooldown_key):
+            raise EbayApiError("eBay seller-list quota is cooling down.", status_code=429, operation="get_seller_list")
+        window_key = f"ebay:seller_list:window:{account}:{marketplace_id}"
+        cache.add(window_key, 0, timeout=_SELLER_LIST_WINDOW_SECONDS)
+        if cache.incr(window_key) > _SELLER_LIST_MAX_CALLS_PER_WINDOW:
+            raise EbayApiError("eBay seller-list request burst is throttled.", status_code=429, operation="get_seller_list")
+
+        now = datetime.now(timezone.utc)
+        end = now + timedelta(days=119)
+        xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <EndTimeFrom>{now.strftime("%Y-%m-%dT%H:%M:%SZ")}</EndTimeFrom>
+  <EndTimeTo>{end.strftime("%Y-%m-%dT%H:%M:%SZ")}</EndTimeTo>
+  <SKUArray><SKU>{xml_escape(sku)}</SKU></SKUArray>
+  <Pagination><EntriesPerPage>100</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+</GetSellerListRequest>'''
+        try:
+            response = self._session.post(
+                f"{self._config.base_url}/ws/api.dll",
+                data=xml.encode("utf-8"),
+                headers={
+                    "Content-Type": "text/xml",
+                    "X-EBAY-API-CALL-NAME": "GetSellerList",
+                    "X-EBAY-API-COMPATIBILITY-LEVEL": self._TRADING_COMPATIBILITY_LEVEL,
+                    "X-EBAY-API-SITEID": site_id,
+                    "X-EBAY-API-IAF-TOKEN": self._seller_access_token(account=account),
+                },
+                timeout=(self._config.connect_timeout, self._config.read_timeout),
+            )
+            root = ElementTree.fromstring(response.content)
+        except requests.RequestException as error:
+            raise EbayApiError("eBay SKU listing search failed.", operation="get_seller_list") from error
+        except ElementTree.ParseError as error:
+            raise EbayApiError("eBay SKU listing search returned invalid XML.", status_code=502, operation="get_seller_list") from error
+        namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
+        if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
+            if any(_xml_text(error, "ebay:ErrorCode", namespace) == "518" for error in root.findall("ebay:Errors", namespace)):
+                cache.set(cooldown_key, True, timeout=_SELLER_LIST_QUOTA_COOLDOWN_SECONDS)
+                logger.warning("EBAY_SELLER_LIST_QUOTA_EXHAUSTED account=%s marketplace_id=%s", account, marketplace_id)
+            raise EbayApiError(
+                "eBay SKU listing search returned an error response.",
+                status_code=response.status_code,
+                details={"errors": [
+                    {"code": _xml_text(error, "ebay:ErrorCode", namespace),
+                     "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace)}
+                    for error in root.findall("ebay:Errors", namespace)
+                ]},
+                operation="get_seller_list",
+            )
+        if _xml_text(root, "ebay:HasMoreItems", namespace).lower() == "true":
+            raise EbayApiError("eBay SKU listing search has more than 100 results.", status_code=502, operation="get_seller_list")
+        return list(dict.fromkeys(
+            item_id for item in root.findall("ebay:ItemArray/ebay:Item", namespace)
+            if (item_id := _xml_text(item, "ebay:ItemID", namespace)).isdecimal()
+        ))
 
     def active_listings(self, *, account: str, marketplace_id: str, page: int, limit: int) -> dict[str, Any]:
         site_id = self._TRADING_SITE_IDS.get(marketplace_id)
