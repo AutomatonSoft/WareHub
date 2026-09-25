@@ -724,7 +724,19 @@ class EbayOAuthClient:
             raise EbayApiError("eBay seller lookup returned invalid XML.", status_code=502, operation="get_user") from error
         namespace = {"ebay": "urn:ebay:apis:eBLBaseComponents"}
         if not response.ok or _xml_text(root, "ebay:Ack", namespace) not in {"Success", "Warning"}:
-            raise EbayApiError("eBay seller lookup returned an error response.", status_code=response.status_code, operation="get_user")
+            errors = [
+                {
+                    "code": _xml_text(error, "ebay:ErrorCode", namespace),
+                    "message": _xml_text(error, "ebay:LongMessage", namespace) or _xml_text(error, "ebay:ShortMessage", namespace),
+                }
+                for error in root.findall("ebay:Errors", namespace)
+            ]
+            raise EbayApiError(
+                "eBay seller lookup returned an error response.",
+                status_code=response.status_code,
+                details={"errors": errors},
+                operation="get_user",
+            )
         user_id = _xml_text(root, "ebay:User/ebay:UserID", namespace)
         if not user_id:
             raise EbayApiError("eBay seller lookup returned no user ID.", status_code=502, operation="get_user")

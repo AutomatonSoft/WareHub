@@ -342,6 +342,26 @@ class EbayListingOperationViewTests(SimpleTestCase):
 
 class EbayLegacySearchClientTests(SimpleTestCase):
     @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
+    def test_seller_lookup_preserves_ebay_error_code(self, _load_refresh_token):
+        session = MagicMock()
+        session.post.side_effect = [
+            FakeResponse({"access_token": "seller-token"}),
+            FakeResponse({}, status_code=200, content=b'''<GetUserResponse xmlns="urn:ebay:apis:eBLBaseComponents">
+                <Ack>Failure</Ack><Errors><ShortMessage>Call limit reached</ShortMessage>
+                <ErrorCode>518</ErrorCode></Errors></GetUserResponse>'''),
+        ]
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame", session=session,
+        )
+
+        with self.assertRaises(EbayApiError) as error:
+            client.seller_user_id(account="dep", marketplace_id="EBAY_DE")
+
+        self.assertEqual(error.exception.operation, "get_user")
+        self.assertEqual(error.exception.details, {"errors": [{"code": "518", "message": "Call limit reached"}]})
+
+    @patch("ebay_service.client.load_refresh_token", return_value="refresh-token")
     def test_searches_gtin_and_keyword_for_authenticated_seller(self, _load_refresh_token):
         session = MagicMock()
         session.post.side_effect = [
