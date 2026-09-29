@@ -3304,7 +3304,7 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "KAUFLAND" ? (
                   <KauflandProductDetailsPanel
                     initialDraft={activeKauflandInitialDraft}
-                    draftKey={`${activeKauflandDraftKey}:${activeReservedMarketplaceEan}`}
+                    draftKey={`${activeTab}:${activeKauflandDraftKey}:${activeReservedMarketplaceEan}`}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(description))}
