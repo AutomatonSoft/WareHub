@@ -30,6 +30,7 @@ import {
   DEFAULT_MAIN_XLJV_CREATE_FIELDS,
   DEFAULT_HOOD_CREATE_FIELDS,
   normalizeCreateProductInput,
+  missingRequiredEbayAspects,
   validateCreateProductInput,
   validateHoodCreateFields,
   validateMainKauflandCreateFields,
@@ -53,6 +54,7 @@ import {
   mapValidationErrorCodeToLabel
 } from "./create-product-controller-model";
 import { normalizeCreateProductRuntimeError } from "./create-product-api-errors";
+import { fetchEbayCategoryAspects } from "./ebay-category-aspects";
 import {
   CREATE_PRODUCT_XL_DEFAULT_SITE_KEY,
   discoverCreateProductEbaySources,
@@ -934,8 +936,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         return;
       }
       try {
-        const parsed = JSON.parse(ebayFields.aspectsText);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length === 0
+        const parsed = ebayFields.aspectsText.trim() ? JSON.parse(ebayFields.aspectsText) : {};
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
           || Object.values(parsed).some((value) => !Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim()))) {
           throw new Error("invalid aspects");
         }
@@ -963,6 +965,18 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
 
     setSubmitting(true);
     try {
+      if (hasEbaySelection && ebayFields && ebayAspects) {
+        const categoryAspects = await fetchEbayCategoryAspects(ebayFields.categoryId.trim());
+        const missingAspects = missingRequiredEbayAspects(categoryAspects, ebayAspects);
+        if (missingAspects.length > 0) {
+          showToast(`Complete required eBay category attributes: ${missingAspects.join(", ")}.`, "error");
+          return;
+        }
+        if (Object.keys(ebayAspects).length === 0) {
+          showToast("Add at least one eBay category attribute before publishing.", "error");
+          return;
+        }
+      }
       let imageUrls = hasKauflandSelection
         ? normalizeKauflandImageUrls(normalized.imageUrls)
         : normalized.imageUrls;

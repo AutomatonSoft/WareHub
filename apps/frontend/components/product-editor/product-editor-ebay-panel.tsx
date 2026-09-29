@@ -7,6 +7,7 @@ import { Input } from "../ui/input";
 import { CreateProductImageGallery, type CreateProductGalleryItem } from "../../app/create-product/create-product-image-gallery";
 import { uploadProductImages } from "../editor/product-image-api";
 import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
+import { EbayCategoryPicker } from "../../app/create-product/ebay-category-picker";
 import { ProductEditorEbaySpecifics } from "./product-editor-ebay-specifics";
 import type { ProductEditorEbayDraft, ProductEditorWarning } from "./product-editor-types";
 
@@ -93,14 +94,11 @@ export function ProductEditorEbayPanel(props: Props) {
   const policies = asRecord(offer.listingPolicies);
   const legacyItem = asRecord(props.draft.ebay_legacy_item);
   const invalidLegacySpecifics = props.draft.ebay_listing_mode === "legacy" && Object.values(asRecord(legacyItem.item_specifics)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
-  const canApply = props.isEanValid && props.draft.ean === props.eanValue.trim() && Boolean(props.draft.target_id) && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics;
-  const [aspectsText, setAspectsText] = useState(() => JSON.stringify(asRecord(product.aspects), null, 2));
-  const [aspectsError, setAspectsError] = useState("");
+  const invalidInventoryAspects = props.draft.ebay_listing_mode !== "legacy" && Object.values(asRecord(product.aspects)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
+  const canApply = props.isEanValid && props.draft.ean === props.eanValue.trim() && Boolean(props.draft.target_id) && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics && !invalidInventoryAspects;
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
 
   useEffect(() => {
-    setAspectsText(JSON.stringify(asRecord(asRecord(props.draft.ebay_inventory_item).product).aspects, null, 2));
-    setAspectsError("");
     setDescriptionMode("preview");
   }, [props.draft.ean, props.draft.target_id]);
 
@@ -122,17 +120,6 @@ export function ProductEditorEbayPanel(props: Props) {
 
   function updateLegacyItem(patch: Record<string, unknown>) {
     props.onChange({ ebay_legacy_item: { ...legacyItem, ...patch } });
-  }
-
-  function commitAspects() {
-    try {
-      const parsed = JSON.parse(aspectsText);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid aspects");
-      updateProduct({ aspects: parsed });
-      setAspectsError("");
-    } catch {
-      setAspectsError("Aspects must be a JSON object, for example {\"Brand\":[\"Depotum\"]}.");
-    }
   }
 
   return (
@@ -181,7 +168,7 @@ export function ProductEditorEbayPanel(props: Props) {
             <FormField label="Legacy Item ID"><Input value={props.draft.ebay_item_id} onChange={(event) => props.onChange({ ebay_item_id: event.target.value })} placeholder="Required for legacy listings outside the first page" /></FormField>
             <FormField label="Variation SKU"><Input value={props.draft.ebay_variation_sku} onChange={(event) => props.onChange({ ebay_variation_sku: event.target.value })} placeholder="Only for legacy variations" /></FormField>
             <FormField label="Title"><Input value={String(legacyItem.title ?? "")} onChange={(event) => updateLegacyItem({ title: event.target.value })} /></FormField>
-            <FormField label="Category ID"><Input value={String(legacyItem.category_id ?? "")} onChange={(event) => updateLegacyItem({ category_id: event.target.value })} /></FormField>
+            <EbayCategoryPicker label="Primary category" value={String(legacyItem.category_id ?? "")} onChange={(category_id) => updateLegacyItem({ category_id })} />
           </div>
           <JvDescriptionEditor description={String(legacyItem.description ?? "")} previewHtml={String(legacyItem.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateLegacyItem({ description })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(legacyItem.image_urls).join("\n")} onChange={(event) => updateLegacyItem({ image_urls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
@@ -202,8 +189,8 @@ export function ProductEditorEbayPanel(props: Props) {
             <FormField label="ISBN (comma-separated)"><Input value={stringArray(product.isbn).join(", ")} onChange={(event) => updateProduct({ isbn: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
             <FormField label="Condition"><Input value={String(inventoryItem.condition ?? "")} onChange={(event) => updateInventoryItem({ condition: event.target.value })} placeholder="NEW" /></FormField>
             <FormField label="Condition description"><Input value={String(inventoryItem.conditionDescription ?? "")} onChange={(event) => updateInventoryItem({ conditionDescription: event.target.value })} /></FormField>
-            <FormField label="Category ID"><Input value={String(offer.categoryId ?? "")} onChange={(event) => updateOffer({ categoryId: event.target.value })} /></FormField>
-            <FormField label="Secondary category ID"><Input value={String(offer.secondaryCategoryId ?? "")} onChange={(event) => updateOffer({ secondaryCategoryId: event.target.value })} /></FormField>
+            <EbayCategoryPicker label="Primary category" value={String(offer.categoryId ?? "")} excludeCategoryId={String(offer.secondaryCategoryId ?? "")} onChange={(categoryId) => updateOffer({ categoryId })} />
+            <EbayCategoryPicker label="Secondary category" value={String(offer.secondaryCategoryId ?? "")} excludeCategoryId={String(offer.categoryId ?? "")} optional onChange={(secondaryCategoryId) => updateOffer({ secondaryCategoryId })} />
             <FormField label="Merchant location key"><Input value={String(offer.merchantLocationKey ?? "")} onChange={(event) => updateOffer({ merchantLocationKey: event.target.value })} /></FormField>
             <FormField label="Store category names (comma-separated)"><Input value={stringArray(offer.storeCategoryNames).join(", ")} onChange={(event) => updateOffer({ storeCategoryNames: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
           </div>
@@ -213,8 +200,7 @@ export function ProductEditorEbayPanel(props: Props) {
           <JsonObjectField label="Regulatory / GPSR (eBay JSON)" value={offer.regulatory} onChange={(regulatory) => updateOffer({ regulatory })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(product.imageUrls).join("\n")} onChange={(event) => updateProduct({ imageUrls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(product.imageUrls)} onChange={(imageUrls) => updateProduct({ imageUrls })} />
-          <FormField label="Category aspects (JSON)"><textarea className="min-h-36 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={aspectsText} onChange={(event) => setAspectsText(event.target.value)} onBlur={commitAspects} /></FormField>
-          {aspectsError ? <p className="text-sm text-destructive">{aspectsError}</p> : null}
+          <ProductEditorEbaySpecifics title="Category attributes" categoryId={String(offer.categoryId ?? "")} value={asRecord(product.aspects)} onChange={(aspects) => updateProduct({ aspects })} />
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Fulfillment policy ID"><Input value={String(policies.fulfillmentPolicyId ?? "")} onChange={(event) => updatePolicies({ fulfillmentPolicyId: event.target.value })} /></FormField>
             <FormField label="Payment policy ID"><Input value={String(policies.paymentPolicyId ?? "")} onChange={(event) => updatePolicies({ paymentPolicyId: event.target.value })} /></FormField>
