@@ -80,7 +80,7 @@ export function KauflandProductFields({ product, onProductChange }: {
   onProductChange: (product: Record<string, unknown>) => void;
 }) {
   const fields = flattenFields(Object.fromEntries(Object.entries(product).filter(
-    ([key]) => !["title", "ean", "price", "picture", "picture_urls", "category", "category_detail", "storefront", "product_safety_contact", "short_description", "description", "undefined", "null", ...REQUIRED_CREATE_FIELDS.map((field) => field.key)].includes(key.toLowerCase()),
+    ([key]) => !["title", "ean", "price", "colour", "picture", "picture_urls", "category", "category_detail", "storefront", "product_safety_contact", "short_description", "description", "undefined", "null", ...REQUIRED_CREATE_FIELDS.map((field) => field.key)].includes(key.toLowerCase()),
   )))
     .filter((field) => !HIDDEN_FIELD_LABELS.has(field.label))
     .filter((field) => field.label !== "Delivery Time Min" && field.label !== "Delivery Time Max");

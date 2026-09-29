@@ -3319,6 +3319,7 @@ export default function CreateProductPage() {
                   <KauflandProductDetailsPanel
                     initialDraft={activeKauflandInitialDraft}
                     draftKey={`${activeTab}:${activeKauflandDraftKey}:${activeReservedMarketplaceEan}`}
+                    sourceLoaded={Object.keys(kauflandProduct).length > 0}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(description))}
