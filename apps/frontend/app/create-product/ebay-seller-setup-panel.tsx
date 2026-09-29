@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ProductEditorEbaySpecifics } from "../../components/product-editor/product-editor-ebay-specifics";
+import { EbayPackageFields } from "../../components/product-editor/ebay-package-fields";
 import { apiFetch } from "../../lib/api/client";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { JvDescriptionEditor } from "./jv-description-editor";
@@ -51,6 +52,16 @@ function parseAspects(value: string): Record<string, string[]> {
   }
 }
 
+function parsePackage(value: string): Record<string, unknown> | null {
+  if (!value.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
 function apiError(response: Response, payload: unknown): string {
   if (payload && typeof payload === "object" && "detail" in payload && typeof payload.detail === "string") return payload.detail;
   return `HTTP ${response.status}`;
@@ -91,6 +102,7 @@ export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialF
   const fulfillmentPolicies = useMemo(() => setup?.fulfillment_policies?.fulfillmentPolicies ?? [], [setup]);
   const paymentPolicies = useMemo(() => setup?.payment_policies?.paymentPolicies ?? [], [setup]);
   const returnPolicies = useMemo(() => setup?.return_policies?.returnPolicies ?? [], [setup]);
+  const packageData = parsePackage(fields.packageWeightAndSizeText);
 
   function updateField<Key extends keyof EbayCreateFields>(key: Key, value: EbayCreateFields[Key]) {
     setFields((current) => { const next = { ...current, [key]: value }; onDraftChangeRef.current(next); return next; });
@@ -100,6 +112,26 @@ export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialF
     setAspectValues(next);
     updateField("aspectsText", JSON.stringify(next, null, 2));
   }
+
+  function applyGenerated(aspects: Record<string, string[]>, seo: { title: string; subtitle: string; description: string }) {
+    setAspectValues(aspects);
+    setFields((current) => {
+      const next = {
+        ...current,
+        aspectsText: JSON.stringify(aspects, null, 2),
+        title: seo.title || current.title,
+        subtitle: seo.subtitle || current.subtitle,
+        listingDescription: seo.description || current.listingDescription,
+      };
+      onDraftChangeRef.current(next);
+      return next;
+    });
+  }
+
+  const packageFacts = packageData ? {
+    ...(packageData.weight ? { "Package weight": JSON.stringify(packageData.weight) } : {}),
+    ...(packageData.dimensions ? { "Package dimensions": JSON.stringify(packageData.dimensions) } : {}),
+  } : {};
 
   return (
     <section className="mt-4 space-y-4 rounded-[var(--radius-control)] border border-border/70 bg-background p-4">
@@ -127,12 +159,12 @@ export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialF
         <label className="space-y-1.5 text-sm font-medium md:col-span-2">Listing description override<DeferredTextarea className="min-h-24 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={fields.listingDescription} onCommit={(value) => updateField("listingDescription", value)} /></label>
         <label className="space-y-1.5 text-sm font-medium">Condition<DeferredInput className="wh-input h-10 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm" value={fields.condition} onCommit={(value) => updateField("condition", value)} placeholder="NEW" /></label>
         <label className="space-y-1.5 text-sm font-medium md:col-span-2">Condition description<DeferredTextarea className="min-h-16 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={fields.conditionDescription} onCommit={(value) => updateField("conditionDescription", value)} /></label>
-        <label className="space-y-1.5 text-sm font-medium md:col-span-2">Package weight and size (JSON)<DeferredTextarea className="min-h-24 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={fields.packageWeightAndSizeText} onCommit={(value) => updateField("packageWeightAndSizeText", value)} placeholder={'{"weight":{"value":14,"unit":"KILOGRAM"}}'} /></label>
+        <div className="md:col-span-2">{packageData ? <EbayPackageFields value={packageData} onChange={(value) => updateField("packageWeightAndSizeText", Object.keys(value).length ? JSON.stringify(value) : "")} /> : <label className="space-y-1.5 text-sm font-medium">Package weight and size (invalid JSON; correct it to use the form)<DeferredTextarea className="min-h-24 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={fields.packageWeightAndSizeText} onCommit={(value) => updateField("packageWeightAndSizeText", value)} /></label>}</div>
         <EbayCategoryPicker label="Primary category" value={fields.categoryId} excludeCategoryId={fields.secondaryCategoryId} onChange={(categoryId) => updateField("categoryId", categoryId)} />
         <EbayCategoryPicker label="Secondary category" value={fields.secondaryCategoryId} excludeCategoryId={fields.categoryId} optional onChange={(secondaryCategoryId) => updateField("secondaryCategoryId", secondaryCategoryId)} />
         <label className="space-y-1.5 text-sm font-medium">Store category names (one per line)<DeferredTextarea className="min-h-16 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={fields.storeCategoryNamesText} onCommit={(value) => updateField("storeCategoryNamesText", value)} /></label>
         <label className="space-y-1.5 text-sm font-medium md:col-span-2">Regulatory / GPSR (eBay JSON)<DeferredTextarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={fields.regulatoryText} onCommit={(value) => updateField("regulatoryText", value)} placeholder="Only enter applicable eBay regulatory fields" /></label>
-        <div className="md:col-span-2"><ProductEditorEbaySpecifics title="Category attributes" categoryId={fields.categoryId} value={aspectValues} onChange={updateAspects} /></div>
+        <div className="md:col-span-2"><ProductEditorEbaySpecifics title="Category attributes" categoryId={fields.categoryId} sourceTitle={fields.title} sourceDescription={fields.description} sourceFacts={{ Brand: fields.brand, MPN: fields.mpn, ...packageFacts, ...Object.fromEntries(Object.entries(aspectValues).slice(0, 30).map(([name, values]) => [name.slice(0, 100), values.join(", ").slice(0, 500)])) }} value={aspectValues} onChange={updateAspects} onGenerated={applyGenerated} /></div>
       </div> : null}
     </section>
   );
