@@ -773,6 +773,10 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     }
 
     const normalized = normalizeCreateProductInput(formInput);
+    if (targetSiteIds.some((siteId) => ["hood-", "kaufland-", "otto-"].some((prefix) => siteId.startsWith(prefix))) && !kidContext?.kidNumber.trim()) {
+      showToast("Open Create Product from a Kid before publishing to HOOD, Kaufland, or OTTO.", "error");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -782,6 +786,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           price: normalized.price,
           productName: normalized.productName,
           imageUrls: normalized.imageUrls,
+          kidNumber: kidContext?.kidNumber,
+          kidId: kidContext?.kidId,
           selectedSiteIds: targetSiteIds,
           operation,
           additionalPayload,
@@ -797,6 +803,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         price: normalized.price,
         productName: normalized.productName,
         imageUrls: normalized.imageUrls,
+        kidNumber: kidContext?.kidNumber,
+        kidId: kidContext?.kidId,
         selectedSiteIds: targetSiteIds,
         operation,
         additionalPayload,
@@ -890,8 +898,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       showToast("Add a description before publishing to Kaufland.", "error");
       return;
     }
-    if ((hasHoodSelection || hasKauflandSelection) && !kidContext?.kidNumber.trim()) {
-      showToast("Open Create Product from a Kid before publishing to HOOD or Kaufland.", "error");
+    if ((hasHoodSelection || hasKauflandSelection || hasOttoSelection) && !kidContext?.kidNumber.trim()) {
+      showToast("Open Create Product from a Kid before publishing to HOOD, Kaufland, or OTTO.", "error");
       return;
     }
     if (hasJvSelection && (!kidContext?.kidId || !kidContext.kidNumber.trim())) {

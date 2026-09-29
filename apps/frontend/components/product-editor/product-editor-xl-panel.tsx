@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useLabels } from "../../app/use-labels";
+import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
 import { getXlRubricTree, type ProductEditorJvRubricNode } from "./product-editor-api";
 import { ProductEditorAttributesEditor, ProductEditorPanelLayout } from "./product-editor-shared-panels";
 import { normalizeProductAttributes, sanitizeDescriptionPreviewHtml } from "./product-editor-model";
@@ -391,58 +392,18 @@ export function ProductEditorXlPanel(props: ProductEditorXlPanelProps) {
                       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productEditorXlDescriptionTitle}</p>
                       <p className="text-sm text-muted-foreground">{t.productEditorXlDescriptionHint}</p>
                     </div>
-                    <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setDescriptionMode("code")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-                          descriptionMode === "code" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {t.codeLabel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDescriptionMode("preview")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-                          descriptionMode === "preview" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {t.previewLabel}
-                      </button>
-                    </div>
                   </div>
 
-                  {descriptionMode === "code" ? (
-                    <Textarea
-                      value={descriptionValue}
-                      onChange={(event) => patchDescription(0, "description", event.target.value)}
-                      className="min-h-[32rem] rounded-xl border-border bg-white font-sans text-sm"
-                    />
-                  ) : (
-                    <div className="max-h-[32rem] overflow-auto rounded-xl border border-border bg-white p-4">
-                      {descriptionValue.trim() ? (
-                        <div
-                          className="text-sm leading-6 outline-none"
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(event) => patchDescription(0, "description", event.currentTarget.innerHTML)}
-                          dangerouslySetInnerHTML={{ __html: descriptionPreviewHtml }}
-                        />
-                      ) : (
-                        <div
-                          className="text-sm text-muted-foreground outline-none"
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(event) => patchDescription(0, "description", event.currentTarget.innerHTML)}
-                        >
-                          {t.noDescription}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <JvDescriptionEditor
+                    description={descriptionValue}
+                    previewHtml={descriptionPreviewHtml}
+                    mode={descriptionMode}
+                    descriptionLabel={t.descriptionLabel}
+                    codeLabel={t.codeLabel}
+                    previewLabel={t.previewLabel}
+                    onModeChange={setDescriptionMode}
+                    onChange={(value) => patchDescription(0, "description", value)}
+                  />
                 </div>
 	            </div>
 	          ) : null}

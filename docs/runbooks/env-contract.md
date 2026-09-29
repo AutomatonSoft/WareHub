@@ -90,6 +90,8 @@ If SMTP credentials are missing locally, local password-reset fallback logging m
 Do not copy local secrets into stage/prod templates.
 Do not copy live stage/prod secrets back into the repository.
 
+Production XL DE source DB credentials are kept in `/opt/warehub/prod/.env.xl.local` (owner `cddeploy`, mode `0600`). The production `services` Compose entry loads this file after `.env`, so its `XL_SOURCE_XLMOEBEL_DE_DB_*` values survive releases that replace `.env`. The deploy bundle does not contain or delete this server-local file. Back it up separately when moving servers; never commit it. After rotating its credentials, recreate only the `services` container and verify the XL source lookup.
+
 ## Stage Compose Preflight
 
 Stage Compose Preflight is a read-only validation workflow, not a deployment.

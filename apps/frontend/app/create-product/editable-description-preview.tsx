@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { readHoodDescriptionPreviewDocumentHtml } from "../../components/product-editor/product-editor-hood-description-preview";
+import { HtmlFontFamilySelect } from "../../components/ui/html-font-family-select";
 
 type EditableDescriptionPreviewProps = {
   title: string;
@@ -19,7 +20,9 @@ export function EditableDescriptionPreview({
 }: EditableDescriptionPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const frameEventsRef = useRef<AbortController | null>(null);
   const editingRef = useRef(false);
+  const selectionRangeRef = useRef<Range | null>(null);
   const lastSavedHtmlRef = useRef("");
   const [frameSrcDoc, setFrameSrcDoc] = useState(srcDoc);
 
@@ -36,6 +39,26 @@ export function EditableDescriptionPreview({
     onSave(nextDescription);
   };
 
+  const saveSelection = () => {
+    const selection = iframeRef.current?.contentWindow?.getSelection();
+    const body = iframeRef.current?.contentDocument?.body;
+    if (selection?.rangeCount && body?.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      selectionRangeRef.current = selection.getRangeAt(0).cloneRange();
+    }
+  };
+
+  const applyFontFamily = (fontFamily: string) => {
+    const frameDocument = iframeRef.current?.contentDocument;
+    const selection = iframeRef.current?.contentWindow?.getSelection();
+    if (!frameDocument || !selectionRangeRef.current || !selection) return;
+    selection.removeAllRanges();
+    selection.addRange(selectionRangeRef.current);
+    frameDocument.execCommand("fontName", false, fontFamily);
+    saveSelection();
+    saveFrameEdits();
+    syncFrameHeight();
+  };
+
   const syncFrameHeight = () => {
     if (!autoHeight || !iframeRef.current) return;
     const documentElement = iframeRef.current.contentDocument?.documentElement;
@@ -45,10 +68,17 @@ export function EditableDescriptionPreview({
     iframeRef.current.style.height = `${height}px`;
   };
 
-  useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
+  useEffect(() => () => {
+    resizeObserverRef.current?.disconnect();
+    frameEventsRef.current?.abort();
+  }, []);
 
   return (
-    <iframe
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1 rounded-t-[var(--radius-control)] border border-b-0 border-border/70 bg-muted/20 p-2">
+        <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={applyFontFamily} />
+      </div>
+      <iframe
       ref={iframeRef}
       title={title}
       srcDoc={frameSrcDoc}
@@ -63,6 +93,11 @@ export function EditableDescriptionPreview({
         const documentElement = iframeRef.current?.contentDocument?.documentElement;
         if (!frameWindow || !frameBody) return;
 
+        frameEventsRef.current?.abort();
+        const frameEvents = new AbortController();
+        frameEventsRef.current = frameEvents;
+        selectionRangeRef.current = null;
+
         syncFrameHeight();
         frameWindow.setTimeout(syncFrameHeight, 0);
         frameBody.querySelectorAll("img").forEach((image) => {
@@ -75,8 +110,8 @@ export function EditableDescriptionPreview({
           resizeObserverRef.current.observe(frameBody);
         }
 
-        frameBody.contentEditable = "true";
-        frameBody.dataset.hoodPreviewEditable = "true";
+        frameBody.setAttribute("contenteditable", "true");
+        frameBody.setAttribute("data-hood-preview-editable", "true");
         const markEditing = () => {
           editingRef.current = true;
         };
@@ -84,14 +119,16 @@ export function EditableDescriptionPreview({
           saveFrameEdits();
           editingRef.current = false;
         };
-        frameBody.oninput = () => {
+        frameBody.addEventListener("input", () => {
           markEditing();
           syncFrameHeight();
-        };
-        frameBody.onkeyup = markEditing;
-        frameBody.onblur = stopEditing;
-        frameWindow.onblur = stopEditing;
+        }, { signal: frameEvents.signal });
+        frameBody.addEventListener("keyup", () => { markEditing(); saveSelection(); }, { signal: frameEvents.signal });
+        frameBody.addEventListener("mouseup", saveSelection, { signal: frameEvents.signal });
+        frameBody.addEventListener("blur", stopEditing, { signal: frameEvents.signal });
+        frameWindow.addEventListener("blur", stopEditing, { signal: frameEvents.signal });
       }}
-    />
+      />
+    </div>
   );
 }
