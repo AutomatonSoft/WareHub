@@ -32,7 +32,7 @@ import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
 import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./otto-create-product-panel";
-import type { EbayCreateFields, MainKauflandCreateFields } from "./create-product-model";
+import { normalizeKauflandDimension, type EbayCreateFields, type MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
@@ -145,6 +145,7 @@ type GalleryItem = CreateProductGalleryItem;
 const EMPTY_GALLERY_ITEMS: GalleryItem[] = [];
 type LocalDraftSnapshot<TDraft> = {
   sourceKey: string;
+  sourceSnapshotKey?: string;
   draft: TDraft;
 };
 
@@ -605,9 +606,9 @@ function buildKauflandFieldsFromDraft(product: Record<string, unknown>): MainKau
     color: kauflandDraftFieldText(product, "color"),
     material: kauflandDraftFieldText(product, "material"),
     delivery: kauflandDraftFieldText(product, "delivery"),
-    height: kauflandDraftFieldText(product, "height"),
-    length: kauflandDraftFieldText(product, "length"),
-    width: kauflandDraftFieldText(product, "width"),
+    height: normalizeKauflandDimension(kauflandDraftFieldText(product, "height")),
+    length: normalizeKauflandDimension(kauflandDraftFieldText(product, "length")),
+    width: normalizeKauflandDimension(kauflandDraftFieldText(product, "width")),
     amount: kauflandDraftFieldText(product, "amount") || "20",
     idOffer: kauflandDraftFieldText(product, "id_offer") || kauflandDraftFieldText(product, "ean"),
     storefronts: kauflandDraftFieldText(product, "storefronts", "storefront") || "de, cz, sk, pl, at, fr, it",
@@ -1397,10 +1398,12 @@ export default function CreateProductPage() {
     [sourcePayload]
   );
   const kauflandProduct = useMemo(
-    () => (sourcePayload.response_data && typeof sourcePayload.response_data === "object" && !Array.isArray(sourcePayload.response_data)
+    () => (controller.sourceSnapshot?.siteKey === activeTabMeta.sourceSiteKey
+      && controller.sourceSnapshot?.ean === controller.activeMainEan
+      && sourcePayload.response_data && typeof sourcePayload.response_data === "object" && !Array.isArray(sourcePayload.response_data)
       ? sourcePayload.response_data
       : {}) as Record<string, unknown>,
-    [sourcePayload],
+    [activeTabMeta.sourceSiteKey, controller.activeMainEan, controller.sourceSnapshot?.ean, controller.sourceSnapshot?.siteKey, sourcePayload],
   );
   const sourceCategories = useMemo(() => extractSourceCategories(sourcePayload), [sourcePayload]);
   const jvInitialSelections = useMemo<JvPublishingSelections>(() => {
@@ -1719,7 +1722,17 @@ export default function CreateProductPage() {
     ? activeHoodDraftSnapshot.draft
     : { name: controller.productName, price: controller.price, ...controller.hoodFields, ean: activeReservedMarketplaceEan || controller.ean };
   const activeKauflandInitialDraft = activeKauflandDraftSnapshot
-    ? activeKauflandDraftSnapshot.draft
+    ? activeKauflandDraftSnapshot.sourceSnapshotKey === activeSourceSnapshotKey
+      ? activeKauflandDraftSnapshot.draft
+      : {
+          ...sourceKauflandDraft,
+          ...activeKauflandDraftSnapshot.draft,
+          title: activeKauflandDraftSnapshot.draft.title || sourceKauflandDraft.title,
+          price: activeKauflandDraftSnapshot.draft.price || sourceKauflandDraft.price,
+          description: activeKauflandDraftSnapshot.draft.description || sourceKauflandDraft.description,
+          shortDescription: activeKauflandDraftSnapshot.draft.shortDescription || sourceKauflandDraft.shortDescription,
+          product: { ...sourceKauflandDraft.product, ...activeKauflandDraftSnapshot.draft.product },
+        }
     : sourceKauflandDraft;
   const activeOttoProfile: OttoProfile | null = activeTabMeta.marketplace === "OTTO"
     ? (activeTabMeta.account === "XL" ? "xl" : "jv")
@@ -1743,7 +1756,7 @@ export default function CreateProductPage() {
     }), activeReservedMarketplaceEan);
   const activeXlDraftKey = activeXlDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
   const activeHoodDraftKey = activeHoodSourceKey;
-  const activeKauflandDraftKey = activeKauflandDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
+  const activeKauflandDraftKey = `${activeDraftContextKey}:${activeSourceSnapshotKey}`;
   const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
 
   useEffect(() => {
@@ -1854,6 +1867,7 @@ export default function CreateProductPage() {
             : sourceKauflandDraft;
           kauflandDraftRefByTab.current[activeTab] = {
             sourceKey: activeKauflandSourceKey,
+            sourceSnapshotKey: kauflandDraftRefByTab.current[activeTab]?.sourceSnapshotKey,
             draft: { ...current, ean },
           };
         } else if (activeTabMeta.marketplace === "OTTO") {
@@ -3305,6 +3319,7 @@ export default function CreateProductPage() {
                   <KauflandProductDetailsPanel
                     initialDraft={activeKauflandInitialDraft}
                     draftKey={`${activeTab}:${activeKauflandDraftKey}:${activeReservedMarketplaceEan}`}
+                    sourceLoaded={Object.keys(kauflandProduct).length > 0}
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildKauflandDescriptionPreviewDocument(description))}
@@ -3316,7 +3331,7 @@ export default function CreateProductPage() {
                       <KauflandDeliveryTimeRange product={product} onProductChange={onProductChange} label={t.ottoDeliveryTimeDays} />
                     )}
                     onDraftChange={(draft) => {
-                      kauflandDraftRefByTab.current[activeTab] = { sourceKey: activeKauflandSourceKey, draft };
+                      kauflandDraftRefByTab.current[activeTab] = { sourceKey: activeKauflandSourceKey, sourceSnapshotKey: activeSourceSnapshotKey, draft };
                     }}
                   />
                 ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { DeferredInput, DeferredTextarea } from "../../app/create-product/deferred-form-fields";
+import { normalizeKauflandDimension } from "../../app/create-product/create-product-model";
 
 const REQUIRED_CREATE_FIELDS = [
   { key: "size", label: "Size", inputMode: "text" },
@@ -80,7 +81,7 @@ export function KauflandProductFields({ product, onProductChange }: {
   onProductChange: (product: Record<string, unknown>) => void;
 }) {
   const fields = flattenFields(Object.fromEntries(Object.entries(product).filter(
-    ([key]) => !["title", "ean", "price", "picture", "picture_urls", "category", "category_detail", "storefront", "product_safety_contact", "short_description", "description", "undefined", "null", ...REQUIRED_CREATE_FIELDS.map((field) => field.key)].includes(key.toLowerCase()),
+    ([key]) => !["title", "ean", "price", "colour", "picture", "picture_urls", "category", "category_detail", "storefront", "product_safety_contact", "short_description", "description", "undefined", "null", ...REQUIRED_CREATE_FIELDS.map((field) => field.key)].includes(key.toLowerCase()),
   )))
     .filter((field) => !HIDDEN_FIELD_LABELS.has(field.label))
     .filter((field) => field.label !== "Delivery Time Min" && field.label !== "Delivery Time Max");
@@ -97,6 +98,11 @@ export function KauflandProductFields({ product, onProductChange }: {
             inputMode={field.inputMode}
             value={readTopLevelField(product, field.key)}
             onDraftChange={(value) => onProductChange(updateTopLevelField(product, field.key, value))}
+            onBlur={field.inputMode === "decimal" ? (event) => {
+              const normalized = normalizeKauflandDimension(event.currentTarget.value);
+              event.currentTarget.value = normalized;
+              onProductChange(updateTopLevelField(product, field.key, normalized));
+            } : undefined}
           />
         </div>
       ))}
