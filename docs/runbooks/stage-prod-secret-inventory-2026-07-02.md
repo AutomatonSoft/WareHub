@@ -698,6 +698,7 @@ These are not part of the minimal compose `environment:` block, but now reach co
 - Current active deploy contract is bundle-based, not many-small-secrets based.
 - For `stage`, the authoritative runtime overlay is `STAGE_ENV_FILE`.
 - For `production`, the authoritative runtime overlay is `PROD_ENV_FILE`.
+- Exception: production XL DE source DB credentials are held in the server-local `.env.xl.local` loaded after `.env` by `services`; see `docs/runbooks/env-contract.md`.
 - `SHARED_ENV_FILE` is available for cross-environment shared values, but production is currently configured so the effective live values are already contained in `PROD_ENV_FILE`.
 - If you want stricter auditability later, the next improvement is to split large env overlay files into smaller named secrets by domain:
   - SMTP

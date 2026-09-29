@@ -93,10 +93,8 @@ export function KauflandProductFields({ product, onProductChange }: {
             {field.label}
           </label>
           <DeferredInput
-            type={field.inputMode === "text" ? "text" : "number"}
+            type="text"
             inputMode={field.inputMode}
-            min={field.inputMode === "numeric" ? "0" : undefined}
-            step={field.inputMode === "decimal" ? "0.01" : undefined}
             value={readTopLevelField(product, field.key)}
             onDraftChange={(value) => onProductChange(updateTopLevelField(product, field.key, value))}
           />

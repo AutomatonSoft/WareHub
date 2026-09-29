@@ -144,6 +144,8 @@ export async function pushProductToOrchestrator(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  kidNumber?: string;
+  kidId?: number;
   additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
   operation?: OrchestratorOperation;
@@ -154,7 +156,13 @@ export async function pushProductToOrchestrator(input: {
   const response = await apiFetch(`/api/v1/orchestrator/products/${encodeURIComponent(input.ean)}/update`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels })
+    body: JSON.stringify({
+      operation: input.operation ?? (Operation.update satisfies OrchestratorOperation),
+      payload,
+      channels,
+      ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+      ...(input.kidId && Number.isInteger(input.kidId) ? { kid_id: input.kidId } : {}),
+    })
   });
 
   const body = await response.json();
@@ -175,6 +183,8 @@ export async function createOrchestratorJob(input: {
   productName: string;
   price: string;
   imageUrls: string[];
+  kidNumber?: string;
+  kidId?: number;
   additionalPayload?: Record<string, unknown>;
   selectedSiteIds: string[];
   operation?: OrchestratorOperation;
@@ -187,7 +197,13 @@ export async function createOrchestratorJob(input: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       ean: input.ean,
-      command: { operation: input.operation ?? (Operation.update satisfies OrchestratorOperation), payload, channels }
+      command: {
+        operation: input.operation ?? (Operation.update satisfies OrchestratorOperation),
+        payload,
+        channels,
+        ...(input.kidNumber?.trim() ? { kid_number: input.kidNumber.trim() } : {}),
+        ...(input.kidId && Number.isInteger(input.kidId) ? { kid_id: input.kidId } : {}),
+      }
     })
   });
   const raw = (await response.json()) as Record<string, unknown>;

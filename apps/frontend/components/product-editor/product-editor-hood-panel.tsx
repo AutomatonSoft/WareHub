@@ -7,6 +7,7 @@ import { HoodCreateProductPanel, type HoodCreateProductDraft } from "../product-
 import { Button } from "../ui/button";
 import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
+import { HtmlFontFamilySelect } from "../ui/html-font-family-select";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/cn";
 import { decodeHtmlEntities } from "../hood/hood-search-utils";
@@ -116,9 +117,13 @@ function EditableHoodDescriptionPreview({
 }) {
   const t = useLabels();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const frameEventsRef = useRef<AbortController | null>(null);
+  const selectionRangeRef = useRef<Range | null>(null);
   const editingRef = useRef(false);
   const lastSavedHtmlRef = useRef("");
   const [frameSrcDoc, setFrameSrcDoc] = useState(srcDoc);
+
+  useEffect(() => () => frameEventsRef.current?.abort(), []);
 
   useEffect(() => {
     if (editingRef.current) return;
@@ -133,8 +138,28 @@ function EditableHoodDescriptionPreview({
     onSave(nextDescription);
   }
 
+  function saveSelection() {
+    const selection = iframeRef.current?.contentWindow?.getSelection();
+    const body = iframeRef.current?.contentDocument?.body;
+    if (selection?.rangeCount && body?.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      selectionRangeRef.current = selection.getRangeAt(0).cloneRange();
+    }
+  }
+
+  function applyFontFamily(fontFamily: string) {
+    const frameDocument = iframeRef.current?.contentDocument;
+    const selection = iframeRef.current?.contentWindow?.getSelection();
+    if (!frameDocument || !selectionRangeRef.current || !selection) return;
+    selection.removeAllRanges();
+    selection.addRange(selectionRangeRef.current);
+    frameDocument.execCommand("fontName", false, fontFamily);
+    saveSelection();
+    syncFrameToDraft();
+  }
+
   return (
     <div className="space-y-3">
+      <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={applyFontFamily} />
       <iframe
         ref={iframeRef}
         title={t.hoodDescriptionPreview}
@@ -147,6 +172,11 @@ function EditableHoodDescriptionPreview({
           const editableBody = frameDocument?.body;
           if (!frameWindow || !editableBody) return;
 
+          frameEventsRef.current?.abort();
+          const frameEvents = new AbortController();
+          frameEventsRef.current = frameEvents;
+          selectionRangeRef.current = null;
+
           const markEditing = () => {
             editingRef.current = true;
             syncFrameToDraft();
@@ -156,10 +186,11 @@ function EditableHoodDescriptionPreview({
             editingRef.current = false;
           };
 
-          editableBody.oninput = markEditing;
-          editableBody.onkeyup = markEditing;
-          editableBody.onblur = stopEditing;
-          frameWindow.onblur = stopEditing;
+          editableBody.addEventListener("input", markEditing, { signal: frameEvents.signal });
+          editableBody.addEventListener("keyup", () => { markEditing(); saveSelection(); }, { signal: frameEvents.signal });
+          editableBody.addEventListener("mouseup", saveSelection, { signal: frameEvents.signal });
+          editableBody.addEventListener("blur", stopEditing, { signal: frameEvents.signal });
+          frameWindow.addEventListener("blur", stopEditing, { signal: frameEvents.signal });
         }}
       />
       <div className="flex items-center justify-between gap-3">

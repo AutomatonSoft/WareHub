@@ -164,6 +164,8 @@ services:
     env_file:
       - path: .env
         required: false
+      - path: .env.xl.local
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
