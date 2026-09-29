@@ -83,6 +83,11 @@ export type MainKauflandCreateFields = {
 
 export type MainKauflandCreateFieldKey = keyof MainKauflandCreateFields;
 
+export function normalizeKauflandDimension(value: string): string {
+  const match = value.match(/^\s*(\d+(?:[.,]\d+)?)\s*(?:cm)?\s*$/i);
+  return match ? match[1].replace(",", ".") : value.trim();
+}
+
 export type MainXljvCreateFields = {
   artikelnr: string;
   sourceSku: string;

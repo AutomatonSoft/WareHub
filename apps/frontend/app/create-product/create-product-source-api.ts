@@ -16,6 +16,7 @@ import {
 import { fetchKauflandByEan, type KauflandSite } from "../../components/channels/kaufland-api";
 import { normalizeEanOrEmpty } from "../../components/inventory/ean-utils";
 import { apiFetch } from "../../lib/api/client";
+import { normalizeKauflandDimension } from "./create-product-model";
 
 type KidMarketplaceEansResponse = {
   main_ean_jv?: unknown;
@@ -308,6 +309,9 @@ function normalizeKauflandProduct(payload: Record<string, unknown>): Record<stri
     ean: firstAvailableText(product, ["ean", "product_ean"]),
     price: firstAvailableText(product, ["price", "standard_price", "sale_price"]),
     color: firstAvailableText(product, ["color", "colour"]),
+    height: normalizeKauflandDimension(firstText(product.height)),
+    length: normalizeKauflandDimension(firstText(product.length)),
+    width: normalizeKauflandDimension(firstText(product.width)),
     description: firstAvailableText(product, ["description", "long_description"]),
     short_description: product.short_description ?? product.shortDescription ?? product.short_description_text ?? [],
     picture: imageUrls,
