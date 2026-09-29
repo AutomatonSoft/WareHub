@@ -74,6 +74,7 @@ from orders_pars.views import (
 )
 from hood_service.views import HoodFetchByEANAPIView
 from ebay_service.views import (
+    EbayAttributeSuggestionsAPIView,
     EbayActiveListingsAPIView,
     EbayCategoryAspectsAPIView,
     EbayCategorySuggestionsAPIView,
@@ -306,6 +307,11 @@ api_v1_patterns = [
         "api/v1/ebay/taxonomy/category-aspects/",
         EbayCategoryAspectsAPIView.as_view(),
         name="ebay-category-aspects-v1",
+    ),
+    path(
+        "api/v1/ebay/taxonomy/attribute-suggestions/",
+        EbayAttributeSuggestionsAPIView.as_view(),
+        name="ebay-attribute-suggestions-v1",
     ),
     path(
         "api/v1/ebay/taxonomy/category-tree/",

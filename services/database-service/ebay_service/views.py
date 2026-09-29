@@ -16,6 +16,7 @@ from database.idempotency import build_request_hash, claim_or_replay, derive_ide
 from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import EbayCredentialError, store_refresh_token
 from .listing_operations import execute_listing_operation, index_legacy_listing_page, reconcile_legacy_listing
+from .attribute_suggestions import AttributeSuggestionError, suggest_category_attributes
 
 
 _OAUTH_STATE_SALT = "ebay-oauth-state"
@@ -530,6 +531,40 @@ class EbayCategoryAspectsAPIView(APIView):
             return Response(EbayTaxonomyClient().category_aspects(marketplace_id=marketplace_id, category_id=category_id))
         except EbayApiError as error:
             return _error_response(error)
+
+
+class EbayAttributeSuggestionsAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        category_id = str(payload.get("category_id") or "").strip()
+        title = str(payload.get("title") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        facts = payload.get("facts") or {}
+        if not category_id or not category_id.isdigit() or len(category_id) > 20 or len(title) > 500 or len(description) > 12000:
+            return Response({"code": "ebay_attribute_suggestions_invalid_request", "detail": "Enter a valid category and product text."}, status=400)
+        if not isinstance(facts, dict) or len(facts) > 40 or any(
+            not isinstance(name, str) or len(name) > 100 or not isinstance(value, str) or len(value) > 500
+            for name, value in facts.items()
+        ):
+            return Response({"code": "ebay_attribute_suggestions_invalid_request", "detail": "Product facts must be short text fields."}, status=400)
+        if not title and not description:
+            return Response({"code": "ebay_attribute_suggestions_invalid_request", "detail": "Enter a title or description first."}, status=400)
+        try:
+            taxonomy = EbayTaxonomyClient().category_aspects(marketplace_id="EBAY_DE", category_id=category_id)
+            suggestions = suggest_category_attributes(
+                category_id=category_id,
+                title=title,
+                description=description,
+                facts=facts,
+                aspects=taxonomy.get("aspects") or [],
+            )
+        except EbayApiError as error:
+            return _error_response(error)
+        except AttributeSuggestionError as error:
+            return Response({"code": "ebay_attribute_suggestions_unavailable", "detail": str(error)}, status=503)
+        return Response({"category_id": category_id, **suggestions})
 
 
 class EbayCategoryTreeAPIView(APIView):

@@ -9,6 +9,7 @@ import { uploadProductImages } from "../editor/product-image-api";
 import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
 import { EbayCategoryPicker } from "../../app/create-product/ebay-category-picker";
 import { ProductEditorEbaySpecifics } from "./product-editor-ebay-specifics";
+import { EbayPackageFields } from "./ebay-package-fields";
 import type { ProductEditorEbayDraft, ProductEditorWarning } from "./product-editor-types";
 
 type Props = {
@@ -194,13 +195,25 @@ export function ProductEditorEbayPanel(props: Props) {
             <FormField label="Merchant location key"><Input value={String(offer.merchantLocationKey ?? "")} onChange={(event) => updateOffer({ merchantLocationKey: event.target.value })} /></FormField>
             <FormField label="Store category names (comma-separated)"><Input value={stringArray(offer.storeCategoryNames).join(", ")} onChange={(event) => updateOffer({ storeCategoryNames: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
           </div>
-          <JsonObjectField label="Package weight and size (JSON)" value={inventoryItem.packageWeightAndSize} onChange={(packageWeightAndSize) => updateInventoryItem({ packageWeightAndSize })} />
+          <EbayPackageFields value={asRecord(inventoryItem.packageWeightAndSize)} onChange={(packageWeightAndSize) => updateInventoryItem({ packageWeightAndSize })} />
           <JvDescriptionEditor description={String(product.description ?? "")} previewHtml={String(product.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateProduct({ description })} />
           <FormField label="Listing description override"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={String(offer.listingDescription ?? "")} onChange={(event) => updateOffer({ listingDescription: event.target.value })} /></FormField>
           <JsonObjectField label="Regulatory / GPSR (eBay JSON)" value={offer.regulatory} onChange={(regulatory) => updateOffer({ regulatory })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(product.imageUrls).join("\n")} onChange={(event) => updateProduct({ imageUrls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(product.imageUrls)} onChange={(imageUrls) => updateProduct({ imageUrls })} />
-          <ProductEditorEbaySpecifics title="Category attributes" categoryId={String(offer.categoryId ?? "")} value={asRecord(product.aspects)} onChange={(aspects) => updateProduct({ aspects })} />
+          <ProductEditorEbaySpecifics
+            title="Category attributes"
+            categoryId={String(offer.categoryId ?? "")}
+            sourceTitle={String(product.title ?? "")}
+            sourceDescription={String(product.description ?? "")}
+            sourceFacts={{ Brand: String(product.brand ?? ""), MPN: String(product.mpn ?? ""), "Package weight": JSON.stringify(asRecord(inventoryItem.packageWeightAndSize).weight ?? ""), "Package dimensions": JSON.stringify(asRecord(inventoryItem.packageWeightAndSize).dimensions ?? ""), ...Object.fromEntries(Object.entries(asRecord(product.aspects)).slice(0, 30).map(([name, values]) => [name.slice(0, 100), stringArray(values).join(", ").slice(0, 500)])) }}
+            value={asRecord(product.aspects)}
+            onChange={(aspects) => updateProduct({ aspects })}
+            onGenerated={(aspects, seo) => props.onChange({
+              ebay_inventory_item: { ...inventoryItem, product: { ...product, aspects, title: seo.title || product.title, subtitle: seo.subtitle || product.subtitle } },
+              ebay_offer: { ...offer, listingDescription: seo.description || offer.listingDescription },
+            })}
+          />
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Fulfillment policy ID"><Input value={String(policies.fulfillmentPolicyId ?? "")} onChange={(event) => updatePolicies({ fulfillmentPolicyId: event.target.value })} /></FormField>
             <FormField label="Payment policy ID"><Input value={String(policies.paymentPolicyId ?? "")} onChange={(event) => updatePolicies({ paymentPolicyId: event.target.value })} /></FormField>
