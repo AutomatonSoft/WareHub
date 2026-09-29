@@ -1,6 +1,7 @@
 "use client";
 
 import { DeferredInput, DeferredTextarea } from "../../app/create-product/deferred-form-fields";
+import { normalizeKauflandDimension } from "../../app/create-product/create-product-model";
 
 const REQUIRED_CREATE_FIELDS = [
   { key: "size", label: "Size", inputMode: "text" },
@@ -97,6 +98,11 @@ export function KauflandProductFields({ product, onProductChange }: {
             inputMode={field.inputMode}
             value={readTopLevelField(product, field.key)}
             onDraftChange={(value) => onProductChange(updateTopLevelField(product, field.key, value))}
+            onBlur={field.inputMode === "decimal" ? (event) => {
+              const normalized = normalizeKauflandDimension(event.currentTarget.value);
+              event.currentTarget.value = normalized;
+              onProductChange(updateTopLevelField(product, field.key, normalized));
+            } : undefined}
           />
         </div>
       ))}

@@ -32,7 +32,7 @@ import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
 import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./otto-create-product-panel";
-import type { EbayCreateFields, MainKauflandCreateFields } from "./create-product-model";
+import { normalizeKauflandDimension, type EbayCreateFields, type MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
@@ -606,9 +606,9 @@ function buildKauflandFieldsFromDraft(product: Record<string, unknown>): MainKau
     color: kauflandDraftFieldText(product, "color"),
     material: kauflandDraftFieldText(product, "material"),
     delivery: kauflandDraftFieldText(product, "delivery"),
-    height: kauflandDraftFieldText(product, "height"),
-    length: kauflandDraftFieldText(product, "length"),
-    width: kauflandDraftFieldText(product, "width"),
+    height: normalizeKauflandDimension(kauflandDraftFieldText(product, "height")),
+    length: normalizeKauflandDimension(kauflandDraftFieldText(product, "length")),
+    width: normalizeKauflandDimension(kauflandDraftFieldText(product, "width")),
     amount: kauflandDraftFieldText(product, "amount") || "20",
     idOffer: kauflandDraftFieldText(product, "id_offer") || kauflandDraftFieldText(product, "ean"),
     storefronts: kauflandDraftFieldText(product, "storefronts", "storefront") || "de, cz, sk, pl, at, fr, it",
