@@ -307,6 +307,7 @@ function normalizeKauflandProduct(payload: Record<string, unknown>): Record<stri
     title: firstAvailableText(product, ["title", "name", "product_name", "product_title"]),
     ean: firstAvailableText(product, ["ean", "product_ean"]),
     price: firstAvailableText(product, ["price", "standard_price", "sale_price"]),
+    color: firstAvailableText(product, ["color", "colour"]),
     description: firstAvailableText(product, ["description", "long_description"]),
     short_description: product.short_description ?? product.shortDescription ?? product.short_description_text ?? [],
     picture: imageUrls,
