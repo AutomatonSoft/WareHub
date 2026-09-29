@@ -97,6 +97,8 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
       }
       if (currentSource.current.categoryId !== requestedCategory || currentSource.current.sourceTitle !== sourceTitle || currentSource.current.sourceDescription !== sourceDescription) return;
       const suggestions = payload && typeof payload === "object" && "suggestions" in payload && Array.isArray(payload.suggestions) ? payload.suggestions as Array<{ name: string; value: string }> : [];
+      const aspectCount = payload && typeof payload === "object" && "category_aspect_count" in payload && typeof payload.category_aspect_count === "number" ? payload.category_aspect_count : categoryAspects.length;
+      const consideredCount = payload && typeof payload === "object" && "considered_aspect_count" in payload && typeof payload.considered_aspect_count === "number" ? payload.considered_aspect_count : aspectCount;
       const rawSeo = payload && typeof payload === "object" && "seo" in payload && payload.seo && typeof payload.seo === "object" ? payload.seo as Record<string, unknown> : {};
       const seo = {
         title: typeof rawSeo.title === "string" ? rawSeo.title : "",
@@ -113,7 +115,8 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
       }
       if (onGenerated) onGenerated(next, seo);
       else if (added) onChange(next);
-      setSuggestionMessage(added || Object.values(seo).some(Boolean) ? `Generated ${added} attributes and SEO suggestions. Review every value before publishing.` : "No reliable suggestions were found. Fill the fields manually.");
+      const coverage = `Reviewed ${consideredCount} of ${aspectCount} category attributes.`;
+      setSuggestionMessage(added || Object.values(seo).some(Boolean) ? `Filled ${added} attributes from available product data. ${coverage} Review every value before publishing; add missing details manually.` : `No supported attributes found. ${coverage} Add product details or fill them manually.`);
     } catch (cause) {
       setSuggestionMessage(cause instanceof Error ? cause.message : "Attribute suggestions failed.");
     } finally {
