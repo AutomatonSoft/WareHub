@@ -50,6 +50,27 @@ export type EbayCreateFields = {
   returnPolicyId: string;
 };
 
+export type EbayCategoryAspect = {
+  localizedAspectName?: string;
+  aspectConstraint?: {
+    aspectRequired?: boolean;
+    aspectUsage?: string;
+    itemToAspectCardinality?: string;
+  };
+  aspectValues?: Array<{ localizedValue?: string }>;
+};
+
+export function missingRequiredEbayAspects(
+  categoryAspects: EbayCategoryAspect[],
+  submittedAspects: Record<string, string[]>,
+): string[] {
+  return categoryAspects
+    .filter((aspect) => aspect.aspectConstraint?.aspectRequired)
+    .map((aspect) => aspect.localizedAspectName?.trim() ?? "")
+    .filter((name) => name && !submittedAspects[name]?.some((value) => value.trim()))
+    .sort();
+}
+
 export type HoodCreateFields = {
   description: string;
   quantity: string;
