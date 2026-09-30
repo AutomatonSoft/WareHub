@@ -7,6 +7,7 @@ import { Input } from "../ui/input";
 import { CreateProductImageGallery, type CreateProductGalleryItem } from "../../app/create-product/create-product-image-gallery";
 import { uploadProductImages } from "../editor/product-image-api";
 import { JvDescriptionEditor } from "../../app/create-product/jv-description-editor";
+import { EBAY_INVENTORY_DESCRIPTION_MAX_LENGTH, EBAY_TITLE_MAX_LENGTH, EBAY_SUBTITLE_MAX_LENGTH, EBAY_IMAGES_MAX_COUNT, ebayInventoryDescriptionError, ebayListingTextErrors, ebayImageUrlsError } from "../../app/create-product/create-product-model";
 import { EbayCategoryPicker } from "../../app/create-product/ebay-category-picker";
 import { ProductEditorEbaySpecifics } from "./product-editor-ebay-specifics";
 import { EbayPackageFields } from "./ebay-package-fields";
@@ -85,7 +86,7 @@ function EbayImageGallery({ imageUrls, onChange }: { imageUrls: string[]; onChan
       next.splice(targetIndex, 0, moved);
       onChange(next);
     }}
-  />{uploadError ? <p className="text-sm text-destructive">{uploadError}</p> : null}</div>;
+  /><p className="text-xs text-muted-foreground">{imageUrls.length} / {EBAY_IMAGES_MAX_COUNT} images for a standard listing.</p>{ebayImageUrlsError(imageUrls) ? <p role="alert" className="text-sm text-destructive">{ebayImageUrlsError(imageUrls)}</p> : null}{uploadError ? <p className="text-sm text-destructive">{uploadError}</p> : null}</div>;
 }
 
 export function ProductEditorEbayPanel(props: Props) {
@@ -96,7 +97,17 @@ export function ProductEditorEbayPanel(props: Props) {
   const legacyItem = asRecord(props.draft.ebay_legacy_item);
   const invalidLegacySpecifics = props.draft.ebay_listing_mode === "legacy" && Object.values(asRecord(legacyItem.item_specifics)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
   const invalidInventoryAspects = props.draft.ebay_listing_mode !== "legacy" && Object.values(asRecord(product.aspects)).some((values) => !Array.isArray(values) || !values.length || values.some((entry) => typeof entry !== "string" || !entry.trim()));
-  const canApply = props.isEanValid && props.draft.ean === props.eanValue.trim() && Boolean(props.draft.target_id) && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics && !invalidInventoryAspects;
+  const description = String(product.description ?? "");
+  const descriptionError = props.draft.ebay_listing_mode !== "legacy" ? ebayInventoryDescriptionError(description) : null;
+  const legacy = props.draft.ebay_listing_mode === "legacy";
+  const title = String(legacy ? legacyItem.title ?? "" : product.title ?? "");
+  const subtitle = String(legacy ? legacyItem.subtitle ?? "" : product.subtitle ?? "");
+  const textErrors = ebayListingTextErrors(title, subtitle);
+  const imageError = ebayImageUrlsError(stringArray(legacy ? legacyItem.image_urls : product.imageUrls));
+  const [categoryAttributesValid, setCategoryAttributesValid] = useState(false);
+  const contentChanged = props.changedFields.includes(legacy ? "ebay_legacy_item" : "ebay_inventory_item");
+  const invalidContent = (contentChanged && (Object.keys(textErrors).length > 0 || Boolean(imageError) || Boolean(descriptionError))) || ((contentChanged || (!legacy && props.changedFields.includes("ebay_offer"))) && !categoryAttributesValid);
+  const canApply = props.isEanValid && props.draft.ean === props.eanValue.trim() && Boolean(props.draft.target_id) && props.changedFields.length > 0 && !props.loading && !props.applyLoading && !invalidLegacySpecifics && !invalidInventoryAspects && !invalidContent;
   const [descriptionMode, setDescriptionMode] = useState<"code" | "preview">("preview");
 
   useEffect(() => {
@@ -168,20 +179,20 @@ export function ProductEditorEbayPanel(props: Props) {
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Legacy Item ID"><Input value={props.draft.ebay_item_id} onChange={(event) => props.onChange({ ebay_item_id: event.target.value })} placeholder="Required for legacy listings outside the first page" /></FormField>
             <FormField label="Variation SKU"><Input value={props.draft.ebay_variation_sku} onChange={(event) => props.onChange({ ebay_variation_sku: event.target.value })} placeholder="Only for legacy variations" /></FormField>
-            <FormField label="Title"><Input value={String(legacyItem.title ?? "")} onChange={(event) => updateLegacyItem({ title: event.target.value })} /></FormField>
+            <FormField label="Title"><Input value={title} maxLength={EBAY_TITLE_MAX_LENGTH} aria-invalid={Boolean(textErrors.title)} onChange={(event) => updateLegacyItem({ title: event.target.value })} /><span className="text-xs text-muted-foreground">{title.trim().length} / {EBAY_TITLE_MAX_LENGTH}</span>{textErrors.title ? <span role="alert" className="text-xs text-destructive">{textErrors.title}</span> : null}</FormField>
             <EbayCategoryPicker label="Primary category" value={String(legacyItem.category_id ?? "")} onChange={(category_id) => updateLegacyItem({ category_id })} />
           </div>
           <JvDescriptionEditor description={String(legacyItem.description ?? "")} previewHtml={String(legacyItem.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateLegacyItem({ description })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(legacyItem.image_urls).join("\n")} onChange={(event) => updateLegacyItem({ image_urls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
           <EbayImageGallery imageUrls={stringArray(legacyItem.image_urls)} onChange={(image_urls) => updateLegacyItem({ image_urls })} />
-          <ProductEditorEbaySpecifics value={asRecord(legacyItem.item_specifics)} onChange={(item_specifics) => updateLegacyItem({ item_specifics })} />
+          <ProductEditorEbaySpecifics categoryId={String(legacyItem.category_id ?? "")} value={asRecord(legacyItem.item_specifics)} onValidationChange={setCategoryAttributesValid} onChange={(item_specifics) => updateLegacyItem({ item_specifics })} />
           <p className="text-xs text-amber-700">eBay can reject title or category changes after a sale or close to the listing end time. Item specifics replace the complete current set, so keep all required values.</p>
         </>
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-2">
-            <FormField label="Title"><Input value={String(product.title ?? "")} onChange={(event) => updateProduct({ title: event.target.value })} /></FormField>
-            <FormField label="Subtitle"><Input value={String(product.subtitle ?? "")} onChange={(event) => updateProduct({ subtitle: event.target.value })} /></FormField>
+            <FormField label="Title"><Input value={title} maxLength={EBAY_TITLE_MAX_LENGTH} aria-invalid={Boolean(textErrors.title)} onChange={(event) => updateProduct({ title: event.target.value })} /><span className="text-xs text-muted-foreground">{title.trim().length} / {EBAY_TITLE_MAX_LENGTH}</span>{textErrors.title ? <span role="alert" className="text-xs text-destructive">{textErrors.title}</span> : null}</FormField>
+            <FormField label="Subtitle"><Input value={subtitle} maxLength={EBAY_SUBTITLE_MAX_LENGTH} aria-invalid={Boolean(textErrors.subtitle)} onChange={(event) => updateProduct({ subtitle: event.target.value })} /><span className="text-xs text-muted-foreground">{subtitle.trim().length} / {EBAY_SUBTITLE_MAX_LENGTH}</span>{textErrors.subtitle ? <span role="alert" className="text-xs text-destructive">{textErrors.subtitle}</span> : null}</FormField>
             <FormField label="Product EAN"><Input value={stringArray(product.ean).join(", ")} onChange={(event) => updateProduct({ ean: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} /></FormField>
             <FormField label="Brand"><Input value={String(product.brand ?? "")} onChange={(event) => updateProduct({ brand: event.target.value })} /></FormField>
             <FormField label="MPN"><Input value={String(product.mpn ?? "")} onChange={(event) => updateProduct({ mpn: event.target.value })} /></FormField>
@@ -197,6 +208,8 @@ export function ProductEditorEbayPanel(props: Props) {
           </div>
           <EbayPackageFields value={asRecord(inventoryItem.packageWeightAndSize)} onChange={(packageWeightAndSize) => updateInventoryItem({ packageWeightAndSize })} />
           <JvDescriptionEditor description={String(product.description ?? "")} previewHtml={String(product.description ?? "")} mode={descriptionMode} descriptionLabel="Description" codeLabel="Code" previewLabel="Preview" onModeChange={setDescriptionMode} onChange={(description) => updateProduct({ description })} />
+          <p className={descriptionError ? "text-xs text-destructive" : "text-xs text-muted-foreground"} aria-live="polite">{description.trim().length} / {EBAY_INVENTORY_DESCRIPTION_MAX_LENGTH} characters, including HTML tags.</p>
+          {descriptionError ? <p role="alert" className="text-sm text-destructive">{descriptionError}</p> : null}
           <FormField label="Listing description override"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={String(offer.listingDescription ?? "")} onChange={(event) => updateOffer({ listingDescription: event.target.value })} /></FormField>
           <JsonObjectField label="Regulatory / GPSR (eBay JSON)" value={offer.regulatory} onChange={(regulatory) => updateOffer({ regulatory })} />
           <FormField label="Image URLs (one per line)"><textarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={stringArray(product.imageUrls).join("\n")} onChange={(event) => updateProduct({ imageUrls: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) })} /></FormField>
@@ -208,6 +221,7 @@ export function ProductEditorEbayPanel(props: Props) {
             sourceDescription={String(product.description ?? "")}
             sourceFacts={{ Brand: String(product.brand ?? ""), MPN: String(product.mpn ?? ""), "Package weight": JSON.stringify(asRecord(inventoryItem.packageWeightAndSize).weight ?? ""), "Package dimensions": JSON.stringify(asRecord(inventoryItem.packageWeightAndSize).dimensions ?? ""), ...Object.fromEntries(Object.entries(asRecord(product.aspects)).slice(0, 30).map(([name, values]) => [name.slice(0, 100), stringArray(values).join(", ").slice(0, 500)])) }}
             value={asRecord(product.aspects)}
+            onValidationChange={setCategoryAttributesValid}
             onChange={(aspects) => updateProduct({ aspects })}
             onGenerated={(aspects, seo) => props.onChange({
               ebay_inventory_item: { ...inventoryItem, product: { ...product, aspects, title: seo.title || product.title, subtitle: seo.subtitle || product.subtitle } },

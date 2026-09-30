@@ -22,6 +22,43 @@ export type NormalizedCreateProductInput = {
   imageUrls: string[];
 };
 
+export const EBAY_INVENTORY_DESCRIPTION_MAX_LENGTH = 4000;
+export const EBAY_TITLE_MAX_LENGTH = 80;
+export const EBAY_SUBTITLE_MAX_LENGTH = 55;
+export const EBAY_IMAGES_MAX_COUNT = 24;
+export const EBAY_ASPECT_DEFAULT_MAX_LENGTH = 65;
+
+export function ebayListingTextErrors(title: string, subtitle: string): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!title.trim()) errors.title = "Enter an eBay title.";
+  else if (title.trim().length > EBAY_TITLE_MAX_LENGTH) errors.title = `eBay title must contain at most ${EBAY_TITLE_MAX_LENGTH} characters.`;
+  if (subtitle.trim().length > EBAY_SUBTITLE_MAX_LENGTH) errors.subtitle = `eBay subtitle must contain at most ${EBAY_SUBTITLE_MAX_LENGTH} characters.`;
+  return errors;
+}
+
+export function ebayImageUrlsError(imageUrls: string[]): string | null {
+  if (!imageUrls.length) return "Add at least one eBay product image.";
+  if (imageUrls.length > EBAY_IMAGES_MAX_COUNT) return `eBay supports at most ${EBAY_IMAGES_MAX_COUNT} images for a standard listing.`;
+  for (const value of imageUrls) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:") return "All eBay image URLs must use HTTPS.";
+    } catch {
+      return "Enter valid, absolute HTTPS image URLs for eBay.";
+    }
+  }
+  return null;
+}
+
+export function ebayInventoryDescriptionError(description: string): string | null {
+  const length = description.trim().length;
+  if (length === 0) return "Enter an eBay product description.";
+  if (length > EBAY_INVENTORY_DESCRIPTION_MAX_LENGTH) {
+    return `eBay product description contains ${length} characters. Maximum: ${EBAY_INVENTORY_DESCRIPTION_MAX_LENGTH}, including HTML tags.`;
+  }
+  return null;
+}
+
 export type EbayCreateFields = {
   ean: string;
   productEan: string;
@@ -56,6 +93,8 @@ export type EbayCategoryAspect = {
     aspectRequired?: boolean;
     aspectUsage?: string;
     itemToAspectCardinality?: string;
+    aspectMode?: string;
+    aspectMaxLength?: number;
   };
   aspectValues?: Array<{ localizedValue?: string }>;
 };
@@ -69,6 +108,21 @@ export function missingRequiredEbayAspects(
     .map((aspect) => aspect.localizedAspectName?.trim() ?? "")
     .filter((name) => name && !submittedAspects[name]?.some((value) => value.trim()))
     .sort();
+}
+
+export function ebayCategoryAspectErrors(categoryAspects: EbayCategoryAspect[], values: Record<string, string[]>): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const name of missingRequiredEbayAspects(categoryAspects, values)) errors[name] = "Required category attribute.";
+  for (const [name, entries] of Object.entries(values)) {
+    const aspect = categoryAspects.find((candidate) => candidate.localizedAspectName?.trim() === name);
+    const constraint = aspect?.aspectConstraint;
+    const maxLength = constraint?.aspectMaxLength ?? EBAY_ASPECT_DEFAULT_MAX_LENGTH;
+    if (!entries.length || entries.some((entry) => !entry.trim())) errors[name] = "Fill every value or remove the optional attribute.";
+    else if (constraint?.itemToAspectCardinality === "SINGLE" && entries.length > 1) errors[name] = "This attribute allows only one value.";
+    else if (entries.some((entry) => entry.trim().length > maxLength)) errors[name] = `Maximum ${maxLength} characters per value.`;
+    else if (constraint?.aspectMode === "SELECTION_ONLY" && entries.some((entry) => !aspect?.aspectValues?.some((option) => option.localizedValue === entry.trim()))) errors[name] = "Choose a value from the eBay category list.";
+  }
+  return errors;
 }
 
 export type HoodCreateFields = {
