@@ -4,7 +4,7 @@ import requests
 from django.test import SimpleTestCase
 from rest_framework.test import APIRequestFactory
 
-from kaufland.external_requests import create_product_by_ean, set_product_active_state
+from kaufland.external_requests import create_product_by_ean, get_product_publication_status, set_product_active_state
 from kaufland.serializers import KauflandCreateByEANSerializer
 from kaufland.views import (
     ActivateProductByEANAPIView,
@@ -58,6 +58,26 @@ class KauflandProductActiveStateApiTests(SimpleTestCase):
 
 
 class KauflandProductActiveStateClientTests(SimpleTestCase):
+    @patch("kaufland.external_requests.requests.get")
+    def test_client_reads_publication_status_for_controller(self, mock_get):
+        mock_get.return_value.json.return_value = {"status": "LIVE"}
+
+        result = get_product_publication_status("4062292276706", "jv")
+
+        self.assertEqual(result, {"status": "LIVE"})
+        mock_get.assert_called_once_with(
+            "https://kl.automatonsoft.de/api/products/status/4062292276706/",
+            params={"controller": "jv"},
+            timeout=15,
+        )
+
+    @patch("kaufland.external_requests.requests.get")
+    def test_client_rejects_non_object_publication_status(self, mock_get):
+        mock_get.return_value.json.return_value = []
+
+        with self.assertRaises(ValueError):
+            get_product_publication_status("4062292276706", "jv")
+
     @patch("kaufland.external_requests.requests.put")
     def test_client_uses_put_upload_endpoint_to_create_product(self, mock_put):
         response = Mock()
@@ -150,9 +170,11 @@ class KauflandCreateApiTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
+    @patch("kaufland.views.get_product_publication_status")
     @patch("kaufland.views.create_product_by_ean")
-    def test_forwards_new_create_contract_with_defaults(self, mock_create_product_by_ean):
+    def test_forwards_new_create_contract_with_defaults(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
+        mock_status.return_value = {"ean": "4062292276706", "controller": "jv", "is_live": True, "is_valid": True}
         request = self.factory.post(
             "/",
             {
@@ -177,6 +199,7 @@ class KauflandCreateApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, {"status": "created"})
+        mock_status.assert_called_once_with("4062292276706", "jv")
         mock_create_product_by_ean.assert_called_once_with(
             {
                 "ean": "4062292276706",
@@ -198,9 +221,11 @@ class KauflandCreateApiTests(SimpleTestCase):
             }
         )
 
+    @patch("kaufland.views.get_product_publication_status")
     @patch("kaufland.views.create_product_by_ean")
-    def test_omits_empty_image_array_when_picture_is_provided(self, mock_create_product_by_ean):
+    def test_omits_empty_image_array_when_picture_is_provided(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
+        mock_status.return_value = {"ean": "4062292276706", "controller": "jv", "is_live": True, "is_valid": True}
         request = self.factory.post(
             "/",
             {
@@ -228,6 +253,56 @@ class KauflandCreateApiTests(SimpleTestCase):
         payload = mock_create_product_by_ean.call_args.args[0]
         self.assertEqual(payload["picture"], ["https://example.test/product.jpg"])
         self.assertNotIn("picture_urls", payload)
+
+    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.create_product_by_ean")
+    def test_rejects_upload_without_live_product(self, mock_create_product_by_ean, mock_status):
+        mock_create_product_by_ean.return_value = {"status": "created"}
+        mock_status.return_value = {
+            "ean": "4062292276706",
+            "controller": "jv",
+            "status": "BLOCKED",
+            "is_live": False,
+            "is_valid": False,
+            "issues_detected": ["Product has no main image"],
+        }
+        request = self.factory.post(
+            "/", {
+                "ean": "4062292276706", "controller": "jv", "title": "Test cabinet",
+                "description": "Test description", "price": "900.50",
+                "picture_urls": ["https://example.test/product.jpg"],
+                "size": "120 x 40 cm", "color": "Black", "material": "Wood",
+                "delivery": 14, "height": 100, "length": 120, "width": 40,
+            }, format="json"
+        )
+
+        response = CreateProductByEANAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error"], "kaufland_publication_not_live")
+        self.assertEqual(response.data["publication_status"], "BLOCKED")
+        mock_create_product_by_ean.assert_called_once()
+
+    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.create_product_by_ean")
+    def test_reports_unverified_upload_when_status_times_out(self, mock_create_product_by_ean, mock_status):
+        mock_create_product_by_ean.return_value = {"status": "created"}
+        mock_status.side_effect = requests.Timeout()
+        request = self.factory.post(
+            "/", {
+                "ean": "4062292276706", "controller": "jv", "title": "Test cabinet",
+                "description": "Test description", "price": "900.50",
+                "picture_urls": ["https://example.test/product.jpg"],
+                "size": "120 x 40 cm", "color": "Black", "material": "Wood",
+                "delivery": 14, "height": 100, "length": 120, "width": 40,
+            }, format="json"
+        )
+
+        response = CreateProductByEANAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["error"], "kaufland_publication_unverified")
+        mock_create_product_by_ean.assert_called_once()
 
 
 class KauflandProductLookupApiTests(SimpleTestCase):

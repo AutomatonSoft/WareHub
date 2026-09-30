@@ -20,6 +20,7 @@ type Props = {
   draftKey: string;
   draftVersion: number;
   initialFields: EbayCreateFields;
+  sourceShortDescription?: string;
   onDraftChange: (fields: EbayCreateFields) => void;
   sourceLoading: boolean;
   onLoadSource: (ean: string) => void;
@@ -67,7 +68,7 @@ function apiError(response: Response, payload: unknown): string {
   return `HTTP ${response.status}`;
 }
 
-export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialFields, onDraftChange, sourceLoading, onLoadSource }: Props) {
+export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialFields, sourceShortDescription = "", onDraftChange, sourceLoading, onLoadSource }: Props) {
   const [setup, setSetup] = useState<SellerSetup | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -164,7 +165,7 @@ export function EbaySellerSetupPanel({ account, draftKey, draftVersion, initialF
         <EbayCategoryPicker label="Secondary category" value={fields.secondaryCategoryId} excludeCategoryId={fields.categoryId} optional onChange={(secondaryCategoryId) => updateField("secondaryCategoryId", secondaryCategoryId)} />
         <label className="space-y-1.5 text-sm font-medium">Store category names (one per line)<DeferredTextarea className="min-h-16 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 text-sm" value={fields.storeCategoryNamesText} onCommit={(value) => updateField("storeCategoryNamesText", value)} /></label>
         <label className="space-y-1.5 text-sm font-medium md:col-span-2">Regulatory / GPSR (eBay JSON)<DeferredTextarea className="min-h-28 w-full rounded-[var(--radius-control)] border border-input bg-background px-3 py-2 font-mono text-xs" value={fields.regulatoryText} onCommit={(value) => updateField("regulatoryText", value)} placeholder="Only enter applicable eBay regulatory fields" /></label>
-        <div className="md:col-span-2"><ProductEditorEbaySpecifics title="Category attributes" categoryId={fields.categoryId} sourceTitle={fields.title} sourceDescription={fields.description} sourceFacts={{ Brand: fields.brand, MPN: fields.mpn, ...packageFacts, ...Object.fromEntries(Object.entries(aspectValues).slice(0, 30).map(([name, values]) => [name.slice(0, 100), values.join(", ").slice(0, 500)])) }} value={aspectValues} onChange={updateAspects} onGenerated={applyGenerated} /></div>
+        <div className="md:col-span-2"><ProductEditorEbaySpecifics title="Category attributes" categoryId={fields.categoryId} sourceTitle={fields.title} sourceDescription={fields.description} sourceFacts={{ "Source short description": sourceShortDescription.slice(0, 500), Brand: fields.brand, MPN: fields.mpn, ...packageFacts, ...Object.fromEntries(Object.entries(aspectValues).slice(0, 30).map(([name, values]) => [name.slice(0, 100), values.join(", ").slice(0, 500)])) }} value={aspectValues} onChange={updateAspects} onGenerated={applyGenerated} /></div>
       </div> : null}
     </section>
   );
