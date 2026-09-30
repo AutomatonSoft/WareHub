@@ -1249,6 +1249,22 @@ class DatabaseApiTests(APITestCase):
         self.assertFalse(status_row.otto_xl)
         self.assertFalse(status_row.hood_jv)
 
+    def test_ebay_publication_maps_new_sku_without_changing_main_ean(self):
+        ean_row, _ = Ean.objects.get_or_create(kid=self.kid)
+        ean_row.main_ean_jv = "4062292011702"
+        ean_row.save(update_fields=["main_ean_jv"])
+        for account in ("jv", "xl", "dep"):
+            response = self.client.post(
+                "/api/v1/marketplace/ean-mappings/confirm/",
+                {"kid_number": "13234455", "kid_id": self.kid.pk, "marketplace": "ebay", "account": account, "ean": "4071489360790"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            ean_row.refresh_from_db()
+            self.assertEqual(getattr(ean_row, f"ebay_{account}"), "4071489360790")
+            self.assertEqual(ean_row.main_ean_jv, "4062292011702")
+            self.assertTrue(getattr(EanStatus.objects.get(ean=self.kid), f"ebay_{account}"))
+
     def test_xljv_marketplace_ean_mapping_confirmation_updates_ean_and_status(self):
         response = self.client.post(
             "/api/v1/marketplace/ean-mappings/confirm/",

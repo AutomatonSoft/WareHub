@@ -780,6 +780,23 @@ class EbayTaxonomyClientTests(SimpleTestCase):
             [{"sku": "yellow", "quantity": "5", "quantity_sold": "2", "price": "199.99", "currency": "EUR", "identifiers": {"EAN": ["4062292372025"]}}],
         )
 
+    def test_get_listing_exposes_business_policy_ids(self):
+        response = FakeResponse(
+            {},
+            content=b'''<GetItemResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Success</Ack><Item>
+<SellerProfiles>
+<SellerShippingProfile><ShippingProfileID>123</ShippingProfileID></SellerShippingProfile>
+<SellerPaymentProfile><PaymentProfileID>456</PaymentProfileID></SellerPaymentProfile>
+<SellerReturnProfile><ReturnProfileID>789</ReturnProfileID></SellerReturnProfile>
+</SellerProfiles></Item></GetItemResponse>''',
+        )
+
+        listing = _listing_payload(response=response, marketplace_id="EBAY_DE")
+
+        self.assertEqual(listing["listing_policies"], {
+            "fulfillmentPolicyId": "123", "paymentPolicyId": "456", "returnPolicyId": "789",
+        })
+
     def test_get_listing_reads_variation_ean_from_variation_specifics(self):
         response = FakeResponse(
             {},
@@ -874,6 +891,32 @@ class EbayLegacyVariationOperationTests(SimpleTestCase):
 
 
 class EbayInventoryPublishValidationTests(SimpleTestCase):
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    @patch("ebay_service.listing_operations.EbayListing")
+    def test_inventory_fetch_resolves_source_ean_to_saved_sku(self, listings, client):
+        listings.ListingMode.INVENTORY = "inventory"
+        listings.objects.filter.return_value.first.return_value = None
+        listings.objects.filter.return_value.exclude.return_value.order_by.return_value.__getitem__.return_value = [
+            SimpleNamespace(sku="4071489360790", status="active")
+        ]
+        result = execute_listing_operation(account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="inventory", sku="4062292011702")
+        self.assertEqual(result["sku"], "4071489360790")
+        client.return_value.inventory_item.assert_called_once_with(account="dep", sku="4071489360790")
+        client.return_value.offers_by_sku.assert_called_once_with(account="dep", sku="4071489360790", marketplace_id="EBAY_DE")
+
+    @patch("ebay_service.listing_operations.EbayOAuthClient")
+    @patch("ebay_service.listing_operations.EbayListing")
+    def test_inventory_fetch_rejects_ambiguous_source_ean(self, listings, client):
+        listings.ListingMode.INVENTORY = "inventory"
+        listings.objects.filter.return_value.first.return_value = None
+        listings.objects.filter.return_value.exclude.return_value.order_by.return_value.__getitem__.return_value = [
+            SimpleNamespace(sku="sku-1"), SimpleNamespace(sku="sku-2")
+        ]
+        with self.assertRaises(EbayApiError) as error:
+            execute_listing_operation(account="dep", marketplace_id="EBAY_DE", operation="fetch", listing_mode="inventory", sku="4062292011702")
+        self.assertEqual(error.exception.status_code, 409)
+        client.return_value.inventory_item.assert_not_called()
+
     def test_offer_merge_preserves_current_settings_and_removes_read_only_fields(self):
         offer = _merge_inventory_offer(
             current={

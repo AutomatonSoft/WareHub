@@ -3489,6 +3489,7 @@ export default function CreateProductPage() {
               draftKey={activeDraftContextKey}
               draftVersion={activeEbayDraftVersion}
               initialFields={activeEbayInitialFields}
+              publishSku={activeReservedMarketplaceEan}
               sourceShortDescription={activeEbaySourceSnapshot?.shortDescription}
               sourceLoading={ebaySourceLoading}
               onLoadSource={(ean) => {

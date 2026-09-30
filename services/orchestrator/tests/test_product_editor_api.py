@@ -516,7 +516,8 @@ def test_product_editor_otto_rejects_empty_upstream_response(tmp_path):
 
 
 def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_path):
-    client, _ = _client(tmp_path)
+    client, gateway = _client(tmp_path)
+    gateway.ebay_inventory_by_account["jv"]["sku"] = "4071489360790"
     discovered = client.post(
         "/api/v1/orchestrator/product-editor/discover",
         json={"ean": "4012345678901", "active_group": "EBAY"},
@@ -531,6 +532,7 @@ def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_pat
     assert loaded.status_code == 200
     draft = loaded.json()["draft"]
     assert draft["ebay_listing_mode"] == "inventory"
+    assert draft["sku"] == "4071489360790"
     assert draft["price"] == "19.99"
 
     planned = client.post(
@@ -552,6 +554,7 @@ def test_product_editor_ebay_load_plan_and_apply_create_orchestrator_job(tmp_pat
     assert command.channels[0].marketplace.value == "ebay"
     assert command.channels[0].account == "jv"
     assert command.payload.price == "18.99"
+    assert command.payload.sku == "4071489360790"
     assert command.payload.ebay_inventory_item is None
 
 

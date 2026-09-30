@@ -342,10 +342,28 @@ def _execute_inventory_operation(
         raise EbayApiError("Unsupported Inventory API listing operation.", status_code=400)
     if not sku:
         raise EbayApiError("sku is required for Inventory API listings.", status_code=400)
-    listing = EbayListing.objects.filter(account=account, marketplace_id=marketplace_id, sku=sku).first()
+    listing = EbayListing.objects.filter(account=account, marketplace_id=marketplace_id, listing_mode=EbayListing.ListingMode.INVENTORY, sku=sku).first()
+    if listing is not None and operation != "publish":
+        source_ean = listing.source_ean or source_ean
     client = EbayOAuthClient()
 
     if operation == "fetch":
+        if listing is None:
+            matches = list(EbayListing.objects.filter(
+                account=account,
+                marketplace_id=marketplace_id,
+                listing_mode=EbayListing.ListingMode.INVENTORY,
+                source_ean=source_ean or sku,
+            ).exclude(sku="").order_by("pk")[:2])
+            if len(matches) > 1:
+                raise EbayApiError(
+                    "Multiple Inventory listings match this source EAN. Supply the listing SKU.",
+                    status_code=409,
+                    details={"source_ean": source_ean or sku, "skus": [match.sku for match in matches]},
+                )
+            if matches:
+                listing = matches[0]
+                sku = listing.sku
         return {
             "account": account,
             "marketplace_id": marketplace_id,

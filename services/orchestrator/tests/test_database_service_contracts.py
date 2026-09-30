@@ -57,6 +57,25 @@ def test_marketplace_ean_confirmation_sends_exact_kid_id():
     }
 
 
+def test_ebay_pooled_publish_preserves_source_gtin_and_update_sku():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+    payload = {
+        "sku": "4062292011702",
+        "__source_ean": "4062292011702",
+        "ebay_inventory_item": {"product": {"ean": ["4062292011702"]}},
+    }
+    channel = ChannelTarget(marketplace=Marketplace.EBAY, account="dep", ean_source="pool")
+    adapters.dispatch(ean="4071489360790", request_id="publish", channel=channel, payload=payload, operation=Operation.PUBLISH)
+    body = fake_http.calls[0]["json"]
+    assert body["sku"] == "4071489360790"
+    assert body["source_ean"] == "4062292011702"
+    assert body["inventory_item"]["product"]["ean"] == ["4062292011702"]
+
+    adapters.dispatch(ean="4062292011702", request_id="update", channel=channel, payload={"sku": "4071489360790"}, operation=Operation.UPDATE)
+    assert fake_http.calls[1]["json"]["sku"] == "4071489360790"
+
+
 def test_hood_contract_path_and_params():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
