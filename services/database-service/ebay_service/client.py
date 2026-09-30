@@ -1271,6 +1271,7 @@ def _listing_item_payload(*, item: ElementTree.Element, marketplace_id: str, nam
     return {
         "marketplace_id": marketplace_id,
         "item_id": _xml_text(item, "ebay:ItemID", namespace),
+        "relisted_item_id": _xml_text(item, "ebay:ListingDetails/ebay:RelistedItemID", namespace),
         "seller": _xml_text(item, "ebay:Seller/ebay:UserID", namespace),
         "title": _xml_text(item, "ebay:Title", namespace),
         "description": _xml_text(item, "ebay:Description", namespace),
