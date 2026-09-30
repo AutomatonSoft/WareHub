@@ -32,7 +32,7 @@ import type { XlCreateProductDraft } from "./xl-create-product-panel";
 import type { HoodCreateProductDraft } from "./hood-create-product-panel";
 import type { KauflandCreateProductDraft } from "./kaufland-create-product-panel";
 import { EMPTY_OTTO_CREATE_PRODUCT_DRAFT, type OttoCreateProductDraft } from "./otto-create-product-panel";
-import { normalizeKauflandDimension, type EbayCreateFields, type MainKauflandCreateFields } from "./create-product-model";
+import { EBAY_IMAGES_MAX_COUNT, normalizeKauflandDimension, type EbayCreateFields, type MainKauflandCreateFields } from "./create-product-model";
 import { DeferredInput, DeferredTextarea } from "./deferred-form-fields";
 import { KauflandProductFields } from "../../components/product-forms/kaufland-product-fields";
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
@@ -114,7 +114,7 @@ const JV_PUBLIC_BASE_BY_SITE_KEY: Record<string, string> = {
 };
 const ALL_MARKETPLACE_SITE_IDS = allMarketplaceSites.map((site) => site.id);
 const XL_MARKETPLACE_SITE_IDS = ["xlmoebel_de"];
-const PUBLISHABLE_SITE_FAMILIES = new Set<SiteFamily>(["JVMOEBEL", "XL", "HOOD", "KAUFLAND", "OTTO"]);
+const PUBLISHABLE_SITE_FAMILIES = new Set<SiteFamily>(["JVMOEBEL", "XL", "HOOD", "KAUFLAND", "OTTO", "EBAY"]);
 const PUBLISHABLE_XL_SITE_ID = "xlmoebel_de";
 const JV_SITE_KEY_BY_MARKETPLACE_SITE_ID = {
   "jvmoebel-de": "JV_DE",
@@ -2972,60 +2972,6 @@ export default function CreateProductPage() {
     }, getLocalImageFilesForTab(ottoTab));
   }
 
-  function handlePrimaryCreateAction() {
-    if (activeTab === "jv") {
-      return void handleSendToAllJvSites();
-    }
-
-    if (activeTab === "xl") {
-      const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
-        ? xlDraftRefByTab.current[activeTab].draft
-        : activeXlDescriptionFields;
-      return void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles());
-    }
-
-    if (activeTab === "main") {
-      return void handleMainCreate();
-    }
-
-    if (isEbayMarketplace) {
-      return void controller.handleCreateProduct({}, activeMarketplaceSiteIds, {
-        ebayFields: activeEbayInitialFields,
-      }, getActiveTabLocalImageFiles());
-    }
-
-    if (activeTabMeta.marketplace === "HOOD") {
-      const draft = hoodPublishDraftRef.current?.draftKey === activeHoodSourceKey
-        ? hoodPublishDraftRef.current.draft
-        : hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
-        ? hoodDraftRefByTab.current[activeTab].draft
-        : activeHoodInitialDraft;
-      return void controller.handleCreateProductForHoodSiteIds(activeMarketplaceSiteIds, {
-        name: draft.name,
-        ean: draft.ean,
-        price: draft.price,
-        fields: {
-          description: draft.description,
-          quantity: draft.quantity,
-          condition: draft.condition,
-          itemMode: draft.itemMode,
-          itemNumber: draft.itemNumber,
-          productPropertiesText: draft.productPropertiesText,
-        },
-      }, getActiveTabLocalImageFiles());
-    }
-
-    if (activeTabMeta.marketplace === "KAUFLAND") {
-      return void submitKauflandCreate(activeMarketplaceSiteIds);
-    }
-
-    if (activeTabMeta.marketplace === "OTTO") {
-      return void submitOttoCreate(activeMarketplaceSiteIds);
-    }
-
-    return void controller.handleCreateProductForSiteIds(activeMarketplaceSiteIds);
-  }
-
   function openPublishSitesDialog() {
     setSelectedPublishSiteIds(
       new Set(
@@ -3033,30 +2979,50 @@ export default function CreateProductPage() {
           ? Object.keys(JV_SITE_KEY_BY_MARKETPLACE_SITE_ID)
           : activeTab === "xl"
             ? [PUBLISHABLE_XL_SITE_ID]
-            : [],
+            : isEbayMarketplace ? activeMarketplaceSiteIds : [],
       ),
     );
     setIsPublishSitesDialogOpen(true);
   }
 
   function confirmPublishSites() {
+    const selectedEbaySites = allMarketplaceSites.filter((site) => site.family === "EBAY" && selectedPublishSiteIds.has(site.id));
+    const ebayPublications = selectedEbaySites.map((site) => {
+      const tab = `ebay_${site.kind.toLowerCase()}` as CreateProductTab;
+      const snapshot = ebayDraftRefByTab.current[tab];
+      return { site, tab, draft: snapshot?.sourceKey === activeDraftContextKey ? snapshot.draft : undefined };
+    });
+    const missingEbayDraft = ebayPublications.find((publication) => !publication.draft);
+    if (missingEbayDraft) {
+      showToast(`Open ${missingEbayDraft.site.name} and complete its product and seller settings before publishing.`, "error");
+      return;
+    }
     const selectedJvSiteKeys = Array.from(selectedPublishSiteIds)
       .map((siteId) => JV_SITE_KEY_BY_MARKETPLACE_SITE_ID[siteId as keyof typeof JV_SITE_KEY_BY_MARKETPLACE_SITE_ID])
       .filter((siteKey): siteKey is (typeof JV_RUBRIC_SITE_TABS)[number]["key"] => Boolean(siteKey));
     const selectedNonJvSiteIds = Array.from(selectedPublishSiteIds).filter(
-      (siteId) => !(siteId in JV_SITE_KEY_BY_MARKETPLACE_SITE_ID),
+      (siteId) => !(siteId in JV_SITE_KEY_BY_MARKETPLACE_SITE_ID) && !selectedEbaySites.some((site) => site.id === siteId),
     );
     const selectedOttoSiteIds = selectedNonJvSiteIds.filter((siteId) =>
       allMarketplaceSites.some((site) => site.id === siteId && site.family === "OTTO"),
     );
     const selectedOtherSiteIds = selectedNonJvSiteIds.filter((siteId) => !selectedOttoSiteIds.includes(siteId));
 
-    if (selectedJvSiteKeys.length === 0 && selectedNonJvSiteIds.length === 0) {
+    if (selectedJvSiteKeys.length === 0 && selectedNonJvSiteIds.length === 0 && selectedEbaySites.length === 0) {
       showToast("Выберите хотя бы один сайт для публикации.", "error");
       return;
     }
 
     setIsPublishSitesDialogOpen(false);
+    void (async () => {
+      for (const { site, tab, draft } of ebayPublications) {
+        if (!draft) continue;
+        await controller.handleCreateProduct({}, [site.id], {
+          ebayFields: draft,
+          ebayImageUrls: (tabGalleryItemsByTab[tab] ?? []).filter((item) => !item.isLocal).map((item) => item.src),
+        }, getLocalImageFilesForTab(tab));
+      }
+    })();
     if (selectedJvSiteKeys.length > 0) {
       void handleSendToAllJvSites(selectedJvSiteKeys);
     }
@@ -3115,47 +3081,6 @@ export default function CreateProductPage() {
     }
   }
 
-  function handleMainCreate() {
-    const siteKey = "JV_DE";
-    const {
-      rubricIds: selectedCategoryIds,
-      mainRubricId: mainCategoryId,
-      deliveryIds,
-    } = getEffectiveJvPublishingSelections(siteKey);
-    const selectedDeliveryId = deliveryIds[0];
-
-    if (selectedCategoryIds.length === 0) {
-      showToast("Select at least one JV DE category before creating the job.", "error");
-      return;
-    }
-    if (!mainCategoryId || !selectedCategoryIds.includes(mainCategoryId)) {
-      showToast("Select one main JV DE category before creating the job.", "error");
-      return;
-    }
-    if (selectedDeliveryId === undefined) {
-      showToast("Select one JV DE delivery option before creating the job.", "error");
-      return;
-    }
-
-    const orderedCategoryIds = selectedCategoryIds.slice().sort((left, right) => {
-      if (left === mainCategoryId) return -1;
-      if (right === mainCategoryId) return 1;
-      return left - right;
-    });
-
-    return void controller.handleCreateProduct({
-      categories: orderedCategoryIds.map((categoryId) => ({
-        category_id: categoryId,
-        main_category: categoryId === mainCategoryId,
-      })),
-      jv_fields: {
-        lieferzeitid: selectedDeliveryId,
-        lieferzeit: selectedDeliveryId,
-        lieferzeit_id: selectedDeliveryId,
-      },
-    }, undefined, undefined, getActiveTabLocalImageFiles());
-  }
-
   return (
     <AppShell
       title={t.createProduct}
@@ -3196,7 +3121,7 @@ export default function CreateProductPage() {
             <CreateProductEanPoolPanel />
             <button
               type="button"
-              onClick={isEbayMarketplace ? handlePrimaryCreateAction : openPublishSitesDialog}
+              onClick={openPublishSitesDialog}
               disabled={primaryActionLoading || !canCreateProduct}
               className="flex min-h-10 items-center justify-center rounded-[var(--radius-control)] bg-primary px-4 py-2 text-sm font-semibold uppercase tracking-[0.08em] text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               title={
@@ -3514,6 +3439,8 @@ export default function CreateProductPage() {
                 onDeleteItem={handleDeleteTabGalleryItem}
                 onMoveItem={handleMoveTabGalleryItem}
               />
+              <p className="mt-2 text-xs text-muted-foreground">{tabGalleryItems.length} / {EBAY_IMAGES_MAX_COUNT} images for a standard eBay listing.</p>
+              {!tabGalleryItems.length || tabGalleryItems.length > EBAY_IMAGES_MAX_COUNT ? <p role="alert" className="text-sm text-destructive">Add between 1 and {EBAY_IMAGES_MAX_COUNT} product images before publishing.</p> : null}
             </div>
           </div>
         ) : null}

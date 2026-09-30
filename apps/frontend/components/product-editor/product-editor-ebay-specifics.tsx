@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { fetchEbayCategoryAspects } from "../../app/create-product/ebay-category-aspects";
-import type { EbayCategoryAspect } from "../../app/create-product/create-product-model";
+import { EBAY_ASPECT_DEFAULT_MAX_LENGTH, ebayCategoryAspectErrors, type EbayCategoryAspect } from "../../app/create-product/create-product-model";
 import { apiFetch } from "../../lib/api/client";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -12,6 +12,7 @@ type Props = {
   value: Record<string, unknown>;
   onChange: (value: Record<string, string[]>) => void;
   onGenerated?: (value: Record<string, string[]>, seo: { title: string; subtitle: string; description: string }) => void;
+  onValidationChange?: (valid: boolean) => void;
   categoryId?: string;
   title?: string;
   sourceTitle?: string;
@@ -19,9 +20,10 @@ type Props = {
   sourceFacts?: Record<string, string>;
 };
 
-export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categoryId, title = "Item specifics", sourceTitle = "", sourceDescription = "", sourceFacts = {} }: Props) {
+export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, onValidationChange, categoryId, title = "Item specifics", sourceTitle = "", sourceDescription = "", sourceFacts = {} }: Props) {
   const [newName, setNewName] = useState("");
   const [categoryAspects, setCategoryAspects] = useState<EbayCategoryAspect[]>([]);
+  const [loadedCategoryId, setLoadedCategoryId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [suggesting, setSuggesting] = useState(false);
@@ -42,7 +44,10 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
     setError("");
     setLoading(true);
     void fetchEbayCategoryAspects(categoryId).then((aspects) => {
-      if (!cancelled) setCategoryAspects(aspects);
+      if (!cancelled) {
+        setCategoryAspects(aspects);
+        setLoadedCategoryId(categoryId);
+      }
     }).catch((cause: unknown) => {
       if (!cancelled) setError(cause instanceof Error ? cause.message : "Category attributes could not be loaded.");
     }).finally(() => {
@@ -65,6 +70,9 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
     ...Object.entries(specifics).filter(([name]) => !requiredNames.has(name)),
   ]);
   const hasEmptyValue = Object.values(displayed).some((values) => !values.length || values.some((entry) => !entry.trim()));
+  const validationErrors = ebayCategoryAspectErrors(categoryAspects, specifics);
+  const valid = !loading && !error && (!categoryId || loadedCategoryId === categoryId) && !Object.keys(validationErrors).length;
+  useEffect(() => { onValidationChange?.(Boolean(valid)); }, [onValidationChange, valid]);
   const knownNames = categoryAspects.map((aspect) => aspect.localizedAspectName?.trim()).filter((name): name is string => Boolean(name));
   const availableNames = knownNames.filter((name) => !Object.keys(displayed).some((existing) => existing.toLowerCase() === name.toLowerCase()));
 
@@ -141,6 +149,8 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
           const aspect = categoryAspects.find((candidate) => candidate.localizedAspectName?.trim() === name);
           const options = (aspect?.aspectValues ?? []).map((candidate) => candidate.localizedValue).filter((candidate): candidate is string => Boolean(candidate));
           const multi = aspect?.aspectConstraint?.itemToAspectCardinality !== "SINGLE";
+          const selectionOnly = aspect?.aspectConstraint?.aspectMode === "SELECTION_ONLY";
+          const maxLength = aspect?.aspectConstraint?.aspectMaxLength ?? EBAY_ASPECT_DEFAULT_MAX_LENGTH;
           const listId = `${listPrefix}-${name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
           return (
             <div key={name} className="min-w-0 space-y-2 rounded-[var(--radius-control)] border border-border/70 p-3">
@@ -154,16 +164,21 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, categ
               </div>
               {values.map((entry, index) => (
                 <div key={index} className="flex min-w-0 gap-2">
-                  <Input aria-label={`${name} value ${index + 1}`} value={entry} list={options.length ? listId : undefined} aria-required={requiredNames.has(name)} onChange={(event) => {
+                  {selectionOnly ? <select className="wh-input h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm" aria-label={`${name} value ${index + 1}`} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} value={entry} onChange={(event) => {
                     const next = [...values];
                     next[index] = event.target.value;
                     updateValues(name, next);
-                  }} />
+                  }}><option value="">Choose a category value…</option>{entry && !options.includes(entry) ? <option value={entry}>{entry} — invalid category value</option> : null}{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <Input aria-label={`${name} value ${index + 1}`} value={entry} list={options.length ? listId : undefined} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} maxLength={maxLength} onChange={(event) => {
+                    const next = [...values];
+                    next[index] = event.target.value;
+                    updateValues(name, next);
+                  }} />}
                   {values.length > 1 ? <Button type="button" variant="outline" size="sm" aria-label={`Remove ${name} value ${index + 1}`} onClick={() => updateValues(name, values.filter((_, valueIndex) => valueIndex !== index))}>−</Button> : null}
                 </div>
               ))}
               {options.length ? <datalist id={listId}>{options.map((option) => <option key={option} value={option} />)}</datalist> : null}
               {multi ? <Button type="button" variant="outline" size="sm" onClick={() => updateValues(name, [...values, ""])}>Add value</Button> : null}
+              {validationErrors[name] ? <p role="alert" className="text-xs text-destructive">{validationErrors[name]}</p> : null}
             </div>
           );
         })}
