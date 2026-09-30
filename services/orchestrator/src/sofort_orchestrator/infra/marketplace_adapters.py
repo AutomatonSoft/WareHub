@@ -41,15 +41,16 @@ class MarketplaceAdapters:
         if channel.marketplace is Marketplace.EBAY:
             account = (channel.account or "").strip().lower()
             marketplace_id = (channel.site or "EBAY_DE").strip().upper()
+            pooled_publish = operation is Operation.PUBLISH and channel.ean_source == "pool"
             body = {
                 "account": account,
                 "marketplace_id": marketplace_id,
                 "operation": operation.value,
                 "listing_mode": str(payload.get("ebay_listing_mode") or "inventory").strip().lower(),
-                "sku": str(payload.get("sku") or ean).strip(),
+                "sku": ean if pooled_publish else str(payload.get("sku") or ean).strip(),
                 "item_id": str(payload.get("ebay_item_id") or "").strip(),
                 "variation_sku": str(payload.get("ebay_variation_sku") or "").strip(),
-                "source_ean": ean,
+                "source_ean": str(payload.get("__source_ean") or ean).strip(),
                 "inventory_item": payload.get("ebay_inventory_item"),
                 "offer": payload.get("ebay_offer"),
                 "quantity": payload.get("quantity"),

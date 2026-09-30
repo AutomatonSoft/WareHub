@@ -1266,6 +1266,11 @@ def _listing_item_payload(*, item: ElementTree.Element, marketplace_id: str, nam
         "title": _xml_text(item, "ebay:Title", namespace),
         "description": _xml_text(item, "ebay:Description", namespace),
         "category_id": _xml_text(item, "ebay:PrimaryCategory/ebay:CategoryID", namespace),
+        "listing_policies": {
+            "fulfillmentPolicyId": _xml_text(item, "ebay:SellerProfiles/ebay:SellerShippingProfile/ebay:ShippingProfileID", namespace),
+            "paymentPolicyId": _xml_text(item, "ebay:SellerProfiles/ebay:SellerPaymentProfile/ebay:PaymentProfileID", namespace),
+            "returnPolicyId": _xml_text(item, "ebay:SellerProfiles/ebay:SellerReturnProfile/ebay:ReturnProfileID", namespace),
+        },
         "image_urls": [_xml_text(url, ".", namespace) for url in item.findall("ebay:PictureDetails/ebay:PictureURL", namespace) if _xml_text(url, ".", namespace)],
         "item_specifics": {
             _xml_text(entry, "ebay:Name", namespace): [str(value.text or "").strip() for value in entry.findall("ebay:Value", namespace) if str(value.text or "").strip()]

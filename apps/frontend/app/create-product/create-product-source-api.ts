@@ -562,6 +562,10 @@ export async function fetchCreateProductEbayListingDetails(ean: string, account:
   const inventoryItem = sourceRecord(inventory?.inventory_item);
   const product = sourceRecord(inventoryItem.product);
   const offer = Array.isArray(inventory?.offers) ? inventory.offers[0] as Record<string, unknown> | undefined : undefined;
+  const sourceAccount = asTrimmedString((legacy ?? inventory)?.account).toLowerCase();
+  const policies = sourceAccount === primary
+    ? sourceRecord(listing.listing_policies ?? offer?.listingPolicies)
+    : {};
   const specifics = listing?.item_specifics ?? product?.aspects;
   const aspects = specifics && typeof specifics === "object" && !Array.isArray(specifics)
     ? Object.fromEntries(Object.entries(specifics).filter(([, values]) => Array.isArray(values)))
@@ -571,6 +575,9 @@ export async function fetchCreateProductEbayListingDetails(ean: string, account:
   const jsonText = (value: unknown) => value && typeof value === "object" ? JSON.stringify(value, null, 2) : "";
   return {
     categoryId: asTrimmedString(listing?.category_id ?? offer?.categoryId),
+    fulfillmentPolicyId: asTrimmedString(policies.fulfillmentPolicyId),
+    paymentPolicyId: asTrimmedString(policies.paymentPolicyId),
+    returnPolicyId: asTrimmedString(policies.returnPolicyId),
     aspectsText: Object.keys(aspects).length ? JSON.stringify(aspects, null, 2) : "",
     productEan: firstText(product.ean) || firstText(identifiers.EAN),
     brand: asTrimmedString(product.brand) || aspectText("Brand") || aspectText("Marke"),

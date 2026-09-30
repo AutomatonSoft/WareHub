@@ -345,7 +345,7 @@ def _normalize_ebay_draft(*, body: dict, target_id: str, ean: str, metadata: dic
     price = offer.get("pricingSummary", {}).get("price") if isinstance(offer.get("pricingSummary"), dict) else offer.get("price")
     quantity = item.get("availability", {}).get("shipToLocationAvailability", {}).get("quantity") if isinstance(item.get("availability"), dict) else None
     return {
-        "target_id": target_id, "ean": ean, "ebay_listing_mode": "inventory", "sku": ean, "ebay_inventory_item": item, "ebay_offer": offer,
+        "target_id": target_id, "ean": ean, "ebay_listing_mode": "inventory", "sku": str(body.get("sku") or ean), "ebay_inventory_item": item, "ebay_offer": offer,
         "price": str(price.get("value") or "") if isinstance(price, dict) else "", "quantity": _as_int(quantity),
         "ebay_currency": str(price.get("currency") or "EUR") if isinstance(price, dict) else "EUR",
     }

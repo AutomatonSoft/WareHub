@@ -316,7 +316,7 @@ export async function createMainMarketplaceProductJob(input: {
         site: "EBAY_DE",
         changed_fields: ebayChangedFields,
         overrides: input.ebayPayload ?? {},
-        ean_source: "main",
+        ean_source: "pool",
       });
     }
   }
