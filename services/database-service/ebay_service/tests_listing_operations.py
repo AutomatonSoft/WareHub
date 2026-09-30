@@ -37,6 +37,9 @@ class EbayInventoryFetchTests(SimpleTestCase):
     @patch("ebay_service.listing_operations.EbayTaxonomyClient")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_inventory_publish_supplies_hidden_default_warehouse(self, client_class, taxonomy_client_class, filter_mock, _save_listing):
+        dimensions = patch("ebay_service.image_validation._image_dimensions", return_value=(800, 600))
+        dimensions.start()
+        self.addCleanup(dimensions.stop)
         client = client_class.return_value
         filter_mock.return_value.first.return_value = None
         client.inventory_locations.return_value = {"locations": [], "total": 0}
@@ -539,6 +542,9 @@ class EbayListingOperationTests(TestCase):
     @patch("ebay_service.listing_operations.EbayTaxonomyClient")
     @patch("ebay_service.listing_operations.EbayOAuthClient")
     def test_inventory_publish_persists_offer_and_reuses_it_on_retry(self, client_class, taxonomy_client_class):
+        dimensions = patch("ebay_service.image_validation._image_dimensions", return_value=(800, 600))
+        dimensions.start()
+        self.addCleanup(dimensions.stop)
         client = client_class.return_value
         taxonomy_client = taxonomy_client_class.return_value
         taxonomy_client.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": True}}
