@@ -4,7 +4,7 @@ from django.test import SimpleTestCase, TestCase
 
 from database.models import EbayListing
 
-from .client import EbayApiError
+from .client import EbayApiError, EbayOAuthClient
 from .listing_operations import _default_merchant_location_key, _legacy_ean_matches, execute_listing_operation, index_all_legacy_listings, index_legacy_listing_page, reconcile_legacy_listing
 from .management.commands.run_ebay_legacy_indexer import Command as LegacyIndexerCommand
 
@@ -40,7 +40,11 @@ class EbayInventoryFetchTests(SimpleTestCase):
         client = client_class.return_value
         filter_mock.return_value.first.return_value = None
         client.inventory_locations.return_value = {"locations": [], "total": 0}
-        client.offers_by_sku.return_value = []
+        client._seller_get.side_effect = EbayApiError(
+            "This Offer is not available.", status_code=404,
+            details={"errors": [{"errorId": 25713}]}, operation="get_offers_by_sku",
+        )
+        client.offers_by_sku.side_effect = lambda **kwargs: EbayOAuthClient.offers_by_sku(client, **kwargs)
         client.create_offer.return_value = {"offerId": "offer-1"}
         client.publish_offer.return_value = {"listingId": "listing-1"}
         taxonomy_client_class.return_value.category_tree.return_value = {"categorySubtreeNode": {"leafCategoryTreeNode": True}}
@@ -59,6 +63,8 @@ class EbayInventoryFetchTests(SimpleTestCase):
         )
 
         self.assertEqual(client.create_offer.call_args.kwargs["offer"]["merchantLocationKey"], "warehub-dep-de-88483")
+        client.create_offer.assert_called_once()
+        client.publish_offer.assert_called_once_with(account="dep", offer_id="offer-1")
 
     @patch("ebay_service.listing_operations.EbayListing.objects.filter")
     @patch("ebay_service.listing_operations.EbayOAuthClient")

@@ -840,6 +840,34 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(result["listings"][0]["identifiers"], {"EAN": ["4062292372025"]})
 
 
+class EbayOfferLookupTests(SimpleTestCase):
+    def test_offer_not_available_is_empty_but_other_errors_propagate(self):
+        client = EbayOAuthClient(
+            config=EbayApiConfig("client-id", "client-secret", "https://api.sandbox.ebay.com", "https://api.sandbox.ebay.com/identity/v1/oauth2/token", 8, 20),
+            ru_name="sandbox-runame",
+            session=MagicMock(),
+        )
+        for status, errors, empty in [
+            (404, [{"errorId": 25713}], True),
+            (404, [{"errorId": "25713"}], True),
+            (404, [{"errorId": 25713}, {"errorId": 1001}], False),
+            (404, [{"errorId": 1001}], False),
+            (404, [], False),
+            (401, [{"errorId": 25713}], False),
+            (429, [{"errorId": 25713}], False),
+            (500, [{"errorId": 25713}], False),
+        ]:
+            with self.subTest(status=status, errors=errors):
+                error = EbayApiError("Offer lookup failed", status_code=status, details={"errors": errors}, operation="get_offers_by_sku")
+                with patch.object(client, "_seller_access_token", return_value="access-token"), patch.object(client, "_seller_get", side_effect=error):
+                    if empty:
+                        self.assertEqual(client.offers_by_sku(account="dep", sku="4071489361032", marketplace_id="EBAY_DE"), [])
+                    else:
+                        with self.assertRaises(EbayApiError) as caught:
+                            client.offers_by_sku(account="dep", sku="4071489361032", marketplace_id="EBAY_DE")
+                        self.assertIs(caught.exception, error)
+
+
 class EbayMediaImageTests(SimpleTestCase):
     def test_upload_image_from_url_returns_eps_url(self):
         client = EbayOAuthClient(

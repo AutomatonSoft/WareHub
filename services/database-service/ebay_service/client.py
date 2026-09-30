@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 _SELLER_LIST_WINDOW_SECONDS = 15
 _SELLER_LIST_MAX_CALLS_PER_WINDOW = 30
 _SELLER_LIST_QUOTA_COOLDOWN_SECONDS = 900
+_OFFER_NOT_AVAILABLE_ERROR_ID = "25713"
 
 
 class EbayApiError(Exception):
@@ -383,12 +384,20 @@ class EbayOAuthClient:
 
     def offers_by_sku(self, *, account: str, sku: str, marketplace_id: str) -> list[dict[str, Any]]:
         access_token = self._seller_access_token(account=account)
-        payload = self._seller_get(
-            token=access_token,
-            path="/sell/inventory/v1/offer",
-            params={"sku": _required(sku, "sku"), "marketplace_id": _required(marketplace_id, "marketplace_id"), "limit": "100"},
-            operation="get_offers_by_sku",
-        )
+        try:
+            payload = self._seller_get(
+                token=access_token,
+                path="/sell/inventory/v1/offer",
+                params={"sku": _required(sku, "sku"), "marketplace_id": _required(marketplace_id, "marketplace_id"), "limit": "100"},
+                operation="get_offers_by_sku",
+            )
+        except EbayApiError as error:
+            errors = error.details.get("errors") if isinstance(error.details, dict) else None
+            if error.status_code == 404 and isinstance(errors, list) and errors and all(
+                isinstance(entry, dict) and str(entry.get("errorId")) == _OFFER_NOT_AVAILABLE_ERROR_ID for entry in errors
+            ):
+                return []
+            raise
         offers = payload.get("offers")
         return [entry for entry in offers if isinstance(entry, dict)] if isinstance(offers, list) else []
 
