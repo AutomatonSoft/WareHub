@@ -31,6 +31,10 @@ import {
   DEFAULT_HOOD_CREATE_FIELDS,
   normalizeCreateProductInput,
   missingRequiredEbayAspects,
+  ebayInventoryDescriptionError,
+  ebayListingTextErrors,
+  ebayImageUrlsError,
+  ebayCategoryAspectErrors,
   validateCreateProductInput,
   validateHoodCreateFields,
   validateMainKauflandCreateFields,
@@ -847,6 +851,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       ottoImageUrls?: string[];
       ottoPayload?: Record<string, unknown>;
       ebayFields?: EbayCreateFields;
+      ebayImageUrls?: string[];
     },
     uploadedImageFiles?: File[],
   ) {
@@ -855,7 +860,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           ean: publishDraft.ebayFields.ean,
           price: publishDraft.ebayFields.price,
           productName: publishDraft.ebayFields.title,
-          imagesText,
+          imagesText: publishDraft.ebayImageUrls?.join("\n") ?? imagesText,
         }
       : publishDraft?.kauflandEan !== undefined
       ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
@@ -918,6 +923,16 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         showToast("Complete the eBay seller, category, and product fields before creating the job.", "error");
         return;
       }
+      const descriptionError = ebayInventoryDescriptionError(ebayFields.description);
+      if (descriptionError) {
+        showToast(descriptionError, "error");
+        return;
+      }
+      const textErrors = ebayListingTextErrors(ebayFields.title, ebayFields.subtitle);
+      if (Object.keys(textErrors).length) {
+        showToast(Object.values(textErrors).join(" "), "error");
+        return;
+      }
       if (!/^\d+$/.test(ebayFields.quantity.trim()) || Number(ebayFields.quantity) < 1) {
         showToast("eBay quantity must be a positive whole number.", "error");
         return;
@@ -970,6 +985,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         const missingAspects = missingRequiredEbayAspects(categoryAspects, ebayAspects);
         if (missingAspects.length > 0) {
           showToast(`Complete required eBay category attributes: ${missingAspects.join(", ")}.`, "error");
+          return;
+        }
+        const aspectErrors = ebayCategoryAspectErrors(categoryAspects, ebayAspects);
+        if (Object.keys(aspectErrors).length) {
+          showToast(Object.entries(aspectErrors).map(([name, message]) => `${name}: ${message}`).join("; "), "error");
           return;
         }
         if (Object.keys(ebayAspects).length === 0) {
@@ -1048,6 +1068,13 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       if (imageUrls.length === 0) {
         showToast("Upload at least one image before creating the marketplace job.", "error");
         return;
+      }
+      if (hasEbaySelection) {
+        const imageError = ebayImageUrlsError(imageUrls);
+        if (imageError) {
+          showToast(imageError, "error");
+          return;
+        }
       }
 
     const hoodPayload = buildHoodCreatePayload({ ean: normalized.ean, fields: hoodFields });
