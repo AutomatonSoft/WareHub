@@ -8,6 +8,7 @@ from rest_framework.exceptions import APIException
 
 from catalog_core.models import ImportedProduct
 from database.models import EanStatus, Kid
+from ebay_service.marketplace_toggle import apply_ebay_active_state
 from hood_service.core import (
     HOOD_API_BASE_URL,
     HOOD_API_TIMEOUT,
@@ -1595,6 +1596,13 @@ def deactivate_marketplaces_by_kid_number(
 
     for target in targets:
         source_field = target["source_field"]
+        if target["channel"] == "EBAY":
+            result = apply_ebay_active_state(account=source_field.removeprefix("ebay_"), ean=target["ean"], inactive=inactive)
+            if result["ok"]:
+                setattr(status_row, source_field, desired_flag_value)
+                status_row.save(update_fields=[source_field])
+            results.append(result)
+            continue
         if target.get("unsupported"):
             if source_field == "temu" or inactive:
                 setattr(status_row, source_field, desired_flag_value)
@@ -1791,9 +1799,18 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
         ean_value = str(getattr(ean_row, field_name, "") or "").strip()
         if not ean_value:
             continue
+        if channel == "EBAY":
+            result = apply_ebay_active_state(account=field_name.removeprefix("ebay_"), ean=ean_value, inactive=inactive)
+            results.append(result)
+            if not result["ok"]:
+                continue
+        else:
+            result = None
         if getattr(status_row, field_name, None) != desired_flag_value:
             setattr(status_row, field_name, desired_flag_value)
             update_fields.append(field_name)
+        if result is not None:
+            continue
         results.append(
             {
                 "ok": True,
@@ -1837,7 +1854,7 @@ def toggle_local_marketplace_statuses_by_kid_number(*, kid_number: str, inactive
         response_status=response_status,
     )
     payload["payload"]["kid_id"] = kid.id
-    payload["payload"]["mode"] = "local_status_only"
+    payload["payload"]["mode"] = "ebay_and_local_statuses"
     return payload
 
 

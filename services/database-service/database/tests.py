@@ -1903,7 +1903,9 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertEqual(kid.place, "-4")
 
-    def test_marketplace_deactivate_by_kid_updates_unsupported_channels_locally(self):
+    @patch("database.marketplace_deactivate_service.apply_ebay_active_state")
+    def test_marketplace_deactivate_by_kid_toggles_ebay_and_keeps_other_local_channels(self, mocked_ebay):
+        mocked_ebay.return_value = {"ok": True, "site_key": "EBAY_JV", "channel": "EBAY", "status_code": 200, "details": {"code": "marketplace_ebay_toggle_applied"}}
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ONLY"], place="4")
         Ean.objects.create(
             kid=kid,
@@ -1932,7 +1934,8 @@ class DatabaseApiTests(APITestCase):
         site_keys = {row["site_key"]: row for row in response.data["results"]}
         self.assertNotIn("HOOD_JV", site_keys)
         self.assertEqual(site_keys["OTTO_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
-        self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
+        self.assertEqual(site_keys["EBAY_JV"]["details"]["code"], "marketplace_ebay_toggle_applied")
+        mocked_ebay.assert_called_once_with(account="jv", ean="6062292028939", inactive=True)
         self.assertEqual(site_keys["KAUFLAND_JV"]["details"]["code"], "marketplace_deactivate_local_status_only")
 
         status_row = EanStatus.objects.get(ean=kid)
@@ -2077,7 +2080,9 @@ class DatabaseApiTests(APITestCase):
         kid.refresh_from_db()
         self.assertIsNone(kid.place)
 
-    def test_marketplace_local_statuses_by_kid_keeps_hood_status_on_activate(self):
+    @patch("database.marketplace_deactivate_service.apply_ebay_active_state")
+    def test_marketplace_local_statuses_by_kid_keeps_hood_status_on_activate(self, mocked_ebay):
+        mocked_ebay.return_value = {"ok": True, "site_key": "EBAY_JV", "channel": "EBAY", "status_code": 200, "details": {"code": "marketplace_ebay_toggle_applied"}}
         kid = Kid.objects.create(kid_number=["KID-LOCAL-ACTIVATE"])
         Ean.objects.create(
             kid=kid,
