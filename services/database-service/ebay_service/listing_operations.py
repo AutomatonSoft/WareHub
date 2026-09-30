@@ -9,6 +9,7 @@ from django.db.models import Q
 from database.models import EbayListing
 
 from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
+from .image_validation import prepare_inventory_images
 
 
 _INVENTORY_OPERATIONS = frozenset({"fetch", "publish", "update", "unpublish", "relist"})
@@ -395,6 +396,7 @@ def _execute_inventory_operation(
             category_id=str(normalized_offer.get("categoryId") or ""),
             marketplace_id=marketplace_id,
         )
+        inventory_item, image_validation = prepare_inventory_images(inventory_item)
         if use_default_location:
             normalized_offer["merchantLocationKey"] = _default_merchant_location_key(client=client, account=account)
         client.create_or_replace_inventory_item(
@@ -447,7 +449,7 @@ def _execute_inventory_operation(
             merchant_location_key=str(normalized_offer.get("merchantLocationKey") or "").strip(),
             status=EbayListing.ListingStatus.ACTIVE,
             operation=operation,
-            result={"offer_id": offer_id, "listing_id": str(published.get("listingId") or "").strip()},
+            result={"offer_id": offer_id, "listing_id": str(published.get("listingId") or "").strip(), "image_validation": image_validation},
         )
 
     if listing is None and operation in {"update", "unpublish", "relist"}:
@@ -515,6 +517,10 @@ def _execute_inventory_operation(
             result={"offer_id": listing.offer_id, "listing_id": listing.item_id},
         )
 
+    current_item = client.inventory_item(account=account, sku=sku)
+    checked_item, image_validation = prepare_inventory_images(current_item)
+    if checked_item != current_item:
+        client.create_or_replace_inventory_item(account=account, sku=sku, item=checked_item, marketplace_id=marketplace_id)
     published = client.publish_offer(account=account, offer_id=listing.offer_id)
     return _save_listing(
         listing=listing,
@@ -528,7 +534,7 @@ def _execute_inventory_operation(
         merchant_location_key=listing.merchant_location_key,
         status=EbayListing.ListingStatus.ACTIVE,
         operation=operation,
-        result={"offer_id": listing.offer_id, "listing_id": str(published.get("listingId") or listing.item_id).strip()},
+        result={"offer_id": listing.offer_id, "listing_id": str(published.get("listingId") or listing.item_id).strip(), "image_validation": image_validation},
     )
 
 
@@ -978,7 +984,7 @@ def _save_listing(
     merchant_location_key: str,
     status: str,
     operation: str,
-    result: dict[str, str],
+    result: dict[str, Any],
 ) -> dict[str, Any]:
     with transaction.atomic():
         if listing is None:
