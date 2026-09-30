@@ -20,7 +20,7 @@ class CapturingHttpClient:
     def __init__(self):
         self.calls = []
 
-    def request(self, method, url, *, headers, params=None, json=None, timeout_seconds=None):
+    def request(self, method, url, *, headers, params=None, json=None, timeout_seconds=None, retries=None):
         self.calls.append(
             {
                 "method": method,
@@ -29,6 +29,7 @@ class CapturingHttpClient:
                 "params": params,
                 "json": json,
                 "timeout_seconds": timeout_seconds,
+                "retries": retries,
             }
         )
         return FakeResponse()
@@ -161,6 +162,38 @@ def test_hood_publish_contract_uses_post():
     assert call["params"] == {"account": "xl"}
 
 
+def test_hood_pool_publish_uses_reserved_ean_as_item_number():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+    draft = {"title": "Desk", "itemNumber": "OLD-ARTICLE"}
+
+    adapters.dispatch(
+        ean="4098765432100",
+        request_id="r1",
+        channel=ChannelTarget(marketplace=Marketplace.HOOD, account="jv", ean_source="pool"),
+        payload=draft,
+        operation=Operation.PUBLISH,
+    )
+
+    assert fake_http.calls[0]["json"]["itemNumber"] == "4098765432100"
+    assert draft["itemNumber"] == "OLD-ARTICLE"
+
+
+def test_hood_pool_update_keeps_existing_item_number():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4098765432100",
+        request_id="r1",
+        channel=ChannelTarget(marketplace=Marketplace.HOOD, account="jv", ean_source="pool"),
+        payload={"itemNumber": "OLD-ARTICLE"},
+        operation=Operation.UPDATE,
+    )
+
+    assert fake_http.calls[0]["json"]["itemNumber"] == "OLD-ARTICLE"
+
+
 def test_kaufland_publish_contract_uses_create_endpoint():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
@@ -178,6 +211,25 @@ def test_kaufland_publish_contract_uses_create_endpoint():
     assert call["url"] == "http://database-service:8000/api/v1/kaufland/products/create/"
     assert call["json"]["ean"] == "4012345678901"
     assert call["json"]["controller"] == "jv"
+    assert call["timeout_seconds"] == 75
+    assert call["retries"] == 0
+
+
+def test_kaufland_update_keeps_shared_timeout_and_retry_policy():
+    fake_http = CapturingHttpClient()
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+
+    adapters.dispatch(
+        ean="4012345678901",
+        request_id="r-update-kaufland",
+        channel=ChannelTarget(marketplace=Marketplace.KAUFLAND, account="jv"),
+        payload={"price": "19.99"},
+        operation=Operation.UPDATE,
+    )
+
+    call = fake_http.calls[0]
+    assert call["timeout_seconds"] is None
+    assert call["retries"] is None
 
 
 def test_jv_publish_contract_uses_create_and_push_endpoint():

@@ -68,6 +68,7 @@ def _build_service() -> OrchestratorService:
         base_url=settings.base_url,
         http_client=http_client,
         service_auth_token=settings.service_auth_token,
+        kaufland_publish_timeout_seconds=settings.kaufland_publish_timeout_seconds,
     )
     circuit_breaker = InMemoryCircuitBreaker(
         failure_threshold=settings.circuit_breaker_failure_threshold,

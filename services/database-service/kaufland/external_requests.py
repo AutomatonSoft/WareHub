@@ -45,6 +45,19 @@ def product_inside(ean: str, site: str) -> dict:
     return {"ean": ean, "site": site, "raw": raw}
 
 
+def get_product_publication_status(ean: str, controller: str) -> dict:
+    response = requests.get(
+        f"{BASE_URL}/api/products/status/{ean}/",
+        params={"controller": controller},
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict):
+        raise ValueError("Kaufland publication status must be an object")
+    return data
+
+
 def change_product_by_ean(payload: dict) -> dict:
     url = f"{BASE_URL}/api/products/ean/change/"
     response = requests.patch(
@@ -105,12 +118,6 @@ def create_product_by_ean(payload: dict) -> dict:
         json=payload,
         timeout=45
     )
-    if response.status_code == 405:
-        response = requests.put(
-            url,
-            json=payload,
-            timeout=45
-        )
     response.raise_for_status()
     return response.json()
 # from PIL import Image

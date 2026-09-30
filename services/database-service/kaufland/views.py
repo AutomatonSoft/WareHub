@@ -8,6 +8,7 @@ from .external_requests import (
     change_product_by_ean,
     create_product_by_ean,
     delete_product_by_ean,
+    get_product_publication_status,
     product_inside,
     set_product_active_state,
 )
@@ -280,7 +281,6 @@ class CreateProductByEANAPIView(APIView):
                 payload.pop(image_field, None)
         try:
             data = create_product_by_ean(payload)
-            return Response(data, status=200)
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502
             details = None
@@ -295,3 +295,29 @@ class CreateProductByEANAPIView(APIView):
             )
         except Exception as exc:
             return Response({"error": str(exc)}, status=500)
+        try:
+            publication = get_product_publication_status(payload["ean"], payload["controller"])
+        except (requests.RequestException, ValueError):
+            return Response(
+                {
+                    "error": "kaufland_publication_unverified",
+                    "detail": "Kaufland accepted the upload, but its publication status could not be verified.",
+                },
+                status=503,
+            )
+        if (
+            publication.get("ean") != payload["ean"]
+            or publication.get("controller") != payload["controller"]
+            or publication.get("is_live") is not True
+            or publication.get("is_valid") is not True
+        ):
+            return Response(
+                {
+                    "error": "kaufland_publication_not_live",
+                    "detail": "Kaufland accepted the upload, but the product is not live.",
+                    "publication_status": publication.get("status"),
+                    "issues_detected": publication.get("issues_detected") or [],
+                },
+                status=409,
+            )
+        return Response(data, status=200)
