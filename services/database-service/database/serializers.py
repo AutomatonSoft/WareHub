@@ -12,8 +12,8 @@ from .place_rules import is_invalid_multi_letter_pool_place, normalize_place
 class MarketplaceEanMappingConfirmSerializer(serializers.Serializer):
     kid_number = serializers.CharField(max_length=128)
     kid_id = serializers.IntegerField(min_value=1, required=False)
-    marketplace = serializers.ChoiceField(choices=("xljv", "hood", "kaufland", "otto"))
-    account = serializers.ChoiceField(choices=("jv", "xl"))
+    marketplace = serializers.ChoiceField(choices=("xljv", "hood", "kaufland", "otto", "ebay"))
+    account = serializers.ChoiceField(choices=("jv", "xl", "dep"))
     ean = serializers.CharField(max_length=64)
 
     def validate_kid_number(self, value):

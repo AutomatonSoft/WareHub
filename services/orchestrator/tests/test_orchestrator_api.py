@@ -635,6 +635,27 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
     assert all(item.data["marketplace_ean_mapping"]["status"] == "confirmed" for item in result.results)
 
 
+@pytest.mark.parametrize("account,family", [("jv", "jv"), ("xl", "xl"), ("dep", "jv")])
+def test_ebay_publish_uses_stable_pool_sku_and_confirms_exact_kid(account, family):
+    pool_gateway = FakeEanPoolGateway()
+    mapping_gateway = FakeMarketplaceEanMappingGateway()
+    service = OrchestratorService(adapters=SuccessfulAdapters(), ean_pool_gateway=pool_gateway, marketplace_ean_mapping_gateway=mapping_gateway)
+    command = OrchestrateRequest.model_validate({
+        "operation": "publish", "kid_number": "13234455", "kid_id": 42,
+        "payload": {"sku": "4012345678901", "ebay_inventory_item": {"condition": "NEW"}, "ebay_offer": {"categoryId": "123"}},
+        "channels": [{"marketplace": "ebay", "account": account, "ean_source": "pool"}],
+    })
+    for _ in range(2):
+        result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+        assert result.status == "success"
+        assert result.results[0].data["payload"]["__source_ean"] == "4012345678901"
+        assert result.results[0].data["ean"] != "4012345678901"
+    assert pool_gateway.claimed_job_ids == [service._pool_reservation_id(job_id="job-1", target_label=family)] * 2
+    assert mapping_gateway.calls[0] == mapping_gateway.calls[1]
+    assert mapping_gateway.calls[0]["account"] == account
+    assert mapping_gateway.calls[0]["kid_id"] == 42
+
+
 def test_kaufland_publish_rejection_does_not_confirm_ean_mapping():
     pool_gateway = FakeEanPoolGateway()
     mapping_gateway = FakeMarketplaceEanMappingGateway()

@@ -102,11 +102,7 @@ class OrchestratorService:
                     )
             scoped_payload.update(channel.overrides)
 
-            # A pooled marketplace EAN is different from the source product
-            # EAN. Preserve the source identity as internal transport metadata
-            # so database-service can save the successful HOOD mapping to the
-            # correct Kid without exposing this field to HOOD's external API.
-            if channel.marketplace is Marketplace.HOOD and channel.ean_source == "pool":
+            if channel.marketplace in {Marketplace.HOOD, Marketplace.EBAY} and channel.ean_source == "pool":
                 scoped_payload["__source_ean"] = ean
 
             missing = [] if product_editor_mode in {"jv_batch_apply", "xl_batch_apply"} else missing_required_fields(channel.marketplace, scoped_payload)
@@ -360,9 +356,11 @@ class OrchestratorService:
         return {"status": "confirmed", "mapping": mapping}
 
     def _pool_reservation_family(self, channel) -> str | None:
-        if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO}:
+        if channel.marketplace not in {Marketplace.HOOD, Marketplace.KAUFLAND, Marketplace.OTTO, Marketplace.EBAY}:
             return None
         account = str(channel.account or channel.profile or "").strip().lower()
+        if channel.marketplace is Marketplace.EBAY and account == "dep":
+            return "jv"
         return account if account in {"jv", "xl"} else None
 
     @staticmethod
@@ -374,7 +372,8 @@ class OrchestratorService:
     @staticmethod
     def _marketplace_mapping_account(channel) -> str | None:
         if channel.marketplace is Marketplace.EBAY:
-            return None
+            account = str(channel.account or "").strip().lower()
+            return account if account in {"jv", "xl", "dep"} else None
         if channel.marketplace is Marketplace.XLJV:
             account = str(channel.site or "").strip().lower()
         else:
