@@ -43,10 +43,12 @@ class HttpClient:
         params: dict | None = None,
         json: dict | list | None = None,
         timeout_seconds: float | None = None,
+        retries: int | None = None,
     ) -> httpx.Response:
         last_exc: Exception | None = None
         last_kind = "network"
-        for attempt in range(self._retries + 1):
+        retry_limit = self._retries if retries is None else max(0, retries)
+        for attempt in range(retry_limit + 1):
             try:
                 request_options = {
                     "headers": headers,
@@ -60,20 +62,20 @@ class HttpClient:
                     url,
                     **request_options,
                 )
-                if response.status_code >= 500 and attempt < self._retries:
+                if response.status_code >= 500 and attempt < retry_limit:
                     time.sleep(0.2 * (attempt + 1))
                     continue
                 return response
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 last_kind = "timeout"
-                if attempt >= self._retries:
+                if attempt >= retry_limit:
                     raise RetryExhaustedError(str(exc), kind=last_kind) from exc
                 time.sleep(0.2 * (attempt + 1))
             except (httpx.NetworkError, httpx.RemoteProtocolError) as exc:
                 last_exc = exc
                 last_kind = "network"
-                if attempt >= self._retries:
+                if attempt >= retry_limit:
                     raise RetryExhaustedError(str(exc), kind=last_kind) from exc
                 time.sleep(0.2 * (attempt + 1))
         if last_exc:

@@ -635,6 +635,32 @@ def test_publish_confirms_pool_ean_mappings_after_marketplace_success():
     assert all(item.data["marketplace_ean_mapping"]["status"] == "confirmed" for item in result.results)
 
 
+def test_kaufland_publish_rejection_does_not_confirm_ean_mapping():
+    pool_gateway = FakeEanPoolGateway()
+    mapping_gateway = FakeMarketplaceEanMappingGateway()
+    service = OrchestratorService(
+        adapters=FakeAdapters(),
+        ean_pool_gateway=pool_gateway,
+        marketplace_ean_mapping_gateway=mapping_gateway,
+    )
+    command = OrchestrateRequest.model_validate(
+        {
+            "operation": "publish",
+            "kid_number": "13234455",
+            "kid_id": 42,
+            "payload": {"ean": "4012345678901", "title": "Desk", "description": "Oak", "price": "199.99"},
+            "channels": [{"marketplace": "kaufland", "account": "jv", "ean_source": "pool"}],
+        }
+    )
+
+    result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+
+    assert result.status == "failed"
+    assert result.results[0].status == "failed"
+    assert mapping_gateway.calls == []
+    assert pool_gateway.used_job_ids == []
+
+
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)

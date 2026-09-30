@@ -3489,6 +3489,7 @@ export default function CreateProductPage() {
               draftKey={activeDraftContextKey}
               draftVersion={activeEbayDraftVersion}
               initialFields={activeEbayInitialFields}
+              sourceShortDescription={activeEbaySourceSnapshot?.shortDescription}
               sourceLoading={ebaySourceLoading}
               onLoadSource={(ean) => {
                 void handleLoadEbaySourceProduct(ean);

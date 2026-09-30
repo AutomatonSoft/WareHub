@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from src.sofort_orchestrator.infra import http_client as http_client_module
 from src.sofort_orchestrator.infra.http_client import HttpClient
@@ -96,3 +97,21 @@ def test_http_client_passes_only_explicit_timeout_override(monkeypatch):
 
     assert created_clients[0].calls[0]["has_timeout_override"] is True
     assert created_clients[0].calls[0]["timeout"] == 3
+
+
+def test_http_client_can_disable_retries_for_ambiguous_write(monkeypatch):
+    calls = []
+
+    class TimeoutClient(FakeSyncClient):
+        def request(self, method, url, *, headers, params=None, json=None, **kwargs):
+            calls.append(url)
+            raise httpx.ReadTimeout("response timed out")
+
+    monkeypatch.setattr(http_client_module.httpx, "Client", TimeoutClient)
+    client = HttpClient(timeout_seconds=8, retries=2)
+
+    with pytest.raises(http_client_module.RetryExhaustedError) as error:
+        client.request("POST", "http://example.test/create", headers={}, json={"ean": "4012345678901"}, timeout_seconds=60, retries=0)
+
+    assert error.value.kind == "timeout"
+    assert calls == ["http://example.test/create"]
