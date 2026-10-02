@@ -10,6 +10,17 @@ from .views_gallery_mapping import GalleryMappingAPIView
 
 
 class MappingJobTests(TestCase):
+    def test_safe_command_error_is_saved_with_its_cause(self):
+        from .management.commands.map_jv_xl_gallery import GalleryMappingCommandError
+        database = MagicMock()
+        database.jv_xl_mapping_jobs.find_one_and_update.return_value = {"job_id": "job"}
+        with patch("jv_services.gallery_mapping_jobs.call_command",
+                   side_effect=GalleryMappingCommandError("Aftercool login failed: HTTP 401.")):
+            run_next_mapping(database)
+        values = database.jv_xl_mapping_jobs.update_one.call_args.args[1]["$set"]
+        self.assertEqual(values["status"], "failed")
+        self.assertEqual(values["error"], "Aftercool login failed: HTTP 401.")
+
     def test_unconfigured_worker_waits_without_processing_jobs(self):
         from .management.commands.run_gallery_mapping_worker import Command
         module = "jv_services.management.commands.run_gallery_mapping_worker"

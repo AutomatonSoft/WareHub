@@ -24,6 +24,11 @@ starts it with the service image. Without credentials it stays in standby and
 does not import anything. Its process healthcheck also passes in standby;
 the Admin Users panel reports missing configuration.
 Worker and API must share `AFTERCOOL_*` and `JV_XL_MAPPING_MONGO_*` configuration.
+`configured: true` only confirms that required environment values are present;
+it does not validate Aftercool login or database permissions. Jobs report the
+current phase (storage, login, JV/XL cache, matching) and safe error details.
+The worker logs `AFTERCOOL_MAPPING_JOB_FAILED` with job ID and the same safe
+message. Raw response bodies, connection URLs and credentials are not logged.
 
 Deployment reads optional GitHub Secrets `AFTERCOOL_USERNAME` and
 `AFTERCOOL_PASSWORD` into runtime env (never into images). They can instead be
