@@ -37,7 +37,7 @@ jobs:
       PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
       PROD_PROJECT_NAME: warehub-prod
       PROD_EXPECTED_GATEWAY_PORT: "8950"
-      PROD_EXPECTED_SERVICE_COUNT: "12"
+      PROD_EXPECTED_SERVICE_COUNT: "13"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
       MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
@@ -501,7 +501,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/prod"
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
-          EXPECTED_SERVICE_COUNT="12"
+          EXPECTED_SERVICE_COUNT="13"
           MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           IFS= read -r GHCR_USERNAME
@@ -713,7 +713,7 @@ jobs:
           wait_health orchestrator healthy
 
           running_count="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}" | sed "/^$/d" | wc -l | tr -d " ")"
-          [ "$running_count" = "$EXPECTED_SERVICE_COUNT" ] || { echo "Unexpected running project container count" >&2; exit 1; }
+          [ "$running_count" = "$EXPECTED_SERVICE_COUNT" ] || { echo "Unexpected running project container count: expected=$EXPECTED_SERVICE_COUNT actual=$running_count" >&2; exit 1; }
 
           check_url gateway "https://warehub.automatonsoft.de/gateway/healthz" 200
           check_url backend "https://warehub.automatonsoft.de/api/v1/healthz" 200

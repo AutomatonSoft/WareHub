@@ -174,7 +174,7 @@ jobs:
       STAGE_EXPECTED_DEPLOY_PATH: /opt/warehub/stage
       STAGE_PROJECT_NAME: warehub-stage
       STAGE_EXPECTED_GATEWAY_PORT: "8940"
-      STAGE_EXPECTED_SERVICE_COUNT: "10"
+      STAGE_EXPECTED_SERVICE_COUNT: "11"
       STAGE_BACKUP_ROOT: /opt/warehub/backups/stage
 
     steps:
@@ -499,7 +499,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/stage"
           BACKUP_ROOT="/opt/warehub/backups/stage"
           EXPECTED_GATEWAY_PORT="8940"
-          EXPECTED_SERVICE_COUNT="10"
+          EXPECTED_SERVICE_COUNT="11"
 
           IFS= read -r GHCR_USERNAME
           IFS= read -r GHCR_TOKEN
@@ -774,7 +774,7 @@ jobs:
 
           running_ids="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}")"
           [ "$(count_lines "$running_ids")" = "$EXPECTED_SERVICE_COUNT" ] || {
-            echo "Unexpected running project container count" >&2
+            echo "Unexpected running project container count: expected=$EXPECTED_SERVICE_COUNT actual=$(count_lines "$running_ids")" >&2
             exit 1
           }
 
