@@ -242,6 +242,8 @@ jobs:
         env:
           SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
           PROD_ENV_FILE_SECRET: ${{ secrets.PROD_ENV_FILE }}
+          AFTERCOOL_USERNAME_SECRET: ${{ secrets.AFTERCOOL_USERNAME }}
+          AFTERCOOL_PASSWORD_SECRET: ${{ secrets.AFTERCOOL_PASSWORD }}
           ALLOWED_HOSTS_EXTRA_VALUE: ${{ vars.ALLOWED_HOSTS_EXTRA }}
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -318,6 +320,12 @@ jobs:
           {
             printf '%s\n' "${SHARED_ENV_FILE_SECRET:-}"
             printf '%s\n' "${PROD_ENV_FILE_SECRET:-}"
+            if [ -n "${AFTERCOOL_USERNAME_SECRET:-}" ]; then
+              printf 'AFTERCOOL_USERNAME=%s\n' "$AFTERCOOL_USERNAME_SECRET"
+            fi
+            if [ -n "${AFTERCOOL_PASSWORD_SECRET:-}" ]; then
+              printf 'AFTERCOOL_PASSWORD=%s\n' "$AFTERCOOL_PASSWORD_SECRET"
+            fi
             printf 'ALLOWED_HOSTS_EXTRA=%s\n' "${ALLOWED_HOSTS_EXTRA_VALUE:-}"
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "${TELEGRAM_BOT_TOKEN_SECRET:-}"
             printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
@@ -593,9 +601,13 @@ jobs:
               exit "$rc"
             fi
             set +e
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml stop aftercool_mapping_worker >/dev/null 2>&1 || true
             if [ -f "$BACKUP_DIR/live.env" ]; then cp -a "$BACKUP_DIR/live.env" .env; fi
             if [ -f "$BACKUP_DIR/live.docker-compose.yml" ]; then cp -a "$BACKUP_DIR/live.docker-compose.yml" docker-compose.yml; fi
             docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps mongodb backend frontend mobile services orchestrator gateway
+            if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --services | grep -qx aftercool_mapping_worker; then
+              docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps aftercool_mapping_worker
+            fi
             echo "Rollback attempted. Backup: $BACKUP_DIR" >&2
             exit "$rc"
           }
@@ -672,9 +684,10 @@ jobs:
           wait_health redis healthy
 
           echo "=== UP APP SERVICES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services jv_batch_worker ebay_legacy_indexer telegram_notifier orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services jv_batch_worker aftercool_mapping_worker ebay_legacy_indexer telegram_notifier orchestrator
 
           wait_health jv_batch_worker healthy
+          wait_health aftercool_mapping_worker healthy
           wait_health ebay_legacy_indexer healthy
 
           echo "=== UP GATEWAY ==="

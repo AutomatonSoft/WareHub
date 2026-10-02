@@ -59,6 +59,7 @@ import {
 } from "./product-editor-hood-sync";
 import { ProductEditorActiveGroupPanel } from "./product-editor-active-group-panel";
 import { getProductEditorTabCopy } from "./product-editor-copy";
+import { buildJvAutoLoadKey, createProductEditorDiscoveryLoader } from "./product-editor-discovery";
 import type {
   ProductEditorApplyResponse,
   ProductEditorDiscoverResponse,
@@ -176,6 +177,9 @@ function ProductEditorContent() {
   const [tabSearchStatuses, setTabSearchStatuses] = useState<Record<string, ProductEditorTabSearchStatus>>({});
   const [discovering, setDiscovering] = useState(false);
   const [discover, setDiscover] = useState<ProductEditorDiscoverResponse | null>(null);
+  const discoveredTabsRef = useRef<Record<string, ProductEditorDiscoverResponse>>({});
+  const discoveryVersionRef = useRef(0);
+  const discoverForEditor = useMemo(() => createProductEditorDiscoveryLoader(discoverProductEditor), []);
   const draftLoadVersionByTabRef = useRef<Record<string, number>>({});
   const jvPublishingSelectionsLoadKeyRef = useRef<string | null>(null);
   const manuallyChangedJvPublishingSiteKeysRef = useRef<Set<string>>(new Set());
@@ -407,6 +411,14 @@ function ProductEditorContent() {
     }));
 
   useEffect(() => {
+    if (activeGroupId !== "JV" && activeGroupId !== "XL") return;
+    const cached = discoveredTabsRef.current[activeTabKey];
+    if (tabSearchStatuses[activeTabKey] !== "found" || cached?.ean !== effectiveTabEanInput) return;
+    if (discover?.ean === cached.ean && hasActionableJvTarget(findGroup(discover, activeGroupId))) return;
+    setDiscover(limitDiscoverToActiveGroup(cached, activeGroupId));
+  }, [activeGroupId, activeTabKey, effectiveTabEanInput, tabSearchStatuses, discover]);
+
+  useEffect(() => {
     if (!discover) return;
     const preferredTargetId = getPreferredTargetIdForTab(discover, activeTabKey);
     if (
@@ -424,7 +436,8 @@ function ProductEditorContent() {
       hasActionableJvTarget(findGroup(discover, activeGroupId)) &&
       !isLoadedJvDraft(jvDraft, discover.ean)
     ) {
-      const autoLoadKey = buildJvAutoLoadKey(discover.ean, discover.recommended_baseline_target_id);
+      const baselineTargetId = preferredTargetId ?? (activeGroupId === "XL" ? "XLMOEBEL_DE" : "JV_DE");
+      const autoLoadKey = buildJvAutoLoadKey(activeGroupId, discover.ean, baselineTargetId);
       if (jvAutoLoadInFlightKeyRef.current === autoLoadKey) {
         return;
       }
@@ -440,9 +453,9 @@ function ProductEditorContent() {
       }
       autoLoadHandledKeysRef.current.add(autoLoadKey);
       jvAutoLoadInFlightKeyRef.current = autoLoadKey;
-      void autoLoadersRef.current.loadJvDraft(discover, activeGroupId, discover.recommended_baseline_target_id);
+      void autoLoadersRef.current.loadJvDraft(discover, activeGroupId, baselineTargetId);
     }
-    if (activeGroupId === "KAUFLAND" && !hasLocalLoadedKaufland) {
+    if (activeGroupId === "KAUFLAND" && findGroup(discover, "KAUFLAND") && !hasLocalLoadedKaufland) {
       const autoLoadKey = `KAUFLAND:${activeTabKey}:${discover.ean}`;
       if (autoLoadHandledKeysRef.current.has(autoLoadKey)) return;
       autoLoadHandledKeysRef.current.add(autoLoadKey);
@@ -450,7 +463,7 @@ function ProductEditorContent() {
       kauflandLoadInFlightEanRef.current = discover.ean;
       void autoLoadersRef.current.loadKauflandDraft(discover, preferredTargetId);
     }
-    if (activeGroupId === "OTTO" && !ottoDraft.ean) {
+    if (activeGroupId === "OTTO" && findGroup(discover, "OTTO") && !ottoDraft.ean) {
       const autoLoadKey = `OTTO:${activeTabKey}:${discover.ean}`;
       if (autoLoadHandledKeysRef.current.has(autoLoadKey)) return;
       autoLoadHandledKeysRef.current.add(autoLoadKey);
@@ -484,33 +497,46 @@ function ProductEditorContent() {
   }
 
   async function runDiscover(ean: string, activeGroup: ProductEditorGroupId | null, targetTabKey?: string): Promise<boolean> {
+    const version = ++discoveryVersionRef.current;
     setDiscovering(true);
     resetEditorState();
     setPageError(null);
-    try {
-      const response = await discoverProductEditor(ean, activeGroup ?? undefined);
-      const normalizedResponse = limitDiscoverToActiveGroup(response, activeGroup);
-      const nextActiveGroup = activeGroup ?? activeGroupId;
-      setDiscover(normalizedResponse);
-      setActiveTabKey(targetTabKey ?? getDefaultTabKeyForGroup(nextActiveGroup));
-      if (!activeGroup) {
-        const nextTabEans = Object.fromEntries(PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, ean]));
-        setTabEanInputs(nextTabEans);
-        setTabSearchStatuses(Object.fromEntries(
-          PRODUCT_EDITOR_DISPLAY_TABS.map((tab) => [tab.key, getTabSearchStatus(normalizedResponse, tab.key)]),
-        ));
+    setActiveTabKey(targetTabKey ?? getDefaultTabKeyForGroup(activeGroup ?? activeGroupId));
+    const tabs = PRODUCT_EDITOR_DISPLAY_TABS.filter((tab) => !activeGroup || tab.groupId === activeGroup);
+    setTabEanInputs(Object.fromEntries(tabs.map((tab) => [tab.key, ean])));
+    setTabSearchStatuses(Object.fromEntries(tabs.map((tab) => [tab.key, "loading" as const])));
+    const groups = [...new Set(tabs.map((tab) => tab.groupId))];
+    const results = await Promise.all(groups.map(async (groupId) => {
+      const groupTabs = tabs.filter((tab) => tab.groupId === groupId);
+      try {
+        const discovered = limitDiscoverToActiveGroup(await discoverForEditor(ean, groupId), groupId);
+        const response = { ...discovered, groups: discovered.groups.filter((group) => group.id === groupId) };
+        if (version !== discoveryVersionRef.current) return false;
+        for (const tab of groupTabs) discoveredTabsRef.current[tab.key] = response;
+        setDiscover((current) => ({
+          ...response,
+          groups: [...(current?.ean === ean ? current.groups.filter((group) => group.id !== groupId) : []), ...response.groups],
+        }));
+        setTabSearchStatuses((current) => ({
+          ...current,
+          ...Object.fromEntries(groupTabs.map((tab) => [tab.key, getTabSearchStatus(response, tab.key)])),
+        }));
+        return hasFoundTargetInGroup(response, groupId);
+      } catch (error) {
+        if (version !== discoveryVersionRef.current) return false;
+        setTabSearchStatuses((current) => ({
+          ...current,
+          ...Object.fromEntries(groupTabs.map((tab) => [tab.key, "error" as const])),
+        }));
+        const message = `${groupId}: ${error instanceof Error ? error.message : t.productEditorDiscoverFailed}`;
+        setPageError(message);
+        showToast(message, "error");
+        return false;
       }
-      return activeGroup
-        ? hasFoundTargetInGroup(normalizedResponse, nextActiveGroup)
-        : normalizedResponse.groups.some((group) => group.targets.some((target) => target.status === "found"));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorDiscoverFailed;
-      setPageError(message);
-      showToast(message, "error");
-      return false;
-    } finally {
-      setDiscovering(false);
-    }
+    }));
+    if (version !== discoveryVersionRef.current) return true;
+    setDiscovering(false);
+    return results.some(Boolean);
   }
 
   useEffect(() => {
@@ -578,19 +604,26 @@ function ProductEditorContent() {
     const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
     if (!tab) return;
     setActiveTabKey(tab.key);
+    const cached = discoveredTabsRef.current[tab.key];
+    const ean = (tabEanInputs[tab.key] ?? eanInput).trim();
+    if (cached?.ean === ean) setDiscover(limitDiscoverToActiveGroup(cached, tab.groupId));
   }
 
   async function scanTabForProduct(tabKey: string, ean: string) {
     const tab = PRODUCT_EDITOR_DISPLAY_TABS.find((item) => item.key === tabKey);
     if (!tab || !isValidProductIdentifier(ean)) return;
+    const version = discoveryVersionRef.current;
     setTabSearchStatuses((current) => ({ ...current, [tabKey]: "loading" }));
     try {
-      const response = await discoverProductEditor(ean, tab.groupId);
+      const response = await discoverForEditor(ean, tab.groupId);
+      if (version !== discoveryVersionRef.current) return;
+      discoveredTabsRef.current[tabKey] = response;
       setTabSearchStatuses((current) => ({
         ...current,
         [tabKey]: getTabSearchStatus(response, tabKey)
       }));
     } catch {
+      if (version !== discoveryVersionRef.current) return;
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
     }
   }
@@ -635,11 +668,13 @@ function ProductEditorContent() {
 
   async function loadJvDraftByEan(ean: string, tabKey: JvTabKey = "JV"): Promise<boolean> {
     const activeGroup = tabKey === "XL" ? "XL" : "JV";
-    const discovered = await discoverProductEditor(ean, activeGroup);
-    skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(ean, discovered.recommended_baseline_target_id);
+    const discovered = await discoverForEditor(ean, activeGroup);
+    const baselineTargetId = getPreferredTargetIdForTab(discovered, tabKey) ?? (activeGroup === "XL" ? "XLMOEBEL_DE" : "JV_DE");
+    skipNextAutoJvLoadKeyRef.current = buildJvAutoLoadKey(activeGroup, ean, baselineTargetId);
+    discoveredTabsRef.current[tabKey] = discovered;
     setDiscover(limitDiscoverToActiveGroup(discovered, activeGroup));
     if (!hasFoundTargetInGroup(discovered, activeGroup)) return false;
-    return loadJvDraftForTab(ean, tabKey, discovered.recommended_baseline_target_id);
+    return loadJvDraftForTab(ean, tabKey, baselineTargetId);
   }
 
   async function loadXlDraftByEan(ean: string): Promise<boolean> {
@@ -662,7 +697,7 @@ function ProductEditorContent() {
   async function loadKauflandDraftByEan(ean: string, tabKey: KauflandTabKey = "KAUFLAND_JV"): Promise<boolean> {
     kauflandLoadInFlightEanRef.current = ean;
     try {
-      const discovered = await discoverProductEditor(ean, "KAUFLAND");
+      const discovered = await discoverForEditor(ean, "KAUFLAND");
       setDiscover(limitDiscoverToActiveGroup(discovered, "KAUFLAND"));
       const status = getTabSearchStatus(discovered, tabKey);
       if (status !== "found" && status !== "missing") return false;
@@ -685,14 +720,14 @@ function ProductEditorContent() {
   }
 
   async function loadOttoDraftByEan(ean: string, tabKey: OttoTabKey = "OTTO_JV"): Promise<boolean> {
-    const discovered = await discoverProductEditor(ean, "OTTO");
+    const discovered = await discoverForEditor(ean, "OTTO");
     setDiscover(limitDiscoverToActiveGroup(discovered, "OTTO"));
     if (getTabSearchStatus(discovered, tabKey) !== "found") return false;
     return loadOttoDraftForTab(ean, tabKey, getPreferredTargetIdForTab(discovered, tabKey));
   }
 
   async function loadEbayDraftByEan(ean: string, tabKey: EbayTabKey = "EBAY_JV"): Promise<"found" | "multiple" | "missing"> {
-    const discovered = await discoverProductEditor(ean, "EBAY");
+    const discovered = await discoverForEditor(ean, "EBAY");
     setDiscover(limitDiscoverToActiveGroup(discovered, "EBAY"));
     const legacyItemId = ebayDraftsByTab[tabKey].ebay_listing_mode === "legacy"
       && ebayDraftsByTab[tabKey].ean === ean ? ebayDraftsByTab[tabKey].ebay_item_id.trim()
@@ -749,7 +784,7 @@ function ProductEditorContent() {
 
   async function loadJvDraftForTab(ean: string, tabKey: JvTabKey, baselineTargetId?: string | null): Promise<boolean> {
     const activeGroup = tabKey === "XL" ? "XL" : "JV";
-    const autoLoadKey = buildJvAutoLoadKey(ean, baselineTargetId);
+    const autoLoadKey = buildJvAutoLoadKey(activeGroup, ean, baselineTargetId);
     const loadVersion = beginDraftLoad(tabKey);
     setJvTabLoading(tabKey, true);
     try {
@@ -763,7 +798,7 @@ function ProductEditorContent() {
       setJvTabDraft(tabKey, hydrated);
       setInitialJvTabDraft(tabKey, hydrated);
       setJvTabWarnings(tabKey, response.warnings);
-      loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(ean, baselineTargetId ?? response.baseline_target_id);
+      loadedJvAutoLoadKeyRef.current = buildJvAutoLoadKey(activeGroup, ean, baselineTargetId ?? response.baseline_target_id);
       if (activeGroup === "JV") {
         void loadJvPublishingSelections(ean, tabKey);
       }
@@ -1807,6 +1842,10 @@ function ProductEditorContent() {
   }
 
   function resetEditorState() {
+    for (const tab of PRODUCT_EDITOR_DISPLAY_TABS) {
+      draftLoadVersionByTabRef.current[tab.key] = (draftLoadVersionByTabRef.current[tab.key] ?? 0) + 1;
+    }
+    discoveredTabsRef.current = {};
     setDiscover(null);
     setTabSearchStatuses({});
     jvAutoLoadInFlightKeyRef.current = null;
@@ -2169,10 +2208,6 @@ function normalizeProductIdentifier(value: string): string {
 function extractCanonicalEan(value: string): string {
   const match = normalizeProductIdentifier(value).match(/\d{13}/);
   return match ? match[0] : "";
-}
-
-function buildJvAutoLoadKey(ean: string, baselineTargetId?: string | null): string {
-  return `${ean.trim()}::${String(baselineTargetId ?? "").trim()}`;
 }
 
 function getPlanEan(activeDraft: ProductEditorHoodDraft | ProductEditorJvDraft): string {

@@ -26,6 +26,7 @@ import {
   type MarketplaceStatusRowKey,
 } from "../inventory-api";
 import { useToast } from "../../shared/toast-provider";
+import { EbayImageValidationWarnings } from "../../ebay/image-validation-warnings";
 import { SofortListMarketplaceMatrix } from "./sofort-list-marketplace-matrix";
 
 import type { HighlightText, SofortListRow } from "./sofort-list-types";
@@ -78,6 +79,7 @@ type MarketplaceResultDialogState = {
   title: string;
   successSites: string[];
   failedSites: string[];
+  payload: MarketplaceActionResult;
 };
 
 type MarketplaceConfirmDialogState = {
@@ -227,7 +229,7 @@ const MARKETPLACE_CONFIRM_TARGETS = [
   { key: "XL", state: "live" as const },
   { key: "HOOD", state: "live" as const },
   { key: "OTTO", state: "live" as const },
-  { key: "EBAY", state: "pending" as const },
+  { key: "EBAY", state: "live" as const },
   { key: "KAUFLAND", state: "pending" as const },
 ];
 
@@ -542,6 +544,7 @@ function buildMarketplaceResultDialogState(
     title: payload.inactive ? labels.markedInactive : labels.markedActive,
     successSites,
     failedSites,
+    payload,
   };
 }
 
@@ -1847,6 +1850,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                 <p className="text-sm font-semibold text-foreground">{marketplaceResult.title}</p>
                 <p className="mt-1 text-sm text-muted-foreground">KID {marketplaceResult.kidNumber}</p>
               </div>
+              <EbayImageValidationWarnings payload={marketplaceResult.payload} />
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
                   <h3 className="text-sm font-semibold text-emerald-900">{props.labels.resultSuccessSites}</h3>

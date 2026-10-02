@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { SectionCard } from "../ui/section-card";
 import { StatusBadge } from "../ui/status-badge";
+import { EbayImageValidationWarnings } from "../ebay/image-validation-warnings";
 import type { ProductEditorJobResponse } from "./product-editor-types";
 
 type ProductEditorJobPanelProps = {
@@ -95,6 +96,7 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
         ))}
       </div>
 
+      <EbayImageValidationWarnings payload={job} />
       {job.error ? (
         <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <div className="font-medium">{job.error.code}</div>
