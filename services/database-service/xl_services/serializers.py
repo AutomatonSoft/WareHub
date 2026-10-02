@@ -200,6 +200,8 @@ class BatchSpecialChangeSerializer(serializers.Serializer):
 
 
 class XLBatchPayloadSerializer(serializers.Serializer):
+    categories_by_site_key = serializers.DictField(child=BatchCategoryChangeSerializer(many=True), required=False)
+    manufacturer_id_by_site_key = serializers.DictField(child=serializers.IntegerField(min_value=1), required=False)
     site_family = serializers.ChoiceField(choices=[ImportedProduct.Site.XL], default=ImportedProduct.Site.XL)
     site_keys = serializers.ListField(child=serializers.CharField(max_length=64), required=False, allow_empty=True)
     template_site_key = serializers.CharField(max_length=64, required=False, allow_blank=True)
@@ -235,6 +237,26 @@ class XLBatchPayloadSerializer(serializers.Serializer):
     stores = BatchStoreChangeSerializer(many=True, required=False)
     images = BatchImageChangeSerializer(many=True, required=False)
     specials = BatchSpecialChangeSerializer(many=True, required=False)
+
+    def validate_categories_by_site_key(self, value):
+        normalized = {}
+        for key, categories in value.items():
+            site_key = key.strip().upper()
+            if site_key not in {"XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"}:
+                raise serializers.ValidationError("Unsupported XL category site.")
+            ids = [item["category_id"] for item in categories]
+            if any(category_id <= 0 for category_id in ids) or len(ids) != len(set(ids)):
+                raise serializers.ValidationError("Category IDs must be positive and unique per site.")
+            if sum(bool(item.get("main_category")) for item in categories) > 1:
+                raise serializers.ValidationError("Select only one main category per site.")
+            normalized[site_key] = categories
+        return normalized
+
+    def validate_manufacturer_id_by_site_key(self, value):
+        normalized = {key.strip().upper(): manufacturer_id for key, manufacturer_id in value.items()}
+        if set(normalized) - {"XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"}:
+            raise serializers.ValidationError("Unsupported XL manufacturer site.")
+        return normalized
 
     def validate_translation_source(self, value):
         allowed = {"name", "description", "tag", "meta_title", "meta_description", "meta_keyword"}

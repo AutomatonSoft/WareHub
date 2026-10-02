@@ -28,9 +28,8 @@ from ..infra.job_store import SqliteJobStore
 from ..infra.product_editor_gateway import ProductEditorGateway
 from ..infra.product_editor_store import SqliteProductEditorStore
 
-_XL_ACTIVE_SITE_KEYS = ["XLMOEBEL_DE"]
+_XL_ACTIVE_SITE_KEYS = ["XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"]
 _XL_READ_ONLY_SITE_KEYS = [
-    "XLMOEBEL_CH",
     "XLMOBILI_IT",
     "XLMEUBILAIR_NL",
     "XLMEBELES_LV",
@@ -43,7 +42,6 @@ _XL_READ_ONLY_SITE_KEYS = [
     "XLMEBLE_PL",
     "XLMEUBELLA_BE",
     "XLMEUBLES_FR",
-    "XLMOEBEL_AT",
     "XLMUEBLES_ES",
     "XLFURNITURE_IE",
     "XLHUONEKALUT_FI",
@@ -69,7 +67,7 @@ class ProductEditorXlFlow:
         self.orchestrator_job_store = orchestrator_job_store
 
     def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
-        fetch = self.gateway.fetch_xl_sites_by_ean(ean=ean, request_id=request_id, site_key="XLMOEBEL_DE")
+        fetch = self.gateway.fetch_xl_sites_by_ean(ean=ean, request_id=request_id)
         if not (200 <= fetch.status_code < 300):
             return {
                 site_key: {
@@ -78,7 +76,7 @@ class ProductEditorXlFlow:
                     "warnings": [
                         ProductEditorWarning(
                             code="product_editor_xl_discover_error" if site_key in _XL_ACTIVE_SITE_KEYS else "product_editor_xl_placeholder",
-                            message="Failed to discover XL site status." if site_key in _XL_ACTIVE_SITE_KEYS else "XL editing is enabled only for XLMOEBEL_DE in current runtime.",
+                            message="Failed to discover XL site status." if site_key in _XL_ACTIVE_SITE_KEYS else "XL editing is enabled for DE, CH and AT.",
                         )
                     ],
                 }
@@ -118,11 +116,11 @@ class ProductEditorXlFlow:
 
             row = missing_by_key.get(site_key) or {}
             reason = str(row.get("reason") or "").strip().lower()
-            if reason == "query_error":
+            if reason in {"query_error", "not_configured"}:
                 results[site_key] = {
                     "status": ProductEditorTargetStatus.ERROR,
                     "metadata": {"domain": row.get("domain"), "reason": reason},
-                    "warnings": [ProductEditorWarning(code="product_editor_xl_site_query_error", message="XL site query failed during discover.")],
+                    "warnings": [ProductEditorWarning(code="product_editor_xl_site_not_configured" if reason == "not_configured" else "product_editor_xl_site_query_error", message=f"Source DB is not configured for {site_key}." if reason == "not_configured" else "XL site query failed during discover.")],
                 }
                 continue
 
@@ -135,7 +133,7 @@ class ProductEditorXlFlow:
         return results
 
     def recommended_baseline_from_results(self, results: dict[str, dict]) -> str | None:
-        return "XLMOEBEL_DE" if results.get("XLMOEBEL_DE", {}).get("status") is ProductEditorTargetStatus.FOUND else None
+        return next((key for key in _XL_ACTIVE_SITE_KEYS if results.get(key, {}).get("status") is ProductEditorTargetStatus.FOUND), None)
 
     def load(self, *, ean: str, request_id: str, baseline_target_id: str | None) -> ProductEditorLoadResponse:
         baseline_site_key = self._resolve_baseline_site_key(
@@ -167,17 +165,34 @@ class ProductEditorXlFlow:
                 warnings=[ProductEditorWarning(code="product_editor_xl_load_failed", message="Failed to load XL baseline draft.")],
             )
 
+        draft = _normalize_xl_draft(local.body, baseline_site_key)
+        site_warnings = []
+        for site_key in _XL_ACTIVE_SITE_KEYS:
+            if site_key == baseline_site_key:
+                continue
+            sync = self.gateway.sync_xl_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+            if not 200 <= sync.status_code < 300:
+                if sync.status_code != 404:
+                    site_warnings.append(ProductEditorWarning(code="product_editor_xl_site_load_failed", message=f"Could not refresh {site_key} categories and delivery."))
+                continue
+            site_local = self.gateway.fetch_xl_local_by_ean(ean=ean, site_key=site_key, request_id=request_id)
+            if 200 <= site_local.status_code < 300:
+                draft["categories_by_site_key"][site_key] = site_local.body.get("categories") or []
+                manufacturer_id = site_local.body.get("manufacturer_id")
+                if manufacturer_id:
+                    draft["manufacturer_id_by_site_key"][site_key] = manufacturer_id
         return ProductEditorLoadResponse(
             request_id=request_id,
             ean=ean,
             active_group=ProductEditorGroupId.XL,
             baseline_target_id=baseline_site_key,
-            draft=_normalize_xl_draft(local.body, baseline_site_key),
+            draft=draft,
             supported=True,
             warnings=[
+                *site_warnings,
                 ProductEditorWarning(
-                    code="product_editor_xl_de_only",
-                    message="XL Product Editor is currently enabled only for XLMOEBEL_DE.",
+                    code="product_editor_xl_multisite",
+                    message="XL DE/CH/AT use site-specific categories and manufacturers. Prices are converted from the baseline currency.",
                     level=ProductEditorRiskLevel.MEDIUM,
                 )
             ],
@@ -228,7 +243,7 @@ class ProductEditorXlFlow:
             "supported": True,
             "selected_target_count": len(target_ids),
             "changed_fields_count": len(changed_fields),
-            "target_policy": "xlde_only",
+            "target_policy": "xl_de_ch_at",
             "baseline_site_key": baseline_site_key,
         }
         self.store.create_plan(
@@ -319,7 +334,7 @@ class ProductEditorXlFlow:
             found_target_ids = self._found_target_ids(ean=ean, request_id=request_id)
         if preferred_target_id and preferred_target_id in found_target_ids:
             return preferred_target_id
-        return "XLMOEBEL_DE" if "XLMOEBEL_DE" in found_target_ids else None
+        return next((key for key in _XL_ACTIVE_SITE_KEYS if key in found_target_ids), None)
 
     def _found_target_ids(self, *, ean: str, request_id: str) -> list[str]:
         results = self.discover_targets(ean=ean, request_id=request_id)
@@ -351,8 +366,13 @@ def _normalize_xl_draft(payload: dict, baseline_site_key: str) -> dict:
         "quantity": payload.get("quantity"),
         "status": bool(payload.get("status", False)),
         "image": str(payload.get("image") or "").strip(),
+        "image_public_url": str(payload.get("image_public_url") or "").strip(),
+        "images_public_urls": payload.get("images_public_urls") or [],
         "descriptions": descriptions,
         "categories": categories,
+        "categories_by_site_key": {baseline_site_key: categories},
+        "manufacturer_id": payload.get("manufacturer_id"),
+        "manufacturer_id_by_site_key": {baseline_site_key: payload["manufacturer_id"]} if payload.get("manufacturer_id") else {},
         "stores": stores,
         "images": images,
         "specials": specials,
@@ -378,6 +398,15 @@ def _build_xl_batch_payload(*, draft: dict, changed_fields: list[str], target_id
     payload["site_family"] = "XL"
     payload["site_keys"] = target_ids
     payload["template_site_key"] = baseline_site_key
+    if "price" in changed_fields:
+        payload["convert_currency"] = True
+        payload["source_currency"] = "CHF" if baseline_site_key == "XLMOEBEL_CH" else "EUR"
+    if "categories" in changed_fields and draft.get("categories_by_site_key"):
+        payload["categories_by_site_key"] = draft["categories_by_site_key"]
+        payload.pop("categories", None)
+    if "manufacturer_id" in changed_fields and draft.get("manufacturer_id_by_site_key"):
+        payload["manufacturer_id_by_site_key"] = draft["manufacturer_id_by_site_key"]
+        payload.pop("manufacturer_id", None)
     return payload
 
 
@@ -449,8 +478,8 @@ def _plan_warnings_for_xl(*, changed_fields: list[str]) -> list[ProductEditorWar
             level=ProductEditorRiskLevel.HIGH,
         ),
         ProductEditorWarning(
-            code="product_editor_xl_de_only",
-            message="Current XL Product Editor scope is limited to XLMOEBEL_DE.",
+            code="product_editor_xl_multisite",
+            message="XL DE/CH/AT use independent category and delivery selections.",
             level=ProductEditorRiskLevel.MEDIUM,
         ),
     ]
@@ -458,7 +487,7 @@ def _plan_warnings_for_xl(*, changed_fields: list[str]) -> list[ProductEditorWar
         warnings.append(
             ProductEditorWarning(
                 code="product_editor_xl_images_live_update",
-                message="Image changes will be pushed to the live XL DE source site.",
+                message="Image changes will be pushed to the selected live XL source sites.",
                 level=ProductEditorRiskLevel.HIGH,
             )
         )
@@ -530,8 +559,8 @@ def _map_xl_orchestrator_summary(*, details) -> dict:
     job_payload = channel_result.data.get("job") if isinstance(channel_result.data.get("job"), dict) else {}
     items = job_payload.get("items") if isinstance(job_payload.get("items"), list) else []
     if batch_summary:
-        success_count = int(batch_summary.get("applied") or 0) + int(batch_summary.get("skipped") or 0)
-        failed_count = int(batch_summary.get("failed") or 0)
+        success_count = int(batch_summary.get("applied") or 0)
+        failed_count = int(batch_summary.get("failed") or 0) + int(batch_summary.get("skipped") or 0)
         return {
             "supported": True,
             "success": success_count,

@@ -5,14 +5,14 @@ export function buildJvAutoLoadKey(group: "JV" | "XL", ean: string, baselineTarg
 }
 
 export function createProductEditorDiscoveryLoader(
-  fetchDiscovery: (ean: string, group?: ProductEditorGroupId) => Promise<ProductEditorDiscoverResponse>,
+  fetchDiscovery: (ean: string, group?: ProductEditorGroupId, account?: "jv" | "xl") => Promise<ProductEditorDiscoverResponse>,
 ) {
   const pending = new Map<string, Promise<ProductEditorDiscoverResponse>>();
-  return (ean: string, group?: ProductEditorGroupId): Promise<ProductEditorDiscoverResponse> => {
-    const key = JSON.stringify([ean.trim(), group ?? null]);
+  return (ean: string, group?: ProductEditorGroupId, account?: "jv" | "xl"): Promise<ProductEditorDiscoverResponse> => {
+    const key = JSON.stringify([ean.trim(), group ?? null, account ?? null]);
     const existing = pending.get(key);
     if (existing) return existing;
-    const request = fetchDiscovery(ean.trim(), group).finally(() => pending.delete(key));
+    const request = fetchDiscovery(ean.trim(), group, account).finally(() => pending.delete(key));
     pending.set(key, request);
     return request;
   };

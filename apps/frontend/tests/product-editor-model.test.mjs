@@ -1,5 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+
+test("XL detects delivery changes independently from JV fields", () => {
+  const initial = { ...createEmptyJvDraft(), manufacturer_id_by_site_key: { XLMOEBEL_CH: 11 } };
+  const current = { ...initial, manufacturer_id_by_site_key: { XLMOEBEL_CH: 22 } };
+  assert.deepEqual(buildJvChangedFields(initial, current), ["manufacturer_id"]);
+});
 import {
   attributesToProductProperties,
   buildHoodChangedFields,

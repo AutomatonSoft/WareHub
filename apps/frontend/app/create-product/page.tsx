@@ -113,9 +113,8 @@ const JV_PUBLIC_BASE_BY_SITE_KEY: Record<string, string> = {
   JV_CO_UK: "https://www.jvfurniture.co.uk",
 };
 const ALL_MARKETPLACE_SITE_IDS = allMarketplaceSites.map((site) => site.id);
-const XL_MARKETPLACE_SITE_IDS = ["xlmoebel_de"];
+const XL_MARKETPLACE_SITE_IDS = ["xlmoebel_de", "xlmoebel_ch", "xlmoebel_at"];
 const PUBLISHABLE_SITE_FAMILIES = new Set<SiteFamily>(["JVMOEBEL", "XL", "HOOD", "KAUFLAND", "OTTO", "EBAY"]);
-const PUBLISHABLE_XL_SITE_ID = "xlmoebel_de";
 const JV_SITE_KEY_BY_MARKETPLACE_SITE_ID = {
   "jvmoebel-de": "JV_DE",
   "jvmoebel-at": "JV_AT",
@@ -1213,12 +1212,15 @@ async function galleryItemToFile(item: GalleryItem, index: number, t: Record<str
   return new File([blob], fileName, { type: blob.type || "image/jpeg" });
 }
 
+import { MarketplaceFormFeedback, useMarketplaceFeedback } from "../../components/product-forms/marketplace-form-feedback";
+
 export default function CreateProductPage() {
   const t = useLabels();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<CreateProductTab>("jv");
   const [isPublishSitesDialogOpen, setIsPublishSitesDialogOpen] = useState(false);
   const [selectedPublishSiteIds, setSelectedPublishSiteIds] = useState<Set<string>>(new Set());
+  const feedback = useMarketplaceFeedback(activeTab);
   const activeTabMeta = getCreateProductTabMeta(activeTab, t);
   const controller = useCreateProductController({
     t,
@@ -1226,6 +1228,7 @@ export default function CreateProductPage() {
     sourceSite: activeTabMeta.sourceSite,
     mainEanFamily: activeTabMeta.mainEanFamily,
     preferredSourceSiteKey: activeTabMeta.sourceSiteKey,
+    onFailure: feedback.report,
   });
   const [jvName, setJvName] = useState("");
   const [jvArtikelnr, setJvArtikelnr] = useState("");
@@ -1251,6 +1254,7 @@ export default function CreateProductPage() {
     deliveryIdsBySite: {},
   });
   const jvPublishingSelectionKeyRef = useRef("");
+  const xlPublishingSelectionsRef = useRef<JvPublishingSelections>({ rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} });
   const xlDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<XlCreateProductDraft>>>>({});
   const hoodDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<HoodCreateProductDraft>>>>({});
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
@@ -1282,16 +1286,6 @@ export default function CreateProductPage() {
   const [selectedRubricIdsBySite, setSelectedRubricIdsBySite] = useState<SelectedRubricIdsBySite>({});
   const [mainRubricIdBySite, setMainRubricIdBySite] = useState<MainRubricIdBySite>({});
   const [jvRubricSelectionSourceKey, setJvRubricSelectionSourceKey] = useState("");
-  const [xlRubricTree, setXlRubricTree] = useState<RubricTreeNode[]>([]);
-  const [xlRubricTreeSourceKey, setXlRubricTreeSourceKey] = useState("");
-  const [xlRubricTreeLoading, setXlRubricTreeLoading] = useState(false);
-  const [xlRubricTreeError, setXlRubricTreeError] = useState("");
-  const [xlRubricSearch, setXlRubricSearch] = useState("");
-  const [showOnlySelectedXlRubrics, setShowOnlySelectedXlRubrics] = useState(false);
-  const [expandedXlRubricIds, setExpandedXlRubricIds] = useState<Set<number>>(new Set());
-  const [selectedXlRubricIds, setSelectedXlRubricIds] = useState<Set<number>>(new Set());
-  const [mainXlRubricId, setMainXlRubricId] = useState<number | null>(null);
-  const [xlRubricSelectionSourceKey, setXlRubricSelectionSourceKey] = useState("");
   const [deliveryOptionsBySite, setDeliveryOptionsBySite] = useState<DeliveryOptionsCache>({});
   const [deliveryOptionsLoading, setDeliveryOptionsLoading] = useState(false);
   const [deliveryOptionsError, setDeliveryOptionsError] = useState("");
@@ -1548,52 +1542,6 @@ export default function CreateProductPage() {
 
     return filterNodes(rubricTree);
   }, [rubricSearch, rubricTree, selectedRubricIds, showOnlySelectedRubrics]);
-  const filteredXlRubricTree = useMemo(() => {
-    const query = xlRubricSearch.trim().toLowerCase();
-    if (!query && !showOnlySelectedXlRubrics) {
-      return xlRubricTree;
-    }
-
-    function filterNodes(nodes: RubricTreeNode[]): RubricTreeNode[] {
-      const next: RubricTreeNode[] = [];
-      for (const node of nodes) {
-        const label = String(node.name || "").toLowerCase();
-        const code = String(node.id || "");
-        const children = Array.isArray(node.children) ? filterNodes(node.children) : [];
-        const matchesQuery = !query || label.includes(query) || code.includes(query);
-        const matchesSelection = !showOnlySelectedXlRubrics || selectedXlRubricIds.has(node.id);
-
-        if ((!matchesQuery || !matchesSelection) && children.length === 0) {
-          continue;
-        }
-
-        next.push({
-          ...node,
-          children,
-        });
-      }
-      return next;
-    }
-
-    const filtered = filterNodes(xlRubricTree);
-    if (!showOnlySelectedXlRubrics || selectedXlRubricIds.size === 0) {
-      return filtered;
-    }
-
-    const allTreeIds = collectRubricTreeIds(xlRubricTree);
-    const filteredIds = collectRubricTreeIds(filtered);
-    const fallbackNodes = Array.from(selectedXlRubricIds)
-      .filter((id) => !allTreeIds.has(id) && !filteredIds.has(id))
-      .filter((id) => !query || String(id).includes(query))
-      .map((id) => ({
-        id,
-        category_id: id,
-        name: "Sonstige",
-        children: [],
-      }));
-
-    return [...filtered, ...fallbackNodes];
-  }, [showOnlySelectedXlRubrics, selectedXlRubricIds, xlRubricSearch, xlRubricTree]);
   const filteredDeliveryOptions = useMemo(() => {
     const query = deliverySearch.trim().toLowerCase();
 
@@ -1610,14 +1558,9 @@ export default function CreateProductPage() {
     () => expandableRubricIds.length > 0 && expandableRubricIds.every((id) => expandedRubricIds.has(id)),
     [expandableRubricIds, expandedRubricIds]
   );
-  const expandableXlRubricIds = useMemo(() => collectExpandableRubricIds(filteredXlRubricTree), [filteredXlRubricTree]);
-  const areAllXlRubricsExpanded = useMemo(
-    () => expandableXlRubricIds.length > 0 && expandableXlRubricIds.every((id) => expandedXlRubricIds.has(id)),
-    [expandableXlRubricIds, expandedXlRubricIds]
-  );
   const activeMarketplaceSiteIds = activeTabMeta.targetSiteIds;
   const publishSiteOptions: PublishSiteOption[] = allMarketplaceSites
-    .filter((site) => PUBLISHABLE_SITE_FAMILIES.has(site.family) && (site.family !== "XL" || site.id === PUBLISHABLE_XL_SITE_ID))
+    .filter((site) => PUBLISHABLE_SITE_FAMILIES.has(site.family) && (site.family !== "XL" || XL_MARKETPLACE_SITE_IDS.includes(site.id)))
     .map((site) => ({ id: site.id, label: site.name, family: site.family as PublishSiteOption["family"] }));
   const isEbayMarketplace = activeTabMeta.marketplace === "EBAY";
   const canCreateProduct = activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0;
@@ -1691,8 +1634,6 @@ export default function CreateProductPage() {
   const activeHoodSourceKey = [
     activeDraftContextKey,
     activeTabMeta.sourceSiteKey || "",
-    activeHoodSnapshot?.ean || "",
-    activeHoodSnapshot?.sourceProductId || "",
   ].join(":");
   const activeKauflandSourceKey = activeDraftContextKey;
   const activeKauflandDescriptionFields = useMemo(
@@ -1755,7 +1696,11 @@ export default function CreateProductPage() {
       category: ottoCategoryNameByTab[activeTab] ?? "",
     }), activeReservedMarketplaceEan);
   const activeXlDraftKey = activeXlDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
-  const activeHoodDraftKey = activeHoodSourceKey;
+  const activeHoodDraftKey = activeHoodDraftSnapshot ? activeHoodSourceKey : [
+    activeHoodSourceKey,
+    activeHoodSnapshot?.ean || "",
+    activeHoodSnapshot?.sourceProductId || "",
+  ].join(":");
   const activeKauflandDraftKey = `${activeDraftContextKey}:${activeSourceSnapshotKey}`;
   const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
 
@@ -1776,6 +1721,7 @@ export default function CreateProductPage() {
     };
     jvPublishingSelectionKeyRef.current = "";
     xlDraftRefByTab.current = {};
+    xlPublishingSelectionsRef.current = { rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} };
     hoodDraftRefByTab.current = {};
     kauflandDraftRefByTab.current = {};
     ottoDraftRefByTab.current = {};
@@ -1856,11 +1802,13 @@ export default function CreateProductPage() {
         if (activeTabMeta.marketplace === "HOOD") {
           const current = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
             ? hoodDraftRefByTab.current[activeTab].draft
-            : activeHoodInitialDraft;
-          hoodDraftRefByTab.current[activeTab] = {
-            sourceKey: activeHoodSourceKey,
-            draft: { ...current, ean },
-          };
+            : null;
+          if (current) {
+            hoodDraftRefByTab.current[activeTab] = {
+              sourceKey: activeHoodSourceKey,
+              draft: { ...current, ean },
+            };
+          }
         } else if (activeTabMeta.marketplace === "KAUFLAND") {
           const current = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
             ? kauflandDraftRefByTab.current[activeTab].draft
@@ -1995,66 +1943,6 @@ export default function CreateProductPage() {
     });
   }, [activeTab, activeTabSourceGalleryItems]);
 
-  useEffect(() => {
-    const sourceSiteKey = String(controller.sourceSnapshot?.siteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY).trim();
-    const normalizedSourceSiteKey = (sourceSiteKey || CREATE_PRODUCT_XL_DEFAULT_SITE_KEY).toLowerCase();
-    if (activeTabMeta.sourceSite !== "XL" || xlRubricTreeSourceKey === normalizedSourceSiteKey) {
-      return;
-    }
-
-    let active = true;
-    setXlRubricTreeLoading(true);
-    setXlRubricTreeError("");
-
-    const rubricTreeUrl =
-      `/api/v1/xl/rubrics/tree/?site=XL&site_key=${encodeURIComponent(normalizedSourceSiteKey)}&language=de`;
-
-    void apiFetch(rubricTreeUrl)
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(`Failed to load XL rubric tree: HTTP ${response.status}`);
-        }
-        const tree = normalizeRubricTreePayload(payload);
-        if (!active) {
-          return;
-        }
-        setXlRubricTree(tree);
-        setXlRubricTreeSourceKey(normalizedSourceSiteKey);
-        setExpandedXlRubricIds(new Set(collectExpandableRubricIds(tree)));
-      })
-      .catch((error) => {
-        if (!active) {
-          return;
-        }
-        setXlRubricTreeError(error instanceof Error ? error.message : "Failed to load XL rubric tree.");
-      })
-      .finally(() => {
-        if (active) {
-          setXlRubricTreeLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeTabMeta.sourceSite, controller.sourceSnapshot?.siteKey, xlRubricTreeSourceKey]);
-
-  useEffect(() => {
-    if (activeTabMeta.sourceSite !== "XL" || xlRubricSelectionSourceKey === activeXlSourceKey) {
-      return;
-    }
-
-    const selectedCategoryIds = sourceCategories.map((category) => category.category_id);
-    const mainCategoryId =
-      sourceCategories.find((category) => category.main_category)?.category_id ??
-      selectedCategoryIds[0] ??
-      null;
-
-    setSelectedXlRubricIds(new Set(selectedCategoryIds));
-    setMainXlRubricId(mainCategoryId);
-    setXlRubricSelectionSourceKey(activeXlSourceKey);
-  }, [activeTabMeta.sourceSite, activeXlSourceKey, sourceCategories, xlRubricSelectionSourceKey]);
 
   useEffect(() => {
     if (activeTabMeta.sourceSite !== "JV" || jvRubricSelectionSourceKey === activeJvSourceKey) {
@@ -2364,27 +2252,7 @@ export default function CreateProductPage() {
     }));
   }
 
-  function toggleSelectedXlRubric(rubricId: number) {
-    setSelectedXlRubricIds((current) => {
-      const next = new Set(current);
-      if (next.has(rubricId)) {
-        next.delete(rubricId);
-      } else {
-        next.add(rubricId);
-      }
-      return next;
-    });
-    setMainXlRubricId((current) => {
-      if (current !== rubricId) {
-        return current;
-      }
-      return selectedXlRubricIds.has(rubricId) ? null : current;
-    });
-  }
 
-  function toggleMainXlRubric(rubricId: number) {
-    setMainXlRubricId((current) => (current === rubricId ? null : rubricId));
-  }
 
   function toggleSelectedDelivery(deliveryId: number) {
     setSelectedDeliveryIdsBySite((current) => {
@@ -2672,9 +2540,8 @@ export default function CreateProductPage() {
         });
 
         if (!response.ok) {
-          const message =
-            asTrimmedString((responsePayload as Record<string, unknown>).detail) ||
-            t.createProductFailedQueueJob.replace("{status}", String(response.status));
+          const message = feedback.report({ status: response.status, payload: responsePayload },
+            t.createProductFailedQueueJob.replace("{status}", String(response.status)));
           if (isMountedRef.current) {
             setSendAllSitesStatus(message);
             setSendAllSitesLoading(false);
@@ -2706,7 +2573,7 @@ export default function CreateProductPage() {
           setSendAllSitesLoading(false);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : t.createProductJvBackgroundFailed;
+        const message = feedback.report(error, t.createProductJvBackgroundFailed);
         if (isMountedRef.current) {
           setSendAllSitesStatus(message);
           setSendAllSitesLoading(false);
@@ -2790,75 +2657,6 @@ export default function CreateProductPage() {
     });
   }
 
-  function renderXlRubricTree(nodes: RubricTreeNode[], level = 0): ReactNode[] {
-    return nodes.flatMap((node) => {
-      const label = String(
-        node.name || t.createProductRubricLabel.replace("{id}", String(node.id || ""))
-      ).trim();
-      const children = Array.isArray(node.children) ? node.children : [];
-      const isExpanded = expandedXlRubricIds.has(node.id);
-      const hasChildren = children.length > 0;
-      const isSelected = selectedXlRubricIds.has(node.id);
-      const isMain = mainXlRubricId === node.id;
-
-      return [
-        <div
-          key={`xl-${level}-${node.id}`}
-          className="flex items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-sm text-foreground"
-        >
-          <div className="flex w-10 shrink-0 items-center gap-1">
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={() => toggleSelectedXlRubric(node.id)}
-              className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff]"
-            />
-            <input
-              type="checkbox"
-              checked={isMain}
-              onChange={() => toggleMainXlRubric(node.id)}
-              disabled={!isSelected}
-              className="size-4 rounded-[4px] border border-[#cfd8e3] bg-white accent-[#1677ff] disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={t.createProductMainRubricAria.replace("{label}", label)}
-            />
-          </div>
-          <div
-            className="flex min-w-0 items-center gap-2"
-            style={{ paddingLeft: `${level * 18 + 8}px` }}
-          >
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() =>
-                  setExpandedXlRubricIds((current) => {
-                    const next = new Set(current);
-                    if (next.has(node.id)) {
-                      next.delete(node.id);
-                    } else {
-                      next.add(node.id);
-                    }
-                    return next;
-                  })
-                }
-                className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-pill)] border border-border/70 bg-background text-xs text-muted-foreground transition hover:text-foreground"
-                aria-label={
-                  isExpanded
-                    ? t.createProductCollapseRubricAria.replace("{label}", label)
-                    : t.createProductExpandRubricAria.replace("{label}", label)
-                }
-              >
-                {isExpanded ? "-" : "+"}
-              </button>
-            ) : (
-              <span className="inline-block size-5 shrink-0" />
-            )}
-            <span className="min-w-0">{label}</span>
-          </div>
-        </div>,
-        ...(hasChildren && isExpanded ? renderXlRubricTree(children, level + 1) : []),
-      ];
-    });
-  }
 
   function submitKauflandCreate(siteIds: string[]) {
     const draft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
@@ -2908,28 +2706,31 @@ export default function CreateProductPage() {
     const imageUrls = ottoGalleryItems.map((item) => item.src.trim()).filter(Boolean);
     const identityEan = reservedEan || draft.ean.trim() || controller.ean.trim();
     const productReference = draft.productReference.trim();
+    const rejectField = (field: string, message: string) => {
+      showToast(feedback.report({ field_errors: { [field]: message } }, "", ottoTab), "error");
+    };
     if (!productReference) {
-      showToast("Enter a product reference for OTTO.", "error");
+      rejectField("productReference", "Enter a product reference for OTTO.");
       return;
     }
     if (!isOttoProductLineValid(draft.productLine)) {
-      showToast("OTTO product line must contain at most 70 characters.", "error");
+      rejectField("productLine", "OTTO product line must contain at most 70 characters.");
       return;
     }
     const ean = identityEan;
     const quantity = Number(draft.quantity);
     if (!Number.isInteger(quantity) || quantity < 1) {
-      showToast("Enter a positive whole quantity for OTTO.", "error");
+      rejectField("quantity", "Enter a positive whole quantity for OTTO.");
       return;
     }
     const deliveryTime = Number(draft.deliveryTime);
     if (!Number.isInteger(deliveryTime) || deliveryTime < 1) {
-      showToast("Enter a delivery time in whole days for OTTO.", "error");
+      rejectField("deliveryTime", "Enter a delivery time in whole days for OTTO.");
       return;
     }
     const shippingProfileId = draft.shippingProfileId?.trim() ?? "";
     if (!shippingProfileId) {
-      showToast("Select a shipping profile for OTTO.", "error");
+      rejectField("shippingProfileId", "Select a shipping profile for OTTO.");
       return;
     }
     const attributes = deduplicateOttoAttributes(
@@ -2978,7 +2779,7 @@ export default function CreateProductPage() {
         activeTab === "jv"
           ? Object.keys(JV_SITE_KEY_BY_MARKETPLACE_SITE_ID)
           : activeTab === "xl"
-            ? [PUBLISHABLE_XL_SITE_ID]
+            ? XL_MARKETPLACE_SITE_IDS
             : isEbayMarketplace ? activeMarketplaceSiteIds : [],
       ),
     );
@@ -3046,7 +2847,14 @@ export default function CreateProductPage() {
         const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
           ? xlDraftRefByTab.current[activeTab].draft
           : activeXlDescriptionFields;
-        void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles());
+        const selections = xlPublishingSelectionsRef.current;
+        const siteKeys = selectedOtherSiteIds.filter((id) => XL_MARKETPLACE_SITE_IDS.includes(id)).map((id) => id.toUpperCase());
+        const categoriesBySite = Object.fromEntries(Object.entries(selections.rubricIdsBySite).map(([key, ids]) => [key, ids.map((category_id) => ({ category_id, main_category: category_id === (selections.mainRubricIdBySite[key as keyof typeof selections.mainRubricIdBySite] ?? ids[0]) }))]));
+        const manufacturerBySite = Object.fromEntries(Object.entries(selections.deliveryIdsBySite).filter(([, ids]) => ids.length === 1).map(([key, ids]) => [key, ids[0]]));
+        void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles(), {
+          siteKeys, categoriesBySite, manufacturerBySite,
+          sourceCurrency: controller.sourceSnapshot?.siteKey === "XLMOEBEL_CH" ? "CHF" : "EUR",
+        });
         return;
       }
 
@@ -3086,6 +2894,7 @@ export default function CreateProductPage() {
       title={t.createProduct}
       subtitle={t.createProduct}
     >
+      <MarketplaceFormFeedback failure={feedback.failure} clear={feedback.clear}>
       <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
@@ -3229,6 +3038,7 @@ export default function CreateProductPage() {
               ].join(" ")}>
                 {activeTabMeta.sourceSite === "HOOD" ? (
                   <HoodCreateProductPanel
+                    key={activeHoodSourceKey}
                     initialDraft={activeHoodInitialDraft}
                     draftKey={`${activeHoodDraftKey}:${activeReservedMarketplaceEan}`}
                     publishDraftRef={hoodPublishDraftRef}
@@ -3236,7 +3046,16 @@ export default function CreateProductPage() {
                     previewLabel={t.previewLabel}
                     previewDocumentFor={(description) => makeHoodDescriptionPreviewEditableDocument(buildHoodDescriptionPreviewDocument(description, activeTabMeta.account))}
                     onDraftChange={(draft) => {
-                      hoodDraftRefByTab.current[activeTab] = { sourceKey: activeHoodSourceKey, draft };
+                      const current = hoodDraftRefByTab.current[activeTab];
+                      hoodDraftRefByTab.current[activeTab] = {
+                        sourceKey: activeHoodSourceKey,
+                        draft: {
+                          ...draft,
+                          productPropertiesText: current?.sourceKey === activeHoodSourceKey
+                            ? current.draft.productPropertiesText
+                            : draft.productPropertiesText,
+                        },
+                      };
                     }}
                   />
                 ) : null}
@@ -3283,7 +3102,11 @@ export default function CreateProductPage() {
                   </div>
                 ) : null}
                 {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" ? (
+                  <p className="text-sm text-muted-foreground">Price currency: {controller.sourceSnapshot?.siteKey === "XLMOEBEL_CH" ? "CHF" : "EUR"}. XL CH receives CHF; XL DE/AT receive EUR. Conversion runs on the server.</p>
+                ) : null}
+                {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" ? (
                   <XlCreateProductPanel
+                    showManufacturer={false}
                     initialFields={activeXlInitialDraft}
                     draftKey={activeXlDraftKey}
                     codeLabel={t.codeLabel}
@@ -3326,8 +3149,9 @@ export default function CreateProductPage() {
                 {activeTabMeta.sourceSite === "KAUFLAND" ? <div id="kaufland-delivery-time-range" /> : null}
                 {activeTabMeta.sourceSite === "HOOD" ? (
                   <HoodProductPropertiesPanel
+                    key={activeHoodSourceKey}
                     initialValue={activeHoodInitialDraft.productPropertiesText}
-                    draftKey={activeHoodSourceKey}
+                    draftKey={activeHoodDraftKey}
                     onDraftChange={(productPropertiesText) => {
                       const current = hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
                         ? hoodDraftRefByTab.current[activeTab].draft
@@ -3339,68 +3163,17 @@ export default function CreateProductPage() {
                     }}
                   />
                 ) : null}
-                {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" ? (
-                  <div className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        {t.createProductRubricTree}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedXlRubricIds(areAllXlRubricsExpanded ? new Set<number>() : new Set(expandableXlRubricIds))}
-                        disabled={expandableXlRubricIds.length === 0}
-                        className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {areAllXlRubricsExpanded ? t.createProductCollapseAll : t.createProductExpandAll}
-                      </button>
-                    </div>
-
-                    <Input
-                      value={xlRubricSearch}
-                      onChange={(event) => setXlRubricSearch(event.target.value)}
-                      placeholder={t.createProductSearchRubric}
-                    />
-
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="rounded-[var(--radius-pill)] border border-border/70 bg-muted/30 px-3 py-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                        XL {selectedXlRubricIds.size}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowOnlySelectedXlRubrics((current) => !current)}
-                        className={[
-                          "rounded-[var(--radius-pill)] px-3 py-1.5 text-xs font-semibold uppercase transition",
-                          showOnlySelectedXlRubrics
-                            ? "bg-primary text-primary-foreground"
-                            : "border border-border/70 bg-background text-foreground hover:bg-muted/40",
-                        ].join(" ")}
-                      >
-                        {t.xljvSelectedOnly}
-                      </button>
-                    </div>
-
-                    {xlRubricTreeLoading ? (
-                      <div className="text-sm text-muted-foreground">{t.createProductLoadingRubricTree}</div>
-                    ) : null}
-
-                    {xlRubricTreeError ? (
-                      <div className="text-sm text-destructive">{xlRubricTreeError}</div>
-                    ) : null}
-
-                    {!xlRubricTreeLoading && !xlRubricTreeError && xlRubricTree.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t.createProductNoRubricTreeData}</div>
-                    ) : null}
-
-                    {!xlRubricTreeLoading && !xlRubricTreeError && xlRubricTree.length > 0 && filteredXlRubricTree.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t.createProductNoRubricsFound}</div>
-                    ) : null}
-
-                    {!xlRubricTreeLoading && !xlRubricTreeError && filteredXlRubricTree.length > 0 ? (
-                      <div className="max-h-[320px] overflow-auto rounded-[var(--radius-control)] border border-border/70 bg-card py-2">
-                        {renderXlRubricTree(filteredXlRubricTree)}
-                      </div>
-                    ) : null}
-                  </div>
+                {activeTabMeta.sourceSite === "XL" && activeTabMeta.marketplace !== "OTTO" && controller.sourceSnapshot?.siteKey.startsWith("XL") ? (
+                  <JvPublishingOptionsPanel
+                    key={activeXlSourceKey}
+                    family="XL"
+                    sourceSiteKey={controller.sourceSnapshot?.siteKey ?? CREATE_PRODUCT_XL_DEFAULT_SITE_KEY}
+                    sourceCategories={sourceCategories}
+                    sourceDeliveryId={Number(activeXlInitialDraft.manufacturer_id) || undefined}
+                    initialSelections={Object.keys(xlPublishingSelectionsRef.current.rubricIdsBySite).length ? xlPublishingSelectionsRef.current : undefined}
+                    initialSelectionKey={activeXlSourceKey}
+                    onSelectionsChange={(selections) => { xlPublishingSelectionsRef.current = selections; }}
+                  />
                 ) : null}
               </div>
             </div>
@@ -3446,6 +3219,7 @@ export default function CreateProductPage() {
         ) : null}
 
       </div>
+      </MarketplaceFormFeedback>
     </AppShell>
   );
 }

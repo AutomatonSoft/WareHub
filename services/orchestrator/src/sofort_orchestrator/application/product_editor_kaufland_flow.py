@@ -27,9 +27,11 @@ class ProductEditorKauflandFlow:
         self.gateway = gateway
         self.store = store
 
-    def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
+    def discover_targets(self, *, ean: str, request_id: str, account: str | None = None) -> dict[str, dict]:
         results: dict[str, dict] = {}
         for target_id, controller in _KAUFLAND_CONTROLLER_BY_TARGET.items():
+            if account is not None and controller != account:
+                continue
             fetch = self.gateway.fetch_kaufland_by_ean(ean=ean, controller=controller, request_id=request_id)
             if 200 <= fetch.status_code < 300 and _has_kaufland_product(fetch.body):
                 results[target_id] = {
@@ -210,10 +212,10 @@ class ProductEditorKauflandFlow:
         return ProductEditorJobResponse(request_id=request_id, job_id=job_id, ean=job["ean"], status=job["status"], active_group=job["active_group"], summary=job["summary"], targets=job["targets"], error=job["error"], created_at_unix_ms=job["created_at_unix_ms"], updated_at_unix_ms=job["updated_at_unix_ms"])
 
     def _resolve_baseline_target_id(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
-        states = self.discover_targets(ean=ean, request_id=request_id)
-        available = [target_id for target_id, state in states.items() if state["status"] in {ProductEditorTargetStatus.FOUND, ProductEditorTargetStatus.MISSING}]
         if preferred_target_id is not None:
             return preferred_target_id if preferred_target_id in _KAUFLAND_CONTROLLER_BY_TARGET else None
+        states = self.discover_targets(ean=ean, request_id=request_id)
+        available = [target_id for target_id, state in states.items() if state["status"] in {ProductEditorTargetStatus.FOUND, ProductEditorTargetStatus.MISSING}]
         return available[0] if available else None
 
 

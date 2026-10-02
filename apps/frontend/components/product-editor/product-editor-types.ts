@@ -176,7 +176,7 @@ export type ProductEditorJvCategory = {
   main_category?: boolean;
 };
 
-export type ProductEditorJvSiteKey = "JV_DE" | "JV_CO_UK" | "JV_CH" | "JV_AT" | "XLMOEBEL_DE";
+export type ProductEditorJvSiteKey = "JV_DE" | "JV_CO_UK" | "JV_CH" | "JV_AT" | "XLMOEBEL_DE" | "XLMOEBEL_CH" | "XLMOEBEL_AT";
 
 export type ProductEditorJvCategoriesBySiteKey = Partial<Record<ProductEditorJvSiteKey, ProductEditorJvCategory[]>>;
 
@@ -217,6 +217,8 @@ export type ProductEditorJvDraft = {
   descriptions: ProductEditorJvDescription[];
   categories: ProductEditorJvCategory[];
   categories_by_site_key: ProductEditorJvCategoriesBySiteKey;
+  manufacturer_id?: number;
+  manufacturer_id_by_site_key?: Partial<Record<ProductEditorJvSiteKey, number>>;
   stores: ProductEditorXlStore[];
   images: ProductEditorJvImage[];
   specials: ProductEditorXlSpecial[];

@@ -7,6 +7,43 @@ from rest_framework.test import APIRequestFactory
 
 from .gallery_mapping_jobs import enqueue_mapping, mapping_status, run_next_mapping
 from .views_gallery_mapping import GalleryMappingAPIView
+from .gallery_mapping_store import GalleryMappingStore
+from .views_gallery_mapping import GalleryMappingLookupAPIView
+
+
+class MappingLookupTests(TestCase):
+    def test_pair_routing_and_bidirectional_query(self):
+        database = MagicMock()
+        store = GalleryMappingStore(database, source_url="https://aftercool.de", dataset="lister")
+        store.rows.aggregate.return_value = [{"_id": {"jv_ean": "111", "xl_ean": "222"}}]
+        for identifier in ("111", "222"):
+            result = store.resolve_ean(identifier)
+            self.assertEqual(result["status"], "matched")
+            self.assertEqual(result["ean_by_tab"]["XL"], "111")
+            self.assertEqual(result["ean_by_tab"]["OTTO_XL"], "222")
+            query = store.rows.aggregate.call_args.args[0][0]["$match"]
+            self.assertEqual(query["$or"], [{"jv_ean": identifier}, {"xl_ean": identifier}])
+            self.assertFalse(any(key.startswith("EBAY") for key in result["ean_by_tab"]))
+
+    def test_missing_or_ambiguous_pair_never_selects_xl(self):
+        store = GalleryMappingStore(MagicMock(), source_url="https://aftercool.de", dataset="lister")
+        for rows, expected in (([], "not_found"),
+                               ([{"_id": {"jv_ean": "111", "xl_ean": None}}], "jv_only"),
+                               ([{"_id": {}}, {"_id": {}}], "ambiguous")):
+            store.rows.aggregate.return_value = rows
+            result = store.resolve_ean("111")
+            self.assertEqual(result["status"], expected)
+            self.assertIsNone(result["ean_by_tab"].get("OTTO_XL"))
+
+    def test_lookup_requires_session_and_masks_storage_errors(self):
+        request = APIRequestFactory().get("/api/v1/jv/gallery-mapping/lookup/?ean=111")
+        request.session = {}
+        self.assertEqual(GalleryMappingLookupAPIView.as_view()(request).status_code, 403)
+        request.session = {"role": "user"}
+        with patch("jv_services.views_gallery_mapping.mapping_database", side_effect=ValueError("secret")):
+            response = GalleryMappingLookupAPIView.as_view()(request)
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("secret", str(response.data))
 
 
 class MappingJobTests(TestCase):

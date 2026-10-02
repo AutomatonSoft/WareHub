@@ -32,8 +32,8 @@ class XLProductByEANAPIView(APIView):
         force_xl_site(request)
         site = ImportedProduct.Site.XL
         requested_site_key = normalize_site_key(request.query_params.get("site_key"))
-        site_key = "XLMOEBEL_DE"
-        if requested_site_key and requested_site_key != site_key:
+        site_key = requested_site_key or "XLMOEBEL_DE"
+        if site_key not in {item["site_key"] for item in xl_site_catalog()}:
             return Response(
                 {"detail": "Requested XL site_key is not supported.", "site_key": requested_site_key},
                 status=status.HTTP_400_BAD_REQUEST,

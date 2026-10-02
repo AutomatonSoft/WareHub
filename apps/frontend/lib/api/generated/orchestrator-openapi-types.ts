@@ -847,6 +847,8 @@ export interface components {
         };
         /** ProductEditorDiscoverRequest */
         ProductEditorDiscoverRequest: {
+            /** Account */
+            account?: ProductEditorDiscoverRequestAccountAnyOf0 | null;
             active_group?: components["schemas"]["ProductEditorGroupId"] | null;
             /** Ean */
             ean: string;
@@ -1939,6 +1941,10 @@ export enum Operation {
     update = "update",
     unpublish = "unpublish",
     relist = "relist"
+}
+export enum ProductEditorDiscoverRequestAccountAnyOf0 {
+    jv = "jv",
+    xl = "xl"
 }
 export enum ProductEditorGroupId {
     JV = "JV",

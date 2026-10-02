@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useLabels } from "../use-labels";
 import { DeferredInput } from "./deferred-form-fields";
@@ -40,13 +40,12 @@ export function HoodProductPropertiesPanel({ initialValue, draftKey, onDraftChan
   useEffect(() => {
     const next = parseProperties(sourceValueRef.current);
     setProperties(next);
-    callbackRef.current(JSON.stringify(next));
   }, [draftKey]);
 
-  const serialized = useMemo(() => JSON.stringify(properties), [properties]);
-  useEffect(() => { callbackRef.current(serialized); }, [serialized]);
-
-  const update = (next: Property[]) => setProperties(next);
+  const update = (next: Property[]) => {
+    setProperties(next);
+    callbackRef.current(JSON.stringify(next));
+  };
   const addProperty = (name: string) => {
     if (!name) return;
     update([...properties, { name: name === CUSTOM_PROPERTY ? "" : name, value: "" }]);

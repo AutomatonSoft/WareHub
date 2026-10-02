@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -88,6 +89,7 @@ class ProductEditorGroup(BaseModel):
 class ProductEditorDiscoverRequest(BaseModel):
     ean: str
     active_group: ProductEditorGroupId | None = None
+    account: Literal["jv", "xl"] | None = None
 
 
 class ProductEditorDiscoverResponse(BaseModel):

@@ -85,7 +85,7 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
     <div className="min-w-0 flex-1 space-y-4">
       <div className="space-y-1.5">
         <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.name}</label>
-        <DeferredInput value={fields.name} onDraftChange={(value) => handleDraftChange("name", value)} />
+        <DeferredInput name="name" value={fields.name} onDraftChange={(value) => handleDraftChange("name", value)} />
       </div>
       <div className="space-y-1.5">
         <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.urlKey}</label>
@@ -94,11 +94,11 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.artikelnr}</label>
-          <DeferredInput value={fields.artikelnr} onDraftChange={(value) => handleDraftChange("artikelnr", value)} />
+          <DeferredInput name="artikelnr" value={fields.artikelnr} onDraftChange={(value) => handleDraftChange("artikelnr", value)} />
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.price}</label>
-          <DeferredInput value={fields.price} onDraftChange={(value) => handleDraftChange("price", value)} />
+          <DeferredInput name="price" value={fields.price} onDraftChange={(value) => handleDraftChange("price", value)} />
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">UVP</label>
@@ -130,11 +130,11 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
         ))}
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.metaTitle}</label>
-          <DeferredInput value={fields.metaTitle} onDraftChange={(value) => handleDraftChange("metaTitle", value)} />
+          <DeferredInput name="metaTitle" value={fields.metaTitle} onDraftChange={(value) => handleDraftChange("metaTitle", value)} />
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.metaDescription}</label>
-          <DeferredTextarea value={fields.metaDescription} onDraftChange={(value) => handleDraftChange("metaDescription", value)} className={textAreaClass} />
+          <DeferredTextarea name="metaDescription" value={fields.metaDescription} onDraftChange={(value) => handleDraftChange("metaDescription", value)} className={textAreaClass} />
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{labels.metaKeyword}</label>
@@ -146,7 +146,7 @@ export const JvCreateProductPanel = memo(function JvCreateProductPanel({
                 ))}
               </div>
             ) : null}
-            <DeferredTextarea value={fields.metaKeyword} onDraftChange={(value) => handleDraftChange("metaKeyword", value)} placeholder={labels.keywordPlaceholder} className="min-h-[110px] w-full border-0 bg-transparent p-0 text-sm text-foreground outline-none" />
+            <DeferredTextarea name="metaKeyword" value={fields.metaKeyword} onDraftChange={(value) => handleDraftChange("metaKeyword", value)} placeholder={labels.keywordPlaceholder} className="min-h-[110px] w-full border-0 bg-transparent p-0 text-sm text-foreground outline-none" />
           </div>
         </div>
         <JvDescriptionEditor

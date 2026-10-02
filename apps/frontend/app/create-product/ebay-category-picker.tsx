@@ -1,5 +1,7 @@
 "use client";
 
+import { MarketplaceFieldGroup, useMarketplaceField } from "../../components/product-forms/marketplace-form-feedback";
+
 import { useEffect, useState } from "react";
 
 import { fetchEbayCategoryNode, searchEbayCategorySuggestions, type EbayCategoryNode, type EbayCategorySuggestion } from "./ebay-category-api";
@@ -13,6 +15,7 @@ type Props = {
 };
 
 export function EbayCategoryPicker({ label, value, onChange, excludeCategoryId, optional = false }: Props) {
+  const feedback = useMarketplaceField(optional ? "secondary_category" : "category");
   const [selected, setSelected] = useState({ id: "", name: "" });
   const [expanded, setExpanded] = useState(!optional && !value);
   const [query, setQuery] = useState("");
@@ -36,6 +39,7 @@ export function EbayCategoryPicker({ label, value, onChange, excludeCategoryId, 
 
   function choose(categoryId: string, name: string) {
     if (!categoryId || categoryId === excludeCategoryId) return;
+    feedback.clear();
     setSelected({ id: categoryId, name });
     setExpanded(false);
     setError("");
@@ -80,7 +84,7 @@ export function EbayCategoryPicker({ label, value, onChange, excludeCategoryId, 
     } finally { setLoading(false); }
   }
 
-  return <div className="space-y-2 md:col-span-2">
+  return <MarketplaceFieldGroup name={optional ? "secondary_category" : "category"} className="md:col-span-2"><div className="space-y-2 md:col-span-2">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="text-sm font-medium">{label}</span>
       <div className="flex items-center gap-2">
@@ -100,5 +104,5 @@ export function EbayCategoryPicker({ label, value, onChange, excludeCategoryId, 
       {loading ? <p className="text-xs text-muted-foreground">Loading categories…</p> : null}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     </div> : null}
-  </div>;
+  </div></MarketplaceFieldGroup>;
 }

@@ -7,6 +7,8 @@ from .source_client import source_db_config_for_xl, xl_site_catalog
 DEFAULT_LOCALE_BY_SITE_KEY = {}
 DEFAULT_CURRENCY_BY_SITE_KEY = {
     "XLMOEBEL_DE": "EUR",
+    "XLMOEBEL_CH": "CHF",
+    "XLMOEBEL_AT": "EUR",
 }
 DEFAULT_LANGUAGE_ID_BY_LOCALE = {
     "de": 1,

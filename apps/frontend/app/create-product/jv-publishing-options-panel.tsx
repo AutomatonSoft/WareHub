@@ -1,10 +1,13 @@
 "use client";
 
+import { MarketplaceFieldGroup } from "../../components/product-forms/marketplace-form-feedback";
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { xljvGetDeliveryOptions, xljvGetRubricsTree } from "../../components/xljv/xljv-api";
 import { Input } from "../../components/ui/input";
 import { useLabels } from "../use-labels";
+import { fetchXlManufacturerOptions } from "./create-product-source-api";
 
 const SITES = [
   { key: "JV_DE", label: "JV DE" },
@@ -13,7 +16,12 @@ const SITES = [
   { key: "JV_CO_UK", label: "JV UK" },
 ] as const;
 
-type SiteKey = (typeof SITES)[number]["key"];
+const XL_SITES = [
+  { key: "XLMOEBEL_DE", label: "XL DE" },
+  { key: "XLMOEBEL_CH", label: "XL CH" },
+  { key: "XLMOEBEL_AT", label: "XL AT" },
+] as const;
+type SiteKey = (typeof SITES)[number]["key"] | (typeof XL_SITES)[number]["key"];
 type RubricNode = { id: number; parent_id?: number; name?: string; children?: RubricNode[] };
 type DeliveryOption = { id: number; lieferzeitid?: number; label?: string; is_default?: boolean };
 
@@ -34,6 +42,7 @@ function haveSameNumberIds(left: Set<number> | undefined, right: number[]) {
 }
 
 type Props = {
+  family?: "JV" | "XL";
   sourceSiteKey?: string;
   sourceCategories: Array<{ category_id: number; main_category: boolean }>;
   sourceDeliveryId?: number;
@@ -95,7 +104,7 @@ async function loadRubricTree(siteKey: SiteKey): Promise<RubricNode[]> {
   if (cached) return cached;
 
   if (!rubricTreeRequests[siteKey]) {
-    rubricTreeRequests[siteKey] = xljvGetRubricsTree({ site: "JV", siteKey, language: "de" })
+    rubricTreeRequests[siteKey] = xljvGetRubricsTree({ site: siteKey.startsWith("XL") ? "XL" : "JV", siteKey, language: "de" })
       .then((result) => {
         if (!result.response.ok) throw new Error(String(result.response.status));
         const tree = normalizeTree(result.payload);
@@ -115,9 +124,11 @@ async function loadDeliveryOptions(siteKey: SiteKey): Promise<DeliveryOption[]> 
   if (cached) return cached;
 
   if (!deliveryOptionRequests[siteKey]) {
-    deliveryOptionRequests[siteKey] = xljvGetDeliveryOptions({ site: "JV", siteKey, language: "de" })
+    deliveryOptionRequests[siteKey] = (siteKey.startsWith("XL")
+      ? fetchXlManufacturerOptions(siteKey).then((items) => ({ response: { ok: true }, payload: { items: items.map((item) => ({ id: Number(item.manufacturerId), label: `${item.name} — ${item.deliveryTime || "No delivery time"}` })) } }))
+      : xljvGetDeliveryOptions({ site: "JV", siteKey, language: "de" }))
       .then((result) => {
-        if (!result.response.ok) throw new Error(String(result.response.status));
+        if (!result.response.ok) throw new Error("Failed to load delivery options");
         const options = Array.isArray(result.payload.items) ? result.payload.items as DeliveryOption[] : [];
         cachedDeliveryOptions = { ...cachedDeliveryOptions, [siteKey]: options };
         return options;
@@ -130,11 +141,14 @@ async function loadDeliveryOptions(siteKey: SiteKey): Promise<DeliveryOption[]> 
   return deliveryOptionRequests[siteKey] ?? [];
 }
 
-export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sourceDeliveryId, initialSelections, initialSelectionKey, onSelectionsChange }: Props) {
+export function JvPublishingOptionsPanel({ family = "JV", sourceSiteKey, sourceCategories, sourceDeliveryId, initialSelections, initialSelectionKey, onSelectionsChange }: Props) {
+  const sites = family === "XL" ? XL_SITES : SITES;
   const t = useLabels();
   const callbackRef = useRef(onSelectionsChange);
   const [trees, setTrees] = useState<Partial<Record<SiteKey, RubricNode[]>>>({});
   const [deliveries, setDeliveries] = useState<Partial<Record<SiteKey, DeliveryOption[]>>>({});
+  const [rubricError, setRubricError] = useState("");
+  const [deliveryError, setDeliveryError] = useState("");
   const [rubricSite, setRubricSite] = useState<SiteKey>("JV_DE");
   const [deliverySite, setDeliverySite] = useState<SiteKey>("JV_DE");
   const [expanded, setExpanded] = useState<Partial<Record<SiteKey, Set<number>>>>({});
@@ -163,7 +177,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
   }, [onSelectionsChange]);
 
   useEffect(() => {
-    const site = SITES.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase()) ?? SITES[0];
+    const site = sites.find((item) => item.key === String(sourceSiteKey ?? "").trim().toUpperCase()) ?? sites[0];
     if (initialSelections) {
       if (initializedSelectionKeyRef.current !== initialSelectionKey) {
         initializedSelectionKeyRef.current = initialSelectionKey ?? null;
@@ -175,7 +189,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
         setDeliveryIds({});
       }
 
-      const loadedSites = SITES.filter(({ key }) => (
+      const loadedSites = sites.filter(({ key }) => (
         Object.hasOwn(initialSelections.rubricIdsBySite, key) ||
         Object.hasOwn(initialSelections.mainRubricIdBySite, key) ||
         Object.hasOwn(initialSelections.deliveryIdsBySite, key)
@@ -209,10 +223,11 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
     setRubricSite(site.key);
     setDeliverySite(site.key);
     setIsSelectionInitialized(true);
-  }, [initialSelectionKey, initialSelections, sourceCategories, sourceSiteKey]);
+  }, [initialSelectionKey, initialSelections, sourceCategories, sourceSiteKey, sites]);
 
   useEffect(() => {
     if (!isSelectionInitialized || trees[rubricSite]) return;
+    setRubricError("");
     let mounted = true;
     void loadRubricTree(rubricSite)
       .then((tree) => {
@@ -220,7 +235,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
         setTrees((current) => ({ ...current, [rubricSite]: tree }));
         setExpanded((current) => ({ ...current, [rubricSite]: collectExpandableRubricIds(tree) }));
       })
-      .catch(() => undefined);
+      .catch(() => { if (mounted) setRubricError(`Could not load categories for ${rubricSite}. Check site configuration and retry.`); });
     return () => {
       mounted = false;
     };
@@ -228,6 +243,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
 
   useEffect(() => {
     if (!isSelectionInitialized || deliveries[deliverySite]) return;
+    setDeliveryError("");
     let mounted = true;
     void loadDeliveryOptions(deliverySite)
       .then((options) => {
@@ -235,7 +251,7 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
           setDeliveries((current) => ({ ...current, [deliverySite]: options }));
         }
       })
-      .catch(() => undefined);
+      .catch(() => { if (mounted) setDeliveryError(`Could not load delivery options for ${deliverySite}. Check site configuration and retry.`); });
     return () => {
       mounted = false;
     };
@@ -245,15 +261,15 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
     if (!Object.keys(deliveries).length) return;
     setDeliveryIds((current) => {
       const next = { ...current };
-      for (const site of SITES) {
+      for (const site of sites) {
         if ((next[site.key]?.size ?? 0) > 0) continue;
         const options = deliveries[site.key] ?? [];
-        const preferred = options.find((item) => item.id === sourceDeliveryId) ?? options.find((item) => item.is_default) ?? options[0];
+        const preferred = options.find((item) => item.id === sourceDeliveryId && (family === "JV" || site.key === sourceSiteKey)) ?? (family === "JV" ? options.find((item) => item.is_default) ?? options[0] : undefined);
         if (preferred) next[site.key] = new Set([preferred.id]);
       }
       return next;
     });
-  }, [deliveries, sourceDeliveryId]);
+  }, [deliveries, sourceDeliveryId, sourceSiteKey, family, sites]);
 
   useEffect(() => {
     if (!isSelectionInitialized) return;
@@ -401,5 +417,5 @@ export function JvPublishingOptionsPanel({ sourceSiteKey, sourceCategories, sour
     ];
   });
 
-  return <div className="space-y-3"><section className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.createProductRubricTree}</div><Input value={rubricQuery} onChange={(event) => setRubricQuery(event.target.value)} placeholder={t.createProductSearchRubric} /><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap gap-2">{SITES.map((site) => <button key={site.key} type="button" onClick={() => setRubricSite(site.key)} className={["rounded-full px-3 py-1.5 text-xs font-semibold", rubricSite === site.key ? "bg-primary text-primary-foreground" : "border"].join(" ")}>{site.label} <span className="ml-1">{rubricIds[site.key]?.size ?? 0}</span></button>)}</div><button type="button" onClick={() => setSelectedRubricsOnly((value) => !value)} className={["rounded-full px-3 py-1.5 text-xs font-semibold transition-colors", selectedRubricsOnly ? "bg-primary text-primary-foreground" : "border hover:bg-muted/40"].join(" ")}>{t.xljvSelectedOnly}</button></div>{selectedRubricLabels.length > 0 ? <div className="flex flex-col gap-1 rounded-[var(--radius-control)] border border-border/70 px-3 py-2 text-xs">{selectedRubricLabels.map((item) => <button key={item.id} type="button" onClick={() => focusSelectedRubric(item.id)} className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] py-0.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-primary text-[11px] font-bold text-primary-foreground">✓</span><span className="min-w-0 flex-1 truncate text-foreground" title={item.path}>{item.path}</span>{mainIds[rubricSite] === item.id ? <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">{t.createProductRubricMain}</span> : null}</button>)}</div> : null}<div className="max-h-[320px] overflow-auto rounded-[var(--radius-control)] border border-border/70 p-2">{renderTree(filteredTree)}</div></section><section className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.xljvAvailabilityDeliveryTime}</div><Input value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t.createProductSearchDelivery} /><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap gap-2">{SITES.map((site) => <button key={site.key} type="button" onClick={() => setDeliverySite(site.key)} className={["rounded-full px-3 py-1.5 text-xs font-semibold", deliverySite === site.key ? "bg-primary text-primary-foreground" : "border"].join(" ")}>{site.label}</button>)}</div><button type="button" onClick={() => setSelectedDeliveryOnly((value) => !value)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">{t.xljvSelectedOnly}</button></div><div className="max-h-[280px] overflow-auto rounded-[var(--radius-control)] border border-border/70 py-2">{shownDelivery.map((item) => <label key={item.id} className="flex items-center gap-3 px-3 py-1.5 text-sm"><input type="checkbox" checked={(deliveryIds[deliverySite] ?? new Set()).has(item.id)} onChange={() => toggleDelivery(item.id)} />{item.label}</label>)}</div></section></div>;
+  return <div className="space-y-3">{rubricError || deliveryError ? <p role="alert" className="text-sm text-destructive">{rubricError || deliveryError}</p> : null}<MarketplaceFieldGroup name="category"><section className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.createProductRubricTree}</div><Input value={rubricQuery} onChange={(event) => setRubricQuery(event.target.value)} placeholder={t.createProductSearchRubric} /><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap gap-2">{sites.map((site) => <button key={site.key} type="button" onClick={() => setRubricSite(site.key)} className={["rounded-full px-3 py-1.5 text-xs font-semibold", rubricSite === site.key ? "bg-primary text-primary-foreground" : "border"].join(" ")}>{site.label} <span className="ml-1">{rubricIds[site.key]?.size ?? 0}</span></button>)}</div><button type="button" onClick={() => setSelectedRubricsOnly((value) => !value)} className={["rounded-full px-3 py-1.5 text-xs font-semibold transition-colors", selectedRubricsOnly ? "bg-primary text-primary-foreground" : "border hover:bg-muted/40"].join(" ")}>{t.xljvSelectedOnly}</button></div>{selectedRubricLabels.length > 0 ? <div className="flex flex-col gap-1 rounded-[var(--radius-control)] border border-border/70 px-3 py-2 text-xs">{selectedRubricLabels.map((item) => <button key={item.id} type="button" onClick={() => focusSelectedRubric(item.id)} className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] py-0.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-primary text-[11px] font-bold text-primary-foreground">✓</span><span className="min-w-0 flex-1 truncate text-foreground" title={item.path}>{item.path}</span>{mainIds[rubricSite] === item.id ? <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">{t.createProductRubricMain}</span> : null}</button>)}</div> : null}<div className="max-h-[320px] overflow-auto rounded-[var(--radius-control)] border border-border/70 p-2">{renderTree(filteredTree)}</div></section></MarketplaceFieldGroup><MarketplaceFieldGroup name="delivery"><section className="space-y-2 rounded-[var(--radius-control)] border border-border/70 bg-background p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.xljvAvailabilityDeliveryTime}</div><Input value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t.createProductSearchDelivery} /><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap gap-2">{sites.map((site) => <button key={site.key} type="button" onClick={() => setDeliverySite(site.key)} className={["rounded-full px-3 py-1.5 text-xs font-semibold", deliverySite === site.key ? "bg-primary text-primary-foreground" : "border"].join(" ")}>{site.label}</button>)}</div><button type="button" onClick={() => setSelectedDeliveryOnly((value) => !value)} className="rounded-full border px-3 py-1.5 text-xs font-semibold">{t.xljvSelectedOnly}</button></div><div className="max-h-[280px] overflow-auto rounded-[var(--radius-control)] border border-border/70 py-2">{shownDelivery.map((item) => <label key={item.id} className="flex items-center gap-3 px-3 py-1.5 text-sm"><input type="checkbox" checked={(deliveryIds[deliverySite] ?? new Set()).has(item.id)} onChange={() => toggleDelivery(item.id)} />{item.label}</label>)}</div></section></MarketplaceFieldGroup></div>;
 }

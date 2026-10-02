@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from src.sofort_orchestrator.api.product_editor_routes import ProductEditorDeps
 from src.sofort_orchestrator.api.routes import Deps
@@ -13,6 +14,21 @@ from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
 from src.sofort_orchestrator.infra.product_editor_store import SqliteProductEditorStore
 from src.sofort_orchestrator.main import app
+
+
+def test_xl_summary_does_not_report_skipped_sites_as_success():
+    from src.sofort_orchestrator.application.product_editor_xl_flow import _map_xl_orchestrator_summary
+
+    details = SimpleNamespace(
+        status=JobStatus.COMPLETED,
+        result=SimpleNamespace(results=[SimpleNamespace(data={
+            "summary": {"applied": 1, "failed": 0, "skipped": 2},
+        })]),
+    )
+    summary = _map_xl_orchestrator_summary(details=details)
+    assert summary["success"] == 1
+    assert summary["failed"] == 2
+    assert summary["skipped"] == 2
 
 
 class NoopAdapters:
@@ -396,7 +412,7 @@ def test_product_editor_discover_respects_active_group_xl(tmp_path):
     assert payload["selected_target_ids"] == ["XLMOEBEL_DE"]
     assert [group["id"] for group in payload["groups"]] == ["XL"]
     xl_group = next(group for group in payload["groups"] if group["id"] == "XL")
-    assert [target["id"] for target in xl_group["targets"]] == ["XLMOEBEL_DE"]
+    assert [target["id"] for target in xl_group["targets"]] == ["XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"]
     targets = {target["id"]: target for target in xl_group["targets"]}
     assert targets["XLMOEBEL_DE"]["status"] == "found"
 
@@ -417,6 +433,27 @@ def test_product_editor_discover_respects_active_group_kaufland(tmp_path):
     assert targets["KAUFLAND_JV"]["status"] == "found"
     assert targets["KAUFLAND_XL"]["status"] == "missing"
     assert gateway.kaufland_fetch_calls == ["jv", "xl"]
+
+
+def test_product_editor_discovery_limits_requests_to_selected_account(tmp_path):
+    from unittest.mock import patch
+    client, gateway = _client(tmp_path)
+    for group, method, argument in (("KAUFLAND", "fetch_kaufland_by_ean", "controller"),
+                                   ("HOOD", "fetch_hood_by_ean", "account"),
+                                   ("OTTO", "fetch_otto_by_sku", "profile")):
+        for account in ("jv", "xl"):
+            with patch.object(gateway, method, wraps=getattr(gateway, method)) as fetch:
+                response = client.post("/api/v1/orchestrator/product-editor/discover",
+                                       json={"ean": "4012345678901", "active_group": group, "account": account})
+                assert fetch.call_count == 1
+                assert fetch.call_args.kwargs[argument] == account
+            assert response.status_code == 200
+            selected_group = next(item for item in response.json()["groups"] if item["id"] == group)
+            assert [target["id"] for target in selected_group["targets"]] == [f"{group}_{account.upper()}"]
+    flow = ProductEditorDeps.service.otto_flow
+    with patch.object(flow, "discover_targets") as discover:
+        assert flow._resolve_target(ean="111", request_id="request", preferred_target_id="OTTO_XL") == "OTTO_XL"
+        discover.assert_not_called()
 
 
 def test_product_editor_kaufland_rejects_empty_upstream_response(tmp_path):
@@ -1168,7 +1205,7 @@ def test_product_editor_plan_returns_all_found_jv_targets_and_translation_warnin
     assert gateway.jv_sites_calls == 0
 
 
-def test_product_editor_plan_returns_xl_de_target(tmp_path):
+def test_product_editor_plan_returns_selected_xl_targets(tmp_path):
     client, gateway = _client(tmp_path)
     response = client.post(
         "/api/v1/orchestrator/product-editor/plan",
@@ -1186,12 +1223,30 @@ def test_product_editor_plan_returns_xl_de_target(tmp_path):
     )
     assert response.status_code == 200
     payload = response.json()
-    assert [target["id"] for target in payload["targets"]] == ["XLMOEBEL_DE"]
+    assert [target["id"] for target in payload["targets"]] == ["XLMOEBEL_DE", "XLMOEBEL_CH"]
     warning_codes = [warning["code"] for warning in payload["warnings"]]
     assert "product_editor_live_source_batch_apply" in warning_codes
-    assert "product_editor_xl_de_only" in warning_codes
+    assert "product_editor_xl_multisite" in warning_codes
     assert payload["summary"]["baseline_site_key"] == "XLMOEBEL_DE"
     assert gateway.xl_sites_calls == 0
+
+
+def test_xl_batch_payload_preserves_site_selections_and_baseline_currency():
+    from src.sofort_orchestrator.application.product_editor_xl_flow import _build_xl_batch_payload
+
+    keys = ["XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"]
+    categories = {key: [{"category_id": index + 10, "main_category": True}] for index, key in enumerate(keys)}
+    manufacturers = {key: index + 20 for index, key in enumerate(keys)}
+    payload = _build_xl_batch_payload(
+        draft={"price": "100", "categories_by_site_key": categories, "manufacturer_id_by_site_key": manufacturers},
+        changed_fields=["price", "categories", "manufacturer_id"], target_ids=keys, baseline_site_key="XLMOEBEL_CH",
+    )
+    assert payload["source_currency"] == "CHF"
+    assert payload["convert_currency"] is True
+    assert payload["categories_by_site_key"] == categories
+    assert payload["manufacturer_id_by_site_key"] == manufacturers
+    assert "categories" not in payload
+    assert "manufacturer_id" not in payload
 
 
 def test_product_editor_apply_requires_existing_plan(tmp_path):
