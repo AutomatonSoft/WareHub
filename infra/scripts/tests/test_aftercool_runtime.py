@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -35,6 +36,14 @@ class AftercoolRuntimeTests(unittest.TestCase):
                 self.assertEqual(config["services"]["aftercool_mapping_worker"]["command"],
                                  ["python", "manage.py", "run_gallery_mapping_worker"])
                 workflow = (ROOT / ".github" / "workflows" / f"{environment}-deploy.yml").read_text()
+                inactive = {"jv_batch_worker", "ebay_legacy_indexer"} if environment == "stage" else set()
+                expected_count = len(set(config["services"]) - inactive)
+                declared_count = re.search(rf'{prefix}_EXPECTED_SERVICE_COUNT: "(\d+)"', workflow)
+                runtime_count = re.search(r'EXPECTED_SERVICE_COUNT="(\d+)"', workflow)
+                self.assertIsNotNone(declared_count)
+                self.assertIsNotNone(runtime_count)
+                self.assertEqual(int(declared_count[1]), expected_count)
+                self.assertEqual(int(runtime_count[1]), expected_count)
                 self.assertIn("secrets.AFTERCOOL_USERNAME", workflow)
                 self.assertIn("secrets.AFTERCOOL_PASSWORD", workflow)
                 self.assertIn("wait_health aftercool_mapping_worker healthy", workflow)
