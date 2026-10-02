@@ -15,6 +15,7 @@ const copy = {
     rule: "JV сохраняется всегда. XL добавляется только при единственном совпадении и наличии EAN; иначе XL остаётся пустым. Повторный запуск продолжает сохранённый проход, а не обновляет весь каталог.",
     idle: "Не запущено", running: "Выполняется", completed: "Завершено", failed: "Ошибка — можно продолжить",
     jv: "Загружено JV", xl: "Загружено XL", mapped: "Обработано JV", recovering: "Worker прервался; ожидается восстановление.",
+    storage: "Подготовка MongoDB", login: "Вход в Aftercool",
     jv_cache: "Загрузка JV", xl_cache: "Загрузка XL", jv_mapping: "Сопоставление JV → XL", error: "Не удалось получить статус"
   },
   en: {
@@ -25,6 +26,7 @@ const copy = {
     rule: "JV is always saved. XL requires exactly one match and an EAN; otherwise XL stays empty. Starting again resumes the saved run; it does not refresh the entire catalog.",
     idle: "Not started", running: "Running", completed: "Completed", failed: "Failed — resume available",
     jv: "JV loaded", xl: "XL loaded", mapped: "JV processed", recovering: "Worker interrupted; waiting for recovery.",
+    storage: "Preparing MongoDB", login: "Signing in to Aftercool",
     jv_cache: "Loading JV", xl_cache: "Loading XL", jv_mapping: "Matching JV → XL", error: "Unable to fetch status"
   },
   de: {
@@ -35,6 +37,7 @@ const copy = {
     rule: "JV wird immer gespeichert. XL benötigt genau einen Treffer und eine EAN; sonst bleibt XL leer. Ein erneuter Start setzt den gespeicherten Lauf fort und aktualisiert nicht den gesamten Katalog.",
     idle: "Nicht gestartet", running: "Läuft", completed: "Abgeschlossen", failed: "Fehler — Fortsetzung möglich",
     jv: "JV geladen", xl: "XL geladen", mapped: "JV verarbeitet", recovering: "Worker unterbrochen; Wiederherstellung ausstehend.",
+    storage: "MongoDB vorbereiten", login: "Bei Aftercool anmelden",
     jv_cache: "JV laden", xl_cache: "XL laden", jv_mapping: "JV → XL zuordnen", error: "Status konnte nicht geladen werden"
   }
 } as const;
@@ -96,7 +99,7 @@ export function AftercoolMappingPanel({ token, lang }: { token: string; lang: La
           <div className="flex flex-col gap-2" role="status" aria-live="polite">
             <p>{job.status === "queued" ? t.queued : t[job.status]}</p>
             {job.recovering ? <p>{t.recovering}</p> : null}
-            {job.status === "running" ? <p>{phase}</p> : null}
+            {(job.status === "running" || job.status === "failed") && job.phase !== "queued" ? <p>{phase}</p> : null}
             <dl className="flex flex-wrap gap-6 text-sm">
               <div><dt>{t.jv}</dt><dd>{job.jv_loaded.toLocaleString()}</dd></div>
               <div><dt>{t.xl}</dt><dd>{job.xl_loaded.toLocaleString()}</dd></div>

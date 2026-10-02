@@ -8,9 +8,13 @@ from django.core.management.base import BaseCommand, CommandError
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
-from jv_services.aftercool_gallery_client import AftercoolGalleryClient
+from jv_services.aftercool_gallery_client import AftercoolGalleryClient, AftercoolReadError
 from jv_services.gallery_mapping import match_gallery
 from jv_services.gallery_mapping_store import GalleryMappingStore
+
+
+class GalleryMappingCommandError(CommandError):
+    pass
 
 
 class Command(BaseCommand):
@@ -28,26 +32,27 @@ class Command(BaseCommand):
         page_size = options["page_size"]
         workers = options["workers"]
         if not 1 <= workers <= 3:
-            raise CommandError("workers must be between 1 and 3.")
+            raise GalleryMappingCommandError("workers must be between 1 and 3.")
         if not 1 <= page_size <= 500:
-            raise CommandError("page-size must be between 1 and 500.")
+            raise GalleryMappingCommandError("page-size must be between 1 and 500.")
         if maximum < 0:
-            raise CommandError("max-products must be nonnegative; 0 means all.")
+            raise GalleryMappingCommandError("max-products must be nonnegative; 0 means all.")
         username, password = os.getenv("AFTERCOOL_USERNAME"), os.getenv("AFTERCOOL_PASSWORD")
         if not username or not password:
-            raise CommandError("Set AFTERCOOL_USERNAME and AFTERCOOL_PASSWORD in the environment.")
+            raise GalleryMappingCommandError("Set AFTERCOOL_USERNAME and AFTERCOOL_PASSWORD in the environment.")
         client = mongo = store = None
         owner = uuid4().hex
         locked = False
         try:
             if options["write"]:
+                self.stdout.write("phase=storage")
                 uri, database = os.getenv("JV_XL_MAPPING_MONGO_URI"), os.getenv("JV_XL_MAPPING_MONGO_DATABASE")
                 if not uri or not database:
-                    raise CommandError("Explicit JV_XL_MAPPING_MONGO_URI and JV_XL_MAPPING_MONGO_DATABASE required.")
+                    raise GalleryMappingCommandError("Explicit JV_XL_MAPPING_MONGO_URI and JV_XL_MAPPING_MONGO_DATABASE required.")
                 mongo_username = os.getenv("JV_XL_MAPPING_MONGO_USERNAME")
                 mongo_password = os.getenv("JV_XL_MAPPING_MONGO_PASSWORD")
                 if bool(mongo_username) != bool(mongo_password):
-                    raise CommandError("Both MongoDB username and password are required when using separate credentials.")
+                    raise GalleryMappingCommandError("Both MongoDB username and password are required when using separate credentials.")
                 credentials = {"username": mongo_username, "password": mongo_password} if mongo_username else {}
                 mongo = MongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=10000, **credentials)
                 store = GalleryMappingStore(mongo[database], source_url=AftercoolGalleryClient.base_url,
@@ -60,13 +65,16 @@ class Command(BaseCommand):
                          "$setOnInsert": {"next_offset": 0}}, upsert=True,
                     )
                 except DuplicateKeyError:
-                    raise CommandError("Another mapping worker holds the lease.") from None
+                    raise GalleryMappingCommandError("Another mapping worker holds the lease.") from None
                 locked = True
+            self.stdout.write("phase=login")
             client = AftercoolGalleryClient(username, password, options["dataset"])
             if store:
+                self.stdout.write("phase=storage")
                 store.prepare_cache()
                 state = store.progress.find_one({"_id": store.scope_id}) or {}
                 if not state.get("jv_complete"):
+                    self.stdout.write("phase=jv_cache")
                     with closing(client.iter_product_pages("jv", state.get("jv_offset", 0), page_size, workers=workers)) as pages:
                         for page_offset, products, more in pages:
                             self._renew(store, owner)
@@ -75,6 +83,7 @@ class Command(BaseCommand):
                 state = store.progress.find_one({"_id": store.scope_id}) or {}
                 xl_offset = state.get("xl_offset", 0)
                 if not state.get("xl_complete"):
+                    self.stdout.write("phase=xl_cache")
                     with closing(client.iter_product_pages("xl", xl_offset, page_size, workers=workers)) as pages:
                         for page_offset, products, more in pages:
                             self._renew(store, owner)
@@ -86,6 +95,7 @@ class Command(BaseCommand):
                 offset = 0
             processed = 0
             if store:
+                self.stdout.write("phase=jv_mapping")
                 while not maximum or processed < maximum:
                     self._renew(store, owner)
                     limit = min(page_size, maximum - processed) if maximum else page_size
@@ -111,10 +121,12 @@ class Command(BaseCommand):
                     self.stdout.write(f"processed={processed} next_offset={offset}")
                 time.sleep(0.2)
             self.stdout.write(f"processed={processed} next_offset={offset} write={options['write']}")
+        except AftercoolReadError as exc:
+            raise GalleryMappingCommandError(str(exc)) from None
         except CommandError:
             raise
         except Exception as exc:
-            raise CommandError(f"Mapping stopped ({type(exc).__name__}); retry resumes the saved checkpoint.") from None
+            raise GalleryMappingCommandError(f"Mapping stopped ({type(exc).__name__}); retry resumes the saved checkpoint.") from None
         finally:
             if client:
                 client.close()
@@ -131,4 +143,4 @@ class Command(BaseCommand):
             {"$set": {"lease_until": now + timedelta(minutes=10)}},
         )
         if renewed.matched_count != 1:
-            raise CommandError("Mapping lease lost.")
+            raise GalleryMappingCommandError("Mapping lease lost.")
