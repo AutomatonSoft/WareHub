@@ -5,10 +5,30 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from database.permissions import SessionRolePermission
 
 from .gallery_mapping_jobs import enqueue_mapping, mapping_database, mapping_status, missing_configuration
+from .aftercool_gallery_client import AftercoolGalleryClient
+from .gallery_mapping_store import GalleryMappingStore
 
 logger = logging.getLogger(__name__)
+
+
+class GalleryMappingLookupAPIView(APIView):
+    permission_classes = [SessionRolePermission]
+
+    def get(self, request):
+        ean = str(request.query_params.get("ean", "")).strip()
+        if not ean or len(ean) > 100:
+            return Response({"message": "EAN must contain 1–100 characters."}, status=400)
+        try:
+            with mapping_database() as database:
+                store = GalleryMappingStore(database, source_url=AftercoolGalleryClient.base_url, dataset="lister")
+                result = store.resolve_ean(ean)
+            return Response({"input_ean": ean, **result})
+        except Exception as exc:
+            logger.error("JV_XL_MAPPING_LOOKUP_FAILED error_type=%s", type(exc).__name__)
+            return Response({"message": "JV–XL mapping lookup is unavailable."}, status=503)
 
 
 class MappingAdminPermission(BasePermission):

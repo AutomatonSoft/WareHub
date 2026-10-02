@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useRef, type ComponentProps } from "react";
 
 import { Input } from "../../components/ui/input";
+import { useMarketplaceField } from "../../components/product-forms/marketplace-form-feedback";
 
 type DeferredInputProps = Omit<ComponentProps<typeof Input>, "value" | "onChange"> & {
   value: string;
@@ -12,6 +13,7 @@ type DeferredInputProps = Omit<ComponentProps<typeof Input>, "value" | "onChange
 
 export function DeferredInput({ value, onCommit, onDraftChange, onBlur, ...props }: DeferredInputProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const feedback = useMarketplaceField(props.name);
 
   useEffect(() => {
     if (document.activeElement !== inputRef.current && inputRef.current) {
@@ -20,16 +22,19 @@ export function DeferredInput({ value, onCommit, onDraftChange, onBlur, ...props
   }, [value]);
 
   return (
-    <Input
+    <><Input
       {...props}
       ref={inputRef}
       defaultValue={value}
-      onChange={(event) => onDraftChange?.(event.currentTarget.value)}
+      data-marketplace-field={feedback.key || undefined}
+      aria-invalid={feedback.message ? true : props["aria-invalid"]}
+      aria-describedby={feedback.message ? feedback.errorId : props["aria-describedby"]}
+      onChange={(event) => { feedback.clear(); onDraftChange?.(event.currentTarget.value); }}
       onBlur={(event) => {
         if (onCommit) startTransition(() => onCommit(event.currentTarget.value));
         onBlur?.(event);
       }}
-    />
+    />{feedback.message ? <span id={feedback.errorId} className="text-xs text-destructive">{feedback.message}</span> : null}</>
   );
 }
 
@@ -41,6 +46,7 @@ type DeferredTextareaProps = Omit<ComponentProps<"textarea">, "value" | "onChang
 
 export function DeferredTextarea({ value, onCommit, onDraftChange, onBlur, ...props }: DeferredTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const feedback = useMarketplaceField(props.name);
 
   useEffect(() => {
     if (document.activeElement !== textareaRef.current && textareaRef.current) {
@@ -49,15 +55,19 @@ export function DeferredTextarea({ value, onCommit, onDraftChange, onBlur, ...pr
   }, [value]);
 
   return (
-    <textarea
+    <><textarea
       {...props}
       ref={textareaRef}
       defaultValue={value}
-      onChange={(event) => onDraftChange?.(event.currentTarget.value)}
+      data-marketplace-field={feedback.key || undefined}
+      aria-invalid={feedback.message ? true : props["aria-invalid"]}
+      aria-describedby={feedback.message ? feedback.errorId : props["aria-describedby"]}
+      className={[props.className, feedback.message ? "border-destructive ring-1 ring-destructive" : ""].filter(Boolean).join(" ")}
+      onChange={(event) => { feedback.clear(); onDraftChange?.(event.currentTarget.value); }}
       onBlur={(event) => {
         if (onCommit) startTransition(() => onCommit(event.currentTarget.value));
         onBlur?.(event);
       }}
-    />
+    />{feedback.message ? <span id={feedback.errorId} className="text-xs text-destructive">{feedback.message}</span> : null}</>
   );
 }

@@ -101,3 +101,10 @@ No WareHub EAN/status tables or marketplace listings are changed by this command
 
 Validation: `PYTHONPATH=. python -m unittest jv_services.tests_gallery_mapping`.
 Mongo writes still require an integration check against the chosen database.
+# Product Editor lookup
+
+`GET /api/v1/jv/gallery-mapping/lookup/?ean=...` resolves either JV or XL EAN in the saved `lister` mapping. It requires an authenticated user session or the existing trusted service authentication. Lookup does not call Aftercool or write mappings.
+
+The response includes `status` (`matched`, `jv_only`, `not_found`, `ambiguous`) and `ean_by_tab`. JV and XL sites, plus JV marketplace accounts, use the JV EAN. Hood XL, OTTO XL and Kaufland XL use the XL EAN. Missing XL pairs leave those marketplace tabs unsearched. Multiple distinct pairs stop discovery; Mongo failures return 503. If no mapping exists, the editor explicitly warns and searches the entered identifier without inventing a pair.
+
+eBay tabs and discovery requests are removed from Product Editor. Create Product and existing eBay service APIs remain unchanged.

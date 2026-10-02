@@ -6,7 +6,7 @@ import { fetchEbayCategoryAspects } from "../../app/create-product/ebay-category
 import { EBAY_ASPECT_DEFAULT_MAX_LENGTH, ebayCategoryAspectErrors, type EbayCategoryAspect } from "../../app/create-product/create-product-model";
 import { apiFetch } from "../../lib/api/client";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { MarketplaceInput as Input, MarketplaceSelect } from "../product-forms/marketplace-form-feedback";
 
 type Props = {
   value: Record<string, unknown>;
@@ -164,11 +164,11 @@ export function ProductEditorEbaySpecifics({ value, onChange, onGenerated, onVal
               </div>
               {values.map((entry, index) => (
                 <div key={index} className="flex min-w-0 gap-2">
-                  {selectionOnly ? <select className="wh-input h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm" aria-label={`${name} value ${index + 1}`} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} value={entry} onChange={(event) => {
+                  {selectionOnly ? <MarketplaceSelect name={`aspects.${name}`} className="wh-input h-10 min-w-0 flex-1 rounded-[var(--radius-control)] border border-input bg-background px-3 text-sm" aria-label={`${name} value ${index + 1}`} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} value={entry} onChange={(event) => {
                     const next = [...values];
                     next[index] = event.target.value;
                     updateValues(name, next);
-                  }}><option value="">Choose a category value…</option>{entry && !options.includes(entry) ? <option value={entry}>{entry} — invalid category value</option> : null}{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <Input aria-label={`${name} value ${index + 1}`} value={entry} list={options.length ? listId : undefined} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} maxLength={maxLength} onChange={(event) => {
+                  }}><option value="">Choose a category value…</option>{entry && !options.includes(entry) ? <option value={entry}>{entry} — invalid category value</option> : null}{options.map((option) => <option key={option} value={option}>{option}</option>)}</MarketplaceSelect> : <Input name={`aspects.${name}`} aria-label={`${name} value ${index + 1}`} value={entry} list={options.length ? listId : undefined} aria-required={requiredNames.has(name)} aria-invalid={Boolean(validationErrors[name])} maxLength={maxLength} onChange={(event) => {
                     const next = [...values];
                     next[index] = event.target.value;
                     updateValues(name, next);

@@ -10,6 +10,7 @@ import type {
   ProductEditorEbayDraft,
   ProductEditorOttoDraft,
   ProductEditorJvDraft,
+  ProductEditorJvSiteKey,
   ProductEditorPendingUpload,
   ProductEditorTarget,
   ProductEditorTargetStatus
@@ -241,6 +242,8 @@ export function hydrateJvDraft(input?: {
   descriptions: Array<Record<string, unknown>>;
   categories: Array<Record<string, unknown>>;
   categories_by_site_key?: Record<string, unknown>;
+  manufacturer_id?: number;
+  manufacturer_id_by_site_key?: Partial<Record<ProductEditorJvSiteKey, number>>;
   stores?: Array<Record<string, unknown>>;
   images: unknown[];
   images_public_urls?: unknown[];
@@ -307,6 +310,8 @@ export function hydrateJvDraft(input?: {
         })).filter((row) => row.category_id > 0)
       : [],
     categories_by_site_key: normalizeCategoriesBySiteKey(input.categories_by_site_key),
+    manufacturer_id: input.manufacturer_id,
+    manufacturer_id_by_site_key: input.manufacturer_id_by_site_key ?? {},
     stores: Array.isArray(input.stores)
       ? input.stores.map((row) => ({
           id: Number(row.id ?? 0) || undefined,
@@ -402,6 +407,9 @@ export function buildHoodChangedFields(initial: ProductEditorHoodDraft, current:
 
 export function buildJvChangedFields(initial: ProductEditorJvDraft, current: ProductEditorJvDraft): string[] {
   const changed = new Set<string>();
+  if (current.manufacturer_id !== initial.manufacturer_id || JSON.stringify(current.manufacturer_id_by_site_key ?? {}) !== JSON.stringify(initial.manufacturer_id_by_site_key ?? {})) {
+    changed.add("manufacturer_id");
+  }
   const scalarKeys: Array<keyof ProductEditorJvDraft> = [
     "source_model",
     "source_sku",

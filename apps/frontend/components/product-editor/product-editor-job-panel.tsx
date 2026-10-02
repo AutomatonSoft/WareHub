@@ -1,7 +1,8 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useLabels } from "../../app/use-labels";
+import { describeMarketplaceError } from "../product-forms/marketplace-errors.mjs";
+import { useLanguage, useLabels } from "../../app/use-labels";
 
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -18,6 +19,7 @@ type ProductEditorJobPanelProps = {
 
 export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditorJobPanelProps) {
   const t = useLabels();
+  const language = useLanguage();
   if (!job) return null;
   const jobStatus = String(job.status || "").toLowerCase();
   const isInFlight = jobStatus === "queued" || jobStatus === "running";
@@ -84,8 +86,7 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
             </div>
             {target.error ? (
               <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                <div className="font-medium">{target.error.code}</div>
-                <div className="mt-1">{target.error.message}</div>
+                <div>{describeMarketplaceError(target.error, language).message}</div>
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
@@ -99,8 +100,7 @@ export function ProductEditorJobPanel({ job, loading, onRefresh }: ProductEditor
       <EbayImageValidationWarnings payload={job} />
       {job.error ? (
         <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <div className="font-medium">{job.error.code}</div>
-          <div className="mt-1">{job.error.message}</div>
+          <div>{describeMarketplaceError(job.error, language).message}</div>
         </div>
       ) : null}
     </SectionCard>

@@ -29,7 +29,7 @@ def missing_configuration():
 
 @contextmanager
 def mapping_database():
-    if missing_configuration():
+    if any(key.startswith("JV_XL_MAPPING_") for key in missing_configuration()):
         raise ValueError("Aftercool mapping configuration is incomplete.")
     credentials = {}
     if os.getenv("JV_XL_MAPPING_MONGO_USERNAME"):

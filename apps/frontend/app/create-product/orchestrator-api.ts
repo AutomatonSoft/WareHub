@@ -36,6 +36,14 @@ export type OrchestratorResponse = {
 
 const SUPPORTED_FAMILIES = new Set(["HOOD", "KAUFLAND", "OTTO", "JVMOEBEL", "XL"]);
 
+async function readJsonSafe(response: Response): Promise<Record<string, unknown>> {
+  try {
+    return await response.json() as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
   const site = allMarketplaceSites.find((item) => item.id === siteId);
   if (!site || !SUPPORTED_FAMILIES.has(site.family)) {
@@ -165,14 +173,14 @@ export async function pushProductToOrchestrator(input: {
     })
   });
 
-  const body = await response.json();
+  const body = await readJsonSafe(response);
   if (!response.ok) {
     const message = formatCreateProductApiError(
       response.status,
       extractErrorTextFromBody(body),
       "Orchestrator update failed."
     );
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, body);
   }
 
   return body as OrchestratorResponse;
@@ -206,11 +214,11 @@ export async function createOrchestratorJob(input: {
       }
     })
   });
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Orchestrator job create failed."),
-      response.status
+      response.status, raw
     );
   }
   const jobIdRaw = raw.job_id ?? raw.id ?? raw.jobId;
@@ -338,11 +346,11 @@ export async function createMainMarketplaceProductJob(input: {
       },
     }),
   });
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Main marketplace create job failed."),
-      response.status,
+      response.status, raw
     );
   }
   const jobIdRaw = raw.job_id ?? raw.id ?? raw.jobId;
@@ -355,11 +363,11 @@ export async function createMainMarketplaceProductJob(input: {
 
 export async function getOrchestratorJob(jobId: string): Promise<Record<string, unknown>> {
   const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}`);
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Orchestrator job fetch failed."),
-      response.status
+      response.status, raw
     );
   }
   return raw;
@@ -367,11 +375,11 @@ export async function getOrchestratorJob(jobId: string): Promise<Record<string, 
 
 export async function getOrchestratorJobAttempts(jobId: string): Promise<Record<string, unknown>> {
   const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}/attempts`);
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Orchestrator attempts fetch failed."),
-      response.status
+      response.status, raw
     );
   }
   return raw;
@@ -379,11 +387,11 @@ export async function getOrchestratorJobAttempts(jobId: string): Promise<Record<
 
 export async function getOrchestratorJobEvents(jobId: string): Promise<Record<string, unknown>> {
   const response = await apiFetch(`/api/v1/orchestrator/jobs/${encodeURIComponent(jobId)}/events`);
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(response.status, extractErrorTextFromBody(raw), "Orchestrator events fetch failed."),
-      response.status
+      response.status, raw
     );
   }
   return raw;
@@ -392,7 +400,7 @@ export async function getOrchestratorJobEvents(jobId: string): Promise<Record<st
 export async function listReconciliationReportsByEan(ean: string): Promise<Record<string, unknown>> {
   const url = `/api/v1/orchestrator/reconciliation/reports?ean=${encodeURIComponent(ean)}`;
   const response = await apiFetch(url);
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(
@@ -408,7 +416,7 @@ export async function listReconciliationReportsByEan(ean: string): Promise<Recor
 
 export async function getReconciliationReport(reportId: string): Promise<Record<string, unknown>> {
   const response = await apiFetch(`/api/v1/orchestrator/reconciliation/reports/${encodeURIComponent(reportId)}`);
-  const raw = (await response.json()) as Record<string, unknown>;
+  const raw = await readJsonSafe(response);
   if (!response.ok) {
     throw new ApiError(
       formatCreateProductApiError(

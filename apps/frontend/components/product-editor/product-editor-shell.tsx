@@ -15,6 +15,7 @@ import { cn } from "../../lib/utils";
 import {
   applyProductEditorPlan,
   discoverProductEditor,
+  resolveProductEditorEanPair,
   getProductEditorJob,
   loadProductEditorGroup,
   planProductEditor,
@@ -22,6 +23,7 @@ import {
 } from "./product-editor-api";
 import { fetchHoodByEan, patchHoodByEan } from "../hood/hood-api";
 import { extractFirstItemFromPayload } from "../hood/hood-search-utils";
+import { MarketplaceFormFeedback, useMarketplaceFeedback } from "../product-forms/marketplace-form-feedback";
 import { ProductEditorHeaderCard } from "./product-editor-header-card";
 import {
   ProductEditorBatchEditDialog,
@@ -128,9 +130,6 @@ const PRODUCT_EDITOR_QUERY_PARAM_BY_TAB: Record<string, string> = {
   KAUFLAND_XL: "kaufland_xl",
   OTTO_JV: "otto_jv",
   OTTO_XL: "otto_xl",
-  EBAY_JV: "ebay_jv",
-  EBAY_XL: "ebay_xl",
-  EBAY_DEP: "ebay_dep",
 };
 
 function isValidProductIdentifier(value: string): boolean {
@@ -185,6 +184,7 @@ function ProductEditorContent() {
   const manuallyChangedJvPublishingSiteKeysRef = useRef<Set<string>>(new Set());
   const [activeTabKey, setActiveTabKey] = useState<string>("HOOD_JV");
   const activeGroupId = getGroupIdForTab(activeTabKey);
+  const feedback = useMarketplaceFeedback(activeTabKey);
   const [pageError, setPageError] = useState<string | null>(null);
 
   const [hoodLoadingByTab, setHoodLoadingByTab] = useState<HoodLoadingByTab>(createEmptyHoodLoadingByTab());
@@ -227,7 +227,11 @@ function ProductEditorContent() {
   const [batchEditResults, setBatchEditResults] = useState<ProductEditorBatchEditResult[]>([]);
   const [dirtyTabKeys, setDirtyTabKeys] = useState<Set<string>>(() => new Set());
   const [applyResponse, setApplyResponse] = useState<ProductEditorApplyResponse | null>(null);
-  const [jobResponse, setJobResponse] = useState<ProductEditorJobResponse | null>(null);
+  const [jobResponse, setJobResponseState] = useState<ProductEditorJobResponse | null>(null);
+  function setJobResponse(response: ProductEditorJobResponse | null, contextKey = activeTabKey) {
+    setJobResponseState(response);
+    if (response && (response.error || response.targets.some((target) => target.status === "failed"))) feedback.report(response, "", contextKey);
+  }
   const [applyConfirmed, setApplyConfirmed] = useState(false);
   const skipNextAutoJvLoadKeyRef = useRef<string | null>(null);
   const jvAutoLoadInFlightKeyRef = useRef<string | null>(null);
@@ -420,6 +424,12 @@ function ProductEditorContent() {
 
   useEffect(() => {
     if (!discover) return;
+    const activeCached = discoveredTabsRef.current[activeTabKey];
+    if (!activeCached || activeCached.ean !== effectiveTabEanInput || tabSearchStatuses[activeTabKey] !== "found") return;
+    if (discover.ean !== effectiveTabEanInput) {
+      setDiscover({ ...discover, ean: effectiveTabEanInput });
+      return;
+    }
     const preferredTargetId = getPreferredTargetIdForTab(discover, activeTabKey);
     if (
       activeGroupId === "HOOD" &&
@@ -469,7 +479,7 @@ function ProductEditorContent() {
       autoLoadHandledKeysRef.current.add(autoLoadKey);
       void autoLoadersRef.current.loadOttoDraft(discover, preferredTargetId);
     }
-  }, [activeGroupId, activeTabKey, discover, hoodDraft, jvDraft, hasLocalLoadedKaufland, ottoDraft.ean]);
+  }, [activeGroupId, activeTabKey, discover, effectiveTabEanInput, tabSearchStatuses, hoodDraft, jvDraft, hasLocalLoadedKaufland, ottoDraft.ean]);
 
   useEffect(() => {
     if (!jobResponse) return;
@@ -503,32 +513,55 @@ function ProductEditorContent() {
     setPageError(null);
     setActiveTabKey(targetTabKey ?? getDefaultTabKeyForGroup(activeGroup ?? activeGroupId));
     const tabs = PRODUCT_EDITOR_DISPLAY_TABS.filter((tab) => !activeGroup || tab.groupId === activeGroup);
-    setTabEanInputs(Object.fromEntries(tabs.map((tab) => [tab.key, ean])));
     setTabSearchStatuses(Object.fromEntries(tabs.map((tab) => [tab.key, "loading" as const])));
-    const groups = [...new Set(tabs.map((tab) => tab.groupId))];
-    const results = await Promise.all(groups.map(async (groupId) => {
-      const groupTabs = tabs.filter((tab) => tab.groupId === groupId);
+    let eanByTab: Record<string, string | null>;
+    try {
+      const pair = await resolveProductEditorEanPair(ean);
+      if (version !== discoveryVersionRef.current) return false;
+      eanByTab = pair.status === "not_found" ? Object.fromEntries(tabs.map((tab) => [tab.key, ean])) : pair.ean_by_tab;
+      if (pair.status === "not_found") setPageError("JV–XL mapping was not found. Searching with the entered EAN; no pair was selected.");
+      if (pair.status === "jv_only") setPageError("No XL EAN pair is saved. XL marketplaces will not be searched.");
+    } catch (error) {
+      if (version !== discoveryVersionRef.current) return false;
+      setPageError(feedback.report(error, t.productEditorDiscoverFailed));
+      setTabSearchStatuses(Object.fromEntries(tabs.map((tab) => [tab.key, "error" as const])));
+      setDiscovering(false);
+      return false;
+    }
+    setTabEanInputs(Object.fromEntries(tabs.map((tab) => [tab.key, eanByTab[tab.key] ?? ""])));
+    setTabSearchStatuses(Object.fromEntries(tabs.map((tab) => [tab.key, eanByTab[tab.key] ? "loading" : "missing"])));
+    const results = await Promise.all(tabs.map(async (tab) => {
+      const groupId = tab.groupId;
+      const lookupEan = eanByTab[tab.key];
+      if (!lookupEan) return false;
       try {
-        const discovered = limitDiscoverToActiveGroup(await discoverForEditor(ean, groupId), groupId);
+        const discovered = limitDiscoverToActiveGroup(await discoverForEditor(lookupEan, groupId, getSourceVariantFromTab(tab.key) ?? undefined), groupId);
         const response = { ...discovered, groups: discovered.groups.filter((group) => group.id === groupId) };
         if (version !== discoveryVersionRef.current) return false;
-        for (const tab of groupTabs) discoveredTabsRef.current[tab.key] = response;
+        discoveredTabsRef.current[tab.key] = response;
         setDiscover((current) => ({
           ...response,
-          groups: [...(current?.ean === ean ? current.groups.filter((group) => group.id !== groupId) : []), ...response.groups],
+          ean: current?.ean ?? lookupEan,
+          groups: [
+            ...(current?.groups.filter((group) => group.id !== groupId) ?? []),
+            ...response.groups.map((group) => ({ ...group, targets: [
+              ...(current?.groups.find((old) => old.id === groupId)?.targets.filter((target) => !group.targets.some((next) => next.id === target.id)) ?? []),
+              ...group.targets,
+            ] })),
+          ],
         }));
         setTabSearchStatuses((current) => ({
           ...current,
-          ...Object.fromEntries(groupTabs.map((tab) => [tab.key, getTabSearchStatus(response, tab.key)])),
+          [tab.key]: getTabSearchStatus(response, tab.key),
         }));
         return hasFoundTargetInGroup(response, groupId);
       } catch (error) {
         if (version !== discoveryVersionRef.current) return false;
         setTabSearchStatuses((current) => ({
           ...current,
-          ...Object.fromEntries(groupTabs.map((tab) => [tab.key, "error" as const])),
+          [tab.key]: "error",
         }));
-        const message = `${groupId}: ${error instanceof Error ? error.message : t.productEditorDiscoverFailed}`;
+        const message = `${groupId}: ${feedback.report(error, t.productEditorDiscoverFailed)}`;
         setPageError(message);
         showToast(message, "error");
         return false;
@@ -576,7 +609,7 @@ function ProductEditorContent() {
       const loaded = await loadHoodDraftByEan(currentDiscover.ean, tabKey);
       if (!loaded) throw new Error(t.productEditorNoHoodItemFound.replace("{ean}", currentDiscover.ean));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorHoodLoadFailedHttp.replace("{status}", "unknown");
+      const message = feedback.report(error, t.productEditorHoodLoadFailedHttp.replace("{status}", "unknown"));
       setPageError(message);
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
@@ -593,7 +626,7 @@ function ProductEditorContent() {
     try {
       await loadJvDraftForTab(currentDiscover.ean, tabKey, preferredTargetId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : `${activeGroup} draft load failed.`;
+      const message = feedback.report(error, `${activeGroup} draft load failed.`);
       setPageError(message);
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
@@ -615,7 +648,7 @@ function ProductEditorContent() {
     const version = discoveryVersionRef.current;
     setTabSearchStatuses((current) => ({ ...current, [tabKey]: "loading" }));
     try {
-      const response = await discoverForEditor(ean, tab.groupId);
+      const response = await discoverForEditor(ean, tab.groupId, getSourceVariantFromTab(tabKey) ?? undefined);
       if (version !== discoveryVersionRef.current) return;
       discoveredTabsRef.current[tabKey] = response;
       setTabSearchStatuses((current) => ({
@@ -658,7 +691,7 @@ function ProductEditorContent() {
       }
       return found;
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorDiscoverFailed;
+      const message = feedback.report(error, t.productEditorDiscoverFailed);
       setPageError(message);
       if (notifyWhenMissing) showToast(message, "error");
       setTabSearchStatuses((current) => ({ ...current, [tab.key]: "error" }));
@@ -687,7 +720,7 @@ function ProductEditorContent() {
     try {
       await loadKauflandDraftForTab(currentDiscover.ean, tabKey, preferredTargetId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Kaufland draft load failed.";
+      const message = feedback.report(error, "Kaufland draft load failed.");
       setPageError(message);
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
@@ -697,7 +730,7 @@ function ProductEditorContent() {
   async function loadKauflandDraftByEan(ean: string, tabKey: KauflandTabKey = "KAUFLAND_JV"): Promise<boolean> {
     kauflandLoadInFlightEanRef.current = ean;
     try {
-      const discovered = await discoverForEditor(ean, "KAUFLAND");
+      const discovered = await discoverForEditor(ean, "KAUFLAND", getSourceVariantFromTab(tabKey) ?? undefined);
       setDiscover(limitDiscoverToActiveGroup(discovered, "KAUFLAND"));
       const status = getTabSearchStatus(discovered, tabKey);
       if (status !== "found" && status !== "missing") return false;
@@ -712,7 +745,7 @@ function ProductEditorContent() {
     try {
       await loadOttoDraftForTab(currentDiscover.ean, tabKey, preferredTargetId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "OTTO draft load failed.";
+      const message = feedback.report(error, "OTTO draft load failed.");
       setPageError(message);
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
@@ -720,7 +753,7 @@ function ProductEditorContent() {
   }
 
   async function loadOttoDraftByEan(ean: string, tabKey: OttoTabKey = "OTTO_JV"): Promise<boolean> {
-    const discovered = await discoverForEditor(ean, "OTTO");
+    const discovered = await discoverForEditor(ean, "OTTO", getSourceVariantFromTab(tabKey) ?? undefined);
     setDiscover(limitDiscoverToActiveGroup(discovered, "OTTO"));
     if (getTabSearchStatus(discovered, tabKey) !== "found") return false;
     return loadOttoDraftForTab(ean, tabKey, getPreferredTargetIdForTab(discovered, tabKey));
@@ -746,7 +779,7 @@ function ProductEditorContent() {
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: found ? "found" : "error" }));
       if (!found) showToast("This eBay listing could not be loaded for this EAN.", "error");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "eBay listing load failed.";
+      const message = feedback.report(error, "eBay listing load failed.");
       setPageError(message);
       setTabSearchStatuses((current) => ({ ...current, [tabKey]: "error" }));
       showToast(message, "error");
@@ -1024,7 +1057,7 @@ function ProductEditorContent() {
         return await uploadProductEditorImages({
           files: input.files ?? [],
           sourceUrls: input.sourceUrls ?? [],
-          site: "JV",
+          site: input.siteKey.startsWith("XL") ? "XL" : "JV",
           siteKey: input.siteKey,
           ean: input.ean,
           artikelnr: input.artikelnr,
@@ -1182,7 +1215,7 @@ function ProductEditorContent() {
       if (
         baselineMainUpload &&
         currentMainUpload &&
-        JSON.stringify(currentMainUpload.uploaded_image_urls) !== JSON.stringify(baselineMainUpload.uploaded_image_urls)
+        JSON.stringify(baselineSiteKey.startsWith("XL") ? currentMainUpload.image : currentMainUpload.uploaded_image_urls) !== JSON.stringify(baselineSiteKey.startsWith("XL") ? baselineMainUpload.image : baselineMainUpload.uploaded_image_urls)
       ) {
         throw new Error(t.productEditorJvUploadPathMismatch.replace("{siteKey}", siteKey));
       }
@@ -1247,7 +1280,7 @@ function ProductEditorContent() {
       setApplyConfirmed(false);
       showToast(t.productEditorPlanGenerated.replace("{targets}", response.targets.map((target) => target.label).join(", ")), "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorPlanFailed;
+      const message = feedback.report(error, t.productEditorPlanFailed);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1267,9 +1300,11 @@ function ProductEditorContent() {
     setGlobalPlanLoading(true);
     setPageError(null);
     let plans: ProductEditorPlannedMarketplace[];
+    let planningTabKey = activeTabKey;
     try {
       plans = [];
       for (const change of selectedChanges) {
+        planningTabKey = change.tabKey;
         const preparedChange = await prepareMarketplaceChangeForPlan(change);
         const plan = await planProductEditor({
           ean: preparedChange.ean,
@@ -1282,7 +1317,9 @@ function ProductEditorContent() {
       }
       setGlobalPlans(plans);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorPlanFailed;
+      setBatchEditDialogOpen(false);
+      setActiveTabKey(planningTabKey);
+      const message = feedback.report(error, t.productEditorPlanFailed, planningTabKey);
       setPageError(message);
       showToast(message, "error");
       return;
@@ -1304,19 +1341,20 @@ function ProductEditorContent() {
         const planItem = plans[index];
         const group = findGroup(discover, planItem.change.groupId);
         if (result.status === "rejected") {
+          const errorMessage = feedback.report(result.reason, "", planItem.change.tabKey);
           planItem.change.selectedTargetIds.forEach((targetId) => {
             batchResults.push({
               targetId,
               label: findTarget(group, targetId)?.label ?? targetId,
               status: "failed",
-              errorMessage: result.reason instanceof Error ? result.reason.message : "Update request failed.",
+              errorMessage,
             });
           });
           return;
         }
 
         setApplyResponse(result.value.response);
-        setJobResponse(result.value.finalJob);
+        setJobResponse(result.value.finalJob, planItem.change.tabKey);
         const targetResults = result.value.finalJob.targets.length > 0
           ? result.value.finalJob.targets
           : planItem.change.selectedTargetIds.map((targetId) => ({
@@ -1473,7 +1511,7 @@ function ProductEditorContent() {
       if (!acceptedJobId) {
         setJobResponse(null);
       }
-      const message = error instanceof Error ? error.message : `${activeStructuredLabel} batch apply failed.`;
+      const message = feedback.report(error, `${activeStructuredLabel} batch apply failed.`);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1518,7 +1556,7 @@ function ProductEditorContent() {
         showToast("Kaufland apply completed with failed targets.", "error");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Kaufland apply failed.";
+      const message = feedback.report(error, "Kaufland apply failed.");
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1554,7 +1592,7 @@ function ProductEditorContent() {
         showToast("OTTO apply completed with failed targets.", "error");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "OTTO apply failed.";
+      const message = feedback.report(error, "OTTO apply failed.");
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1597,7 +1635,7 @@ function ProductEditorContent() {
         showToast("eBay apply completed with failed targets.", "error");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "eBay apply failed.";
+      const message = feedback.report(error, "eBay apply failed.");
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1698,7 +1736,7 @@ function ProductEditorContent() {
       applyHoodImagesUpdate(nextImages);
       showToast(t.productEditorUploadedHoodImages.replace("{count}", String(uploadedCount)), "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorFtpUploadFailed;
+      const message = feedback.report(error, t.productEditorFtpUploadFailed);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1747,7 +1785,7 @@ function ProductEditorContent() {
         showToast(t.productEditorHoodUpdatedSuccess, "success");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorHoodUpdateFailed;
+      const message = feedback.report(error, t.productEditorHoodUpdateFailed);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1761,6 +1799,7 @@ function ProductEditorContent() {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const response = await getProductEditorJob(jobId);
       setJobResponse(response);
+      if (response.targets.some((target) => target.status !== "success") || response.error) feedback.report(response);
       const statusValue = String(response.status || "").toLowerCase();
       if (statusValue !== "queued" && statusValue !== "running") {
         return response;
@@ -1785,7 +1824,7 @@ function ProductEditorContent() {
       showToast(t.productEditorApplyAcceptedShort.replace("{jobId}", response.job_id.slice(0, 8)), "success");
       await refreshJob(response.job_id, true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorApplyFailed;
+      const message = feedback.report(error, t.productEditorApplyFailed);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1807,7 +1846,7 @@ function ProductEditorContent() {
         );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t.productEditorJobRefreshFailed;
+      const message = feedback.report(error, t.productEditorJobRefreshFailed);
       setPageError(message);
       showToast(message, "error");
     } finally {
@@ -1842,6 +1881,7 @@ function ProductEditorContent() {
   }
 
   function resetEditorState() {
+    feedback.reset();
     for (const tab of PRODUCT_EDITOR_DISPLAY_TABS) {
       draftLoadVersionByTabRef.current[tab.key] = (draftLoadVersionByTabRef.current[tab.key] ?? 0) + 1;
     }
@@ -1978,6 +2018,7 @@ function ProductEditorContent() {
 
   return (
     <AppShell title={t.navProductEditor} subtitle={t.productEditorWorkspaceSubtitle}>
+      <MarketplaceFormFeedback failure={feedback.failure} clear={feedback.clear}>
       <div className="wh-product-editor-page flex min-h-[calc(100dvh-1.5rem)] w-full flex-col gap-[12px]">
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, y: -10 }}
@@ -2143,6 +2184,7 @@ function ProductEditorContent() {
           </AnimatePresence>
         </div>
       </div>
+      </MarketplaceFormFeedback>
     </AppShell>
   );
 }
@@ -2158,7 +2200,7 @@ function limitDiscoverToActiveGroup(
   const normalizedGroup = activeGroup === "XL" && activeGroupResponse
     ? {
         ...activeGroupResponse,
-        targets: activeGroupResponse.targets.filter((target) => target.id === "XLMOEBEL_DE"),
+        targets: activeGroupResponse.targets.filter((target) => ["XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"].includes(target.id)),
       }
     : activeGroupResponse;
   return {
@@ -2222,10 +2264,7 @@ const PRODUCT_EDITOR_DISPLAY_TABS: Array<{ key: string; groupId: ProductEditorGr
   { key: "KAUFLAND_JV", groupId: "KAUFLAND" },
   { key: "KAUFLAND_XL", groupId: "KAUFLAND" },
   { key: "OTTO_JV", groupId: "OTTO" },
-  { key: "OTTO_XL", groupId: "OTTO" },
-  { key: "EBAY_JV", groupId: "EBAY" },
-  { key: "EBAY_XL", groupId: "EBAY" },
-  { key: "EBAY_DEP", groupId: "EBAY" }
+  { key: "OTTO_XL", groupId: "OTTO" }
 ];
 
 function getProductEditorDisplayTabLabel(tabKey: string, t: ReturnType<typeof useLabels>): string {

@@ -1,6 +1,8 @@
 "use client";
 
 import { apiFetch, ApiError } from "../../lib/api/client";
+import { readAuth } from "../../app/client-api-shared";
+import { syncDatabaseServiceSession } from "../../app/services-session";
 import type {
   ProductEditorApplyResponse,
   ProductEditorApiError,
@@ -53,18 +55,32 @@ function toApiError(response: Response, body: Record<string, unknown>, fallbackM
     : typeof body.detail === "string"
       ? body.detail
       : fallbackMessage;
-  return new ApiError(message, response.status);
+  return new ApiError(message, response.status, body);
 }
 
 function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function discoverProductEditor(ean: string, activeGroup?: ProductEditorGroupId): Promise<ProductEditorDiscoverResponse> {
+export type ProductEditorEanPair = {
+  status: "matched" | "jv_only" | "not_found" | "ambiguous";
+  ean_by_tab: Record<string, string | null>;
+};
+
+export async function resolveProductEditorEanPair(ean: string): Promise<ProductEditorEanPair> {
+  if (!await syncDatabaseServiceSession(readAuth()?.token ?? "")) throw new Error("Session synchronization failed.");
+  const response = await apiFetch(`/api/v1/jv/gallery-mapping/lookup/?ean=${encodeURIComponent(ean)}`);
+  const body = await readJsonSafe(response);
+  if (!response.ok) throw toApiError(response, body, "JV–XL mapping lookup failed.");
+  if (body.status === "ambiguous") throw new Error("Multiple JV–XL EAN pairs found. Discovery was not started.");
+  return body as unknown as ProductEditorEanPair;
+}
+
+export async function discoverProductEditor(ean: string, activeGroup?: ProductEditorGroupId, account?: "jv" | "xl"): Promise<ProductEditorDiscoverResponse> {
   const response = await apiFetch("/api/v1/orchestrator/product-editor/discover", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ean, active_group: activeGroup ?? null })
+    body: JSON.stringify({ ean, active_group: activeGroup ?? null, account: account ?? null })
   });
   const body = await readJsonSafe(response);
   if (!response.ok) {

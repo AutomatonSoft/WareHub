@@ -34,14 +34,14 @@ class ProductEditorService:
         self.xl_flow = ProductEditorXlFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
         self.ebay_flow = ProductEditorEbayFlow(gateway=gateway, store=store, orchestrator_job_store=orchestrator_job_store)
 
-    def discover(self, *, ean: str, request_id: str, active_group: ProductEditorGroupId | None = None) -> ProductEditorDiscoverResponse:
+    def discover(self, *, ean: str, request_id: str, active_group: ProductEditorGroupId | None = None, account: str | None = None) -> ProductEditorDiscoverResponse:
         groups = build_product_editor_groups()
         if active_group is None:
             with ThreadPoolExecutor(max_workers=6, thread_name_prefix="product-editor-discover") as executor:
                 hood_future = executor.submit(
                     self._discover_targets_safely,
                     group_id=ProductEditorGroupId.HOOD,
-                    discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id),
+                    discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id, account=account),
                 )
                 jv_future = executor.submit(
                     self._discover_targets_safely,
@@ -51,12 +51,12 @@ class ProductEditorService:
                 kaufland_future = executor.submit(
                     self._discover_targets_safely,
                     group_id=ProductEditorGroupId.KAUFLAND,
-                    discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id),
+                    discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id, account=account),
                 )
                 otto_future = executor.submit(
                     self._discover_targets_safely,
                     group_id=ProductEditorGroupId.OTTO,
-                    discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id),
+                    discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id, account=account),
                 )
                 xl_future = executor.submit(
                     self._discover_targets_safely,
@@ -77,7 +77,7 @@ class ProductEditorService:
         else:
             hood_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.HOOD,
-                discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id),
+                discover=lambda: self.hood_flow.discover_targets(ean=ean, request_id=request_id, account=account),
             ) if active_group is ProductEditorGroupId.HOOD else {}
             jv_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.JV,
@@ -85,11 +85,11 @@ class ProductEditorService:
             ) if active_group is ProductEditorGroupId.JV else {}
             kaufland_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.KAUFLAND,
-                discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id),
+                discover=lambda: self.kaufland_flow.discover_targets(ean=ean, request_id=request_id, account=account),
             ) if active_group is ProductEditorGroupId.KAUFLAND else {}
             otto_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.OTTO,
-                discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id),
+                discover=lambda: self.otto_flow.discover_targets(ean=ean, request_id=request_id, account=account),
             ) if active_group is ProductEditorGroupId.OTTO else {}
             xl_results = self._discover_targets_safely(
                 group_id=ProductEditorGroupId.XL,
@@ -139,6 +139,11 @@ class ProductEditorService:
                     if group.id is ProductEditorGroupId.EBAY:
                         ebay_found_target_ids.append(target.id)
 
+        if account is not None:
+            for group in groups:
+                if group.id in {ProductEditorGroupId.HOOD, ProductEditorGroupId.OTTO, ProductEditorGroupId.KAUFLAND}:
+                    group.targets = [target for target in group.targets if target.id.endswith(f"_{account.upper()}")]
+
         warnings = [
             ProductEditorWarning(
                 code="product_editor_hood_first_rollout",
@@ -181,7 +186,7 @@ class ProductEditorService:
             recommended_baseline = self.jv_flow.recommended_baseline_from_results(jv_results) or "JV_DE"
         if active_group is ProductEditorGroupId.XL:
             groups = [
-                group.model_copy(update={"targets": [target for target in group.targets if target.id == "XLMOEBEL_DE"]})
+                group.model_copy(update={"targets": [target for target in group.targets if target.id in {"XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"}]})
                 if group.id is ProductEditorGroupId.XL
                 else group
                 for group in groups

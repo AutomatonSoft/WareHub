@@ -4,16 +4,16 @@ import { extractFailureReason, buildFailureSummary } from "../app/create-product
 
 test("extractFailureReason returns unknown error fallback", () => {
   const msg = extractFailureReason({ marketplace: "hood", status_code: 500 });
-  assert.equal(msg, "hood: unknown error");
+  assert.match(msg, /marketplace is unavailable/);
 });
 
-test("extractFailureReason includes upstream code", () => {
+test("extractFailureReason explains when the API did not identify a field", () => {
   const msg = extractFailureReason({
     marketplace: "kaufland",
     status_code: 400,
     error: { code: "UPSTREAM", details: { upstream_response: { code: "K-401" } } }
   });
-  assert.equal(msg, "kaufland: 400/UPSTREAM, upstream=K-401");
+  assert.match(msg, /API did not identify an invalid field/);
 });
 
 test("extractFailureReason falls back to upstream detail when code is missing", () => {
@@ -22,7 +22,7 @@ test("extractFailureReason falls back to upstream detail when code is missing", 
     status_code: 422,
     error: { code: "UPSTREAM", details: { upstream_response: { detail: "invalid payload" } } }
   });
-  assert.equal(msg, "otto: 422/UPSTREAM, upstream=invalid payload");
+  assert.equal(msg, "invalid payload");
 });
 
 test("buildFailureSummary joins only failed results", () => {
@@ -32,7 +32,7 @@ test("buildFailureSummary joins only failed results", () => {
     { marketplace: "jv", status: "failed", status_code: 502, error: { code: "E2", details: {} } }
   ]);
 
-  assert.equal(summary, "xl: 500/E1; jv: 502/E2");
+  assert.match(summary, /marketplace is unavailable.*;.*marketplace is unavailable/);
 });
 
 test("buildFailureSummary returns empty string when there are no failed rows", () => {

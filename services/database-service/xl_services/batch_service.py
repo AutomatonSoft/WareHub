@@ -261,6 +261,9 @@ def build_batch_plan(*, ean: str, site_family: str, payload: dict):
                 descriptions_to_apply = None
 
             scalar_updates = dict(base_scalar_updates)
+            site_manufacturers = payload.get("manufacturer_id_by_site_key") or {}
+            if site_key in site_manufacturers:
+                scalar_updates["manufacturer_id"] = site_manufacturers[site_key]
             site_specific_image = image_by_site_key.get(str(site_key or "").strip().upper())
             if site_specific_image:
                 scalar_updates["image"] = site_specific_image
@@ -288,7 +291,12 @@ def build_batch_plan(*, ean: str, site_family: str, payload: dict):
             }
             if descriptions_to_apply is not None:
                 details_payload["descriptions"] = descriptions_to_apply
-            if has_explicit_categories:
+            site_categories = payload.get("categories_by_site_key") or {}
+            if site_key in site_categories:
+                details_payload["categories"] = _ensure_main_category(
+                    site_categories[site_key], template_main_category_id=None,
+                )
+            elif has_explicit_categories and not site_categories:
                 details_payload["categories"] = _ensure_main_category(
                     explicit_categories or [],
                     template_main_category_id=template_main_category_id,

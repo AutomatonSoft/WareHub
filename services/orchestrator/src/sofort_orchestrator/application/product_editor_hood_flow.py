@@ -27,9 +27,12 @@ class ProductEditorHoodFlow:
         self.gateway = gateway
         self.store = store
 
-    def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
+    def discover_targets(self, *, ean: str, request_id: str, account: str | None = None) -> dict[str, dict]:
         results: dict[str, dict] = {}
+        requested_account = account
         for target_id, account in _HOOD_ACCOUNT_BY_TARGET.items():
+            if requested_account is not None and account != requested_account:
+                continue
             fetch = self.gateway.fetch_hood_by_ean(ean=ean, account=account, request_id=request_id)
             if _is_hood_found(fetch.body):
                 results[target_id] = {

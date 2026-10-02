@@ -2,6 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildJvAutoLoadKey, createProductEditorDiscoveryLoader } from "../components/product-editor/product-editor-discovery.ts";
 
+test("JV and XL requests are not deduplicated across accounts", async () => {
+  const accounts = [];
+  const load = createProductEditorDiscoveryLoader(async (ean, group, account) => {
+    accounts.push(account);
+    return { ean, groups: [] };
+  });
+  await Promise.all([load("111", "OTTO", "jv"), load("111", "OTTO", "xl")]);
+  assert.deepEqual(accounts, ["jv", "xl"]);
+});
+
 test("loading JV cannot mark the same EAN as already loaded in XL", () => {
   const loaded = new Set([buildJvAutoLoadKey("JV", "4062292011702", "HOOD_JV")]);
   assert.equal(loaded.has(buildJvAutoLoadKey("XL", "4062292011702", "HOOD_JV")), false);
