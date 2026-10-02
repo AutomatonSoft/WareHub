@@ -323,6 +323,17 @@ services:
       retries: 3
       start_period: 15s
 
+  aftercool_mapping_worker:
+    extends:
+      service: services
+    command: ["python", "manage.py", "run_gallery_mapping_worker"]
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'run_gallery_mapping_worker' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   ebay_legacy_indexer:
     extends:
       service: services

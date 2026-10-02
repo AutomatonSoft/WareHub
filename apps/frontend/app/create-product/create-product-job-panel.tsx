@@ -1,6 +1,7 @@
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { EbayImageValidationWarnings } from "../../components/ebay/image-validation-warnings";
 
 type Labels = Record<string, string>;
 
@@ -78,6 +79,7 @@ export function CreateProductJobPanel(props: Props) {
         </div>
       ) : null}
       {reconciliationSummary ? <p className="text-xs text-muted-foreground">{reconciliationSummary}</p> : null}
+      <EbayImageValidationWarnings payload={jobStatusJson} />
       {jobStatusJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{jobStatusJson}</pre></ScrollArea> : null}
       {jobAttemptsJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{jobAttemptsJson}</pre></ScrollArea> : null}
       {jobEventsJson ? <ScrollArea className="max-h-44 rounded-xl border bg-muted/30 p-2 text-xs"><pre>{jobEventsJson}</pre></ScrollArea> : null}
