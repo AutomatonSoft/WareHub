@@ -9,6 +9,7 @@ import type { AuthUser } from "../../client-api-types";
 import { useLabels, useLanguage } from "../../use-labels";
 import { AppShell } from "../../../components/layout/app-shell";
 import { SectionCard } from "../../../components/ui/section-card";
+import { AftercoolMappingPanel } from "./aftercool-mapping-panel";
 
 type AuthState = {
   token: string;
@@ -66,6 +67,10 @@ export default function AdminUsersPage() {
             {t.approvedAdminsOnly}
           </p>
         </SectionCard>
+      ) : null}
+
+      {auth && isAllowed ? (
+        <AftercoolMappingPanel token={auth.token} lang={lang} />
       ) : null}
 
       {auth && isAllowed ? (

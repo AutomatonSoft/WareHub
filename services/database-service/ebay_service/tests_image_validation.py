@@ -1,4 +1,5 @@
 from io import BytesIO
+from copy import deepcopy
 import socket
 import time
 from types import SimpleNamespace
@@ -144,3 +145,57 @@ class EbayImagePublicationTests(SimpleTestCase):
         self.execute("unpublish")
         dimensions.assert_not_called()
         self.client.withdraw_offer.assert_called_once()
+
+    @patch("ebay_service.image_validation._image_dimensions", return_value=(800, 600))
+    def test_inventory_lifecycle_contract_for_jv_xl_dep(self, _dimensions):
+        for account in ("jv", "xl", "dep"):
+            with self.subTest(account=account):
+                self.client.reset_mock()
+                self.filter.return_value.first.return_value = None
+                inventory = {}
+                offer = {"status": "UNPUBLISHED"}
+
+                def save_listing(**kwargs):
+                    self.filter.return_value.first.return_value = SimpleNamespace(**{
+                        key: kwargs[key] for key in ("source_ean", "offer_id", "item_id", "merchant_location_key", "status")
+                    })
+                    return {"status": kwargs["status"], **kwargs["result"]}
+
+                def replace_item(**kwargs):
+                    inventory.clear()
+                    inventory.update(deepcopy(kwargs["item"]))
+
+                def publish(**kwargs):
+                    offer["status"] = "PUBLISHED"
+                    return {"listingId": f"{account}-item"}
+
+                def withdraw(**kwargs):
+                    offer["status"] = "UNPUBLISHED"
+
+                def update_price_quantity(**kwargs):
+                    offer["price"] = kwargs["price"]
+                    inventory["availability"]["shipToLocationAvailability"]["quantity"] = kwargs["quantity"]
+
+                self._save_listing.side_effect = save_listing
+                self.client.create_or_replace_inventory_item.side_effect = replace_item
+                self.client.inventory_item.side_effect = lambda **kwargs: deepcopy(inventory)
+                self.client.offers_by_sku.return_value = []
+                self.client.create_offer.return_value = {"offerId": f"{account}-offer"}
+                self.client.publish_offer.side_effect = publish
+                self.client.withdraw_offer.side_effect = withdraw
+                self.client.bulk_update_price_quantity.side_effect = update_price_quantity
+                common = {"account": account, "marketplace_id": "EBAY_DE", "listing_mode": "inventory", "sku": "4071489361032", "source_ean": "4062292011702"}
+                item = {"condition": "NEW", "availability": {"shipToLocationAvailability": {"quantity": 1}}, "product": {"title": "Chair", "description": "Chair description", "aspects": {"Marke": ["Depotum"]}, "imageUrls": ["https://images.test/first"]}}
+                execute_listing_operation(**common, operation="publish", inventory_item=item, offer={"merchantLocationKey": "warehouse"})
+                self.assertEqual(offer["status"], "PUBLISHED")
+                self.client.create_offer.assert_called_once()
+                execute_listing_operation(**common, operation="update", quantity=2, price="250.00", inventory_item={"product": {"imageUrls": ["https://images.test/second"]}})
+                self.assertEqual(offer["price"], "250.00")
+                self.assertEqual(inventory["availability"]["shipToLocationAvailability"]["quantity"], 2)
+                self.assertEqual(inventory["product"]["imageUrls"], ["https://images.test/second"])
+                execute_listing_operation(**common, operation="unpublish")
+                self.assertEqual(offer["status"], "UNPUBLISHED")
+                result = execute_listing_operation(**common, operation="relist")
+                self.assertEqual(offer["status"], "PUBLISHED")
+                self.assertEqual(result["listing_id"], f"{account}-item")
+                self.client.create_offer.assert_called_once()

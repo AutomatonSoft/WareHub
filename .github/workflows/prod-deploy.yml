@@ -37,7 +37,7 @@ jobs:
       PROD_EXPECTED_DEPLOY_PATH: /opt/warehub/prod
       PROD_PROJECT_NAME: warehub-prod
       PROD_EXPECTED_GATEWAY_PORT: "8950"
-      PROD_EXPECTED_SERVICE_COUNT: "12"
+      PROD_EXPECTED_SERVICE_COUNT: "13"
       PROD_BACKUP_ROOT: /opt/warehub/backups/prod
       DEPLOY_CONFIRMATION: ${{ inputs.confirm_prod_deploy }}
       MIGRATION_CONFIRMATION: ${{ inputs.confirm_prod_migrations }}
@@ -242,6 +242,8 @@ jobs:
         env:
           SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
           PROD_ENV_FILE_SECRET: ${{ secrets.PROD_ENV_FILE }}
+          AFTERCOOL_USERNAME_SECRET: ${{ secrets.AFTERCOOL_USERNAME }}
+          AFTERCOOL_PASSWORD_SECRET: ${{ secrets.AFTERCOOL_PASSWORD }}
           ALLOWED_HOSTS_EXTRA_VALUE: ${{ vars.ALLOWED_HOSTS_EXTRA }}
           TELEGRAM_BOT_TOKEN_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_SECRET: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -318,6 +320,12 @@ jobs:
           {
             printf '%s\n' "${SHARED_ENV_FILE_SECRET:-}"
             printf '%s\n' "${PROD_ENV_FILE_SECRET:-}"
+            if [ -n "${AFTERCOOL_USERNAME_SECRET:-}" ]; then
+              printf 'AFTERCOOL_USERNAME=%s\n' "$AFTERCOOL_USERNAME_SECRET"
+            fi
+            if [ -n "${AFTERCOOL_PASSWORD_SECRET:-}" ]; then
+              printf 'AFTERCOOL_PASSWORD=%s\n' "$AFTERCOOL_PASSWORD_SECRET"
+            fi
             printf 'ALLOWED_HOSTS_EXTRA=%s\n' "${ALLOWED_HOSTS_EXTRA_VALUE:-}"
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "${TELEGRAM_BOT_TOKEN_SECRET:-}"
             printf 'TELEGRAM_CHAT_ID=%s\n' "${TELEGRAM_CHAT_ID_SECRET:-}"
@@ -493,7 +501,7 @@ jobs:
           DEPLOY_PATH="/opt/warehub/prod"
           BACKUP_ROOT="/opt/warehub/backups/prod"
           EXPECTED_GATEWAY_PORT="8950"
-          EXPECTED_SERVICE_COUNT="12"
+          EXPECTED_SERVICE_COUNT="13"
           MIGRATION_CONFIRMATION_VALUE='"${MIGRATION_CONFIRMATION:-}"'
 
           IFS= read -r GHCR_USERNAME
@@ -593,9 +601,13 @@ jobs:
               exit "$rc"
             fi
             set +e
+            docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml stop aftercool_mapping_worker >/dev/null 2>&1 || true
             if [ -f "$BACKUP_DIR/live.env" ]; then cp -a "$BACKUP_DIR/live.env" .env; fi
             if [ -f "$BACKUP_DIR/live.docker-compose.yml" ]; then cp -a "$BACKUP_DIR/live.docker-compose.yml" docker-compose.yml; fi
             docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps mongodb backend frontend mobile services orchestrator gateway
+            if docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml config --services | grep -qx aftercool_mapping_worker; then
+              docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps aftercool_mapping_worker
+            fi
             echo "Rollback attempted. Backup: $BACKUP_DIR" >&2
             exit "$rc"
           }
@@ -672,9 +684,10 @@ jobs:
           wait_health redis healthy
 
           echo "=== UP APP SERVICES ==="
-          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services jv_batch_worker ebay_legacy_indexer telegram_notifier orchestrator
+          docker compose --project-name "$PROJECT" --env-file .env -f docker-compose.yml up -d --no-build --no-deps backend frontend mobile services jv_batch_worker aftercool_mapping_worker ebay_legacy_indexer telegram_notifier orchestrator
 
           wait_health jv_batch_worker healthy
+          wait_health aftercool_mapping_worker healthy
           wait_health ebay_legacy_indexer healthy
 
           echo "=== UP GATEWAY ==="
@@ -700,7 +713,7 @@ jobs:
           wait_health orchestrator healthy
 
           running_count="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format "{{.ID}}" | sed "/^$/d" | wc -l | tr -d " ")"
-          [ "$running_count" = "$EXPECTED_SERVICE_COUNT" ] || { echo "Unexpected running project container count" >&2; exit 1; }
+          [ "$running_count" = "$EXPECTED_SERVICE_COUNT" ] || { echo "Unexpected running project container count: expected=$EXPECTED_SERVICE_COUNT actual=$running_count" >&2; exit 1; }
 
           check_url gateway "https://warehub.automatonsoft.de/gateway/healthz" 200
           check_url backend "https://warehub.automatonsoft.de/api/v1/healthz" 200

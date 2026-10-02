@@ -127,6 +127,7 @@ from jv_services.split_views import (
     JVSitesByEANAPIView,
 )
 from jv_services.views_batch import JVBatchJobListAPIView
+from jv_services.views_gallery_mapping import GalleryMappingAPIView
 from xl_services.views import (
     XLBatchApplyByEANAPIView,
     XLBatchPlanByEANAPIView,
@@ -180,6 +181,7 @@ def _telegram_webhook_route_paths() -> list[str]:
     return normalized
 
 api_v1_patterns = [
+    path("api/v1/jv/gallery-mapping/", GalleryMappingAPIView.as_view(), name="jv-gallery-mapping"),
     path("api/v1/healthz", ServiceHealthAPIView.as_view(), name="service-health-v1-noslash"),
     path("api/v1/healthz/", ServiceHealthAPIView.as_view(), name="service-health-v1"),
     path("api/v1/readyz", ServiceReadyAPIView.as_view(), name="service-ready-v1-noslash"),
