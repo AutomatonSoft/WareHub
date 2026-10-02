@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useRef } from "react";
+import { useMarketplaceField } from "../../components/product-forms/marketplace-form-feedback";
 
 export type CreateProductGalleryItem = {
   id: string;
@@ -44,6 +45,7 @@ export function CreateProductImageGallery({
   onImageError,
   className = "",
 }: CreateProductImageGalleryProps) {
+  const feedback = useMarketplaceField("images");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeItem = useMemo(
     () => items.find((item) => item.id === activeItemId) ?? items[0] ?? null,
@@ -51,7 +53,8 @@ export function CreateProductImageGallery({
   );
 
   return (
-    <div className={["w-full space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-card p-3", className].filter(Boolean).join(" ")}>
+    <div role="group" tabIndex={-1} data-marketplace-field="images" aria-describedby={feedback.message ? feedback.errorId : undefined} className={["w-full space-y-3 rounded-[var(--radius-control)] border border-border/70 bg-card p-3", className, feedback.message ? "border-destructive ring-1 ring-destructive" : ""].filter(Boolean).join(" ")}>
+      {feedback.message ? <p id={feedback.errorId} className="text-sm text-destructive">{feedback.message}</p> : null}
       {onFilesSelected ? (
         <input
           ref={fileInputRef}
@@ -60,6 +63,7 @@ export function CreateProductImageGallery({
           multiple
           className="hidden"
           onChange={(event) => {
+            feedback.clear();
             onFilesSelected(event.target.files);
             event.target.value = "";
           }}
@@ -131,7 +135,7 @@ export function CreateProductImageGallery({
                   {canDelete ? (
                     <button
                       type="button"
-                      onClick={() => onDeleteItem?.(item.id)}
+                      onClick={() => { feedback.clear(); onDeleteItem?.(item.id); }}
                       className="absolute right-1 top-1 z-10 text-sm font-semibold leading-none text-red-500 transition hover:text-red-600"
                       aria-label={deleteAlt?.(index) ?? "Delete image"}
                     >

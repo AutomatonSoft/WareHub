@@ -332,16 +332,17 @@ def _ensure_config_for_site_key(site_key: str, *, leaf_dir: str) -> tuple[str, i
     key_norm = (site_key or "").strip().upper()
     is_jv_site = key_norm.startswith("JV_")
     is_xl_site = key_norm in XL_SITE_PUBLIC_DOMAINS
+    requires_site_credentials = is_jv_site or key_norm in {"XLMOEBEL_CH", "XLMOEBEL_AT"}
 
     host_specific = _sitekey_env_any(site_key, ["FTP_HOST", "HOST"]) or _jv_legacy_env_any(site_key, ["HOST"])
     user_specific = _sitekey_env_any(site_key, ["FTP_USER", "USER"]) or _jv_legacy_env_any(site_key, ["USER"])
     pass_specific = _sitekey_env_any(site_key, ["FTP_PASSWORD", "FTP_PASS", "PASSWORD", "PASS"]) or _jv_legacy_env_any(site_key, ["PASS", "PASSWORD"])
 
-    host = host_specific or ("" if is_jv_site else UPLOAD_FTP_HOST)
-    user = user_specific or ("" if is_jv_site else UPLOAD_FTP_USER)
+    host = host_specific or ("" if requires_site_credentials else UPLOAD_FTP_HOST)
+    user = user_specific or ("" if requires_site_credentials else UPLOAD_FTP_USER)
     password = (
         pass_specific
-        or ("" if is_jv_site else UPLOAD_FTP_PASS)
+        or ("" if requires_site_credentials else UPLOAD_FTP_PASS)
     )
     port_raw = _sitekey_env_any(site_key, ["FTP_PORT", "PORT"]) or _jv_legacy_env_any(site_key, ["PORT"]) or str(UPLOAD_FTP_PORT)
     try:

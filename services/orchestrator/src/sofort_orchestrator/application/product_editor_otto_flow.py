@@ -29,9 +29,11 @@ class ProductEditorOttoFlow:
         self.store = store
         self.orchestrator_job_store = orchestrator_job_store
 
-    def discover_targets(self, *, ean: str, request_id: str) -> dict[str, dict]:
+    def discover_targets(self, *, ean: str, request_id: str, account: str | None = None) -> dict[str, dict]:
         results: dict[str, dict] = {}
         for target_id, profile in _OTTO_PROFILE_BY_TARGET.items():
+            if account is not None and profile != account:
+                continue
             response = self.gateway.fetch_otto_by_sku(sku=ean, profile=profile, request_id=request_id)
             if 200 <= response.status_code < 300 and _has_editable_otto_product(response.body):
                 results[target_id] = {"status": ProductEditorTargetStatus.FOUND, "metadata": {"profile": profile}, "warnings": []}
@@ -149,10 +151,10 @@ class ProductEditorOttoFlow:
         return ProductEditorJobResponse(request_id=request_id, job_id=job_id, status=status, active_group=ProductEditorGroupId.OTTO, summary=summary, targets=targets, error=details.error)
 
     def _resolve_target(self, *, ean: str, request_id: str, preferred_target_id: str | None) -> str | None:
-        states = self.discover_targets(ean=ean, request_id=request_id)
-        found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
         if preferred_target_id is not None:
             return preferred_target_id if preferred_target_id in _OTTO_PROFILE_BY_TARGET else None
+        states = self.discover_targets(ean=ean, request_id=request_id)
+        found = [target_id for target_id, state in states.items() if state["status"] is ProductEditorTargetStatus.FOUND]
         return found[0] if found else None
 
 

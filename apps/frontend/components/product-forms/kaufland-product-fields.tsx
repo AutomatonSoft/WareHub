@@ -94,6 +94,7 @@ export function KauflandProductFields({ product, onProductChange }: {
             {field.label}
           </label>
           <DeferredInput
+            name={field.key}
             type="text"
             inputMode={field.inputMode}
             value={readTopLevelField(product, field.key)}
@@ -117,9 +118,9 @@ export function KauflandProductFields({ product, onProductChange }: {
           <div key={`${field.label}-${index}`} className={isLongValue ? "space-y-1.5 md:col-span-2" : "space-y-1.5"}>
             <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{field.label}</label>
             {isLongValue ? (
-              <DeferredTextarea value={field.value} onDraftChange={(value) => onProductChange(updateField(product, field.path, value))} className="min-h-[110px] w-full resize-y rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground outline-none" />
+              <DeferredTextarea name={field.path.join(".")} value={field.value} onDraftChange={(value) => onProductChange(updateField(product, field.path, value))} className="min-h-[110px] w-full resize-y rounded-[var(--radius-control)] border border-border/70 bg-background px-3 py-2.5 text-sm text-foreground outline-none" />
             ) : (
-              <DeferredInput value={field.value} onDraftChange={(value) => onProductChange(updateField(product, field.path, value))} />
+              <DeferredInput name={field.path.join(".")} value={field.value} onDraftChange={(value) => onProductChange(updateField(product, field.path, value))} />
             )}
           </div>
         );

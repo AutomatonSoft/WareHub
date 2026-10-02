@@ -4,7 +4,7 @@ import { Package, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useLabels } from "../use-labels";
-import { Input } from "../../components/ui/input";
+import { MarketplaceInput as Input, MarketplaceFieldGroup, useMarketplaceField } from "../../components/product-forms/marketplace-form-feedback";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
@@ -127,6 +127,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
   );
   const additionalAttributes = categoryAttributes.filter((attribute) => attribute.id in draft.additionalAttributes);
   const shippingProfiles = getOttoShippingProfiles(profile);
+  const shippingFeedback = useMarketplaceField("shippingProfileId");
   const selectedShippingProfile = shippingProfiles.find((shippingProfile) => shippingProfile.id === draft.shippingProfileId) ?? null;
   const updateAdditionalAttribute = (attribute: OttoCategoryAttribute, value: string) => {
     const next = {
@@ -158,21 +159,22 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
 
   return (
     <div className="space-y-4">
-      <Field label={t.ottoProductLine}><Input maxLength={OTTO_PRODUCT_LINE_MAX_LENGTH} value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
+      <Field label={t.ottoProductLine}><Input name="productLine" maxLength={OTTO_PRODUCT_LINE_MAX_LENGTH} value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label={t.ottoProductReference}><Input value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
-        <Field label="SKU"><Input value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
-        <Field label="EAN"><Input value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
+        <Field label={t.ottoProductReference}><Input name="productReference" value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>
+        <Field label="SKU"><Input name="sku" value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
+        <Field label="EAN"><Input name="ean" value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
       {showQuantity ? (
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
-          <Field label={t.quantity}><Input type="number" min="1" step="1" inputMode="numeric" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} /></Field>
+          <Field label={t.ottoPriceEur}><Input name="price" inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>
+          <Field label={t.quantity}><Input name="quantity" type="number" min="1" step="1" inputMode="numeric" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} /></Field>
         </div>
-      ) : <Field label={t.ottoPriceEur}><Input inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>}
-      <Field label={t.ottoDeliveryTimeDays}><Input inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
+      ) : <Field label={t.ottoPriceEur}><Input name="price" inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>}
+      <Field label={t.ottoDeliveryTimeDays}><Input name="deliveryTime" inputMode="numeric" value={draft.deliveryTime} onChange={(event) => update("deliveryTime", event.target.value)} /></Field>
       <Field label={t.ottoShippingProfile}>
-        <Select value={draft.shippingProfileId} onValueChange={(value) => update("shippingProfileId", value ?? "")}>
+        <MarketplaceFieldGroup name="shippingProfileId">
+        <Select value={draft.shippingProfileId} onValueChange={(value) => { shippingFeedback.clear(); update("shippingProfileId", value ?? ""); }}>
           <SelectTrigger id="otto-shipping-profile" className="w-full"><SelectValue placeholder="Select shipping profile">{selectedShippingProfile?.name ?? null}</SelectValue></SelectTrigger>
           <SelectContent alignItemWithTrigger={false} style={{ width: "var(--anchor-width)" }}>
             <SelectGroup>
@@ -182,6 +184,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
             </SelectGroup>
           </SelectContent>
         </Select>
+        </MarketplaceFieldGroup>
       </Field>
       <div className="grid gap-3">
         {bulletPoints.map((bulletPoint, index) => (
@@ -190,7 +193,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
           </Field>
         ))}
       </div>
-      <Field label={t.descriptionLabel}><Textarea value={draft.description} onChange={(event) => update("description", event.target.value)} className="min-h-40" /></Field>
+      <MarketplaceFieldGroup name="description"><Field label={t.descriptionLabel}><Textarea value={draft.description} onChange={(event) => update("description", event.target.value)} className="min-h-40" /></Field></MarketplaceFieldGroup>
       {selectedAttributes.length > 0 || draft.category ? (
         <section className="flex flex-col gap-3" aria-label={t.ottoCategoryAttributes}>
           <div className="flex items-center justify-between gap-3">

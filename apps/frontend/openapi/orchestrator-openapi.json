@@ -2663,6 +2663,18 @@
       },
       "ProductEditorDiscoverRequest": {
         "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["jv", "xl"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
           "ean": {
             "type": "string",
             "title": "Ean"

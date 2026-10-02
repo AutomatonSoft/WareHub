@@ -20,8 +20,29 @@ class GalleryMappingStore:
         self.xl_cache = database["jv_xl_gallery_cache"]
 
     def prepare_cache(self):
+        self.prepare_lookup_indexes()
         self.xl_cache.create_index([("scope_id", 1), ("gallery_url", 1)], collation=Collation("simple"))
         self.rows.create_index([("scope_id", 1), ("jv_position", 1)])
+
+    def prepare_lookup_indexes(self):
+        self.rows.create_index([("scope_id", 1), ("jv_ean", 1)])
+        self.rows.create_index([("scope_id", 1), ("xl_ean", 1)])
+
+    def resolve_ean(self, ean):
+        pairs = list(self.rows.aggregate([
+            {"$match": {"scope_id": self.scope_id, "$or": [{"jv_ean": ean}, {"xl_ean": ean}]}},
+            {"$group": {"_id": {"jv_ean": "$jv_ean", "xl_ean": "$xl_ean"}}},
+            {"$limit": 2},
+        ], maxTimeMS=3000))
+        if len(pairs) > 1:
+            return {"status": "ambiguous", "ean_by_tab": {}}
+        if not pairs:
+            return {"status": "not_found", "ean_by_tab": {}}
+        pair = pairs[0]["_id"]
+        jv, xl = pair.get("jv_ean"), pair.get("xl_ean")
+        return {"status": "matched" if jv and xl else "jv_only", "jv_ean": jv, "xl_ean": xl,
+                "ean_by_tab": {"JV": jv, "XL": jv, "HOOD_JV": jv, "OTTO_JV": jv, "KAUFLAND_JV": jv,
+                               "HOOD_XL": xl, "OTTO_XL": xl, "KAUFLAND_XL": xl}}
 
     def cache_jv_page(self, products, offset, has_more):
         operations = []

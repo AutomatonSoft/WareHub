@@ -12,6 +12,14 @@ from .ftp_upload import _ensure_config_for_site_key
 
 
 class UploadImagesToFtpTests(SimpleTestCase):
+    @patch("database.ftp_upload._sitekey_env_any", return_value="")
+    @patch("database.ftp_upload._jv_legacy_env_any", return_value="")
+    @patch("database.ftp_upload.UPLOAD_FTP_HOST", "generic-de-host")
+    def test_ch_at_require_explicit_ftp_credentials(self, *_mocks):
+        for site_key in ("XLMOEBEL_CH", "XLMOEBEL_AT"):
+            with self.assertRaises(ftp_upload.FtpUploadConfigError):
+                _ensure_config_for_site_key(site_key, leaf_dir="images")
+
     def test_connection_limit_error_is_recognized(self):
         self.assertTrue(
             ftp_upload._is_ftp_connection_limit_error(

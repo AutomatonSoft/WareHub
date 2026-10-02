@@ -5,6 +5,8 @@ from catalog_core.source_env import source_env_prefixes as _shared_source_env_pr
 
 DEFAULT_XL_SITE_DOMAINS = {
     "XLMOEBEL_DE": "xlmoebel.de",
+    "XLMOEBEL_CH": "xlmoebel.ch",
+    "XLMOEBEL_AT": "xlmoebel.at",
 }
 
 LANGUAGE_LOCALE_ALIASES = {
@@ -18,7 +20,12 @@ LANGUAGE_LOCALE_ALIASES = {
 
 
 def source_env_prefixes(site: str, site_key: str | None):
-    yield from _shared_source_env_prefixes(namespace="XL", site=site, site_key=site_key)
+    normalized_key = str(site_key or "XLMOEBEL_DE").strip().upper()
+    if normalized_key not in DEFAULT_XL_SITE_DOMAINS:
+        return
+    for prefix in _shared_source_env_prefixes(namespace="XL", site=site, site_key=normalized_key):
+        if normalized_key == "XLMOEBEL_DE" or normalized_key in prefix:
+            yield prefix
 
 
 def source_db_config_for_site(site: str, site_key: str | None = None):
@@ -64,4 +71,4 @@ def normalize_locale_code(raw_value: str | None) -> str:
 
 
 def xl_site_catalog():
-    return [{"site_key": "XLMOEBEL_DE", "domain": "xlmoebel.de"}]
+    return [{"site_key": key, "domain": domain} for key, domain in DEFAULT_XL_SITE_DOMAINS.items()]

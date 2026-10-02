@@ -91,6 +91,7 @@ export function buildHoodChangedFields(initial, current) {
 
 export function buildJvChangedFields(initial, current) {
   const changed = new Set();
+  if (current.manufacturer_id !== initial.manufacturer_id || JSON.stringify(current.manufacturer_id_by_site_key ?? {}) !== JSON.stringify(initial.manufacturer_id_by_site_key ?? {})) changed.add("manufacturer_id");
   const scalarKeys = ["source_model", "source_sku", "source_ean_field", "price", "quantity", "image"];
   for (const key of scalarKeys) {
     const nextValue = normalizeScalar(String(current[key] ?? ""));

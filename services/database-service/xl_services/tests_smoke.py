@@ -1,4 +1,5 @@
 import os
+from decimal import Decimal
 
 from django.test import SimpleTestCase, override_settings
 from django.urls import resolve, Resolver404
@@ -12,9 +13,48 @@ from .serializers import XLBatchPayloadSerializer
 from .source_client import fetch_xl_product_brief_by_ean, fetch_xl_product_snapshot_by_ean
 from .views_read import XLProductByEANAPIView, XLSitesByEANAPIView
 from .views_write import _localized_xl_create_payload
+from .source_config import source_db_config_for_xl, xl_site_catalog
 
 
 class XLRoutesSmokeTest(SimpleTestCase):
+    @patch.dict(os.environ, {"XL_SOURCE_XL_DB_HOST": "db", "XL_SOURCE_XL_DB_USER": "user", "XL_SOURCE_XL_DB_PASSWORD": "test", "XL_SOURCE_XL_DB_NAME": "de"}, clear=True)
+    def test_ch_at_never_use_generic_de_database(self):
+        self.assertIsNotNone(source_db_config_for_xl(site_key="XLMOEBEL_DE"))
+        self.assertIsNone(source_db_config_for_xl(site_key="XLMOEBEL_CH"))
+        self.assertIsNone(source_db_config_for_xl(site_key="XLMOEBEL_AT"))
+        self.assertEqual(len(xl_site_catalog()), 3)
+
+    @patch("xl_services.views_write.convert_xl_amount", return_value="95.0000")
+    def test_ch_create_uses_server_currency_conversion(self, convert):
+        payload = _localized_xl_create_payload(payload={"price": "100"}, controls={"convert_currency": True, "source_currency": "EUR"}, site_key="XLMOEBEL_CH", db_config=None)
+        self.assertEqual(payload["price"], "95.0000")
+        convert.assert_called_once_with(amount="100", from_currency="EUR", to_currency="CHF")
+
+    @patch("xl_services.batch_service._convert_amount", side_effect=lambda **kwargs: kwargs["amount"] * (Decimal("0.95") if kwargs["to_currency"] == "CHF" else 1))
+    @patch("xl_services.batch_service._language_map_for_site", return_value={"de": 1})
+    @patch("xl_services.batch_service.fetch_source_product_brief_by_ean", return_value={"product_id": 1, "price": "80", "currency_code": "EUR", "ean": "4062292011702"})
+    @patch("xl_services.batch_service.source_db_config_for_site", return_value={"configured": True})
+    def test_batch_keeps_categories_delivery_and_currency_per_site(self, *_mocks):
+        keys = ["XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"]
+        payload = {
+            "site_keys": keys, "template_site_key": keys[0], "source_currency": "EUR", "price": "100", "convert_currency": True,
+            "categories_by_site_key": {key: [{"category_id": index + 10, "main_category": True}] for index, key in enumerate(keys)},
+            "manufacturer_id_by_site_key": {key: index + 20 for index, key in enumerate(keys)},
+        }
+        serializer = XLBatchPayloadSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        plan = build_batch_plan(ean="4062292011702", site_family="XL", payload=serializer.validated_data)
+        self.assertEqual(len(plan), 3)
+        for index, item in enumerate(plan):
+            self.assertEqual(item["details"]["categories"][0]["category_id"], index + 10)
+            self.assertEqual(item["details"]["scalar_updates"]["manufacturer_id"], index + 20)
+            self.assertEqual(item["currency_code"], "CHF" if item["site_key"] == "XLMOEBEL_CH" else "EUR")
+            self.assertEqual(item["details"]["scalar_updates"]["price"], Decimal("95") if item["site_key"] == "XLMOEBEL_CH" else Decimal("100"))
+
+    def test_batch_rejects_other_family_category_ids(self):
+        serializer = XLBatchPayloadSerializer(data={"categories_by_site_key": {"JV_DE": [{"category_id": 1}]}})
+        self.assertFalse(serializer.is_valid())
+
     def test_xl_sync_route_resolves(self):
         match = resolve('/api/v1/xl/products/sync-by-ean/4071489201321/')
         self.assertIsNotNone(match.func)
@@ -89,15 +129,15 @@ class XLRoutesSmokeTest(SimpleTestCase):
     @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)
     @patch("xl_services.views_read.fetch_xl_product_brief_by_ean", return_value={"product_id": 55, "ean": "4260533187876", "price": "10.00", "currency_code": "EUR", "title": "XL DE product"})
     @patch("xl_services.views_read.source_db_config_for_xl", return_value={"configured": True})
-    def test_xl_sites_by_ean_checks_xl_de_only(self, _mock_db_config, _mock_fetch):
+    def test_xl_sites_by_ean_checks_de_ch_at(self, _mock_db_config, _mock_fetch):
         factory = APIRequestFactory()
         request = factory.get("/api/v1/xl/sites/by-ean/4260533187876/", {"site": "XL"})
         response = XLSitesByEANAPIView.as_view()(request, ean="4260533187876")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["found_count"], 1)
+        self.assertEqual(response.data["found_count"], 3)
         self.assertEqual(response.data["missing_count"], 0)
-        self.assertEqual([row["site_key"] for row in response.data["found"]], ["XLMOEBEL_DE"])
+        self.assertEqual({row["site_key"] for row in response.data["found"]}, {"XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"})
 
     @override_settings(DEBUG=True)
     @patch.dict(os.environ, {"DEV_ALLOW_ALL": "true"}, clear=False)
