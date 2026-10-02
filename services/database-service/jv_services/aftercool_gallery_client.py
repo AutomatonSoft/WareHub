@@ -10,6 +10,10 @@ from urllib3.util.retry import Retry
 from .gallery_mapping import GalleryProduct
 
 
+class AftercoolReadError(ValueError):
+    pass
+
+
 class AftercoolGalleryClient:
     base_url = "https://aftercool.de"
 
@@ -21,7 +25,10 @@ class AftercoolGalleryClient:
                                          json={"username": username, "password": password},
                                          timeout=(5, 30), allow_redirects=False)
             if response.status_code != 200:
-                raise ValueError("Aftercool login failed.")
+                raise AftercoolReadError(f"Aftercool login failed: HTTP {response.status_code}.")
+        except requests.RequestException as exc:
+            self.close()
+            raise AftercoolReadError(f"Aftercool login network failure ({type(exc).__name__}).") from None
         except Exception:
             self.close()
             raise
@@ -46,26 +53,32 @@ class AftercoolGalleryClient:
         return reader
 
     def _page(self, path: str, account: str, offset: int, **params):
-        response = self.session.get(f"{self.base_url}{path}", params={
-            "account": account, "dataset": self.dataset, "offset": offset,
-            "limit": 1, "include_row": 1, **params,
-        }, timeout=(5, 30), allow_redirects=False)
+        try:
+            response = self.session.get(f"{self.base_url}{path}", params={
+                "account": account, "dataset": self.dataset, "offset": offset,
+                "limit": 1, "include_row": 1, **params,
+            }, timeout=(5, 30), allow_redirects=False)
+        except requests.RequestException as exc:
+            raise AftercoolReadError(f"Aftercool read network failure ({type(exc).__name__}).") from None
         if response.status_code != 200:
-            raise ValueError(f"Aftercool read failed: HTTP {response.status_code}.")
-        payload = response.json()
+            raise AftercoolReadError(f"Aftercool read failed: HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError:
+            raise AftercoolReadError("Aftercool returned invalid JSON.") from None
         if (not isinstance(payload, dict) or not isinstance(payload.get("items"), list)
                 or type(payload.get("has_more")) is not bool
                 or type(payload.get("total")) is not int or payload["total"] < 0
                 or payload.get("offset") != offset):
-            raise ValueError("Unexpected Aftercool page schema.")
+            raise AftercoolReadError("Unexpected Aftercool page schema.")
         if not payload["items"] and (payload["has_more"] or offset < payload["total"]):
-            raise ValueError("Aftercool returned an incomplete page.")
+            raise AftercoolReadError("Aftercool returned an incomplete page.")
         products = []
         for item in payload["items"]:
             if (not isinstance(item, dict) or item.get("account") != account.upper()
                     or item.get("dataset") != self.dataset or not isinstance(item.get("row"), dict)
                     or not item.get("product_id")):
-                raise ValueError("Unexpected Aftercool product schema.")
+                raise AftercoolReadError("Unexpected Aftercool product schema.")
             identity = json.dumps([item.get("factory_id"), item["product_id"], item.get("source_file"), item.get("row_no")])
             products.append(GalleryProduct(identity, account, item.get("ean"), item["row"].get("GalleryURL")))
         return products, payload["has_more"]
@@ -73,7 +86,7 @@ class AftercoolGalleryClient:
     def get_product(self, offset: int):
         products, _ = self._page("/api/products", "jv", offset)
         if len(products) > 1:
-            raise ValueError("Aftercool ignored the single-product page limit.")
+            raise AftercoolReadError("Aftercool ignored the single-product page limit.")
         return products[0] if products else None
 
     def get_products(self, account: str, offset: int, limit: int = 500):
@@ -81,7 +94,7 @@ class AftercoolGalleryClient:
             raise ValueError("Invalid product page parameters.")
         products, more = self._page("/api/products", account, offset, limit=limit)
         if len(products) > limit:
-            raise ValueError("Aftercool ignored the page limit.")
+            raise AftercoolReadError("Aftercool ignored the page limit.")
         return products, more
 
     def iter_product_pages(self, account: str, offset: int, limit: int = 500, maximum: int = 0, workers: int = 1):
@@ -106,7 +119,7 @@ class AftercoolGalleryClient:
                     page_offset, size, reader, request = pending.popleft()
                     products, more = request.result()
                     if more and len(products) != size:
-                        raise ValueError("Aftercool returned a short non-final page.")
+                        raise AftercoolReadError("Aftercool returned a short non-final page.")
                     if more:
                         submit(reader)
                     yield page_offset, products, more

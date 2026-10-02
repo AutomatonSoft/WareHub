@@ -9,6 +9,37 @@ from .aftercool_gallery_client import AftercoolGalleryClient
 
 
 class GalleryMappingTests(TestCase):
+    def test_login_error_preserves_http_status_not_response_body(self):
+        from .aftercool_gallery_client import AftercoolReadError
+        session = MagicMock()
+        session.post.return_value.status_code = 401
+        session.post.return_value.text = "private response body"
+        with patch.object(AftercoolGalleryClient, "_new_session", return_value=session):
+            with self.assertRaisesRegex(AftercoolReadError, r"HTTP 401") as error:
+                AftercoolGalleryClient("private-user", "private-password")
+        self.assertNotIn("private", str(error.exception))
+        session.close.assert_called_once()
+
+    def test_read_network_error_does_not_expose_credentials(self):
+        import requests
+        from .aftercool_gallery_client import AftercoolReadError
+        client = AftercoolGalleryClient.__new__(AftercoolGalleryClient)
+        client.dataset = "lister"
+        client.session = MagicMock()
+        client.session.get.side_effect = requests.Timeout("private connection data")
+        with self.assertRaisesRegex(AftercoolReadError, r"network failure \(Timeout\)") as error:
+            client.get_product(0)
+        self.assertNotIn("private", str(error.exception))
+
+    def test_command_preserves_safe_aftercool_error(self):
+        from .aftercool_gallery_client import AftercoolReadError
+        from .management.commands.map_jv_xl_gallery import Command, GalleryMappingCommandError
+        with patch.dict("os.environ", {"AFTERCOOL_USERNAME": "test", "AFTERCOOL_PASSWORD": "test"}), \
+                patch("jv_services.management.commands.map_jv_xl_gallery.AftercoolGalleryClient",
+                      side_effect=AftercoolReadError("Aftercool login failed: HTTP 401.")):
+            with self.assertRaisesRegex(GalleryMappingCommandError, "HTTP 401"):
+                Command(stdout=StringIO()).handle(write=False, max_products=1, page_size=500, workers=3, dataset="lister")
+
     def test_aftercool_contract_and_candidate_pagination(self):
         client = AftercoolGalleryClient.__new__(AftercoolGalleryClient)
         client.dataset = "lister"

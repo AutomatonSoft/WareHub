@@ -1,4 +1,5 @@
 import os
+import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -9,6 +10,9 @@ from pymongo.errors import DuplicateKeyError
 
 from .aftercool_gallery_client import AftercoolGalleryClient
 from .gallery_mapping_store import GalleryMappingStore
+from .management.commands.map_jv_xl_gallery import GalleryMappingCommandError
+
+logger = logging.getLogger(__name__)
 
 JOB_KEY = "lister"
 LEASE_DURATION = timedelta(minutes=10)
@@ -100,7 +104,9 @@ def run_next_mapping(database):
                      dataset=JOB_KEY, stdout=ProgressOutput())
         values = {"status": "completed", "phase": "completed", "error": None}
     except Exception as exc:
-        values = {"status": "failed", "error": f"mapping_failed:{type(exc).__name__}"}
+        error = str(exc) if isinstance(exc, GalleryMappingCommandError) else f"mapping_failed:{type(exc).__name__}"
+        logger.error("AFTERCOOL_MAPPING_JOB_FAILED job_id=%s error=%s", job["job_id"], error)
+        values = {"status": "failed", "error": error}
     values["updated_at"] = datetime.now(UTC)
     database.jv_xl_mapping_jobs.update_one(owner, {"$set": values, "$unset": {"lease_until": ""}})
     return True
