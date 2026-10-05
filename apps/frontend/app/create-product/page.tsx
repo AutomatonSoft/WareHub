@@ -3095,6 +3095,7 @@ export default function CreateProductPage() {
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
                       productAttributes={readOttoProductAttributes(activeOttoProduct)}
+                      sourceProduct={{ product: activeOttoProduct ?? {}, source: controller.sourceSnapshot ?? {} }}
                       onDraftChange={(draft) => {
                         ottoDraftRefByTab.current[activeTab] = { sourceKey: activeOttoSourceKey, draft };
                       }}

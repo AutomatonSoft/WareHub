@@ -1,17 +1,52 @@
 import json
 import os
+from io import BytesIO
 from ftplib import error_perm
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIClient
+from PIL import Image
 
 from . import ftp_upload
 from .ftp_upload import _ensure_config_for_site_key
 
 
 class UploadImagesToFtpTests(SimpleTestCase):
+    def test_mislabeled_webp_is_verified_and_uploaded_with_actual_extension(self):
+        image_data = BytesIO()
+        Image.new("RGB", (32, 24), "white").save(image_data, format="WEBP")
+        raw = image_data.getvalue()
+        for site_key in ("XLMOEBEL_DE", "XLMOEBEL_CH", "XLMOEBEL_AT"):
+            with self.subTest(site_key=site_key):
+                ftp = Mock()
+                config = ("ftp.example", 21, "user", "password", ["image", "images"], "https://example.test/image", "images", False, True, 15)
+                with (
+                    patch.object(ftp_upload, "_ensure_config_for_site_key", return_value=config),
+                    patch.object(ftp_upload, "FTP", return_value=ftp),
+                    patch.object(ftp_upload, "FTP_UPLOAD_REDIS_URL", ""),
+                    patch.object(ftp_upload, "UPLOAD_IMAGE_COMPRESS_ENABLED", False),
+                ):
+                    result = ftp_upload.upload_public_file_for_site_payload(
+                        SimpleUploadedFile("source.jpg", raw, content_type="image/jpeg"), site_key=site_key,
+                    )
+                self.assertTrue(result["filename"].endswith(".webp"))
+                self.assertTrue(result["db_path"].endswith(".webp"))
+                self.assertTrue(result["public_url"].endswith(".webp"))
+                command, uploaded = ftp.storbinary.call_args.args
+                self.assertEqual(command, f'STOR {result["filename"]}')
+                self.assertEqual(uploaded.getvalue(), raw)
+
+    def test_mislabeled_corrupted_image_is_rejected(self):
+        with self.assertRaises(ftp_upload.FtpUploadCorruptedFileError):
+            ftp_upload._validate_uploaded_image_bytes(b"RIFF\x00\x00\x00\x00WEBPinvalid", "source.jpg")
+
+    def test_mislabeled_image_requires_decoder(self):
+        with patch.object(ftp_upload, "Image", None):
+            with self.assertRaises(ftp_upload.FtpUploadCorruptedFileError):
+                ftp_upload._validate_uploaded_image_bytes(b"RIFF\x00\x00\x00\x00WEBPinvalid", "source.jpg")
+
     @patch("database.ftp_upload._sitekey_env_any", return_value="")
     @patch("database.ftp_upload._jv_legacy_env_any", return_value="")
     @patch("database.ftp_upload.UPLOAD_FTP_HOST", "generic-de-host")

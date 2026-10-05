@@ -37,6 +37,30 @@ export function normalizeOttoProductAttributes(value) {
   });
 }
 
+export function applyOttoAttributeSuggestions(draft, productAttributes, suggestions) {
+  const source = normalizeOttoProductAttributes(productAttributes);
+  const next = { ...draft, additionalAttributes: { ...draft.additionalAttributes }, attributeOverrides: { ...draft.attributeOverrides }, attributeNames: { ...draft.attributeNames } };
+  let applied = 0;
+  for (const suggestion of suggestions) {
+    const name = text(suggestion.name);
+    const value = text(suggestion.value);
+    const id = text(suggestion.id);
+    if (!name || !value || !id) continue;
+    const existing = source.find((attribute) => attribute.id === id || attribute.label.toLocaleLowerCase() === name.toLocaleLowerCase());
+    const targetId = existing?.id ?? id;
+    if (draft.removedAttributeIds.includes(targetId) || draft.removedAttributeIds.includes(id)) continue;
+    if (existing && text(next.attributeOverrides[targetId] ?? existing.values.join(", "))) continue;
+    if (text(next.additionalAttributes[targetId]) || text(next.attributeOverrides[targetId])) continue;
+    const sameName = Object.entries(next.attributeNames).some(([key, label]) => text(label).toLocaleLowerCase() === name.toLocaleLowerCase() && text(next.additionalAttributes[key] ?? next.attributeOverrides[key]));
+    if (sameName) continue;
+    if (existing) next.attributeOverrides[targetId] = value;
+    else next.additionalAttributes[targetId] = value;
+    next.attributeNames[targetId] = name;
+    applied += 1;
+  }
+  return { draft: next, applied };
+}
+
 export function buildOttoPayloadAttributes({ productAttributes, additionalAttributes, attributeOverrides, attributeNames, removedAttributeIds }) {
   const removedIds = new Set(removedAttributeIds ?? []);
   const attributesByName = new Map();

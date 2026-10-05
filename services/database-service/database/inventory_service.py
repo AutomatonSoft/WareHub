@@ -406,6 +406,7 @@ def build_inventory_rows() -> list[dict]:
                 "id": f"KID-{kid.id}",
                 "entity": "kid",
                 "kid_id": kid.id,
+                "archived": bool(kid.archived),
                 "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,

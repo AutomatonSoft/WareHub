@@ -2023,6 +2023,11 @@ class InventoryRowsAPIView(APIView):
             )
 
         kid_id_raw = request.query_params.get("kid_id")
+        archived_raw = request.query_params.get("archived")
+        if archived_raw is not None:
+            if archived_raw not in {"true", "false"}:
+                return Response({"detail": "archived must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
+            rows = [row for row in rows if bool(row.get("archived")) == (archived_raw == "true")]
         if kid_id_raw not in (None, ""):
             try:
                 kid_id = int(str(kid_id_raw).strip())

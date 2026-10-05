@@ -11,6 +11,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
 import { normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
+import { OttoAiAttributes } from "./otto-ai-attributes";
 
 export type OttoCreateProductDraft = {
   productReference: string;
@@ -43,6 +44,7 @@ type Props = {
   categoryId: string;
   categoryName: string;
   productAttributes: unknown;
+  sourceProduct?: Record<string, unknown>;
   onDraftChange: (draft: OttoCreateProductDraft) => void;
 };
 
@@ -52,7 +54,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
   const t = useLabels();
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
@@ -99,8 +101,15 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
       const missingNames = Object.fromEntries(
         Object.entries(attributeNames).filter(([attributeId, name]) => current.attributeNames[attributeId] !== name),
       );
-      if (Object.keys(missingNames).length === 0) return current;
-      const next = { ...current, attributeNames: { ...current.attributeNames, ...missingNames } };
+      const mirroredAttributes = Object.entries(current.additionalAttributes).filter(([id]) => id in attributeNames);
+      if (Object.keys(missingNames).length === 0 && mirroredAttributes.length === 0) return current;
+      const additionalAttributes = { ...current.additionalAttributes };
+      const attributeOverrides = { ...current.attributeOverrides };
+      for (const [id, value] of mirroredAttributes) {
+        delete additionalAttributes[id];
+        attributeOverrides[id] ??= value;
+      }
+      const next = { ...current, additionalAttributes, attributeOverrides, attributeNames: { ...current.attributeNames, ...missingNames } };
       onDraftChangeRef.current(next);
       return next;
     });
@@ -196,6 +205,11 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
       <MarketplaceFieldGroup name="description"><Field label={t.descriptionLabel}><Textarea value={draft.description} onChange={(event) => update("description", event.target.value)} className="min-h-40" /></Field></MarketplaceFieldGroup>
       {selectedAttributes.length > 0 || draft.category ? (
         <section className="flex flex-col gap-3" aria-label={t.ottoCategoryAttributes}>
+          <OttoAiAttributes key={`${draftKey}:${categoryId}`} categoryId={categoryId} draftKey={draftKey} draft={draft} sourceProduct={sourceProduct} productAttributes={productAttributes} onChange={(next) => {
+            dirtyDraftKeyRef.current = draftKey;
+            setDraft(next);
+            onDraftChangeRef.current(next);
+          }} />
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold uppercase">{t.attributes}</h3>
             <Select

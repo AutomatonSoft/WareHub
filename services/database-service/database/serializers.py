@@ -55,6 +55,7 @@ class KidModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Kid
         fields = "__all__"
+        read_only_fields = ("archived",)
         extra_kwargs = {
             "kid_number": {"error_messages": {"required": "Укажите kid_number."}},
         }

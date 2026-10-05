@@ -39,6 +39,12 @@ partial block. Workflow changes must be merged before this secret is consumed.
 The optional server `.env.xl.local` overrides `.env`; keep its CH/AT values
 consistent with the GitHub secret if it exists.
 
+Set `XLMOEBEL_DE_FTP_USER` as a separate GitHub Environment secret in both
+`stage` and `production`. The workflows append this login after the XL multisite
+block without replacing the existing host or password. Keep any DE override in
+`.env.xl.local` consistent too. The workflow change requires merge and deployment;
+adding the secret alone does not update running containers.
+
 ## Verification
 
 Run `xl_services.tests_smoke`, `database.tests_upload_images`, orchestrator

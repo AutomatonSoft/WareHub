@@ -29,6 +29,9 @@ class NoopProductEditorGateway:
 
 
 class FakeMarketplaceGateway:
+    def set_kid_archived(self, **kwargs):
+        return type("R", (), {"status_code": 200, "body": {"archived": kwargs["archived"]}})()
+
     def toggle_all_by_kid(self, *, kid_number: str, inactive: bool, request_id: str, place: str | None = None):
         return type(
             "R",
@@ -288,8 +291,8 @@ def test_marketplace_job_service_combines_real_and_stub_channels():
     service = MarketplaceJobService(gateway=FakeMarketplaceGateway())
     result = service.execute(kid_number="566725168", inactive=True, request_id="req-1", place=None)
     assert result.status == "ok"
-    assert result.summary.total == 9
-    assert result.summary.success == 9
+    assert result.summary.total == 10
+    assert result.summary.success == 10
     assert result.summary.failed == 0
     site_keys = {item.site_key: item for item in result.results}
     assert site_keys["JV_DE"].ok is True
@@ -412,5 +415,31 @@ def test_marketplace_toggle_sends_kid_id_to_every_channel():
         kid_number="565478849", kid_id=1606, inactive=True, request_id="request-1"
     )
 
-    assert len(http_client.requests) == 6
+    assert len(http_client.requests) == 7
     assert all(body["kid_id"] == 1606 and body["kid_number"] == "565478849" for _, _, body in http_client.requests)
+    assert http_client.requests[-1][1].endswith("/kids/archive/")
+    assert http_client.requests[-1][2]["archived"] is True
+
+
+def test_archive_is_skipped_after_partial_deactivation():
+    from unittest.mock import Mock
+
+    gateway = TimeoutMarketplaceGateway()
+    gateway.set_kid_archived = Mock()
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=True, request_id="partial")
+    assert result.status == "partial"
+    gateway.set_kid_archived.assert_not_called()
+
+
+def test_archive_failure_is_visible_and_activation_restores_list():
+    from unittest.mock import Mock
+
+    gateway = FakeMarketplaceGateway()
+    gateway.set_kid_archived = Mock(return_value=type("R", (), {"status_code": 409, "body": {"detail": "Active marketplaces"}})())
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=True, request_id="failure")
+    assert result.status == "partial"
+    assert result.results[-1].ok is False
+    gateway.set_kid_archived = Mock(wraps=FakeMarketplaceGateway().set_kid_archived)
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=False, request_id="restore", place="12")
+    assert result.status == "ok"
+    assert gateway.set_kid_archived.call_args.kwargs["archived"] is False
