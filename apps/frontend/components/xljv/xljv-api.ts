@@ -182,7 +182,7 @@ export async function xljvCreateAndPush(params: {
   payload: CreateAndPushBody;
 }): Promise<{ response: Response; payload: Record<string, unknown> }> {
   const response = await apiFetch(
-    `${xljvBasePath(params.site)}/products/create-and-push${buildQuery({
+    `${xljvBasePath(params.site)}/products/create-and-push/${buildQuery({
       site: params.site,
       ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
     })}`,
@@ -250,7 +250,7 @@ export async function xljvSyncByEan(params: {
 }): Promise<{ response: Response; text: string }> {
   const url = params.batch
     ? `${xljvBasePath(params.site)}/batch/${xljvBatchIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}/apply/${buildQuery({})}`
-    : `${xljvBasePath(params.site)}/products/${xljvSyncIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
+    : `${xljvBasePath(params.site)}/products/${xljvSyncIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}/${buildQuery({
         site: params.site,
         ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
       })}`;
@@ -303,7 +303,7 @@ export async function xljvUpdateByEan(params: {
   payload: UpdateByEanBody;
 }): Promise<{ response: Response; payload: XLJVProduct }> {
   const response = await apiFetch(
-    `${xljvBasePath(params.site)}/products/${xljvUpdateIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}${buildQuery({
+    `${xljvBasePath(params.site)}/products/${xljvUpdateIdentifierSegment(params.site)}/${encodeURIComponent(params.ean)}/${buildQuery({
       site: params.site,
       ...(params.siteKey?.trim() ? { site_key: params.siteKey.trim() } : {})
     })}`,

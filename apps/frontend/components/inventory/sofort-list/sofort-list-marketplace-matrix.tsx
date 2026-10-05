@@ -56,6 +56,7 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
         <span />
         <span>{props.labels.jv}</span>
         <span>{props.labels.xl}</span>
+        <span>DEP</span>
       </div>
       {rows.map((row) => (
         <div

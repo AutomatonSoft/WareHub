@@ -2948,15 +2948,15 @@ html[data-density="compact"] .ui-table-data-meta {
 .wh-sofort-table-wrap { height: 100%; max-height: none; min-height: 0; overflow-x: auto; padding-bottom: 0; border: 0; border-radius: var(--wh-radius-card); background: transparent; box-shadow: none; }
 .wh-sofort-data-table {
   table-layout: fixed;
-  min-width: 1277px;
+  min-width: 1501px;
 }
 .wh-sofort-col--select { width: 36px; }
 .wh-sofort-col--place { width: 100px; }
-.wh-sofort-col--image { width: 140px; }
-.wh-sofort-col--product { width: 125px; }
+.wh-sofort-col--image { width: 184px; }
+.wh-sofort-col--product { width: 145px; }
 .wh-sofort-col--attributes { width: 160px; }
 .wh-sofort-col--commentary { width: 150px; }
-.wh-sofort-col--marketplace { width: 390px; }
+.wh-sofort-col--marketplace { width: 550px; }
 .wh-sofort-col--actions { width: 176px; }
 .wh-sofort-col--hidden { width: 0; }
 .wh-sofort-cell {
@@ -3096,6 +3096,9 @@ html[data-density="compact"] .ui-table-data-meta {
 }
 .wh-sofort-image-cell .wh-sofort-product-cell__image {
   margin-right: auto;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 1;
 }
 .wh-sofort-product-cell { display: flex; min-height: 160px; align-items: center; justify-content: flex-start; gap: 10px; min-width: 0; }
 .wh-sofort-product-cell__image { width: 160px; height: 160px; border-radius: 16px; border: 1px solid #e5e7eb; background: #f8fafc; display: inline-flex; align-items: center; justify-content: center; flex: none; overflow: hidden; }
@@ -3505,7 +3508,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
 .wh-sofort-marketplace-matrix__head,
 .wh-sofort-marketplace-matrix__row {
   display: grid;
-  grid-template-columns: 48px repeat(2, minmax(0, 1fr));
+  grid-template-columns: 48px repeat(3, minmax(0, 1fr));
   gap: 6px;
   align-items: center;
   justify-items: stretch;
@@ -3551,10 +3554,12 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
 .wh-sofort-marketplace-matrix__value--b-ware { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
 .wh-sofort-marketplace-matrix__value--active { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .wh-sofort-marketplace-matrix__value--inactive { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
-.wh-sofort-marketplace-matrix__value--single { grid-column: span 2; }
+.wh-sofort-marketplace-matrix__value--single { grid-column: 2 / span 2; }
 .wh-sofort-marketplace-matrix__value code {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
@@ -4047,7 +4052,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   .wh-sofort-col--product { width: 128px; }
   .wh-sofort-col--attributes { width: 160px; }
   .wh-sofort-col--commentary { width: 125px; }
-  .wh-sofort-col--marketplace { width: 330px; }
+  .wh-sofort-col--marketplace { width: 550px; }
   .wh-sofort-col--actions { width: 144px; }
   .wh-sofort-cell { padding-inline: 8px !important; }
   .wh-sofort-data-table th { font-size: 11px; letter-spacing: 0.06em; }
@@ -4120,7 +4125,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   }
   .wh-sofort-marketplace-matrix__head,
   .wh-sofort-marketplace-matrix__row {
-    grid-template-columns: 48px repeat(2, minmax(0, 1fr));
+    grid-template-columns: 48px repeat(3, minmax(0, 1fr));
     gap: 5px;
   }
   .wh-sofort-marketplace-matrix { gap: 6px; }
@@ -4171,7 +4176,7 @@ html[data-density="compact"] .wh-sofort-data-table .ui-table-row td {
   .wh-sofort-marketplace-grid { grid-template-columns: 72px minmax(0, 1fr); }
   .wh-sofort-marketplace-matrix__head,
   .wh-sofort-marketplace-matrix__row {
-    grid-template-columns: 54px repeat(2, minmax(0, 1fr));
+    grid-template-columns: 48px repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
   .wh-inventory-shell { min-height: calc(100dvh - 150px); }
