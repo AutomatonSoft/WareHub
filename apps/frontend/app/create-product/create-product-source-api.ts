@@ -163,6 +163,11 @@ const JV_SITE_PUBLIC_BASE: Record<string, string> = {
   JV_CH: "https://www.jvmoebel.ch",
   JV_CO_UK: "https://www.jvfurniture.co.uk",
 };
+const XL_SITE_PUBLIC_BASE: Record<string, string> = {
+  XLMOEBEL_DE: "https://www.xlmoebel.de",
+  XLMOEBEL_CH: "https://www.xlmoebel.ch",
+  XLMOEBEL_AT: "https://www.xlmoebel.at",
+};
 
 // Make an image reference safe to use as an <img> src and as a relay/fetch source.
 // The backend usually returns absolute public URLs, but when the public base is
@@ -175,6 +180,12 @@ function toAbsoluteImageUrl(raw: string, siteKey: string): string {
   if (!value) return "";
   if (/^(https?:)?\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
     return value;
+  }
+  const xlBase = XL_SITE_PUBLIC_BASE[siteKey.trim().toUpperCase()];
+  if (xlBase) {
+    const path = value.replace(/^\/+/, "");
+    const imagePrefix = path.startsWith("image/") || (value.startsWith("/") && !path.startsWith("catalog/")) ? "" : "image/";
+    return `${xlBase}/${imagePrefix}${path}`;
   }
   const base = JV_SITE_PUBLIC_BASE[siteKey.trim().toUpperCase()] || JV_SITE_PUBLIC_BASE.JV_DE;
   return `${base}/${value.replace(/^\/+/, "")}`;
