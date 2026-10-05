@@ -1371,7 +1371,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
             source_currency: publishing?.sourceCurrency ?? "EUR",
             categories: publishing?.categoriesBySite[defaultSiteKey],
             manufacturer_id: manufacturerId,
-            quantity: 0,
+            quantity: 1,
             status: true,
             image: uploadedUrls[0] || undefined,
             images: uploadedUrls.slice(1).map((url, index) => ({ image: url, sort_order: index })),

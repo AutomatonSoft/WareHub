@@ -62,6 +62,7 @@ from xl_services.batch_translation import (
 from xl_services.batch_service import _build_multilang_descriptions_for_site
 from xl_services.price_rules import apply_special_price_from_product
 from xl_services.source_config import DEFAULT_XL_SITE_DOMAINS
+from xl_services.ean_marker import record_xl_ean_marker
 
 logger = logging.getLogger(__name__)
 
@@ -497,6 +498,7 @@ class XLProductCreateAndPushAPIView(APIView):
             {
                 "created": True,
                 "pushed": True,
+                "warnings": record_xl_ean_marker(product),
                 "item": ImportedProductDetailSerializer(product).data,
                 "ean_auto_assigned": not bool(str(payload.get("ean") or "").strip()),
             },
@@ -683,6 +685,7 @@ class XLProductUpdateByEANAPIView(APIView):
         )
         product.refresh_from_db()
         result = ImportedProductDetailSerializer(product).data
+        result["warnings"] = record_xl_ean_marker(product)
         finalize_success(idem_record, status_code=status.HTTP_200_OK, payload=result)
         return Response(result, status=status.HTTP_200_OK)
 

@@ -82,5 +82,6 @@ test("XL publication uses the edited gallery and retains existing photos with lo
   assert.equal(uploaded.files, files);
   assert.deepEqual(Array.from(uploaded.sourceUrls), ["https://photos.example/kept.jpg"]);
   assert.equal(payload.image, "images/kept.jpg");
+  assert.equal(payload.quantity, 1);
   assert.equal(payload.images[0].image, "images/new.jpg");
 });
