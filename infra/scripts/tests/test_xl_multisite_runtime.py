@@ -23,14 +23,20 @@ class XLMultisiteRuntimeTests(unittest.TestCase):
             with self.subTest(environment=environment), tempfile.TemporaryDirectory() as temporary:
                 workflow = (ROOT / ".github" / "workflows" / f"{environment}-deploy.yml").read_text()
                 self.assertIn("XL_MULTISITE_ENV_FILE_SECRET: ${{ secrets.XL_MULTISITE_ENV_FILE }}", workflow)
+                self.assertIn("XLMOEBEL_DE_FTP_USER_SECRET: ${{ secrets.XLMOEBEL_DE_FTP_USER }}", workflow)
                 full_env_line = f'printf \'%s\\n\' "${{{prefix}_ENV_FILE_SECRET:-}}"'
                 xl_line = 'printf \'%s\\n\' "${XL_MULTISITE_ENV_FILE_SECRET:-}"'
                 self.assertLess(workflow.index(full_env_line), workflow.index(xl_line))
+                user_line = 'printf \'XLMOEBEL_DE_FTP_USER=%s\\n\' "$XLMOEBEL_DE_FTP_USER_SECRET"'
+                self.assertLess(workflow.index(xl_line), workflow.index(user_line))
                 directory = Path(temporary)
                 source = ROOT / "infra" / "deploy" / environment
                 shutil.copy(source / "docker-compose.yml", directory / "docker-compose.yml")
                 override = directory / "override.env"
-                override.write_text("UNRELATED_SETTING=preserved\nXL_SOURCE_XLMOEBEL_CH_DB_HOST=old\n" + block + "\n")
+                user_assignment = subprocess.run(["bash", "-c", user_line],
+                                                 env={"XLMOEBEL_DE_FTP_USER_SECRET": "test-de-ftp-user"},
+                                                 capture_output=True, text=True, check=True).stdout
+                override.write_text("UNRELATED_SETTING=preserved\nXL_SOURCE_XLMOEBEL_CH_DB_HOST=old\nXLMOEBEL_DE_FTP_USER=old\n" + block + "\n" + user_assignment)
                 output = directory / ".env"
                 subprocess.run([sys.executable, str(ROOT / "infra/scripts/build-runtime-env.py"),
                                 "--template", str(source / f"env.{environment}.sanitized.template"),
@@ -40,6 +46,7 @@ class XLMultisiteRuntimeTests(unittest.TestCase):
                                          "docker-compose.yml", "config", "--format", "json"],
                                         cwd=directory, capture_output=True, text=True, check=True)
                 actual = json.loads(result.stdout)["services"]["services"]["environment"]
+                self.assertEqual(actual["XLMOEBEL_DE_FTP_USER"], "test-de-ftp-user")
                 for key, value in values.items():
                     self.assertEqual(actual[key].replace("$$", "$"), value)
 

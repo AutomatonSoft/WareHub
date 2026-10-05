@@ -119,17 +119,30 @@ def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
         )
         return
     try:
-        from django.db.models import Q
-
         from database.models import Ean, EanStatus
 
         with transaction.atomic():
-            matching_eans = Ean.objects.filter(main_ean_jv=ean_digits)
-            matching_eans.filter(
-                Q(jv__isnull=True) | Q(jv="")
-            ).update(jv=artikelnr)
-            for kid_id in matching_eans.values_list("kid_id", flat=True):
-                EanStatus.objects.update_or_create(ean_id=kid_id, defaults={"jv": True})
+            rows = Ean.objects.select_for_update()
+            matching_eans = list(rows.filter(reserved_jv=ean_digits).order_by("pk")[:2])
+            if not matching_eans:
+                matching_eans = list(rows.filter(main_ean_jv=ean_digits).order_by("pk")[:2])
+            if len(matching_eans) != 1:
+                logger.warning(
+                    "JV_EAN_MARKER_IDENTITY_UNRESOLVED item_id=%s ean=%s matches=%s",
+                    item.id, item.effective_ean, len(matching_eans),
+                )
+                return
+            ean_record = matching_eans[0]
+            if ean_record.jv and ean_record.jv != artikelnr:
+                logger.warning(
+                    "JV_EAN_MARKER_MAPPING_CONFLICT item_id=%s kid_id=%s",
+                    item.id, ean_record.kid_id,
+                )
+                return
+            if ean_record.jv != artikelnr:
+                ean_record.jv = artikelnr
+                ean_record.save(update_fields=["jv"])
+            EanStatus.objects.update_or_create(ean_id=ean_record.kid_id, defaults={"jv": True})
     except Exception:  # noqa: BLE001
         logger.warning(
             "JV_EAN_MARKER_WRITE_FAILED code=jv_ean_marker_write_failed item_id=%s ean=%s",

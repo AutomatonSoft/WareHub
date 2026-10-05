@@ -272,6 +272,7 @@ jobs:
           SHARED_ENV_FILE_SECRET: ${{ secrets.SHARED_ENV_FILE }}
           STAGE_ENV_FILE_SECRET: ${{ secrets.STAGE_ENV_FILE }}
           XL_MULTISITE_ENV_FILE_SECRET: ${{ secrets.XL_MULTISITE_ENV_FILE }}
+          XLMOEBEL_DE_FTP_USER_SECRET: ${{ secrets.XLMOEBEL_DE_FTP_USER }}
           AFTERCOOL_USERNAME_SECRET: ${{ secrets.AFTERCOOL_USERNAME }}
           AFTERCOOL_PASSWORD_SECRET: ${{ secrets.AFTERCOOL_PASSWORD }}
           ALLOWED_HOSTS_EXTRA_VALUE: ${{ vars.ALLOWED_HOSTS_EXTRA }}
@@ -323,6 +324,9 @@ jobs:
             printf '%s\n' "${SHARED_ENV_FILE_SECRET:-}"
             printf '%s\n' "${STAGE_ENV_FILE_SECRET:-}"
             printf '%s\n' "${XL_MULTISITE_ENV_FILE_SECRET:-}"
+            if [ -n "${XLMOEBEL_DE_FTP_USER_SECRET:-}" ]; then
+              printf 'XLMOEBEL_DE_FTP_USER=%s\n' "$XLMOEBEL_DE_FTP_USER_SECRET"
+            fi
             if [ -n "${AFTERCOOL_USERNAME_SECRET:-}" ]; then
               printf 'AFTERCOOL_USERNAME=%s\n' "$AFTERCOOL_USERNAME_SECRET"
             fi

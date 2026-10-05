@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -70,6 +70,7 @@ function displayNullable(value: string | null): string {
 }
 
 export function SofortListTable() {
+  const queryClient = useQueryClient();
   const t = useLabels();
   const { showToast } = useToast();
   const pathname = usePathname();
@@ -80,6 +81,7 @@ export function SofortListTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [archived, setArchived] = useState(false);
   const [placeFilter, setPlaceFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
@@ -108,6 +110,7 @@ export function SofortListTable() {
     const pageParam = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const pageSizeParam = Number.parseInt(searchParams.get("page_size") ?? "20", 10);
     setQuery(searchParams.get("q") ?? "");
+    setArchived(searchParams.get("archived") === "true");
     setPlaceFilter(searchParams.get("place") ?? "");
     setSectionFilter(searchParams.get("section") ?? "");
     setLocationFilter(searchParams.get("location") ?? "all");
@@ -127,6 +130,8 @@ export function SofortListTable() {
   useEffect(() => {
     if (!urlHydrated) return;
     const params = new URLSearchParams(window.location.search);
+    if (archived) params.set("archived", "true");
+    else params.delete("archived");
     const normalizedQuery = query.trim();
     if (normalizedQuery) params.set("q", normalizedQuery);
     else params.delete("q");
@@ -163,6 +168,7 @@ export function SofortListTable() {
     const current = `${window.location.pathname}${window.location.search}`;
     if (next !== current) window.history.replaceState(window.history.state, "", next);
   }, [
+    archived,
     backendPage,
     backendPageSize,
     bWareOnlyFilter,
@@ -196,6 +202,7 @@ export function SofortListTable() {
   const sofortListQuery = useQuery({
     queryKey: [
       "sofort-list-rows",
+      archived,
       backendPage,
       backendPageSize,
       normalizedServerQuery,
@@ -215,6 +222,7 @@ export function SofortListTable() {
     queryFn: () =>
       fetchInventoryRows({
         page: backendPage,
+        archived,
         pageSize: backendPageSize,
         q: normalizedServerQuery || undefined,
         place: serverPlace,
@@ -230,7 +238,7 @@ export function SofortListTable() {
         bWare: bWareOnlyFilter,
         inTransit: inTransitOnlyFilter,
       }),
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === archived ? keepPreviousData(previousData) : undefined,
   });
 
   const filterOptionsQuery = useQuery({
@@ -531,10 +539,9 @@ export function SofortListTable() {
     setRows((current) => current.map((row) => (row.id === nextRow.id ? nextRow : row)));
   }, []);
 
-  const { refetch: refetchSofortList } = sofortListQuery;
   const refreshSofortList = useCallback(() => {
-    void refetchSofortList();
-  }, [refetchSofortList]);
+    void queryClient.invalidateQueries({ queryKey: ["sofort-list-rows"] });
+  }, [queryClient]);
 
   const shellLabels = useMemo(() => ({
     place: t.place,
@@ -607,6 +614,11 @@ export function SofortListTable() {
 
   return (
     <div className="wh-sofort-page">
+      <div className="flex gap-2" role="group" aria-label={t.archive}>
+        <Button type="button" variant={archived ? "outline" : "default"} aria-pressed={!archived} onClick={() => { setArchived(false); setBackendPage(1); setSelectedRows([]); setSelectionResetKey((value) => value + 1); }}>Sofort list</Button>
+        <Button type="button" variant={archived ? "default" : "outline"} aria-pressed={archived} onClick={() => { setArchived(true); setBackendPage(1); setSelectedRows([]); setSelectionResetKey((value) => value + 1); }}>{t.archive}</Button>
+      </div>
+      {archived ? <p className="text-sm text-muted-foreground">{t.archiveRestoreHint}</p> : null}
       {error ? <SofortListErrorState message={error} onRetry={() => void sofortListQuery.refetch()} retrying={sofortListQuery.isFetching} /> : null}
       <Card className="wh-sofort-toolbar-card wh-section-card">
         <CardContent className="wh-section-card__body">
@@ -616,8 +628,8 @@ export function SofortListTable() {
             searchPlaceholder={t.searchSofortPlaceholder}
             primaryAction={
               <div className="flex flex-wrap items-center gap-2">
-                <ImportKidGreenButton onImported={() => sofortListQuery.refetch()} />
-                <AddProductButton onCreated={() => sofortListQuery.refetch()} />
+                {!archived ? <ImportKidGreenButton onImported={() => sofortListQuery.refetch()} /> : null}
+                {!archived ? <AddProductButton onCreated={() => sofortListQuery.refetch()} /> : null}
               </div>
             }
             trailingAction={
@@ -730,6 +742,7 @@ export function SofortListTable() {
           ) : (
             <>
               <SofortListTableShell
+                archived={archived}
                 rows={sortedRows}
                 query={query}
                 placeholderEan={placeholderEan}

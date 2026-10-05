@@ -17,6 +17,7 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from database.views_archive import KidArchiveAPIView
 from django.urls import path
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import JSONOpenAPIRenderer
@@ -95,6 +96,7 @@ from ebay_service.views import (
     EbaySellerSetupAPIView,
     EbayShippingServicesAPIView,
 )
+from otto_service.attribute_suggestion_views import OttoAttributeSuggestionsAPIView
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
     OttoCategoriesAPIView,
@@ -190,6 +192,7 @@ api_v1_patterns = [
     path("api/v1/dev/session/sync/", DevBackendSessionSyncAPIView.as_view(), name="dev-backend-session-sync-v1"),
     path("api/v1/kids/", KidListCreateAPIView.as_view(), name="kid-list-create-v1"),
     path("api/v1/kids/<int:pk>/", KidRetrieveUpdateAPIView.as_view(), name="kid-detail-v1"),
+    path("api/v1/kids/archive/", KidArchiveAPIView.as_view(), name="kid-archive-v1"),
     path("api/v1/kids/<int:pk>/marketplace-status/", KidMarketplaceStatusUpdateAPIView.as_view(), name="kid-marketplace-status-v1"),
     path("api/v1/kids/<int:pk>/detail-view/", KidDetailViewAPIView.as_view(), name="kid-detail-view-v1"),
     path("api/v1/kids/<int:pk>/composite-update/", KidCompositeUpdateAPIView.as_view(), name="kid-composite-update-v1"),
@@ -400,6 +403,11 @@ api_v1_patterns = [
         "api/v1/ebay/listing-operations/",
         EbayListingOperationAPIView.as_view(),
         name="ebay-listing-operation-v1",
+    ),
+    path(
+        "api/v1/otto/attributes/suggestions/",
+        OttoAttributeSuggestionsAPIView.as_view(),
+        name="otto-attribute-suggestions-v1",
     ),
     path(
         "api/v1/otto/attributes/",

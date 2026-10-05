@@ -56,6 +56,7 @@ class Kid(Model):
     section = CharField(max_length=1, null=True, blank=True)
     stock_status = CharField(max_length=16, choices=StatusProductInStock.choices, default=StatusProductInStock.IN_STOCK)
     in_transit = BooleanField(default=False)
+    archived = BooleanField(default=False, db_index=True)
 
     def save(self, *args, **kwargs):
         self.kid_number = normalize_kid_numbers(self.kid_number)

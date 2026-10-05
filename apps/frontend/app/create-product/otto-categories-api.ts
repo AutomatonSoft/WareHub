@@ -103,6 +103,20 @@ export async function fetchOttoCategoryAttributes(categoryId: string): Promise<O
   return payload.attributes.map(normalizeAttribute).filter((attribute): attribute is OttoCategoryAttribute => Boolean(attribute));
 }
 
+export type OttoAttributeSuggestion = { id: string; name: string; value: string; evidence: string };
+
+export async function suggestOttoAttributes(categoryId: string, product: Record<string, unknown>): Promise<OttoAttributeSuggestion[]> {
+  const response = await apiFetch("/api/v1/services/otto/attributes/suggestions/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ categoryId, product }),
+  });
+  const payload = await response.json() as { suggestions?: OttoAttributeSuggestion[]; detail?: string };
+  if (!response.ok) throw new Error(payload.detail || `OTTO AI: HTTP ${response.status}`);
+  if (!Array.isArray(payload.suggestions)) throw new Error("Invalid OTTO AI response.");
+  return payload.suggestions;
+}
+
 function normalizeFullCacheSyncStatus(payload: OttoFullCacheSyncResponse): OttoFullCacheSyncStatus {
   const statusValue = String(payload.status ?? "idle");
   const phaseValue = String(payload.phase ?? "idle");
