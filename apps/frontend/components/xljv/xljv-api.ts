@@ -162,6 +162,7 @@ export async function xljvUploadImages(params: {
   }
   const formData = new FormData();
   for (const file of params.files) formData.append("images", file);
+  if (normalizedSourceUrls.length > 0) formData.append("source_urls", JSON.stringify(normalizedSourceUrls));
   return postFormDataWithFallback(
     ["/api/v1/uploads/images/"],
     formData,

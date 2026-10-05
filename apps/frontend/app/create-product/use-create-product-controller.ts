@@ -109,6 +109,7 @@ export type HoodPublishDraft = {
   ean: string;
   price: string;
   fields: HoodCreateFields;
+  imageUrls?: string[];
 };
 
 export type CreateProductSourceDiscoveryStatus = "loading" | "found" | "missing" | "error";
@@ -195,7 +196,11 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
   const [mainXljvFields, setMainXljvFields] = useState<MainXljvCreateFields>(DEFAULT_MAIN_XLJV_CREATE_FIELDS);
   const [mainXljvFieldErrors, setMainXljvFieldErrors] = useState<Partial<Record<MainXljvCreateFieldKey, string>>>({});
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CreateProductFieldKey, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [pendingSubmissions, setPendingSubmissions] = useState(0);
+  const submitting = pendingSubmissions > 0;
+  function setSubmitting(pending: boolean) {
+    setPendingSubmissions((count) => pending ? count + 1 : Math.max(0, count - 1));
+  }
   const [useControlledJob, setUseControlledJob] = useState(true);
   const [latestJobId, setLatestJobId] = useState("");
   const [jobStatusJson, setJobStatusJson] = useState("");
@@ -860,6 +865,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       kauflandTitle?: string;
       kauflandEan?: string;
       kauflandPrice?: string;
+      kauflandImageUrls?: string[];
       kauflandFields?: MainKauflandCreateFields;
       kauflandOverrides?: Record<string, unknown>;
       ottoEan?: string;
@@ -880,7 +886,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
           imagesText: publishDraft.ebayImageUrls?.join("\n") ?? imagesText,
         }
       : publishDraft?.kauflandEan !== undefined
-      ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText }
+      ? { ean: publishDraft.kauflandEan, price: publishDraft.kauflandPrice ?? "", productName: publishDraft.kauflandTitle ?? "", imagesText: publishDraft.kauflandImageUrls?.join("\n") ?? imagesText }
       : publishDraft?.ottoEan !== undefined
         ? {
             ean: publishDraft.ottoEan,
@@ -1236,7 +1242,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       return;
     }
 
-    const input = { ean: draft?.ean ?? ean, price: draft?.price ?? price, productName: draft?.name ?? productName, imagesText };
+    const input = { ean: draft?.ean ?? ean, price: draft?.price ?? price, productName: draft?.name ?? productName, imagesText: draft?.imageUrls?.join("\n") ?? imagesText };
     const validation = validateCreateProductInput(input);
     if (!validation.isValid) {
       showToast(t.fixFormErrorsBeforeCreate, "error");
@@ -1291,12 +1297,13 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
     categoriesBySite: Record<string, Array<{ category_id: number; main_category: boolean }>>;
     manufacturerBySite: Record<string, number>;
     sourceCurrency: string;
+    imageUrls?: string[];
   }) {
     const input = {
       ean: draft?.ean ?? ean,
       price: draft?.price ?? price,
       productName: draft?.name ?? productName,
-      imagesText,
+      imagesText: publishing?.imageUrls?.join("\n") ?? imagesText,
     };
     const validation = validateCreateProductInput(input);
     if (!validation.isValid) {
@@ -1340,11 +1347,12 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
               siteKey: defaultSiteKey,
               ean: normalized.ean,
               files: effectiveImageFiles,
-              sourceUrls: effectiveImageFiles.length === 0 ? normalized.imageUrls : [],
+              sourceUrls: normalized.imageUrls,
             });
             if (!uploadResult.response.ok) {
-              throw new Error(
+              throw new ApiError(
                 String(uploadResult.payload.detail || `XL image upload failed: HTTP ${uploadResult.response.status}`),
+                uploadResult.response.status, uploadResult.payload,
               );
             }
             uploadedUrls = Array.isArray(uploadResult.payload.uploaded_image_urls)
