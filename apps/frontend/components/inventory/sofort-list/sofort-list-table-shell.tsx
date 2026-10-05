@@ -1267,7 +1267,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
     <div className="wh-sofort-table-shell">
       <div className="wh-sofort-table-frame">
         {isDesktopLayout ? (
-        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table max-w-full overflow-x-hidden overflow-y-visible px-0 pb-0 pt-0">
+        <div className="wh-sofort-table-wrap ui-desktop-rhythm-table max-w-full overflow-x-auto overflow-y-visible px-0 pb-0 pt-0">
           <table className="ui-listing-table wh-sofort-data-table wh-sofort-table-grid w-full border-separate border-spacing-y-0 text-left text-sm">
             <colgroup>
               <col className="wh-sofort-col wh-sofort-col--select" />
