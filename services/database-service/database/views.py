@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction, connections
@@ -24,7 +23,7 @@ import json
 import requests
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from .models import Client, EANPool, EANUsage, Ean, EanStatus, InventoryChangeLog, Kid, OrderItem, Orders, ProductAttributes, StatusProductInStock
@@ -58,6 +57,7 @@ from .ftp_upload import (
     upload_public_file_for_site_payload,
 )
 from .permissions import SessionRolePermission
+from .remote_images import MAX_REMOTE_BATCH_BYTES, MAX_REMOTE_IMAGES, RemoteImageError, download_remote_image
 from .marketplace_ean_mapping_service import MarketplaceEanMappingError, confirm_marketplace_ean_mapping
 from .serializers import (
     EANPoolImportSerializer,
@@ -603,18 +603,7 @@ def _normalize_remote_source_urls(value: object) -> list[str]:
 
 
 def _simple_uploaded_file_from_remote_url(source_url: str, index: int):
-    response = requests.get(
-        source_url,
-        timeout=20,
-        headers={
-            "User-Agent": "WareHub/1.0 image-relay",
-            "Accept": "image/*,*/*;q=0.8",
-        },
-    )
-    response.raise_for_status()
-    raw_name = unquote(urlparse(source_url).path.split("/")[-1] or "").strip() or f"remote-image-{index + 1}.jpg"
-    content_type = str(response.headers.get("Content-Type") or "").strip() or "application/octet-stream"
-    return SimpleUploadedFile(raw_name, response.content, content_type=content_type)
+    return download_remote_image(source_url, index)
 
 
 def _is_backend_session_bridge_enabled(request) -> bool:
@@ -2853,17 +2842,29 @@ class UploadImagesToFtpAPIView(APIView):
     def post(self, request):
         uploaded_files = collect_uploaded_files(request, field_names=("images", "files", "image", "photo_files"))
         source_urls = _normalize_remote_source_urls(request.data.get("source_urls") if hasattr(request, "data") else None)
-        if not uploaded_files and source_urls:
-            try:
-                uploaded_files = [
-                    _simple_uploaded_file_from_remote_url(source_url, index)
-                    for index, source_url in enumerate(source_urls)
-                ]
-            except requests.RequestException as exc:
+        source_urls = list(dict.fromkeys(source_urls))
+        if source_urls:
+            if len(source_urls) + len(uploaded_files) > MAX_REMOTE_IMAGES:
+                return Response({"code": "upload_image_limit", "detail": "Upload at most 50 images per request."}, status=status.HTTP_400_BAD_REQUEST)
+            remote_files = []
+            errors = []
+            total_bytes = sum(file.size for file in uploaded_files)
+            for index, source_url in enumerate(source_urls):
+                try:
+                    remote_file = _simple_uploaded_file_from_remote_url(source_url, index)
+                    total_bytes += remote_file.size
+                    if total_bytes > MAX_REMOTE_BATCH_BYTES:
+                        raise RemoteImageError("Image batch exceeds the 50 MiB download limit.")
+                    remote_files.append(remote_file)
+                except RemoteImageError as exc:
+                    errors.append({"index": index + 1, "reason": str(exc)})
+                    break
+            if errors:
                 return Response(
-                    {"code": "upload_remote_fetch_failed", "detail": f"Failed to download remote source image: {exc}"},
-                    status=status.HTTP_502_BAD_GATEWAY,
+                    {"code": "upload_remote_fetch_failed", "detail": f"Image {errors[0]['index']}: {errors[0]['reason']} Remove or replace this photo before publishing.", "field_errors": {"images": "Remove or replace the unavailable image."}, "image_errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
+            uploaded_files = remote_files + uploaded_files
         if not uploaded_files:
             return Response({"detail": "No image files provided."}, status=status.HTTP_400_BAD_REQUEST)
         site_key = str(request.query_params.get("site_key") or request.data.get("site_key") or "").strip().upper()

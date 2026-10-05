@@ -1038,14 +1038,9 @@ function buildSourceGalleryItems(
   sourceSiteKey: string
 ): GalleryItem[] {
   const items: GalleryItem[] = [];
-  // Deduplicate by the underlying source image path (falling back to src) so the
-  // same image is never uploaded or stored twice — the source feed often repeats
-  // the main image inside the gallery and lists some images more than once.
   const seen = new Set<string>();
-  const dedupeKey = (sourcePath: string, src: string) =>
-    (normalizeSourceImagePath(sourcePath) || asTrimmedString(src)).toLowerCase();
   const pushUnique = (item: GalleryItem) => {
-    const key = dedupeKey(item.sourcePath || "", item.src);
+    const key = item.src;
     if (!key || seen.has(key)) {
       return;
     }
@@ -1220,6 +1215,8 @@ export default function CreateProductPage() {
   const [activeTab, setActiveTab] = useState<CreateProductTab>("jv");
   const [isPublishSitesDialogOpen, setIsPublishSitesDialogOpen] = useState(false);
   const [selectedPublishSiteIds, setSelectedPublishSiteIds] = useState<Set<string>>(new Set());
+  const [publishingBatch, setPublishingBatch] = useState(false);
+  const publishingBatchRef = useRef(false);
   const feedback = useMarketplaceFeedback(activeTab);
   const activeTabMeta = getCreateProductTabMeta(activeTab, t);
   const controller = useCreateProductController({
@@ -1255,7 +1252,7 @@ export default function CreateProductPage() {
   });
   const jvPublishingSelectionKeyRef = useRef("");
   const xlPublishingSelectionsRef = useRef<JvPublishingSelections>({ rubricIdsBySite: {}, mainRubricIdBySite: {}, deliveryIdsBySite: {} });
-  const xlDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<XlCreateProductDraft>>>>({});
+  const xlDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<XlCreateProductDraft> & { sourceCurrency?: string }>>>({});
   const hoodDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<HoodCreateProductDraft>>>>({});
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
@@ -1564,7 +1561,7 @@ export default function CreateProductPage() {
     .map((site) => ({ id: site.id, label: site.name, family: site.family as PublishSiteOption["family"] }));
   const isEbayMarketplace = activeTabMeta.marketplace === "EBAY";
   const canCreateProduct = activeTab === "jv" || activeTab === "main" || activeMarketplaceSiteIds.length > 0;
-  const primaryActionLoading = activeTab === "jv" ? sendAllSitesLoading : controller.submitting;
+  const primaryActionLoading = publishingBatch || sendAllSitesLoading || controller.submitting;
   const primaryActionLabel = primaryActionLoading ? t.createProductCreatingAction : t.createProductCreateAction;
   const tabGalleryItems = useMemo(
     () => tabGalleryItemsByTab[activeTab] ?? EMPTY_GALLERY_ITEMS,
@@ -2506,7 +2503,7 @@ export default function CreateProductPage() {
     // Upload galleries + build the per-site payloads on click, then hand the
     // slow create-and-push work to a server-side job (run by the JV batch
     // worker) so it survives page reloads and the user can keep working.
-    void (async () => {
+    await (async () => {
       try {
         if (isMountedRef.current) {
           setSendAllSitesStatus(t.createProductUploadingImagesForSites.replace("{count}", String(targetSites.length)));
@@ -2658,16 +2655,14 @@ export default function CreateProductPage() {
   }
 
 
-  function submitKauflandCreate(siteIds: string[]) {
-    const draft = kauflandDraftRefByTab.current[activeTab]?.sourceKey === activeKauflandSourceKey
-      ? kauflandDraftRefByTab.current[activeTab].draft
-      : sourceKauflandDraft;
+  function submitKauflandCreate(siteIds: string[], kauflandTab: CreateProductTab, draft: KauflandCreateProductDraft) {
     return controller.handleCreateProduct({}, siteIds, {
       kauflandDescription: draft.description,
       kauflandShortDescription: draft.shortDescription,
       kauflandTitle: draft.title,
       kauflandEan: draft.ean,
       kauflandPrice: draft.price,
+      kauflandImageUrls: (tabGalleryItemsByTab[kauflandTab] ?? []).filter((item) => !item.isLocal).map((item) => item.src),
       kauflandFields: buildKauflandFieldsFromDraft(draft.product),
       kauflandOverrides: {
         ...sanitizeKauflandDraftProduct(draft.product),
@@ -2675,7 +2670,7 @@ export default function CreateProductPage() {
         ean: draft.ean,
         price: draft.price,
       },
-    }, getActiveTabLocalImageFiles());
+    }, getLocalImageFilesForTab(kauflandTab));
   }
 
   function submitOttoCreate(
@@ -2774,6 +2769,7 @@ export default function CreateProductPage() {
   }
 
   function openPublishSitesDialog() {
+    if (publishingBatchRef.current || primaryActionLoading) return;
     setSelectedPublishSiteIds(
       new Set(
         activeTab === "jv"
@@ -2786,7 +2782,8 @@ export default function CreateProductPage() {
     setIsPublishSitesDialogOpen(true);
   }
 
-  function confirmPublishSites() {
+  async function confirmPublishSites() {
+    if (publishingBatchRef.current || primaryActionLoading) return;
     const selectedEbaySites = allMarketplaceSites.filter((site) => site.family === "EBAY" && selectedPublishSiteIds.has(site.id));
     const ebayPublications = selectedEbaySites.map((site) => {
       const tab = `ebay_${site.kind.toLowerCase()}` as CreateProductTab;
@@ -2804,70 +2801,66 @@ export default function CreateProductPage() {
     const selectedNonJvSiteIds = Array.from(selectedPublishSiteIds).filter(
       (siteId) => !(siteId in JV_SITE_KEY_BY_MARKETPLACE_SITE_ID) && !selectedEbaySites.some((site) => site.id === siteId),
     );
-    const selectedOttoSiteIds = selectedNonJvSiteIds.filter((siteId) =>
-      allMarketplaceSites.some((site) => site.id === siteId && site.family === "OTTO"),
-    );
-    const selectedOtherSiteIds = selectedNonJvSiteIds.filter((siteId) => !selectedOttoSiteIds.includes(siteId));
-
     if (selectedJvSiteKeys.length === 0 && selectedNonJvSiteIds.length === 0 && selectedEbaySites.length === 0) {
       showToast("Выберите хотя бы один сайт для публикации.", "error");
       return;
     }
 
-    setIsPublishSitesDialogOpen(false);
-    void (async () => {
-      for (const { site, tab, draft } of ebayPublications) {
-        if (!draft) continue;
-        await controller.handleCreateProduct({}, [site.id], {
-          ebayFields: draft,
-          ebayImageUrls: (tabGalleryItemsByTab[tab] ?? []).filter((item) => !item.isLocal).map((item) => item.src),
-        }, getLocalImageFilesForTab(tab));
-      }
-    })();
+    const tasks: Array<() => Promise<unknown> | void> = [];
+    if (ebayPublications.length > 0) {
+      tasks.push(async () => {
+        for (const { site, tab, draft } of ebayPublications) {
+          if (!draft) continue;
+          await controller.handleCreateProduct({}, [site.id], {
+            ebayFields: draft,
+            ebayImageUrls: (tabGalleryItemsByTab[tab] ?? []).filter((item) => !item.isLocal).map((item) => item.src),
+          }, getLocalImageFilesForTab(tab));
+        }
+      });
+    }
     if (selectedJvSiteKeys.length > 0) {
-      void handleSendToAllJvSites(selectedJvSiteKeys);
+      tasks.push(() => handleSendToAllJvSites(selectedJvSiteKeys));
     }
-    if (selectedOttoSiteIds.length > 0) {
-      const selectedOttoJvSiteIds = selectedOttoSiteIds.filter((siteId) =>
-        allMarketplaceSites.some((site) => site.id === siteId && site.kind === "JV"),
-      );
-      const selectedOttoXlSiteIds = selectedOttoSiteIds.filter((siteId) =>
-        allMarketplaceSites.some((site) => site.id === siteId && site.kind === "XL"),
-      );
-
-      if (selectedOttoJvSiteIds.length > 0) {
-        void submitOttoCreate(selectedOttoJvSiteIds, "otto_jv");
-      }
-      if (selectedOttoXlSiteIds.length > 0) {
-        void submitOttoCreate(selectedOttoXlSiteIds, "otto_xl");
-      }
+    const requireDraft = (available: boolean, label: string) => {
+      if (available) return true;
+      showToast(`Open ${label} and complete its draft before publishing.`, "error");
+      return false;
+    };
+    const selectedXlSiteIds = selectedNonJvSiteIds.filter((id) => XL_MARKETPLACE_SITE_IDS.includes(id));
+    if (selectedXlSiteIds.length > 0) {
+      const snapshot = xlDraftRefByTab.current.xl;
+      const draft = snapshot?.sourceKey === activeDraftContextKey ? snapshot.draft : activeTab === "xl" ? activeXlInitialDraft : undefined;
+      if (!requireDraft(Boolean(draft), "XL") || !draft) return;
+      const selections = xlPublishingSelectionsRef.current;
+      const categoriesBySite = Object.fromEntries(Object.entries(selections.rubricIdsBySite).map(([key, ids]) => [key, ids.map((category_id) => ({ category_id, main_category: category_id === (selections.mainRubricIdBySite[key as keyof typeof selections.mainRubricIdBySite] ?? ids[0]) }))]));
+      const manufacturerBySite = Object.fromEntries(Object.entries(selections.deliveryIdsBySite).filter(([, ids]) => ids.length === 1).map(([key, ids]) => [key, ids[0]]));
+      tasks.push(() => controller.handleCreateProductForXlDefaultSite(draft, getLocalImageFilesForTab("xl"), {
+        siteKeys: selectedXlSiteIds.map((id) => id.toUpperCase()), categoriesBySite, manufacturerBySite,
+        imageUrls: (tabGalleryItemsByTab.xl ?? []).filter((item) => !item.isLocal).map((item) => item.src),
+        sourceCurrency: snapshot?.sourceCurrency ?? (activeTab === "xl" && controller.sourceSnapshot?.siteKey === "XLMOEBEL_CH" ? "CHF" : "EUR"),
+      }));
     }
-    if (selectedOtherSiteIds.length > 0) {
-      if (activeTab === "xl") {
-        const draft = xlDraftRefByTab.current[activeTab]?.sourceKey === activeXlSourceKey
-          ? xlDraftRefByTab.current[activeTab].draft
-          : activeXlDescriptionFields;
-        const selections = xlPublishingSelectionsRef.current;
-        const siteKeys = selectedOtherSiteIds.filter((id) => XL_MARKETPLACE_SITE_IDS.includes(id)).map((id) => id.toUpperCase());
-        const categoriesBySite = Object.fromEntries(Object.entries(selections.rubricIdsBySite).map(([key, ids]) => [key, ids.map((category_id) => ({ category_id, main_category: category_id === (selections.mainRubricIdBySite[key as keyof typeof selections.mainRubricIdBySite] ?? ids[0]) }))]));
-        const manufacturerBySite = Object.fromEntries(Object.entries(selections.deliveryIdsBySite).filter(([, ids]) => ids.length === 1).map(([key, ids]) => [key, ids[0]]));
-        void controller.handleCreateProductForXlDefaultSite(draft, getActiveTabLocalImageFiles(), {
-          siteKeys, categoriesBySite, manufacturerBySite,
-          sourceCurrency: controller.sourceSnapshot?.siteKey === "XLMOEBEL_CH" ? "CHF" : "EUR",
-        });
-        return;
+    for (const siteId of selectedNonJvSiteIds.filter((id) => !XL_MARKETPLACE_SITE_IDS.includes(id))) {
+      const site = allMarketplaceSites.find((candidate) => candidate.id === siteId);
+      if (!site) return;
+      const tab = `${site.family.toLowerCase()}_${site.kind.toLowerCase()}` as CreateProductTab;
+      if (site.family === "OTTO") {
+        const snapshot = ottoDraftRefByTab.current[tab];
+        if (!requireDraft(snapshot?.sourceKey === activeDraftContextKey, site.name)) return;
+        tasks.push(() => submitOttoCreate([site.id], tab as OttoCreateProductTab));
       }
-
-      if (activeTabMeta.marketplace === "HOOD") {
-        const draft = hoodPublishDraftRef.current?.draftKey === activeHoodSourceKey
+      if (site.family === "HOOD") {
+        const sourceKey = `${activeDraftContextKey}:HOOD_${site.kind}`;
+        const snapshot = hoodDraftRefByTab.current[tab];
+        const draft = activeTab === tab && hoodPublishDraftRef.current?.draftKey === `${activeHoodDraftKey}:${activeReservedMarketplaceEan}`
           ? hoodPublishDraftRef.current.draft
-          : hoodDraftRefByTab.current[activeTab]?.sourceKey === activeHoodSourceKey
-            ? hoodDraftRefByTab.current[activeTab].draft
-            : activeHoodInitialDraft;
-        void controller.handleCreateProductForHoodSiteIds(selectedOtherSiteIds, {
+          : snapshot?.sourceKey === sourceKey ? snapshot.draft : activeTab === tab ? activeHoodInitialDraft : undefined;
+        if (!requireDraft(Boolean(draft), site.name) || !draft) return;
+        tasks.push(() => controller.handleCreateProductForHoodSiteIds([site.id], {
           name: draft.name,
           ean: draft.ean,
           price: draft.price,
+          imageUrls: (tabGalleryItemsByTab[tab] ?? []).filter((item) => !item.isLocal).map((item) => item.src),
           fields: {
             description: draft.description,
             quantity: draft.quantity,
@@ -2876,16 +2869,26 @@ export default function CreateProductPage() {
             itemNumber: draft.itemNumber,
             productPropertiesText: draft.productPropertiesText,
           },
-        }, getActiveTabLocalImageFiles());
-        return;
+        }, getLocalImageFilesForTab(tab)));
       }
-
-      if (activeTabMeta.marketplace === "KAUFLAND") {
-        void submitKauflandCreate(selectedOtherSiteIds);
-        return;
+      if (site.family === "KAUFLAND") {
+        const snapshot = kauflandDraftRefByTab.current[tab];
+        const draft = snapshot?.sourceKey === activeDraftContextKey ? snapshot.draft : activeTab === tab ? sourceKauflandDraft : undefined;
+        if (!requireDraft(Boolean(draft), site.name) || !draft) return;
+        tasks.push(() => submitKauflandCreate([site.id], tab, draft));
       }
-
-      void controller.handleCreateProduct({}, selectedOtherSiteIds, undefined, getActiveTabLocalImageFiles());
+    }
+    publishingBatchRef.current = true;
+    setPublishingBatch(true);
+    setIsPublishSitesDialogOpen(false);
+    try {
+      const results = await Promise.allSettled(tasks.map((task) => Promise.resolve().then(task)));
+      for (const result of results) {
+        if (result.status === "rejected") showToast(feedback.report(result.reason), "error");
+      }
+    } finally {
+      publishingBatchRef.current = false;
+      setPublishingBatch(false);
     }
   }
 
@@ -3113,7 +3116,7 @@ export default function CreateProductPage() {
                     codeLabel={t.codeLabel}
                     previewLabel={t.previewLabel}
                     onDraftChange={(draft) => {
-                      xlDraftRefByTab.current[activeTab] = { sourceKey: activeXlSourceKey, draft };
+                      xlDraftRefByTab.current[activeTab] = { sourceKey: activeXlSourceKey, draft, sourceCurrency: controller.sourceSnapshot?.siteKey === "XLMOEBEL_CH" ? "CHF" : "EUR" };
                     }}
                   />
                 ) : null}
