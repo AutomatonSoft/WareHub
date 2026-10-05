@@ -38,6 +38,20 @@ class MarketplaceJobGateway:
             headers["X-WareHub-Actor-Name"] = actor_name
         return headers
 
+    def set_kid_archived(
+        self, *, kid_number: str, archived: bool, request_id: str,
+        kid_id: int | None = None, actor_login: str = "", actor_name: str = "",
+    ) -> GatewayResult:
+        body = {"kid_number": kid_number, "archived": archived}
+        if kid_id is not None:
+            body["kid_id"] = kid_id
+        response = self.http.request(
+            "POST", f"{self.base_url}/api/v1/kids/archive/",
+            headers=self._headers(request_id, actor_login=actor_login, actor_name=actor_name),
+            json=body, timeout_seconds=self.timeout_seconds,
+        )
+        return GatewayResult(status_code=response.status_code, body=_json_or_text(response))
+
     def toggle_all_by_kid(
         self,
         *,

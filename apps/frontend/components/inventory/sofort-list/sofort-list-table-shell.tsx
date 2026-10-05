@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   createMarketplaceToggleJob,
   deleteInventoryEntity,
+  restoreArchivedKid,
   fetchKidDetailView,
   getMarketplaceToggleJob,
   patchKidComposite,
@@ -738,6 +739,7 @@ function useSofortDesktopLayout(): boolean {
 }
 
 export const SofortListTableShell = memo(function SofortListTableShell(props: {
+  archived?: boolean;
   rows: SofortListRow[];
   query: string;
   availablePlaces: string[];
@@ -1224,12 +1226,21 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
   const requestMarketplaceAction = useCallback((row: SofortListRow) => {
     if (deactivatingRowId || deletingRowId) return;
+    if (props.archived) {
+      setDeactivatingRowId(row.id);
+      void restoreArchivedKid(row.kidNumber, row.kidId)
+        .then(() => props.onRefresh())
+        .catch((error: unknown) => showToast(error instanceof Error ? error.message : props.labels.deleteFailed, "error"))
+        .finally(() => setDeactivatingRowId(null));
+      return;
+    }
     const nextInactive = row.marketplaceActive !== false;
     setMarketplaceConfirm({ row, inactive: nextInactive, nextPlace: "", placeError: null });
-  }, [deactivatingRowId, deletingRowId]);
+  }, [deactivatingRowId, deletingRowId, props, showToast]);
 
   const runDeleteAction = useCallback(async (row: SofortListRow) => {
     if (deletingRowId || deactivatingRowId || row.marketplaceActive === true) return;
+    if (props.archived && !window.confirm(`${t.confirmDeleteProductMessage.replace("{kid}", row.kidNumber)}\n${t.confirmDeleteProductDetails}`)) return;
 
     setDeletingRowId(row.id);
     try {
@@ -1250,7 +1261,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
     } finally {
       setDeletingRowId(null);
     }
-  }, [deactivatingRowId, deletingRowId, editingRow?.kidId, props, showToast]);
+  }, [deactivatingRowId, deletingRowId, editingRow?.kidId, props, showToast, t]);
 
   const inventoryList = useMemo(() => (
     <div className="wh-sofort-table-shell">
@@ -1391,7 +1402,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                       query={props.query}
                       placeholderEan={props.placeholderEan}
                       highlightText={props.highlightText}
-                      onStatusChange={(marketplace, nextStatus) => updateMarketplaceStatus(row, marketplace, nextStatus)}
+                      onStatusChange={props.archived ? undefined : (marketplace, nextStatus) => updateMarketplaceStatus(row, marketplace, nextStatus)}
                       labels={{
                         matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
                         jv: "JV",
@@ -1409,7 +1420,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                         size="sm"
                         className="min-w-[112px]"
                         onClick={() => setProductActionRow(row)}
-                        disabled={deletingRowId === row.id || deactivatingRowId === row.id}
+                        disabled={props.archived || deletingRowId === row.id || deactivatingRowId === row.id}
                       >
                         {t.create} / {t.edit}
                       </Button>
@@ -1421,7 +1432,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                         onClick={() => requestMarketplaceAction(row)}
                         disabled={deactivatingRowId === row.id || deletingRowId === row.id}
                       >
-                        {deactivatingRowId === row.id ? t.working : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                        {deactivatingRowId === row.id ? t.working : props.archived ? t.restoreToSofort : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
                       </Button>
                       <Button
                         type="button"
@@ -1537,7 +1548,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                         query={props.query}
                         placeholderEan={props.placeholderEan}
                         highlightText={props.highlightText}
-                        onStatusChange={(marketplace, nextStatus) => updateMarketplaceStatus(row, marketplace, nextStatus)}
+                        onStatusChange={props.archived ? undefined : (marketplace, nextStatus) => updateMarketplaceStatus(row, marketplace, nextStatus)}
                         labels={{
                           matrixAria: t.marketplaceMatrixAria.replace("{kid}", row.kidNumber),
                           jv: "JV",
@@ -1556,7 +1567,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                     type="button"
                     size="sm"
                     onClick={() => setProductActionRow(row)}
-                    disabled={deletingRowId === row.id || deactivatingRowId === row.id}
+                    disabled={props.archived || deletingRowId === row.id || deactivatingRowId === row.id}
                   >
                     {t.create} / {t.edit}
                   </Button>
@@ -1568,7 +1579,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                     onClick={() => requestMarketplaceAction(row)}
                     disabled={deactivatingRowId === row.id || deletingRowId === row.id}
                   >
-                    {deactivatingRowId === row.id ? t.working : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
+                    {deactivatingRowId === row.id ? t.working : props.archived ? t.restoreToSofort : row.marketplaceActive === false ? props.labels.activate : props.labels.deactivate}
                   </Button>
                   <Button
                     type="button"

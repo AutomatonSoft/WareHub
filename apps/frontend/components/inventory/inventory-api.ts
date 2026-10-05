@@ -344,10 +344,12 @@ export async function fetchInventoryRows(params: {
   material?: string;
   bWare?: boolean;
   inTransit?: boolean;
+  archived?: boolean;
   sort?: "place" | "quantity";
   dir?: "asc" | "desc";
 }): Promise<InventoryRowsApiResponse> {
   const searchParams = new URLSearchParams();
+  if (params.archived !== undefined) searchParams.set("archived", String(params.archived));
   searchParams.set("page", String(params.page));
   searchParams.set("page_size", String(params.pageSize));
   if (params.q?.trim()) {
@@ -521,6 +523,18 @@ export async function patchOrderMemo(params: {
       ? payload.memo_sync_error_type
       : null,
   };
+}
+
+export async function restoreArchivedKid(kidNumber: string, kidId: number): Promise<void> {
+  const response = await apiFetch(`${getServicesApiBase()}/kids/archive/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kid_number: kidNumber, kid_id: kidId, archived: false }),
+  });
+  if (!response.ok) {
+    const payload = await readJsonSafe(response);
+    throw new Error(String(payload?.detail || `Restore failed: HTTP ${response.status}`));
+  }
 }
 
 export async function deleteInventoryEntity(params: {

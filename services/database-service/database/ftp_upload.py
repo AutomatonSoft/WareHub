@@ -1128,9 +1128,13 @@ def _validate_uploaded_image_bytes(data: bytes, filename: str) -> str:
     if declared_ext == "jpeg":
         declared_ext = "jpg"
     if declared_ext and declared_ext in {"jpg", "png", "gif", "webp"} and declared_ext != detected_ext:
-        raise FtpUploadCorruptedFileError(
-            f"Image extension does not match file bytes: .{declared_ext} vs .{detected_ext}."
-        )
+        if Image is None:
+            raise FtpUploadCorruptedFileError("Image format verification is unavailable.")
+        try:
+            with Image.open(BytesIO(data)) as image:
+                image.verify()
+        except Exception as error:
+            raise FtpUploadCorruptedFileError("Image data is invalid or corrupted.") from error
 
     if detected_ext == "png":
         if len(data) < 33 or data[12:16] != b"IHDR":
