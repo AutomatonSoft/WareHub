@@ -17,6 +17,30 @@ function extract(path, names, context = {}) {
   return runInNewContext(`${compiled}\n({${names.join(",")}})`, context);
 }
 
+test("JV and XL writes use canonical slash-terminated URLs without redirecting their method or body", async () => {
+  const requests = [];
+  const api = extract("../components/xljv/xljv-api.ts", ["buildQuery", "xljvBasePath", "xljvSyncIdentifierSegment", "xljvUpdateIdentifierSegment", "parseJsonSafe", "xljvCreateAndPush", "xljvSyncByEan", "xljvUpdateByEan"], {
+    apiFetch: async (url, options) => {
+      requests.push({ url, ...options });
+      return new Response("{}", { status: 200 });
+    }, Response,
+  });
+  for (const [site, siteKey] of [["JV", "JV_DE"], ["XL", "XLMOEBEL_DE"], ["XL", "XLMOEBEL_CH"], ["XL", "XLMOEBEL_AT"]]) {
+    const params = { site, siteKey, ean: "4067282464896", payload: { name: "Lamp" } };
+    await api.xljvCreateAndPush(params);
+    await api.xljvSyncByEan({ ...params, requestBody: params.payload });
+    await api.xljvUpdateByEan(params);
+    const writes = requests.slice(-3);
+    assert.deepEqual(writes.map(request => request.method), ["POST", "POST", "PATCH"]);
+    for (const request of writes) {
+      const url = new URL(request.url, "https://warehub.example");
+      assert.ok(url.pathname.endsWith("/"), request.url);
+      assert.equal(url.searchParams.get("site_key"), siteKey);
+      assert.deepEqual(JSON.parse(request.body), params.payload);
+    }
+  }
+});
+
 test("JV gallery merges source paths and public URLs without duplicate images", () => {
   const { buildSourceGalleryItems } = extract("../app/create-product/page.tsx", ["buildSourceGalleryItems"], {
     normalizeSourceImagePath: value => typeof value === "string" ? value.trim() : "",
