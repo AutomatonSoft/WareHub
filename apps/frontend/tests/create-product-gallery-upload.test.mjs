@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { buildJvChangedFields } from "../components/product-editor/product-editor-model.mjs";
 
 function extract(path, names, context = {}) {
   const source = readFileSync(new URL(path, import.meta.url), "utf8");
@@ -16,6 +17,84 @@ function extract(path, names, context = {}) {
   const compiled = ts.transpileModule(selected.map(statement => statement.getText(tree).replace(/^export /, "")).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   return runInNewContext(`${compiled}\n({${names.join(",")}})`, context);
 }
+
+test("shared JV publishing panel accepts late categories without overwriting manual selections", () => {
+  const path = "../app/create-product/jv-publishing-options-panel.tsx";
+  const source = readFileSync(new URL(path, import.meta.url), "utf8");
+  const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let effect;
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === "useEffect" && node.arguments[1]?.getText(tree).includes("initialSelections")) effect = node.arguments[0];
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  assert.ok(effect);
+  let rubricIds = {};
+  let mainIds = {};
+  let deliveryIds = {};
+  const context = {
+    sites: ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"].map(key => ({ key })),
+    sourceSiteKey: "JV_DE", initialSelectionKey: "product:1",
+    initializedSelectionKeyRef: { current: null }, initializedSitesRef: { current: new Set() },
+    manuallyChangedRubricSitesRef: { current: new Set() }, manuallyChangedDeliverySitesRef: { current: new Set() },
+    setRubricIds: value => { rubricIds = typeof value === "function" ? value(rubricIds) : value; },
+    setMainIds: value => { mainIds = typeof value === "function" ? value(mainIds) : value; },
+    setDeliveryIds: value => { deliveryIds = typeof value === "function" ? value(deliveryIds) : value; },
+    setRubricSite: () => {}, setDeliverySite: () => {}, setIsSelectionInitialized: () => {},
+    ...extract(path, ["haveSameNumberIds"]),
+  };
+  const compiled = ts.transpileModule(`(${effect.getText(tree)})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const initialize = () => runInNewContext(compiled, context)();
+  const selections = rows => ({ rubricIdsBySite: rows, mainRubricIdBySite: {}, deliveryIdsBySite: {} });
+  context.initialSelections = selections({ JV_DE: [], JV_AT: [], JV_CH: [], JV_CO_UK: [] });
+  initialize();
+  context.initialSelections = selections({ JV_DE: [410], JV_AT: [412], JV_CH: [408], JV_CO_UK: [409, 408] });
+  initialize();
+  assert.deepEqual(Array.from(rubricIds.JV_AT), [412]);
+  assert.deepEqual(Array.from(rubricIds.JV_CH), [408]);
+  assert.deepEqual(Array.from(rubricIds.JV_CO_UK), [409, 408]);
+  rubricIds.JV_AT = new Set([999]);
+  context.manuallyChangedRubricSitesRef.current.add("JV_AT");
+  context.initialSelections = selections({ JV_AT: [412] });
+  initialize();
+  assert.deepEqual(Array.from(rubricIds.JV_AT), [999]);
+  context.initialSelectionKey = "product:2";
+  initialize();
+  assert.deepEqual(Array.from(rubricIds.JV_AT), [412]);
+});
+
+test("JV editor activation and deactivation include the canonical status change", () => {
+  for (const enabled of [true, false]) {
+    const initial = { status: !enabled, jv_fields: { inaktiv: enabled ? 1 : 0, is_sofort: 1 } };
+    let patch;
+    const { patchInaktivEnabled } = extract("../components/product-editor/product-editor-jv-panel.tsx", ["patchInaktivEnabled"], {
+      props: { draft: initial, onChange: value => { patch = value; } },
+    });
+    patchInaktivEnabled(enabled);
+    assert.equal(patch.status, enabled);
+    assert.equal(patch.jv_fields.inaktiv, enabled ? 0 : 1);
+    assert.equal(patch.jv_fields.is_sofort, 1);
+    assert.ok(buildJvChangedFields(initial, { ...initial, ...patch }).includes("status"));
+  }
+});
+
+test("JV creation keeps status and inaktiv consistent for every site", () => {
+  const { buildPayloadForSite } = extract("../app/create-product/page.tsx", ["buildPayloadForSite"], {
+    controller: {}, sourcePayload: {}, sourceJvFields: {},
+    asTrimmedString: value => String(value ?? "").trim(),
+    normalizeDecimalPrice: value => value,
+    asIntegerOrUndefined: () => undefined,
+    getEffectiveJvPublishingSelections: () => ({ rubricIds: [], deliveryIds: [] }),
+    normalizeStores: () => [], normalizeSpecials: () => [], buildUrlKeyFromName: value => value,
+  });
+  for (const siteKey of ["JV_DE", "JV_AT", "JV_CH", "JV_CO_UK"]) {
+    for (const isActive of [true, false]) {
+      const payload = buildPayloadForSite(siteKey, { images: [] }, { artikelnr: "4067282464896", name: "Lamp", price: "340", isActive });
+      assert.equal(payload.status, isActive);
+      assert.equal(payload.jv_fields.inaktiv, isActive ? 0 : 1);
+    }
+  }
+});
 
 test("JV and XL writes use canonical slash-terminated URLs without redirecting their method or body", async () => {
   const requests = [];
