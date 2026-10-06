@@ -260,6 +260,7 @@ export function ProductEditorJvPanel(props: ProductEditorJvPanelProps) {
 
   function patchInaktivEnabled(enabled: boolean) {
     props.onChange({
+      status: enabled,
       jv_fields: {
         ...(props.draft.jv_fields ?? {}),
         inaktiv: enabled ? 0 : 1
