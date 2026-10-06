@@ -196,13 +196,12 @@ export function JvPublishingOptionsPanel({ family = "JV", sourceSiteKey, sourceC
       ));
       for (const { key } of loadedSites) {
         const isFirstInitialization = !initializedSitesRef.current.has(key);
-        if (isFirstInitialization) {
-          initializedSitesRef.current.add(key);
-        }
         if (isFirstInitialization && !manuallyChangedRubricSitesRef.current.has(key)) {
           const rubricIds = initialSelections.rubricIdsBySite[key] ?? [];
-          setRubricIds((current) => ({ ...current, [key]: new Set(rubricIds) }));
-          setMainIds((current) => ({ ...current, [key]: initialSelections.mainRubricIdBySite[key] ?? rubricIds[0] ?? null }));
+          if (rubricIds.length) initializedSitesRef.current.add(key);
+          setRubricIds((current) => haveSameNumberIds(current[key], rubricIds) ? current : ({ ...current, [key]: new Set(rubricIds) }));
+          const mainId = initialSelections.mainRubricIdBySite[key] ?? rubricIds[0] ?? null;
+          setMainIds((current) => current[key] === mainId ? current : ({ ...current, [key]: mainId }));
         }
         if (!manuallyChangedDeliverySitesRef.current.has(key)) {
           const deliveryIds = initialSelections.deliveryIdsBySite[key] ?? [];
