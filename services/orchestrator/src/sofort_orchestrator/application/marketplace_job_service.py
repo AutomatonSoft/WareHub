@@ -117,7 +117,7 @@ class MarketplaceJobService:
             )
         )
         results = self._deduplicate_results(results)
-        if results and all(item.ok for item in results):
+        if inactive or (results and all(item.ok for item in results)):
             results.extend(self._call_channel(
                 fallback_site_key="ARCHIVE", fallback_channel="LOCAL", request_id=request_id,
                 call=lambda: self.gateway.set_kid_archived(
