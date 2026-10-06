@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from .inventory_audit_service import record_inventory_change, request_actor
 from .marketplace_deactivate_service import _find_kid_by_number
-from .models import EanStatus, Kid
+from .models import Kid
 from .permissions import SessionRolePermission
 
 
@@ -27,17 +27,6 @@ class KidArchiveAPIView(APIView):
             return Response({"detail": "Товар не найден."}, status=status.HTTP_404_NOT_FOUND)
         with transaction.atomic():
             kid = Kid.objects.select_for_update().get(pk=kid.pk)
-            status_row = EanStatus.objects.filter(ean=kid).first()
-            active = status_row is not None and any(
-                getattr(status_row, field.name)
-                for field in EanStatus._meta.fields
-                if field.get_internal_type() == "BooleanField"
-            )
-            if data["archived"] and active:
-                return Response(
-                    {"detail": "Сначала деактивируйте активные маркетплейсы.", "code": "archive_active_marketplaces"},
-                    status=status.HTTP_409_CONFLICT,
-                )
             if kid.archived != data["archived"]:
                 previous = kid.archived
                 kid.archived = data["archived"]

@@ -421,14 +421,39 @@ def test_marketplace_toggle_sends_kid_id_to_every_channel():
     assert http_client.requests[-1][2]["archived"] is True
 
 
-def test_archive_is_skipped_after_partial_deactivation():
+def test_archive_is_written_after_partial_deactivation():
+    from unittest.mock import Mock
+
+    gateway = TimeoutMarketplaceGateway()
+    gateway.set_kid_archived = Mock(wraps=FakeMarketplaceGateway().set_kid_archived)
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=True, request_id="partial")
+    assert result.status == "partial"
+    gateway.set_kid_archived.assert_called_once()
+    assert gateway.set_kid_archived.call_args.kwargs["archived"] is True
+
+
+def test_partial_activation_does_not_restore_archive():
     from unittest.mock import Mock
 
     gateway = TimeoutMarketplaceGateway()
     gateway.set_kid_archived = Mock()
-    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=True, request_id="partial")
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=False, request_id="partial", place="12")
     assert result.status == "partial"
     gateway.set_kid_archived.assert_not_called()
+
+
+def test_archive_is_written_even_when_all_channels_fail():
+    from unittest.mock import Mock
+
+    gateway = FakeMarketplaceGateway()
+    for name in ("toggle_all_by_kid", "toggle_jv_by_kid", "toggle_xl_by_kid", "toggle_kaufland_by_kid", "toggle_otto_by_kid", "toggle_local_statuses_by_kid"):
+        setattr(gateway, name, Mock(return_value=type("R", (), {"status_code": 502, "body": {"detail": "Channel failed"}})()))
+    gateway.set_kid_archived = Mock(wraps=FakeMarketplaceGateway().set_kid_archived)
+    result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=True, request_id="all-failed")
+    assert result.status == "partial"
+    assert result.summary.failed > 0
+    gateway.set_kid_archived.assert_called_once()
+    assert gateway.set_kid_archived.call_args.kwargs["archived"] is True
 
 
 def test_archive_failure_is_visible_and_activation_restores_list():
