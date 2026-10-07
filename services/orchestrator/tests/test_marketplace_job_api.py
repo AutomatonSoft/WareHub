@@ -468,3 +468,4 @@ def test_archive_failure_is_visible_and_activation_restores_list():
     result = MarketplaceJobService(gateway=gateway).execute(kid_number="123", inactive=False, request_id="restore", place="12")
     assert result.status == "ok"
     assert gateway.set_kid_archived.call_args.kwargs["archived"] is False
+    assert gateway.set_kid_archived.call_args.kwargs["place"] == "12"
