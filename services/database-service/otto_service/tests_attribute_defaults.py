@@ -9,6 +9,14 @@ from .views import OttoCategoryAttributesAPIView
 
 
 class OttoAttributeDefaultsTests(SimpleTestCase):
+    def test_plural_brand_information_name_from_otto(self):
+        taxonomy = [{'attributeId': 'brand-info', 'name': 'Markeninformationen'}]
+        for profile, brand in [('jv', 'JVmoebel®'), ('xl', 'XLmoebel')]:
+            item = with_create_attribute_defaults(taxonomy, profile)[0]
+            self.assertTrue(item['defaultValue'].startswith(brand))
+            self.assertEqual(item['name'], 'Markeninformationen')
+            self.assertEqual(item['attributeId'], 'brand-info')
+
     def test_account_templates_and_aliases_preserve_taxonomy(self):
         names = [
             'Art Herstellung', 'Geschlecht', 'Hinweis Maßangaben',

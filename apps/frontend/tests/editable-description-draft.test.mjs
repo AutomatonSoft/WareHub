@@ -14,25 +14,32 @@ test("iframe blur preserves the latest price and other draft edits without reloa
   const refs = [];
   let cursor = 0;
   let effects = [];
+  const srcDocUpdates = [];
+  const heightUpdates = [];
   const listeners = {};
   const frameBody = {
     scrollHeight: 512,
+    getBoundingClientRect: () => ({ height: frameBody.scrollHeight }),
     querySelectorAll: () => [],
     setAttribute: () => {},
     addEventListener: (name, callback) => { listeners[name] = callback; },
   };
   const frame = {
-    style: {},
+    style: {
+      get height() { return heightUpdates.at(-1); },
+      set height(value) { heightUpdates.push(value); },
+    },
     contentDocument: { body: frameBody, documentElement: {} },
-    contentWindow: { setTimeout: () => {}, addEventListener: () => {} },
+    contentWindow: { getComputedStyle: () => ({ marginTop: "8px", marginBottom: "8px" }), setTimeout: () => {}, addEventListener: () => {} },
   };
   const context = {
     exports: {}, require: createRequire(import.meta.url), AbortController,
     useRef: initial => refs[cursor++] ??= { current: initial },
-    useState: initial => [initial, () => {}],
+    useState: initial => [initial, value => srcDocUpdates.push(value)],
     useEffect: effect => { effects.push(effect); },
     readHoodDescriptionPreviewDocumentHtml: () => "<p>Edited description</p>",
     HtmlFontFamilySelect: () => null,
+    ResizeObserver: class { observe() {} disconnect() {} },
   };
   runInNewContext(ts.transpileModule(component.getText(tree), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -43,7 +50,8 @@ test("iframe blur preserves the latest price and other draft edits without reloa
     effects = [];
     const snapshot = draft;
     const element = context.exports.EditableDescriptionPreview({
-      title: "Description", srcDoc: "source", onSave: description => { draft = { ...snapshot, description }; },
+      title: "Description", srcDoc: `preview:${draft.description}`, description: draft.description, autoHeight: true,
+      onSave: description => { draft = { ...snapshot, description }; },
     });
     effects.forEach(effect => effect());
     return element.props.children.find(child => child.type === "iframe");
@@ -56,4 +64,21 @@ test("iframe blur preserves the latest price and other draft edits without reloa
   listeners.input();
   listeners.blur();
   assert.deepEqual(draft, { price: "499", title: "Edited title", description: "<p>Edited description</p>" });
+  srcDocUpdates.length = 0;
+  render();
+  assert.deepEqual(srcDocUpdates, []);
+  frameBody.scrollHeight = 3000;
+  listeners.input();
+  assert.equal(heightUpdates.at(-1), "3016px");
+  const count = heightUpdates.length;
+  listeners.input();
+  assert.equal(heightUpdates.length, count);
+  frameBody.scrollHeight = 700;
+  listeners.input();
+  assert.equal(heightUpdates.at(-1), "716px");
+  assert.equal(heightUpdates.includes("auto"), false);
+  listeners.blur();
+  draft = { ...draft, description: "Externally changed description" };
+  render();
+  assert.deepEqual(srcDocUpdates, ["preview:Externally changed description"]);
 });
