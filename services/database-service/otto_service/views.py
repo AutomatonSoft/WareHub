@@ -12,6 +12,7 @@ from database.permissions import SessionRolePermission
 
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from .category_cache import OttoCategoryCache
+from .attribute_defaults import with_create_attribute_defaults
 from .full_cache_sync import get_otto_full_cache_sync_service
 from .image_resolver import get_otto_image_resolver, resolve_cached_or_otto_image
 from .models import OttoProductJV, OttoProductXL
@@ -405,6 +406,9 @@ class OttoCategoryAttributesAPIView(APIView):
 
     def post(self, request):
         category_id = str(request.data.get("categoryId") or "").strip()
+        profile = str(request.data.get("profile") or "").strip().lower()
+        if profile and profile not in PROFILE_TO_MODEL:
+            return Response({"detail": "profile must be jv or xl."}, status=status.HTTP_400_BAD_REQUEST)
         if not category_id:
             return Response({"detail": "categoryId is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -424,7 +428,7 @@ class OttoCategoryAttributesAPIView(APIView):
                 {"detail": "OTTO category attributes could not be refreshed."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
-        return Response({"categoryId": category_id, "attributes": attributes}, status=status.HTTP_200_OK)
+        return Response({"categoryId": category_id, "attributes": with_create_attribute_defaults(attributes, profile)}, status=status.HTTP_200_OK)
 
 
 class OttoProductListAPIView(APIView):
@@ -455,4 +459,3 @@ class OttoProductRetrieveAPIView(APIView):
         product = get_object_or_404(model_cls, pk=pk)
         serializer = serializer_cls(product)
         return Response(serializer.data, status=status.HTTP_200_OK)
-

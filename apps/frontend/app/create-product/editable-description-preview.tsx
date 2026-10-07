@@ -24,7 +24,12 @@ export function EditableDescriptionPreview({
   const editingRef = useRef(false);
   const selectionRangeRef = useRef<Range | null>(null);
   const lastSavedHtmlRef = useRef("");
+  const onSaveRef = useRef(onSave);
   const [frameSrcDoc, setFrameSrcDoc] = useState(srcDoc);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
   useEffect(() => {
     if (editingRef.current) return;
@@ -36,7 +41,7 @@ export function EditableDescriptionPreview({
     const nextDescription = readHoodDescriptionPreviewDocumentHtml(iframeRef.current?.contentDocument?.documentElement ?? null);
     if (!nextDescription || nextDescription === lastSavedHtmlRef.current) return;
     lastSavedHtmlRef.current = nextDescription;
-    onSave(nextDescription);
+    onSaveRef.current(nextDescription);
   };
 
   const saveSelection = () => {

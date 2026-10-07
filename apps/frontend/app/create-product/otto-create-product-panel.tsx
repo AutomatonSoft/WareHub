@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
-import { normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
+import { applyOttoDefaultAttributes, normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
 import { OttoAiAttributes } from "./otto-ai-attributes";
 
 export type OttoCreateProductDraft = {
@@ -58,6 +58,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
   const t = useLabels();
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
+  const [attributeError, setAttributeError] = useState<string | null>(null);
   const onDraftChangeRef = useRef(onDraftChange);
   const sourceDraftRef = useRef(initialDraft);
   const dirtyDraftKeyRef = useRef<string | null>(null);
@@ -83,15 +84,27 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
     });
   }, [categoryName]);
   useEffect(() => {
+    setAttributeError(null);
     if (!categoryId) { setCategoryAttributes([]); return; }
     let active = true;
-    void fetchOttoCategoryAttributes(categoryId).then((items) => {
+    setCategoryAttributes([]);
+    void fetchOttoCategoryAttributes(categoryId, profile).then((items) => {
       if (active) setCategoryAttributes(items);
-    }).catch(() => {
-      if (active) setCategoryAttributes([]);
+    }).catch((error: unknown) => {
+      if (active) {
+        setCategoryAttributes([]);
+        setAttributeError(error instanceof Error ? error.message : "OTTO category attributes could not be loaded.");
+      }
     });
     return () => { active = false; };
-  }, [categoryId]);
+  }, [categoryId, profile]);
+  useEffect(() => {
+    setDraft((current) => {
+      const next = applyOttoDefaultAttributes(current, productAttributes, categoryAttributes);
+      if (next !== current) onDraftChangeRef.current(next);
+      return next;
+    });
+  }, [categoryAttributes, productAttributes, draftKey, initialDraftSignature]);
   useEffect(() => {
     const attributeNames = Object.fromEntries(
       normalizeOttoProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]),
@@ -143,6 +156,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
       ...draft,
       additionalAttributes: { ...draft.additionalAttributes, [attribute.id]: value },
       attributeNames: { ...draft.attributeNames, [attribute.id]: attribute.name },
+      removedAttributeIds: draft.removedAttributeIds.filter((id) => id !== attribute.id),
     };
     dirtyDraftKeyRef.current = draftKey;
     setDraft(next);
@@ -163,11 +177,15 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
   };
   const removeAdditionalAttribute = (attributeId: string) => {
     const { [attributeId]: _removed, ...remaining } = draft.additionalAttributes;
-    update("additionalAttributes", remaining);
+    const next = { ...draft, additionalAttributes: remaining, removedAttributeIds: [...draft.removedAttributeIds, attributeId] };
+    dirtyDraftKeyRef.current = draftKey;
+    setDraft(next);
+    onDraftChangeRef.current(next);
   };
 
   return (
     <div className="space-y-4">
+      {attributeError ? <p role="alert" className="text-sm text-destructive">{attributeError}</p> : null}
       <Field label={t.ottoProductLine}><Input name="productLine" maxLength={OTTO_PRODUCT_LINE_MAX_LENGTH} value={draft.productLine} onChange={(event) => update("productLine", event.target.value)} /></Field>
       <div className="grid gap-3 md:grid-cols-3">
         <Field label={t.ottoProductReference}><Input name="productReference" value={draft.productReference} onChange={(event) => update("productReference", event.target.value)} /></Field>

@@ -38,7 +38,8 @@ import { KauflandProductFields } from "../../components/product-forms/kaufland-p
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
 import { OttoCategoriesPanel } from "./otto-categories-panel";
 import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
-import { applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
+import { applyOttoDefaultAttributes, applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
+import { fetchOttoCategoryAttributes } from "./otto-categories-api";
 import { claimEanForKid } from "../../components/editor/ean-pool-api";
 import { EbaySellerSetupPanel } from "./ebay-seller-setup-panel";
 
@@ -2673,7 +2674,7 @@ export default function CreateProductPage() {
     }, getLocalImageFilesForTab(kauflandTab));
   }
 
-  function submitOttoCreate(
+  async function submitOttoCreate(
     siteIds: string[],
     ottoTab: OttoCreateProductTab = activeTabMeta.account === "XL" ? "otto_xl" : "otto_jv",
   ) {
@@ -2728,13 +2729,27 @@ export default function CreateProductPage() {
       rejectField("shippingProfileId", "Select a shipping profile for OTTO.");
       return;
     }
+    const categoryId = ottoCategoryByTab[ottoTab];
+    if (!categoryId) {
+      rejectField("category", "Select an OTTO category before creating the product.");
+      return;
+    }
+    const productAttributes = readOttoProductAttributes(ottoProductsByProfile[profile]);
+    let attributeDraft: OttoCreateProductDraft;
+    try {
+      const categoryAttributes = await fetchOttoCategoryAttributes(categoryId, profile);
+      attributeDraft = applyOttoDefaultAttributes(draft, productAttributes, categoryAttributes);
+    } catch (error) {
+      rejectField("category", error instanceof Error ? error.message : "OTTO category attributes could not be loaded.");
+      return;
+    }
     const attributes = deduplicateOttoAttributes(
       buildOttoPayloadAttributes({
-        productAttributes: readOttoProductAttributes(ottoProductsByProfile[profile]),
-        additionalAttributes: draft.additionalAttributes,
-        attributeOverrides: draft.attributeOverrides,
-        attributeNames: draft.attributeNames,
-        removedAttributeIds: draft.removedAttributeIds,
+        productAttributes,
+        additionalAttributes: attributeDraft.additionalAttributes,
+        attributeOverrides: attributeDraft.attributeOverrides,
+        attributeNames: attributeDraft.attributeNames,
+        removedAttributeIds: attributeDraft.removedAttributeIds,
       }),
     );
     return controller.handleCreateProduct({}, siteIds, {
