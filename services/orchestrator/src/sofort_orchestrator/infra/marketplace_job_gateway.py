@@ -41,8 +41,11 @@ class MarketplaceJobGateway:
     def set_kid_archived(
         self, *, kid_number: str, archived: bool, request_id: str,
         kid_id: int | None = None, actor_login: str = "", actor_name: str = "",
+        place: str | None = None,
     ) -> GatewayResult:
         body = {"kid_number": kid_number, "archived": archived}
+        if not archived:
+            body["place"] = place
         if kid_id is not None:
             body["kid_id"] = kid_id
         response = self.http.request(
