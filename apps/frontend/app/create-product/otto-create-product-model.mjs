@@ -61,6 +61,27 @@ export function applyOttoAttributeSuggestions(draft, productAttributes, suggesti
   return { draft: next, applied };
 }
 
+export function applyOttoDefaultAttributes(draft, productAttributes, attributes) {
+  const source = normalizeOttoProductAttributes(productAttributes);
+  let next = draft;
+  for (const attribute of attributes) {
+    if (!attribute.defaultValue) continue;
+    const existing = source.find((item) => item.id === attribute.id || item.label.toLocaleLowerCase() === attribute.name.toLocaleLowerCase());
+    const id = existing?.id ?? attribute.id;
+    if (draft.removedAttributeIds.includes(id) || draft.removedAttributeIds.includes(attribute.id)) continue;
+    if (id in next.attributeOverrides || id in next.additionalAttributes) continue;
+    if (Object.entries(next.attributeNames).some(([key, name]) => name.toLocaleLowerCase() === attribute.name.toLocaleLowerCase() && (key in next.attributeOverrides || key in next.additionalAttributes))) continue;
+    next = {
+      ...next,
+      attributeNames: { ...next.attributeNames, [id]: attribute.name },
+      ...(existing
+        ? { attributeOverrides: { ...next.attributeOverrides, [id]: attribute.defaultValue } }
+        : { additionalAttributes: { ...next.additionalAttributes, [id]: attribute.defaultValue } }),
+    };
+  }
+  return next;
+}
+
 export function buildOttoPayloadAttributes({ productAttributes, additionalAttributes, attributeOverrides, attributeNames, removedAttributeIds }) {
   const removedIds = new Set(removedAttributeIds ?? []);
   const attributesByName = new Map();

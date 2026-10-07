@@ -12,6 +12,7 @@ export type OttoCategoryAttribute = {
   multiValue: boolean;
   unit: string;
   allowedValues: string[];
+  defaultValue?: string;
 };
 
 export type OttoFullCacheSyncStatus = {
@@ -88,14 +89,15 @@ function normalizeAttribute(value: unknown): OttoCategoryAttribute | null {
     allowedValues: Array.isArray(item.allowedValues)
       ? item.allowedValues.map((allowedValue) => String(allowedValue).trim()).filter(Boolean)
       : [],
+    defaultValue: typeof item.defaultValue === "string" ? item.defaultValue : undefined,
   };
 }
 
-export async function fetchOttoCategoryAttributes(categoryId: string): Promise<OttoCategoryAttribute[]> {
+export async function fetchOttoCategoryAttributes(categoryId: string, profile?: "jv" | "xl"): Promise<OttoCategoryAttribute[]> {
   const response = await apiFetch("/api/v1/services/otto/attributes/", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ categoryId }),
+    body: JSON.stringify({ categoryId, profile }),
   });
   const payload = await response.json() as OttoCategoriesResponse;
   if (!response.ok) throw new Error(errorMessage(payload, response.status));
