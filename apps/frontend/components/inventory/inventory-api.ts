@@ -525,15 +525,15 @@ export async function patchOrderMemo(params: {
   };
 }
 
-export async function restoreArchivedKid(kidNumber: string, kidId: number): Promise<void> {
+export async function restoreArchivedKid(kidNumber: string, kidId: number, place: string): Promise<void> {
   const response = await apiFetch(`${getServicesApiBase()}/kids/archive/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kid_number: kidNumber, kid_id: kidId, archived: false }),
+    body: JSON.stringify({ kid_number: kidNumber, kid_id: kidId, archived: false, place }),
   });
   if (!response.ok) {
     const payload = await readJsonSafe(response);
-    throw new Error(String(payload?.detail || `Restore failed: HTTP ${response.status}`));
+    throw new Error(String(payload?.detail || (Array.isArray(payload?.place) ? payload.place.join(" ") : payload?.place) || `Restore failed: HTTP ${response.status}`));
   }
 }
 

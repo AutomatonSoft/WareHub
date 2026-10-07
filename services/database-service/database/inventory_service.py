@@ -12,6 +12,7 @@ from .kid_number_utils import primary_kid_number
 from .ftp_upload import normalize_managed_public_photo_value
 from .models import EanStatus, Kid, Orders, StatusProductInStock
 from .order_amounts import parse_order_amount
+from .place_rules import place_sign
 
 logger = logging.getLogger(__name__)
 DEFAULT_EAN = ""
@@ -406,7 +407,7 @@ def build_inventory_rows() -> list[dict]:
                 "id": f"KID-{kid.id}",
                 "entity": "kid",
                 "kid_id": kid.id,
-                "archived": bool(kid.archived),
+                "archived": bool(kid.archived) or place_sign(kid.place) < 0,
                 "kid_number": primary_kid,
                 "kid_account": kid.account or "-",
                 "place": kid.place,

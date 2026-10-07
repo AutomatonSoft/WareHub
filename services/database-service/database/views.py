@@ -36,6 +36,7 @@ from .place_rules import (
     list_available_pool_places,
     normalize_place,
     parse_pool_place,
+    place_sign,
     suggest_nearest_free_place,
     suggest_next_free_base_place,
     suggest_same_base_subplace,
@@ -2016,7 +2017,10 @@ class InventoryRowsAPIView(APIView):
         if archived_raw is not None:
             if archived_raw not in {"true", "false"}:
                 return Response({"detail": "archived must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
-            rows = [row for row in rows if bool(row.get("archived")) == (archived_raw == "true")]
+            if archived_raw == "true":
+                rows = [row for row in rows if row.get("archived") or place_sign(row.get("place")) < 0]
+            else:
+                rows = [row for row in rows if not row.get("archived") and place_sign(row.get("place")) > 0]
         if kid_id_raw not in (None, ""):
             try:
                 kid_id = int(str(kid_id_raw).strip())

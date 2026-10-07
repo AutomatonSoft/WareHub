@@ -5,6 +5,13 @@ from database.models import Ean, EanStatus, Kid, ProductAttributes
 
 
 class BuildInventoryRowsTests(TestCase):
+    def test_negative_place_is_archived_without_persisted_flag(self):
+        kid = Kid.objects.create(kid_number=["123456789"], place="-35", archived=False)
+        row = next(row for row in build_inventory_rows() if row["kid_id"] == kid.pk)
+        self.assertTrue(row["archived"])
+        kid.refresh_from_db()
+        self.assertFalse(kid.archived)
+
     def test_uses_joined_one_to_one_relations_for_kid_metadata(self):
         kid = Kid.objects.create(kid_number=["123456789"])
         Ean.objects.create(kid=kid, main_ean_jv="4012345678901", main_ean_xl="4012345678902", jv="JVM4012345678901")

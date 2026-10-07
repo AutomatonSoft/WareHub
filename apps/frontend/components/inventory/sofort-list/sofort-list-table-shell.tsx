@@ -1227,16 +1227,27 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
   const requestMarketplaceAction = useCallback((row: SofortListRow) => {
     if (deactivatingRowId || deletingRowId) return;
     if (props.archived) {
-      setDeactivatingRowId(row.id);
-      void restoreArchivedKid(row.kidNumber, row.kidId)
-        .then(() => props.onRefresh())
-        .catch((error: unknown) => showToast(error instanceof Error ? error.message : props.labels.deleteFailed, "error"))
-        .finally(() => setDeactivatingRowId(null));
+      setMarketplaceConfirm({ row, inactive: false, nextPlace: "", placeError: null });
       return;
     }
     const nextInactive = row.marketplaceActive !== false;
     setMarketplaceConfirm({ row, inactive: nextInactive, nextPlace: "", placeError: null });
-  }, [deactivatingRowId, deletingRowId, props, showToast]);
+  }, [deactivatingRowId, deletingRowId, props]);
+
+  async function runArchiveRestore(row: SofortListRow, place: string) {
+    if (deactivatingRowId) return;
+    setDeactivatingRowId(row.id);
+    try {
+      await restoreArchivedKid(row.kidNumber, row.kidId, place);
+      setMarketplaceConfirm(null);
+      props.onRefresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : props.labels.deleteFailed;
+      setMarketplaceConfirm((current) => current ? { ...current, placeError: message } : current);
+    } finally {
+      setDeactivatingRowId(null);
+    }
+  }
 
   const runDeleteAction = useCallback(async (row: SofortListRow) => {
     if (deletingRowId || deactivatingRowId || row.marketplaceActive === true) return;
@@ -1707,10 +1718,10 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={Boolean(marketplaceConfirm)} onOpenChange={(open) => { if (!open) setMarketplaceConfirm(null); }}>
+      <Dialog open={Boolean(marketplaceConfirm)} onOpenChange={(open) => { if (!open && !deactivatingRowId) setMarketplaceConfirm(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{props.labels.confirmActionTitle}</DialogTitle>
+            <DialogTitle>{props.archived ? t.restoreToSofort : props.labels.confirmActionTitle}</DialogTitle>
           </DialogHeader>
           {marketplaceConfirm ? (
             <div className="space-y-4">
@@ -1735,7 +1746,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
-                      {props.labels.confirmActionMessage
+                      {props.archived ? t.restoreToSofort : props.labels.confirmActionMessage
                         .replace("{action}", marketplaceConfirm.inactive ? props.labels.deactivate : props.labels.activate)
                         .replace("{kid}", marketplaceConfirm.row.kidNumber)}
                     </p>
@@ -1775,11 +1786,17 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
               {!marketplaceConfirm.inactive ? (
                 <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    <label htmlFor="archive-restore-place" className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                       {props.labels.confirmActionNewPlace}
                     </label>
                     <Input
+                      id="archive-restore-place"
+                      disabled={Boolean(deactivatingRowId)}
                       value={marketplaceConfirm.nextPlace}
+                      required
+                      aria-invalid={Boolean(marketplaceConfirm.placeError)}
+                      aria-describedby={marketplaceConfirm.placeError ? "archive-restore-place-error" : undefined}
+                      className={marketplaceConfirm.placeError ? "border-destructive" : undefined}
                       placeholder={props.labels.confirmActionPlacePlaceholder}
                       onChange={(event) =>
                         setMarketplaceConfirm((current) =>
@@ -1790,13 +1807,13 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                       }
                     />
                     {marketplaceConfirm.placeError ? (
-                      <p className="text-xs text-destructive">{marketplaceConfirm.placeError}</p>
+                      <p id="archive-restore-place-error" role="alert" className="text-xs text-destructive">{marketplaceConfirm.placeError}</p>
                     ) : null}
                   </div>
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-border/70 bg-background p-4">
+              {!props.archived ? <div className="rounded-xl border border-border/70 bg-background p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {t.marketplace}
                 </p>
@@ -1818,11 +1835,11 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                       : props.labels.confirmActionFootnoteActivate}
                   </span>
                 </div>
-              </div>
+              </div> : <p className="text-sm text-muted-foreground">{t.archiveRestoreHint}</p>}
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setMarketplaceConfirm(null)}>
+            <Button type="button" variant="outline" disabled={Boolean(deactivatingRowId)} onClick={() => setMarketplaceConfirm(null)}>
               {hasQuantityDeactivationWarning
                 ? t.confirmActionQuantityWarningCancel
                 : props.labels.confirmActionCancel}
@@ -1830,8 +1847,18 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
             <Button
               type="button"
               variant={marketplaceConfirm?.inactive ? "destructive" : "default"}
+              disabled={Boolean(deactivatingRowId)}
               onClick={() => {
                 if (!marketplaceConfirm) return;
+                if (props.archived) {
+                  const place = marketplaceConfirm.nextPlace.trim();
+                  if (!/^\+?\d+[A-Za-z]?$/.test(place) || Number(place.replace(/[A-Za-z]$/, "")) <= 0) {
+                    setMarketplaceConfirm((current) => current ? { ...current, placeError: t.restorePositivePlaceRequired } : current);
+                    return;
+                  }
+                  void runArchiveRestore(marketplaceConfirm.row, place);
+                  return;
+                }
                 if (!marketplaceConfirm.inactive && !marketplaceConfirm.nextPlace.trim()) {
                   setMarketplaceConfirm((current) => current ? { ...current, placeError: props.labels.confirmActionPlaceRequired } : current);
                   return;
@@ -1841,7 +1868,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                 void runMarketplaceAction(row, inactive, nextPlace);
               }}
             >
-              {hasQuantityDeactivationWarning
+              {props.archived ? t.restoreToSofort : hasQuantityDeactivationWarning
                 ? t.confirmActionQuantityWarningConfirm
                 : marketplaceConfirm?.inactive
                   ? props.labels.deactivate

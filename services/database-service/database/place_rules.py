@@ -10,6 +10,14 @@ POOL_PLACE_PATTERN = re.compile(r"^(?P<base>[1-9]\d{0,4})(?P<suffix>[A-Za-z]?)$"
 POOL_PREFIX_PATTERN = re.compile(r"^[1-9]\d{0,4}[A-Za-z]+$")
 
 
+def place_sign(value: object) -> int:
+    match = re.fullmatch(r"([+-]?\d+)[A-Za-z]?", str(value or "").strip())
+    if match is None:
+        return 0
+    number = int(match.group(1))
+    return (number > 0) - (number < 0)
+
+
 def _increment_suffix(value: str) -> str:
     normalized = str(value or "").strip().upper()
     if not normalized:
