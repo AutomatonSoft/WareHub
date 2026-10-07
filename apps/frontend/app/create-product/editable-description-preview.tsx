@@ -8,6 +8,7 @@ import { HtmlFontFamilySelect } from "../../components/ui/html-font-family-selec
 type EditableDescriptionPreviewProps = {
   title: string;
   srcDoc: string;
+  description: string;
   onSave: (description: string) => void;
   autoHeight?: boolean;
 };
@@ -15,6 +16,7 @@ type EditableDescriptionPreviewProps = {
 export function EditableDescriptionPreview({
   title,
   srcDoc,
+  description,
   onSave,
   autoHeight = false,
 }: EditableDescriptionPreviewProps) {
@@ -23,7 +25,7 @@ export function EditableDescriptionPreview({
   const frameEventsRef = useRef<AbortController | null>(null);
   const editingRef = useRef(false);
   const selectionRangeRef = useRef<Range | null>(null);
-  const lastSavedHtmlRef = useRef("");
+  const lastSavedHtmlRef = useRef<string | null>(null);
   const onSaveRef = useRef(onSave);
   const [frameSrcDoc, setFrameSrcDoc] = useState(srcDoc);
 
@@ -32,10 +34,10 @@ export function EditableDescriptionPreview({
   }, [onSave]);
 
   useEffect(() => {
-    if (editingRef.current) return;
+    if (editingRef.current || description === lastSavedHtmlRef.current) return;
     setFrameSrcDoc(srcDoc);
-    lastSavedHtmlRef.current = srcDoc;
-  }, [srcDoc]);
+    lastSavedHtmlRef.current = null;
+  }, [srcDoc, description]);
 
   const saveFrameEdits = () => {
     const nextDescription = readHoodDescriptionPreviewDocumentHtml(iframeRef.current?.contentDocument?.documentElement ?? null);
@@ -66,11 +68,14 @@ export function EditableDescriptionPreview({
 
   const syncFrameHeight = () => {
     if (!autoHeight || !iframeRef.current) return;
-    const documentElement = iframeRef.current.contentDocument?.documentElement;
     const body = iframeRef.current.contentDocument?.body;
-    iframeRef.current.style.height = "auto";
-    const height = Math.max(documentElement?.scrollHeight ?? 0, body?.scrollHeight ?? 0, 512);
-    iframeRef.current.style.height = `${height}px`;
+    if (!body) return;
+    const bodyStyle = iframeRef.current.contentWindow?.getComputedStyle(body);
+    const margins = (Number.parseFloat(bodyStyle?.marginTop ?? "0") || 0)
+      + (Number.parseFloat(bodyStyle?.marginBottom ?? "0") || 0);
+    const height = Math.ceil(Math.max(body.scrollHeight, body.getBoundingClientRect().height) + margins);
+    const nextHeight = `${Math.max(height, 512)}px`;
+    if (iframeRef.current.style.height !== nextHeight) iframeRef.current.style.height = nextHeight;
   };
 
   useEffect(() => () => {

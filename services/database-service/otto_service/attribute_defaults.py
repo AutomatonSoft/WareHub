@@ -54,6 +54,7 @@ def with_create_attribute_defaults(attributes, profile):
         ),
     }
     values = {_name_key(name): value for name, value in defaults.items()}
+    values[_name_key('Markeninformationen')] = defaults['Markeninformation']
     values[_name_key('WEE-Reg. Nr.')] = defaults['WEEE-Reg. Nr.']
     values[_name_key('Hinweß Lieferumfang')] = defaults['Hinweis Lieferumfang']
     result = []
