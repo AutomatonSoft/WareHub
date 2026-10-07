@@ -11,6 +11,13 @@ export type OttoPayloadAttribute = {
 
 export function normalizeOttoProductAttributes(value: unknown): OttoNormalizedProductAttribute[];
 
+export function applyOttoDefaultAttributes<T extends {
+  additionalAttributes: Record<string, string>;
+  attributeOverrides: Record<string, string>;
+  attributeNames: Record<string, string>;
+  removedAttributeIds: string[];
+}>(draft: T, productAttributes: unknown, attributes: Array<{ id: string; name: string; defaultValue?: string }>): T;
+
 export function applyOttoAttributeSuggestions<T extends {
   additionalAttributes: Record<string, string>;
   attributeOverrides: Record<string, string>;

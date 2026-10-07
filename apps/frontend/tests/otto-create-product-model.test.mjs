@@ -4,11 +4,33 @@ import test from "node:test";
 import {
   applyReservedOttoIdentity,
   applyOttoAttributeSuggestions,
+  applyOttoDefaultAttributes,
   buildOttoPayloadAttributes,
   extractOttoMediaUrls,
   isOttoProductLineValid,
   OTTO_PRODUCT_LINE_MAX_LENGTH,
 } from "../app/create-product/otto-create-product-model.mjs";
+
+test("OTTO defaults use category IDs, replace source templates and preserve manual edits, blanks and removals", () => {
+  const draft = { additionalAttributes: { care: "Custom care", blank: "" }, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: ["removed"] };
+  const source = [{ attributeId: "source-brand", name: "Marke laut BattVO", values: ["XLMOEBEL"] }];
+  const defaults = [
+    { id: "category-brand", name: "Marke laut BattVO", defaultValue: "JVMOEBEL" },
+    { id: "care", name: "Pflegehinweise", defaultValue: "Default care" },
+    { id: "blank", name: "Farbhinweise", defaultValue: "Default color" },
+    { id: "removed", name: "Geschlecht", defaultValue: "Unisex" },
+    { id: "weee", name: "WEEE-Reg. Nr.", defaultValue: "46974041" },
+    { id: "other", name: "Other attribute" },
+  ];
+  const next = applyOttoDefaultAttributes(draft, source, defaults);
+  assert.equal(next.attributeOverrides["source-brand"], "JVMOEBEL");
+  assert.deepEqual(next.additionalAttributes, { care: "Custom care", blank: "", weee: "46974041" });
+  assert.deepEqual(draft.attributeOverrides, {});
+  assert.equal(applyOttoDefaultAttributes(next, source, defaults), next);
+  const payload = buildOttoPayloadAttributes({ ...next, productAttributes: source });
+  assert.deepEqual(payload.find(attribute => attribute.name === "Marke laut BattVO").values, ["JVMOEBEL"]);
+  assert.equal(payload.filter(attribute => attribute.name === "Marke laut BattVO").length, 1);
+});
 
 test("OTTO AI fills only missing attributes and preserves edits and removals", () => {
   const draft = { additionalAttributes: { color: "Weiß" }, attributeOverrides: { width: "100" }, attributeNames: { color: "Farbe", width: "Breite" }, removedAttributeIds: ["material"] };
