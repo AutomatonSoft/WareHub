@@ -70,8 +70,9 @@ export function applyOttoDefaultAttributes(draft, productAttributes, attributes)
   const source = normalizeOttoProductAttributes(productAttributes);
   let next = draft;
   for (const attribute of attributes) {
-    if (!attribute.defaultValue) continue;
+    if (!attribute.defaultValue && attribute.relevance !== "HIGH") continue;
     const existing = source.find((item) => item.id === attribute.id || item.label.toLocaleLowerCase() === attribute.name.toLocaleLowerCase());
+    if (existing && !attribute.defaultValue) continue;
     const id = existing?.id ?? attribute.id;
     if (draft.removedAttributeIds.includes(id) || draft.removedAttributeIds.includes(attribute.id)) continue;
     if (id in next.attributeOverrides || id in next.additionalAttributes) continue;
@@ -81,7 +82,7 @@ export function applyOttoDefaultAttributes(draft, productAttributes, attributes)
       attributeNames: { ...next.attributeNames, [id]: attribute.name },
       ...(existing
         ? { attributeOverrides: { ...next.attributeOverrides, [id]: attribute.defaultValue } }
-        : { additionalAttributes: { ...next.additionalAttributes, [id]: attribute.defaultValue } }),
+        : { additionalAttributes: { ...next.additionalAttributes, [id]: attribute.defaultValue ?? "" } }),
     };
   }
   return next;
