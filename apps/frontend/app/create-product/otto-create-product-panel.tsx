@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
-import { applyOttoDefaultAttributes, normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
+import { applyOttoDefaultAttributes, normalizeOttoProductAttributes, OTTO_BASE_COLORS, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
 import { OttoAiAttributes } from "./otto-ai-attributes";
 
 export type OttoCreateProductDraft = {
@@ -52,6 +52,29 @@ type OttoProductAttribute = { id: string; label: string; value: string };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
+}
+
+function AttributeInput({ name, value, onChange, placeholder }: {
+  name: string; value: string; onChange: (value: string) => void; placeholder?: string;
+}) {
+  const isBaseColor = name.trim().toLowerCase() === "grundfarbe";
+  const normalized = value.trim().toLowerCase();
+  const isAllowed = OTTO_BASE_COLORS.includes(normalized);
+  useEffect(() => {
+    if (isBaseColor && isAllowed && value !== normalized) onChange(normalized);
+  }, [isBaseColor, isAllowed, value, normalized, onChange]);
+  if (!isBaseColor) return <Input aria-label={name} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
+  return <select
+    aria-label={name}
+    aria-invalid={Boolean(value) && !isAllowed}
+    className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive"
+    value={isAllowed ? normalized : value}
+    onChange={(event) => onChange(event.target.value)}
+  >
+    <option value="">—</option>
+    {value && !isAllowed ? <option value={value} disabled>{value} — ✕</option> : null}
+    {OTTO_BASE_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+  </select>;
 }
 
 export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
@@ -252,7 +275,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
               <div key={attribute.id} className="flex min-w-0 flex-col gap-1">
                 <dt className="text-xs font-medium text-muted-foreground">{attribute.label}</dt>
                 <dd className="flex min-w-0 gap-2">
-                  <Input value={attribute.value} onChange={(event) => updateProductAttribute(attribute, event.target.value)} />
+                  <AttributeInput name={attribute.label} value={attribute.value} onChange={(value) => updateProductAttribute(attribute, value)} />
                   <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttribute.replace("{name}", attribute.label)} onClick={() => removeProductAttribute(attribute.id)}>
                     <Trash2 />
                   </Button>
@@ -266,9 +289,10 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
               {additionalAttributes.map((attribute) => (
                 <Field key={attribute.id} label={attribute.name}>
                   <div className="flex min-w-0 gap-2">
-                    <Input
+                    <AttributeInput
+                      name={attribute.name}
                       value={draft.additionalAttributes[attribute.id] ?? ""}
-                      onChange={(event) => updateAdditionalAttribute(attribute, event.target.value)}
+                      onChange={(value) => updateAdditionalAttribute(attribute, value)}
                       placeholder={attribute.unit || attribute.type}
                     />
                     <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${attribute.name}`} onClick={() => removeAdditionalAttribute(attribute.id)}>

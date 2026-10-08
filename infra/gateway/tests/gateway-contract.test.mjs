@@ -380,6 +380,34 @@ test("frontend canonical routes go to frontend upstream unchanged", async () => 
   assert.equal(openapi.headers.deprecation, undefined);
 });
 
+test("marketplace toggle goes through frontend actor verification while job polling stays on orchestrator", async () => {
+  const body = JSON.stringify({ kid_number: "546325385", kid_id: 1, inactive: true });
+  const response = await requestJson("/api/v1/orchestrator/marketplace/toggle-by-kid?source=ui", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer gateway-contract-token",
+      cookie: "session=gateway-contract-session",
+      "x-request-id": "marketplace-actor-contract"
+    },
+    body
+  });
+  assert.equal(response.body.server, "frontend");
+  assert.equal(response.body.method, "POST");
+  assert.equal(response.body.url, "/api/v1/orchestrator/marketplace/toggle-by-kid?source=ui");
+  assert.equal(response.body.body, body);
+  assert.equal(response.body.headers.authorization, "Bearer gateway-contract-token");
+  assert.equal(response.body.headers.cookie, "session=gateway-contract-session");
+  assert.equal(response.body.headers["x-request-id"], "marketplace-actor-contract");
+
+  const jobs = await requestJson("/api/v1/orchestrator/marketplace/jobs?limit=1");
+  assert.equal(jobs.body.server, "orchestrator");
+  assert.equal(jobs.body.url, "/api/v1/orchestrator/marketplace/jobs?limit=1");
+  const health = await requestJson("/api/v1/orchestrator/healthz");
+  assert.equal(health.body.server, "orchestrator");
+  assert.equal(health.body.url, "/api/v1/healthz");
+});
+
 test("backend canonical routing strips only /backend and preserves method, body, query, slash", async () => {
   const health = await requestJson("/api/v1/backend/healthz");
   assert.equal(health.body.server, "backend");

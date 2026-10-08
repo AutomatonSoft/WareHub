@@ -1,8 +1,10 @@
 import logging
 import re
+import uuid
 
 import requests
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException
 
@@ -42,6 +44,7 @@ from jv_services.views_push_state import mark_push_failed, mark_push_pending, ma
 from jv_services.views_write_products import create_local_product_from_source, update_local_product_from_source
 from kaufland.external_requests import set_product_active_state
 from otto_service.external_requests import OttoExternalAPIError, OttoExternalProductsClient
+from otto_service.models import OttoPublication
 from xl_services.models import ImportedProduct as XLImportedProduct
 from xl_services.source_client import (
     fetch_xl_product_brief_by_ean,
@@ -1965,6 +1968,13 @@ def _apply_otto_active_state(*, ean: str, site_key: str, controller: str, inacti
                 "upstream_response": exc.details,
             },
         }
+
+    now = timezone.now()
+    OttoPublication.objects.filter(profile=controller, ean=ean).update(
+        submission_id=uuid.uuid4(), online=False if inactive else None,
+        state="offline" if inactive else "pending", next_check_at=None if inactive else now,
+        submitted_at=now, checked_at=now if inactive else None,
+    )
 
     return {
         "ok": True,

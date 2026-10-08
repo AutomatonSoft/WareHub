@@ -97,6 +97,7 @@ from ebay_service.views import (
     EbayShippingServicesAPIView,
 )
 from otto_service.attribute_suggestion_views import OttoAttributeSuggestionsAPIView
+from otto_service.publication_views import OttoPublicationSyncAPIView
 from otto_service.views import (
     OttoCategoryAttributesAPIView,
     OttoCategoriesAPIView,
@@ -420,6 +421,7 @@ api_v1_patterns = [
         name="otto-categories-v1",
     ),
     path("api/v1/otto/categories/sync/", OttoCategoriesSyncAPIView.as_view(), name="otto-categories-sync-v1"),
+    path("api/v1/otto/publications/sync/", OttoPublicationSyncAPIView.as_view(), name="otto-publications-sync-v1"),
     path(
         "api/v1/otto/categories/full-sync/",
         OttoFullCacheSyncAPIView.as_view(),

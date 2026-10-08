@@ -13,7 +13,7 @@ import {
   Search,
 } from "lucide-react";
 
-import { useLabels } from "../../app/use-labels";
+import { useLabels, useLanguage } from "../../app/use-labels";
 import { apiFetch } from "../../lib/api/client";
 import { Button } from "../ui/button";
 import { EbayImageValidationWarnings } from "../ebay/image-validation-warnings";
@@ -48,6 +48,17 @@ const emptySourceErrors: SourceErrors = { orchestrator: "", productEditor: "", m
 
 function isActive(status: string): boolean {
   return ["queued", "running", "pending"].includes(status.toLowerCase());
+}
+
+function OttoSubmissionNotice({ task }: { task: Task }) {
+  const language = useLanguage();
+  const submitted = task.result?.results?.some((target) => target.data && typeof target.data === "object" &&
+    (target.data as Record<string, unknown>).publication_state === "pending");
+  if (!submitted) return null;
+  return <p className="mt-2 text-xs text-amber-700">{language === "ru"
+    ? "OTTO: запрос отправлен на проверку, не подтверждение публикации. Текущий результат — в Sofort list."
+    : language === "de" ? "OTTO: zur Prüfung gesendet, Veröffentlichung nicht bestätigt. Aktueller Status in der Sofort-Liste."
+      : "OTTO: submitted for validation, not confirmation of publication. Current status is in Sofort list."}</p>;
 }
 
 function isCompleted(status: string): boolean {
@@ -233,13 +244,27 @@ function HistoryTaskRow({ task, labels }: { task: TaskWithSource; labels: Return
         <span className={`hidden rounded-full px-2 py-1 text-xs font-medium sm:inline ${view.badgeClass}`}>{view.label}</span>
       </div>
       <EbayImageValidationWarnings payload={task.result} />
+      <OttoSubmissionNotice task={task} />
     </article>
   );
 }
 
 function TaskArchive({ tasks, labels }: { tasks: TaskWithSource[]; labels: ReturnType<typeof useLabels> }) {
   if (tasks.length === 0) return <p className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">{labels.taskStatusesEmpty}</p>;
-  return <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2.5 font-medium">{labels.taskStatusesTargets}</th><th className="px-3 py-2.5 font-medium">EAN / KID</th><th className="px-3 py-2.5 font-medium">{labels.taskStatusesCreatedAt}</th><th className="px-3 py-2.5 font-medium">{labels.status}</th></tr></thead><tbody className="divide-y">{tasks.map((task) => { const view = statusView(task.status, labels); return <tr key={`${task.source}-${task.job_id}`} className="bg-background"><td className="px-3 py-3"><p className="font-medium text-foreground">{task.operation}</p><p className="text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p><EbayImageValidationWarnings payload={task.result} /></td><td className="px-3 py-3 text-foreground">{task.ean}</td><td className="px-3 py-3 text-muted-foreground">{formatTime(task.updated_at_unix_ms || task.created_at_unix_ms)}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${view.badgeClass}`}>{view.label}</span></td></tr>; })}</tbody></table></div>;
+  return <div className="overflow-x-auto rounded-lg border">
+    <table className="w-full min-w-[620px] text-left text-sm">
+      <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2.5 font-medium">{labels.taskStatusesTargets}</th><th className="px-3 py-2.5 font-medium">EAN / KID</th><th className="px-3 py-2.5 font-medium">{labels.taskStatusesCreatedAt}</th><th className="px-3 py-2.5 font-medium">{labels.status}</th></tr></thead>
+      <tbody className="divide-y">{tasks.map((task) => {
+        const view = statusView(task.status, labels);
+        return <tr key={`${task.source}-${task.job_id}`} className="bg-background">
+          <td className="px-3 py-3"><p className="font-medium text-foreground">{task.operation}</p><p className="text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p><EbayImageValidationWarnings payload={task.result} /><OttoSubmissionNotice task={task} /></td>
+          <td className="px-3 py-3 text-foreground">{task.ean}</td>
+          <td className="px-3 py-3 text-muted-foreground">{formatTime(task.updated_at_unix_ms || task.created_at_unix_ms)}</td>
+          <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${view.badgeClass}`}>{view.label}</span></td>
+        </tr>;
+      })}</tbody>
+    </table>
+  </div>;
 }
 
 function SourcePager({ source, state, loading, offset, onPage, labels }: { source: SourceKey; state: SourceState; loading: boolean; offset: number; onPage: (offset: number) => void; labels: ReturnType<typeof useLabels> }) {
