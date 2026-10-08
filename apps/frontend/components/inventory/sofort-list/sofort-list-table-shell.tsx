@@ -1409,6 +1409,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                     <SofortListMarketplaceMatrix
                       siteEans={row.siteEans}
                       siteEanStatuses={row.siteEanStatuses}
+                      ottoPublications={row.ottoPublications}
                       bWare={row.bWare}
                       query={props.query}
                       placeholderEan={props.placeholderEan}
@@ -1555,6 +1556,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
                       <SofortListMarketplaceMatrix
                         siteEans={row.siteEans}
                         siteEanStatuses={row.siteEanStatuses}
+                        ottoPublications={row.ottoPublications}
                         bWare={row.bWare}
                         query={props.query}
                         placeholderEan={props.placeholderEan}

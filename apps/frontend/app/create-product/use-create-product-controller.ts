@@ -779,6 +779,8 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       totalResults: result.results.length,
       failedCount,
       failureSummary: buildFailureSummary(result.results),
+      pendingOttoPublications: result.results.filter((item) => item.data?.publication_state === "pending").length,
+      language: readStoredLang(),
     });
     showToast(toast.message, toast.tone);
   }
@@ -845,7 +847,9 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         status: result.status,
         totalResults: result.results.length,
         failedCount,
-        failureSummary
+        failureSummary,
+        pendingOttoPublications: result.results.filter((item) => item.data?.publication_state === "pending").length,
+        language: readStoredLang(),
       });
       showToast(toast.message, toast.tone);
     } catch (error) {

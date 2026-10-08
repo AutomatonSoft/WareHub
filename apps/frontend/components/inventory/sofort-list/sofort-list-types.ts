@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 
 export type SofortListRow = {
+  ottoPublications?: Partial<Record<"ottoJv" | "ottoXl", {
+    state: string;
+    online: boolean | null;
+    checking?: boolean;
+    errors: Array<{ code?: string; title?: string; jsonPath?: string }>;
+  }>>;
   id: string;
   kidId: number;
   orderDbId: number | null;

@@ -133,6 +133,10 @@ server {
     proxy_pass http://orchestrator_upstream/api/v1/openapi.json;
   }
 
+  location = /api/v1/orchestrator/marketplace/toggle-by-kid {
+    proxy_pass http://frontend_upstream;
+  }
+
   location = /api/v1/orchestrator {
     proxy_pass http://orchestrator_upstream;
   }

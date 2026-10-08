@@ -16,6 +16,7 @@ from .attribute_defaults import with_create_attribute_defaults
 from .full_cache_sync import get_otto_full_cache_sync_service
 from .image_resolver import get_otto_image_resolver, resolve_cached_or_otto_image
 from .models import OttoProductJV, OttoProductXL
+from .publication_service import record_submissions
 from .product_mapper import enrich_otto_product
 from .serializers import (
     OttoProductJVSerializer,
@@ -217,6 +218,7 @@ class OttoProductUpsertAPIView(APIView):
             )
 
         created_count, updated_count, result_items = _upsert_products(model_cls, local_items)
+        record_submissions(normalized_profile, raw_items, upstream_response)
 
         return Response(
             {
@@ -226,8 +228,10 @@ class OttoProductUpsertAPIView(APIView):
                 "updated": updated_count,
                 "items": result_items,
                 "upstream_response": upstream_response,
+                "publication_state": "pending",
+                "detail": "Sent to OTTO for validation. Publication is not confirmed yet.",
             },
-            status=status.HTTP_200_OK,
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

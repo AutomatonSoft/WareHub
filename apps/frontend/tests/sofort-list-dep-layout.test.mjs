@@ -18,7 +18,8 @@ function compile(path, dependencies = {}) {
 const model = compile("../components/inventory/sofort-list/sofort-list-marketplace-matrix-model.ts");
 const { SofortListMarketplaceMatrix } = compile("../components/inventory/sofort-list/sofort-list-marketplace-matrix.tsx", {
   "./sofort-list-marketplace-matrix-model": model,
-  "@/components/ui/checkbox": { Checkbox: props => React.createElement("input", { type: "checkbox", className: props.className, checked: props.checked, readOnly: true, "aria-label": props["aria-label"] }) },
+  "../../../app/use-labels": { useLanguage: () => "en" },
+  "@/components/ui/checkbox": { Checkbox: props => React.createElement("input", { type: "checkbox", className: props.className, checked: props.checked, disabled: props.disabled, readOnly: true, "aria-label": props["aria-label"] }) },
 });
 const keys = ["jv", "xl", "ottoJv", "ottoXl", "ebayJv", "ebayXl", "ebayDep", "kauflandJv", "kauflandXl", "hoodJv", "hoodXl", "temu"];
 const props = {
@@ -46,6 +47,24 @@ test("all responsive matrix grids reserve three account columns and TEMU spans o
   assert.match(css, /\.wh-sofort-marketplace-matrix__value--single\s*\{\s*grid-column: 2 \/ span 2;/);
   const shell = readFileSync(new URL("../components/inventory/sofort-list/sofort-list-table-shell.tsx", import.meta.url), "utf8");
   assert.match(shell, /wh-sofort-table-wrap[^"\n]*overflow-x-auto/);
+});
+
+test("OTTO submission does not inherit an optimistic green flag and rejected updates keep confirmed visibility", () => {
+  const pending = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
+    ...props, siteEanStatuses: { ...props.siteEanStatuses, ottoJv: true },
+    ottoPublications: { ottoJv: { state: "pending", online: null, errors: [] } },
+  }));
+  assert.match(pending, /OTTO validation pending/);
+  const pendingCheckbox = pending.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0];
+  assert.doesNotMatch(pendingCheckbox, /checked=/);
+  assert.match(pendingCheckbox, /disabled=/);
+  const rejected = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
+    ...props, ottoPublications: { ottoJv: { state: "rejected", online: true, errors: [{ code: "100006", title: "Invalid Grundfarbe", jsonPath: "$.attributes.Grundfarbe" }] } },
+  }));
+  assert.match(rejected, /Rejected by OTTO/);
+  assert.match(rejected, /Invalid Grundfarbe/);
+  assert.match(rejected, /\$\.attributes\.Grundfarbe/);
+  assert.match(rejected.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0], /checked=/);
 });
 
 if (process.env.DEP_LAYOUT_PREVIEW_PATH) {

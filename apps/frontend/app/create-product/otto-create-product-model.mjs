@@ -6,6 +6,11 @@ function text(value) {
 
 export const OTTO_PRODUCT_LINE_MAX_LENGTH = 70;
 
+export const OTTO_BASE_COLORS = Object.freeze([
+  "beige", "blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün",
+  "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
+]);
+
 export function isOttoProductLineValid(value) {
   return text(value).length <= OTTO_PRODUCT_LINE_MAX_LENGTH;
 }

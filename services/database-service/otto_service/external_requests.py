@@ -1,5 +1,6 @@
 import os
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -166,6 +167,33 @@ class OttoExternalProductsClient:
                 details=payload,
             )
 
+        if isinstance(payload, dict) and payload.get("success") is False:
+            raise OttoExternalAPIError("OTTO rejected the create/update request.", status_code=response.status_code, details=payload)
+        return payload
+
+    def fetch_publication_status(self, *, sku: str, controller: str) -> dict[str, Any]:
+        return self._publication_get("/v1/products/marketplace_status", controller=controller, sku=sku)
+
+    def fetch_update_task(self, *, task_id: str, controller: str, result: str = "") -> dict[str, Any]:
+        if result not in ("", "failed", "succeeded", "unchanged"):
+            raise ValueError("Unsupported OTTO task result.")
+        path = f"/v1/products/otto/update-tasks/{quote(task_id, safe='')}"
+        return self._publication_get(f"{path}/{result}" if result else path, controller=controller)
+
+    def _publication_get(self, path: str, **params: Any) -> dict[str, Any]:
+        try:
+            response = self._session.get(
+                f"{self._base_url}{path}", params=params,
+                headers={"Accept": "application/json"}, timeout=(self._connect_timeout, self._read_timeout),
+            )
+        except requests.RequestException as error:
+            raise OttoExternalAPIError("OTTO publication status request failed.") from error
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise OttoExternalAPIError("OTTO publication status returned invalid JSON.", status_code=response.status_code) from error
+        if not response.ok or not isinstance(payload, dict):
+            raise OttoExternalAPIError("OTTO publication status is unavailable.", status_code=response.status_code)
         return payload
 
     def set_active_state(self, *, ean: str, controller: str, active: bool) -> dict[str, Any]:

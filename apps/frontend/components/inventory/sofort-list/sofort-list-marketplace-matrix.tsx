@@ -2,6 +2,7 @@ import type { HighlightText, SofortListRow } from "./sofort-list-types";
 import { buildMarketplaceMatrixRows } from "./sofort-list-marketplace-matrix-model";
 import { Checkbox } from "@/components/ui/checkbox";
 import { memo, useEffect, useState } from "react";
+import { useLanguage } from "../../../app/use-labels";
 
 type MarketplaceStatusKey = keyof SofortListRow["siteEanStatuses"];
 
@@ -14,6 +15,7 @@ function displayEan(value: string, placeholder: string): string {
 export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMatrix(props: {
   siteEans: SofortListRow["siteEans"];
   siteEanStatuses: SofortListRow["siteEanStatuses"];
+  ottoPublications?: SofortListRow["ottoPublications"];
   bWare: boolean;
   query: string;
   placeholderEan: string;
@@ -28,6 +30,7 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
     empty: string;
   };
 }) {
+  const language = useLanguage();
   const [siteEanStatuses, setSiteEanStatuses] = useState(props.siteEanStatuses);
   const [updatingMarketplace, setUpdatingMarketplace] = useState<MarketplaceStatusKey | null>(null);
 
@@ -70,6 +73,15 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
           </span>
           {row.cells.map((cell) => {
             const displayValue = displayEan(cell.value, props.placeholderEan);
+            const publication = cell.key === "ottoJv" || cell.key === "ottoXl" ? props.ottoPublications?.[cell.key] : undefined;
+            const active = publication ? publication.online === true : cell.status === true;
+            const publicationLabels = language === "ru"
+              ? { pending: "На проверке OTTO", processed: "Ожидает публикации", rejected: "Отклонён OTTO", unknown: "Не подтверждён", online: "Опубликован", offline: "Деактивирован" }
+              : language === "de"
+                ? { pending: "OTTO prüft", processed: "Wartet auf Veröffentlichung", rejected: "Von OTTO abgelehnt", unknown: "Nicht bestätigt", online: "Veröffentlicht", offline: "Deaktiviert" }
+                : { pending: "OTTO validation pending", processed: "Awaiting publication", rejected: "Rejected by OTTO", unknown: "Unconfirmed", online: "Published", offline: "Deactivated" };
+            const publicationLabel = publication ? publicationLabels[publication.state as keyof typeof publicationLabels] ?? publicationLabels.unknown : "";
+            const errorText = publication && Array.isArray(publication.errors) ? publication.errors.map((error) => [error.code, error.title, error.jsonPath].filter(Boolean).join(": ")).join("\n") : "";
             return (
               <div
                 key={cell.key}
@@ -80,19 +92,20 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
                     ? "wh-sofort-marketplace-matrix__value--matched"
                     : cell.isBWare
                       ? "wh-sofort-marketplace-matrix__value--b-ware"
-                      : cell.status === true
+                      : active
                         ? "wh-sofort-marketplace-matrix__value--active"
                         : "wh-sofort-marketplace-matrix__value--inactive"
                 }`}
-                title={displayValue || undefined}
+                title={[displayValue, publicationLabel, errorText].filter(Boolean).join("\n") || undefined}
               >
                 <code aria-label={`${row.market} ${cell.key} ${cell.matches ? props.labels.matched : props.labels.value}`}>
                   {props.highlightText(displayValue, props.query)}
+                  {publicationLabel ? <span className="block whitespace-normal text-[10px] font-sans" role="status">{publicationLabel}</span> : null}
                 </code>
                 <Checkbox
                   className="wh-sofort-marketplace-matrix__checkbox"
-                  checked={cell.status === true}
-                  disabled={updatingMarketplace === cell.key}
+                  checked={active}
+                  disabled={Boolean(publication) || updatingMarketplace === cell.key}
                   aria-label={`${row.market} ${cell.key} status`}
                   onCheckedChange={(value) => void handleStatusChange(cell.key as MarketplaceStatusKey, value === true)}
                 />

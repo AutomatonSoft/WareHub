@@ -1,4 +1,23 @@
+import uuid
+
 from django.db import models
+
+
+class OttoPublication(models.Model):
+    profile = models.CharField(max_length=2, choices=[("jv", "JV"), ("xl", "XL")])
+    sku = models.CharField(max_length=255)
+    ean = models.CharField(max_length=255)
+    submission_id = models.UUIDField(default=uuid.uuid4)
+    task_id = models.CharField(max_length=128, blank=True)
+    state = models.CharField(max_length=24, default="pending")
+    online = models.BooleanField(null=True, default=None)
+    errors = models.JSONField(default=list)
+    submitted_at = models.DateTimeField()
+    next_check_at = models.DateTimeField(db_index=True, null=True)
+    checked_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["profile", "sku"], name="otto_publication_profile_sku")]
 
 
 class OttoProductJV(models.Model):
