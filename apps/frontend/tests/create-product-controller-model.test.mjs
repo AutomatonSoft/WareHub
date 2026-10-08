@@ -42,3 +42,12 @@ test("buildOrchestratorStatusToastMessage builds failed message with summary", (
   });
   assert.deepEqual(result, { tone: "error", message: "all-failed. hood: 500/E1" });
 });
+
+test("OTTO accepted requests show validation pending, not a publication success toast", () => {
+  const result = buildOrchestratorStatusToastMessage({ labels, status: "success", totalResults: 1, failedCount: 0, failureSummary: "", pendingOttoPublications: 1, language: "ru" });
+  assert.equal(result.tone, "info");
+  assert.match(result.message, /публикация не подтверждена/);
+  const partial = buildOrchestratorStatusToastMessage({ labels, status: "partial_success", totalResults: 2, failedCount: 1, failureSummary: "hood: failed", pendingOttoPublications: 1 });
+  assert.match(partial.message, /hood: failed/);
+  assert.match(partial.message, /publication not confirmed/);
+});

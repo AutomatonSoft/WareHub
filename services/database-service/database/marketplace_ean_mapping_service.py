@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db import transaction
+from otto_service.models import OttoPublication
 
 from .models import Ean, EanStatus, Kid
 
@@ -58,8 +59,12 @@ def confirm_marketplace_ean_mapping(
 
         ean_record, _ = Ean.objects.select_for_update().get_or_create(kid=kid)
         status_record, _ = EanStatus.objects.select_for_update().get_or_create(ean=kid)
+        published = True
+        if normalized_marketplace == "otto":
+            publication = OttoPublication.objects.filter(profile=normalized_account, ean=normalized_ean).order_by("-submitted_at").first()
+            published = publication.online is True if publication else False
         setattr(ean_record, field_name, normalized_ean)
-        setattr(status_record, field_name, True)
+        setattr(status_record, field_name, published)
         ean_record.save(update_fields=[field_name])
         status_record.save(update_fields=[field_name])
 
@@ -69,5 +74,5 @@ def confirm_marketplace_ean_mapping(
         "marketplace": normalized_marketplace,
         "account": normalized_account,
         "ean": normalized_ean,
-        "status": True,
+        "status": published,
     }

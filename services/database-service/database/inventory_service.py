@@ -7,6 +7,8 @@ from django.db.models import Count, Q
 
 from hood_service.models import HoodApiResponseJV, HoodApiResponseXL
 from catalog_core.models import ImportedProduct
+from otto_service.models import OttoPublication
+from otto_service.publication_service import publication_data
 
 from .kid_number_utils import primary_kid_number
 from .ftp_upload import normalize_managed_public_photo_value
@@ -294,6 +296,9 @@ def _join_unique_text(values: list[str], empty: str = "-") -> str:
 def build_inventory_rows() -> list[dict]:
     orders = list(Orders.objects.select_related("kid").all().order_by("id"))
     kids = list(Kid.objects.select_related("ean", "status", "product_attributes").order_by("id"))
+    otto_eans = {getattr(kid.ean, field, None) for kid in kids if hasattr(kid, "ean") for field in ("otto_jv", "otto_xl")}
+    otto_publications = {(item.profile, item.ean): publication_data(item) for item in
+                         OttoPublication.objects.filter(ean__in=otto_eans - {None, ""}).order_by("submitted_at")}
     orders_by_kid_id: dict[int, list[dict]] = {}
     all_eans: set[str] = set()
     rows: list[dict] = []
@@ -443,6 +448,11 @@ def build_inventory_rows() -> list[dict]:
                 "ean_status": {
                     field_name: getattr(ean_status_row, field_name, False)
                     for field_name in MARKETPLACE_STATUS_FIELDS
+                },
+                "otto_publications": {
+                    key: otto_publications[(profile, ean)]
+                    for key, profile, ean in (("ottoJv", "jv", otto_jv_ean), ("ottoXl", "xl", otto_xl_ean))
+                    if (profile, ean) in otto_publications
                 },
                 "linked_products_by_ean": {
                     "catalog": {ean: catalog_map.get(ean, []) for ean in sku_eans},

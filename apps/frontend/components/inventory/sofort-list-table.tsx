@@ -239,6 +239,14 @@ export function SofortListTable() {
         inTransit: inTransitOnlyFilter,
       }),
     placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === archived ? keepPreviousData(previousData) : undefined,
+    refetchInterval: (queryState) => {
+      const data = queryState.state.data;
+      const items = Array.isArray(data) ? data : data?.results ?? [];
+      return items.some((item) => {
+        const publications = (item as { otto_publications?: SofortListRow["ottoPublications"] }).otto_publications;
+        return Object.values(publications ?? {}).some((publication) => publication?.checking);
+      }) ? 30_000 : false;
+    },
   });
 
   const filterOptionsQuery = useQuery({
@@ -329,6 +337,7 @@ export function SofortListTable() {
         ean: normalizedRowEan,
         siteEans: normalizedSiteEans,
         siteEanStatuses: normalizedSiteEanStatuses,
+        ottoPublications: rawItem.otto_publications as SofortListRow["ottoPublications"],
         photo: getPrimaryPhoto(item.photo),
         photoUrls: photos,
         photoCount: item.photo_count ?? photos.length,

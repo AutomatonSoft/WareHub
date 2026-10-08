@@ -9,7 +9,16 @@ import {
   extractOttoMediaUrls,
   isOttoProductLineValid,
   OTTO_PRODUCT_LINE_MAX_LENGTH,
+  OTTO_BASE_COLORS,
 } from "../app/create-product/otto-create-product-model.mjs";
+
+test("OTTO Grundfarbe choices match the requested lowercase single-select values", () => {
+  assert.deepEqual(OTTO_BASE_COLORS, [
+    "beige", "blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün",
+    "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
+  ]);
+  assert.equal(OTTO_BASE_COLORS.includes("Beige"), false);
+});
 
 test("OTTO defaults use category IDs, replace source templates and preserve manual edits, blanks and removals", () => {
   const draft = { additionalAttributes: { care: "Custom care", blank: "" }, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: ["removed"] };
