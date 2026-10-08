@@ -13,6 +13,7 @@ export type OttoCategoryAttribute = {
   unit: string;
   allowedValues: string[];
   defaultValue?: string;
+  relevance: string;
 };
 
 export type OttoFullCacheSyncStatus = {
@@ -90,6 +91,7 @@ function normalizeAttribute(value: unknown): OttoCategoryAttribute | null {
       ? item.allowedValues.map((allowedValue) => String(allowedValue).trim()).filter(Boolean)
       : [],
     defaultValue: typeof item.defaultValue === "string" ? item.defaultValue : undefined,
+    relevance: String(item.relevance ?? "").trim().toUpperCase(),
   };
 }
 

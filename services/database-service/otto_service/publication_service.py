@@ -19,7 +19,7 @@ CHECK_LEASE = timedelta(minutes=5)
 def extract_task_id(payload):
     if not isinstance(payload, dict):
         return ""
-    for key in ("processId", "process_id", "processUuid", "otto_task_id", "ottoTaskId"):
+    for key in ("job_id", "marketplace_job_id", "processId", "process_id", "processUuid", "otto_task_id", "ottoTaskId"):
         try:
             return str(uuid.UUID(str(payload.get(key))))
         except (ValueError, TypeError, AttributeError):
@@ -81,18 +81,29 @@ def check_publication(publication, client):
     state, errors = "pending", []
     if publication.task_id:
         task = client.fetch_update_task(task_id=publication.task_id, controller=publication.profile)
-        if task.get("state") == "done":
-            failed = client.fetch_update_task(task_id=publication.task_id, controller=publication.profile, result="failed")
+        if (task.get("controller", publication.profile) != publication.profile
+                or task.get("job_id", publication.task_id) != publication.task_id):
+            raise OttoExternalAPIError("OTTO returned a different job or account.")
+        task_state = str(task.get("state", "")).lower()
+        if task_state in ("done", "failed"):
+            failed = ({"results": task["failures"]} if "failures" in task else
+                      client.fetch_update_task(task_id=publication.task_id, controller=publication.profile, result="failed"))
             rows = _task_rows(failed, publication.sku)
             if rows:
                 state = "rejected"
                 errors = [error for row in rows for error in (row.get("errors") or []) if isinstance(error, dict)]
             else:
                 state = "unknown"
-                for result in ("succeeded", "unchanged"):
-                    if _task_rows(client.fetch_update_task(task_id=publication.task_id, controller=publication.profile, result=result), publication.sku):
+                for result in ("succeeded", "unchanged") if task_state == "done" else ():
+                    result_payload = ({"results": task[f"{result}_items"]} if f"{result}_items" in task else
+                                      client.fetch_update_task(task_id=publication.task_id, controller=publication.profile, result=result))
+                    if _task_rows(result_payload, publication.sku):
                         state = "processed"
                         break
+                if task_state == "failed":
+                    errors = [{"code": "otto_job_failed", "title": "OTTO job failed without a matching SKU error."}]
+        elif task_state not in ("pending", "in_progress", "processing"):
+            state = "unknown"
     else:
         state = "unknown"
         errors = [{"code": "otto_task_id_missing", "title": "OTTO did not return a recognised update task ID."}]

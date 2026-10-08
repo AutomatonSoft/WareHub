@@ -41,6 +41,27 @@ test("OTTO defaults use category IDs, replace source templates and preserve manu
   assert.equal(payload.filter(attribute => attribute.name === "Marke laut BattVO").length, 1);
 });
 
+test("category selection adds HIGH fields without inventing values or replacing source and manual values", () => {
+  const draft = { additionalAttributes: { color: "beige" }, attributeOverrides: {}, attributeNames: { color: "Farbe" }, removedAttributeIds: ["removed"] };
+  const source = [{ attributeId: "source-width", name: "Breite", values: ["90"] }];
+  const attributes = [
+    { id: "width", name: "Breite", relevance: "HIGH" },
+    { id: "color", name: "Farbe", relevance: "HIGH" },
+    { id: "depth", name: "Tiefe", relevance: "HIGH" },
+    { id: "removed", name: "Serie", relevance: "HIGH" },
+    { id: "optional", name: "Pflege", relevance: "LOW" },
+  ];
+  const next = applyOttoDefaultAttributes(draft, source, attributes);
+  assert.deepEqual(next.additionalAttributes, { color: "beige", depth: "" });
+  assert.equal(next.attributeNames.depth, "Tiefe");
+  assert.equal(applyOttoDefaultAttributes(next, source, attributes), next);
+  assert.deepEqual(buildOttoPayloadAttributes({ ...next, productAttributes: source }), [
+    { name: "Breite", values: ["90"] }, { name: "Farbe", values: ["beige"] },
+  ]);
+  const changedCategory = applyOttoDefaultAttributes(next, source, [{ id: "height", name: "Höhe", relevance: "HIGH" }]);
+  assert.deepEqual(changedCategory.additionalAttributes, { color: "beige", depth: "", height: "" });
+});
+
 test("OTTO AI fills only missing attributes and preserves edits and removals", () => {
   const draft = { additionalAttributes: { color: "Weiß" }, attributeOverrides: { width: "100" }, attributeNames: { color: "Farbe", width: "Breite" }, removedAttributeIds: ["material"] };
   const source = [{ attributeId: "width", name: "Breite", values: ["90"] }];

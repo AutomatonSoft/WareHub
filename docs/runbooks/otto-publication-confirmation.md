@@ -14,7 +14,9 @@
 
 The orchestrator starts a polling worker when its normal job worker is enabled and its service token is configured. No external create/update requests are retried by this poller: it only reads OTTO status. Each authenticated internal `POST /api/v1/otto/publications/sync/` claims one due row with a five-minute lease, performs bounded HTTP reads outside the database transaction, and conditionally saves the result only if its submission generation still matches. Unfinished checks are rescheduled after one minute. After 48 hours, the result becomes unconfirmed and automatic polling stops. Process restarts do not lose pending rows.
 
-The external upsert OpenAPI currently has an unspecified response schema. Recognised OTTO process UUIDs are read from `processId`, `process_id`, `processUuid`, `otto_task_id`, `ottoTaskId` or update-task links, including nested response/result/data objects. An internal `task_id` is deliberately not treated as an OTTO process UUID. Without a recognised UUID, the state remains unconfirmed; visibility can still be checked. Obtain the real accepted-response contract before adding additional field aliases.
+The supplied external-service contract returns `job_id` and the compatibility alias `marketplace_job_id`; these UUIDs take precedence over the previous process-ID aliases. The internal `task_id` is never used as an OTTO job ID. The poller reads `GET /extermal/job_status/{job_id}?controller=jv|xl` and matches `failures` and `succeeded_items` to the exact SKU. States are case-insensitive. Legacy process-ID aliases and separate task-result endpoints remain supported for response compatibility, including unchanged-item lookup when no list is provided. Mismatched job/account responses and malformed result lists cannot confirm success.
+
+The optional `wait_for_completion=true` mode is not used: durable background polling avoids extending the creation request. A DONE task still requires independent ONLINE visibility confirmation. The new contract is covered by local mocked tests; deployment and a live check against the updated external service are still required.
 
 ## Rollout and verification
 

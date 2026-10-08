@@ -273,7 +273,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
             <dl className="grid gap-3">
             {selectedAttributes.map((attribute) => (
               <div key={attribute.id} className="flex min-w-0 flex-col gap-1">
-                <dt className="text-xs font-medium text-muted-foreground">{attribute.label}</dt>
+                <dt className="text-xs font-medium text-muted-foreground">{attribute.label}{categoryAttributes.some((item) => item.relevance === "HIGH" && (item.id === attribute.id || item.name.trim().toLocaleLowerCase() === attribute.label.trim().toLocaleLowerCase())) ? <span className="text-destructive"> *</span> : null}</dt>
                 <dd className="flex min-w-0 gap-2">
                   <AttributeInput name={attribute.label} value={attribute.value} onChange={(value) => updateProductAttribute(attribute, value)} />
                   <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttribute.replace("{name}", attribute.label)} onClick={() => removeProductAttribute(attribute.id)}>
@@ -287,7 +287,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
           {additionalAttributes.length > 0 ? (
             <div className="grid gap-3">
               {additionalAttributes.map((attribute) => (
-                <Field key={attribute.id} label={attribute.name}>
+                <Field key={attribute.id} label={attribute.relevance === "HIGH" ? `${attribute.name} *` : attribute.name}>
                   <div className="flex min-w-0 gap-2">
                     <AttributeInput
                       name={attribute.name}

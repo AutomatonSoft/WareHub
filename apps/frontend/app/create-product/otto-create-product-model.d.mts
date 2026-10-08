@@ -16,7 +16,7 @@ export function applyOttoDefaultAttributes<T extends {
   attributeOverrides: Record<string, string>;
   attributeNames: Record<string, string>;
   removedAttributeIds: string[];
-}>(draft: T, productAttributes: unknown, attributes: Array<{ id: string; name: string; defaultValue?: string }>): T;
+}>(draft: T, productAttributes: unknown, attributes: Array<{ id: string; name: string; defaultValue?: string; relevance?: string }>): T;
 
 export function applyOttoAttributeSuggestions<T extends {
   additionalAttributes: Record<string, string>;

@@ -177,6 +177,8 @@ class OttoExternalProductsClient:
     def fetch_update_task(self, *, task_id: str, controller: str, result: str = "") -> dict[str, Any]:
         if result not in ("", "failed", "succeeded", "unchanged"):
             raise ValueError("Unsupported OTTO task result.")
+        if not result:
+            return self._publication_get(f"/extermal/job_status/{quote(task_id, safe='')}", controller=controller)
         path = f"/v1/products/otto/update-tasks/{quote(task_id, safe='')}"
         return self._publication_get(f"{path}/{result}" if result else path, controller=controller)
 

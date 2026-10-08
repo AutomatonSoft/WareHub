@@ -40,6 +40,53 @@ class OttoPublicationTests(SimpleTestCase):
         with self.assertRaises(OttoExternalAPIError):
             OttoExternalProductsClient(session=session).create_or_update_products(controller="jv", products=[])
 
+    def test_accepted_contract_prefers_job_id_over_internal_task_id(self):
+        self.assertEqual(extract_task_id({"job_id": TASK, "marketplace_job_id": TASK, "task_id": str(uuid.uuid4())}), TASK)
+        self.assertEqual(extract_task_id({"marketplace_job_id": TASK}), TASK)
+        self.assertEqual(extract_task_id({"job_id": "invalid", "marketplace_job_id": TASK}), TASK)
+
+    def test_aggregated_job_results_match_sku_and_require_online(self):
+        for online in (False, True):
+            api = client(online)
+            api.fetch_update_task.side_effect = [{"job_id": TASK, "controller": "jv", "state": "DONE", "failures": [], "succeeded_items": [{"variation": f"/v5/products/{SKU}"}]}]
+            self.assertEqual(check_publication(publication(), api), ("online" if online else "processed", online, []))
+            self.assertEqual(api.fetch_update_task.call_count, 1)
+
+    def test_aggregated_failures_preserve_error_and_previous_live_listing(self):
+        error = {"code": "100006", "title": "Invalid Grundfarbe", "jsonPath": "$.Grundfarbe"}
+        api = client(True)
+        api.fetch_update_task.side_effect = [{"state": "FAILED", "failures": [{"variation": f"/v5/products/{SKU}", "errors": [error]}], "succeeded_items": []}]
+        self.assertEqual(check_publication(publication(online=True), api), ("rejected", True, [error]))
+        self.assertEqual(api.fetch_update_task.call_count, 1)
+
+    def test_aggregated_partial_batch_ignores_other_sku_failure(self):
+        api = client(True)
+        api.fetch_update_task.side_effect = [{"state": "done", "failures": [{"variation": "/v5/products/other", "errors": [{"title": "Invalid"}]}], "succeeded_items": [{"variation": f"/v5/products/{SKU}"}]}]
+        self.assertEqual(check_publication(publication(), api), ("online", True, []))
+
+    def test_job_identity_and_malformed_results_are_not_trusted(self):
+        for payload in ({"controller": "xl", "state": "done"}, {"job_id": str(uuid.uuid4()), "state": "done"}, {"state": "done", "failures": None}):
+            api = client(True)
+            api.fetch_update_task.side_effect = [payload]
+            with self.assertRaises(OttoExternalAPIError):
+                check_publication(publication(), api)
+
+    def test_pending_and_failed_without_sku_result_are_unconfirmed(self):
+        for task_state in ("PENDING", "IN_PROGRESS", "FAILED", "unexpected"):
+            api = client()
+            api.fetch_update_task.side_effect = [{"state": task_state, "failures": [], "succeeded_items": []}]
+            state, online, errors = check_publication(publication(), api)
+            self.assertEqual(state, "pending" if task_state in ("PENDING", "IN_PROGRESS") else "unknown")
+            self.assertFalse(online)
+
+    def test_job_status_client_uses_new_endpoint(self):
+        session = FakeSession(FakeResponse(payload={"state": "done"}))
+        OttoExternalProductsClient(session=session, base_url="https://otto.example.test").fetch_update_task(task_id=TASK, controller="jv")
+        args, kwargs = session.calls[0]
+        self.assertEqual(args[0], f"https://otto.example.test/extermal/job_status/{TASK}")
+        self.assertEqual(kwargs["params"], {"controller": "jv"})
+        self.assertEqual(kwargs["timeout"], (8, 30))
+
     def test_done_and_succeeded_does_not_mean_online(self):
         self.assertEqual(check_publication(publication(), client()), ("processed", False, []))
         self.assertEqual(check_publication(publication(), client(True)), ("online", True, []))
