@@ -1683,9 +1683,9 @@ export default function CreateProductPage() {
   const activeOttoDraftSnapshot = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeDraftContextKey
     ? ottoDraftRefByTab.current[activeTab]
     : undefined;
-  const activeOttoInitialDraft = applyReservedOttoIdentity(activeOttoDraftSnapshot
+  const activeOttoInitialDraft = activeOttoDraftSnapshot
     ? activeOttoDraftSnapshot.draft
-    : buildOttoDraft(activeOttoProduct ?? {}, {
+    : applyReservedOttoIdentity(buildOttoDraft(activeOttoProduct ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.name : jvName,
       ean: activeReservedMarketplaceEan || (activeTabMeta.sourceSite === "XL" ? activeXlDescriptionFields.ean : String(controller.sourceSnapshot?.ean || "")),
@@ -1700,7 +1700,6 @@ export default function CreateProductPage() {
     activeHoodSnapshot?.sourceProductId || "",
   ].join(":");
   const activeKauflandDraftKey = `${activeDraftContextKey}:${activeSourceSnapshotKey}`;
-  const activeOttoDraftKey = activeOttoDraftSnapshot ? activeDraftContextKey : activeSourceSnapshotKey;
 
   useEffect(() => {
     if (createDraftContextKeyRef.current === activeDraftContextKey) {
@@ -1820,10 +1819,12 @@ export default function CreateProductPage() {
           const current = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
             ? ottoDraftRefByTab.current[activeTab].draft
             : activeOttoInitialDraft;
-          ottoDraftRefByTab.current[activeTab] = {
-            sourceKey: activeOttoSourceKey,
-            draft: { ...current, sku: ean, ean },
-          };
+          if (!ottoDraftRefByTab.current[activeTab] || ottoDraftRefByTab.current[activeTab].sourceKey !== activeOttoSourceKey) {
+            ottoDraftRefByTab.current[activeTab] = {
+              sourceKey: activeOttoSourceKey,
+              draft: applyReservedOttoIdentity(current, ean),
+            };
+          }
         }
         setReservedMarketplaceEans((current) =>
           current[activeReservationFamily] === ean
@@ -2688,7 +2689,7 @@ export default function CreateProductPage() {
         ? activeXlDescriptionFields.ean
         : String(controller.sourceSnapshot?.ean || "")
     );
-    const draft = draftSnapshot?.draft ?? buildOttoDraft(ottoProductsByProfile[profile] ?? {}, {
+    const draft = draftSnapshot?.draft ?? applyReservedOttoIdentity(buildOttoDraft(ottoProductsByProfile[profile] ?? {}, {
       ...EMPTY_OTTO_CREATE_PRODUCT_DRAFT,
       productLine: profile === "xl" ? activeXlDescriptionFields.name : jvName,
       ean: fallbackEan,
@@ -2697,14 +2698,19 @@ export default function CreateProductPage() {
         ? activeXlDescriptionFields.ean
         : String(controller.sourceSnapshot?.ean || ""),
       category: ottoCategoryNameByTab[ottoTab] ?? "",
-    });
+    }), reservedEan);
     const ottoGalleryItems = tabGalleryItemsByTab[ottoTab] ?? EMPTY_GALLERY_ITEMS;
     const imageUrls = ottoGalleryItems.map((item) => item.src.trim()).filter(Boolean);
-    const identityEan = reservedEan || draft.ean.trim() || controller.ean.trim();
+    const identityEan = draft.ean.trim();
+    const sku = draft.sku.trim();
     const productReference = draft.productReference.trim();
     const rejectField = (field: string, message: string) => {
       showToast(feedback.report({ field_errors: { [field]: message } }, "", ottoTab), "error");
     };
+    if (!sku) {
+      rejectField("sku", "Enter a SKU for OTTO.");
+      return;
+    }
     if (!productReference) {
       rejectField("productReference", "Enter a product reference for OTTO.");
       return;
@@ -2759,7 +2765,7 @@ export default function CreateProductPage() {
       ottoImageUrls: imageUrls,
       ottoPayload: {
         productReference,
-        sku: reservedEan || draft.sku.trim() || productReference,
+        sku,
         ean,
         quantity,
         shippingProfileId,
@@ -3108,7 +3114,8 @@ export default function CreateProductPage() {
                     <OttoCreateProductPanel
                       key={activeTab}
                       initialDraft={activeOttoInitialDraft}
-                      draftKey={`${activeTab}:${activeOttoDraftKey}:${activeReservedMarketplaceEan}`}
+                      draftKey={`${activeTab}:${activeDraftContextKey}`}
+                      reservedEan={activeReservedMarketplaceEan}
                       profile={activeOttoProfile ?? "jv"}
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
