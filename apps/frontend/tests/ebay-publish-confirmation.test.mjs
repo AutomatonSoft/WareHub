@@ -18,6 +18,44 @@ function handler(name, context, sourceTree = tree) {
   return runInNewContext(`${compiled}\n${name}`, context);
 }
 
+test("late OTTO reserve fills automatic drafts without overwriting manual identities or other edits", () => {
+  const panelSource = readFileSync(new URL("../app/create-product/otto-create-product-panel.tsx", import.meta.url), "utf8");
+  const panelTree = ts.createSourceFile("panel.tsx", panelSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let effect;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(panelTree) === "useEffect" &&
+        node.arguments[0]?.getText(panelTree).includes("editedIdentityKeyRef.current === draftKey")) effect = node.arguments[0];
+    ts.forEachChild(node, visit);
+  }
+  visit(panelTree);
+  assert.ok(effect);
+  const compiled = ts.transpileModule(`(${effect.getText(panelTree)})();`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  let draft = { sku: "source", ean: "source", productLine: "Manually edited title", additionalAttributes: { care: "Auto default" } };
+  const context = {
+    draftKey: "otto_jv:kid-1614", reservedEan: "", identityEdited: false,
+    editedIdentityKeyRef: { current: null },
+    onDraftChangeRef: { current: next => { draft = next; } },
+    setDraft: update => { draft = update(draft); },
+  };
+  runInNewContext(compiled, context);
+  assert.equal(draft.ean, "source");
+  context.reservedEan = "4071489360790";
+  runInNewContext(compiled, context);
+  assert.equal(draft.ean, context.reservedEan);
+  assert.equal(draft.sku, context.reservedEan);
+  assert.equal(draft.productLine, "Manually edited title");
+  assert.equal(draft.additionalAttributes.care, "Auto default");
+  draft = { ...draft, ean: "", sku: "custom-sku" };
+  context.editedIdentityKeyRef.current = context.draftKey;
+  runInNewContext(compiled, context);
+  assert.equal(draft.ean, "");
+  assert.equal(draft.sku, "custom-sku");
+  context.editedIdentityKeyRef.current = null;
+  context.identityEdited = true;
+  runInNewContext(compiled, context);
+  assert.equal(draft.sku, "custom-sku");
+});
+
 test("OTTO JV and XL submit edited SKU/EAN instead of the reserved identity", async () => {
   for (const profile of ["jv", "xl"]) {
     const tab = `otto_${profile}`;

@@ -9,6 +9,7 @@
 
 ## OTTO Create Product identity — 2026-10-09
 
+- Follow-up: automatic attribute/category updates could save a draft before EAN reservation completed, incorrectly blocking initial reserved identity population. Reservation now updates SKU/EAN independently of other dirty fields, unless the user manually edited SKU/EAN. That identity-edit marker persists across tab remounts, including explicitly cleared fields. A regression covers late reservation, other edits and manual identity preservation.
 - JV/XL reserve identities now initialize new drafts only. Saved drafts and manual SKU/EAN edits are not overwritten on tab changes or by late reservation responses; the form warns when its identity differs from the reserve.
 - Publication submits the current SKU/EAN fields and rejects an empty SKU. OTTO channels use the submitted root EAN rather than pool substitution, so the existing mapping path receives the submitted EAN. Other marketplaces retain their allocation behavior.
 - Validation: 263 frontend tests pass, including regressions for JV/XL edited identities, empty SKU rejection and OTTO channel allocation isolation. Changed-file ESLint reports zero errors and one reservation-effect dependency warning; diff check passes. Typecheck remains blocked by the existing OpenAPI route export `clearOpenApiCacheForTests`.
