@@ -1257,7 +1257,7 @@ export default function CreateProductPage() {
   const hoodDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<HoodCreateProductDraft>>>>({});
   const hoodPublishDraftRef = useRef<{ draftKey: string; draft: HoodCreateProductDraft } | null>(null);
   const kauflandDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<KauflandCreateProductDraft>>>>({});
-  const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft>>>>({});
+  const ottoDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<OttoCreateProductDraft> & { identityEdited?: boolean }>>>({});
   const ebayDraftRefByTab = useRef<Partial<Record<CreateProductTab, LocalDraftSnapshot<EbayCreateFields>>>>({});
   const ebayAutofillSourceByTabRef = useRef<Partial<Record<CreateProductTab, string>>>({});
   const [ottoCategoryByTab, setOttoCategoryByTab] = useState<Partial<Record<CreateProductTab, string>>>({});
@@ -1815,16 +1815,6 @@ export default function CreateProductPage() {
             sourceSnapshotKey: kauflandDraftRefByTab.current[activeTab]?.sourceSnapshotKey,
             draft: { ...current, ean },
           };
-        } else if (activeTabMeta.marketplace === "OTTO") {
-          const current = ottoDraftRefByTab.current[activeTab]?.sourceKey === activeOttoSourceKey
-            ? ottoDraftRefByTab.current[activeTab].draft
-            : activeOttoInitialDraft;
-          if (!ottoDraftRefByTab.current[activeTab] || ottoDraftRefByTab.current[activeTab].sourceKey !== activeOttoSourceKey) {
-            ottoDraftRefByTab.current[activeTab] = {
-              sourceKey: activeOttoSourceKey,
-              draft: applyReservedOttoIdentity(current, ean),
-            };
-          }
         }
         setReservedMarketplaceEans((current) =>
           current[activeReservationFamily] === ean
@@ -3116,13 +3106,18 @@ export default function CreateProductPage() {
                       initialDraft={activeOttoInitialDraft}
                       draftKey={`${activeTab}:${activeDraftContextKey}`}
                       reservedEan={activeReservedMarketplaceEan}
+                      identityEdited={activeOttoDraftSnapshot?.identityEdited ?? false}
                       profile={activeOttoProfile ?? "jv"}
                       categoryId={ottoCategoryByTab[activeTab] ?? ""}
                       categoryName={ottoCategoryNameByTab[activeTab] ?? ""}
                       productAttributes={readOttoProductAttributes(activeOttoProduct)}
                       sourceProduct={{ product: activeOttoProduct ?? {}, source: controller.sourceSnapshot ?? {} }}
-                      onDraftChange={(draft) => {
-                        ottoDraftRefByTab.current[activeTab] = { sourceKey: activeOttoSourceKey, draft };
+                      onDraftChange={(draft, identityEdited) => {
+                        const previous = ottoDraftRefByTab.current[activeTab];
+                        ottoDraftRefByTab.current[activeTab] = {
+                          sourceKey: activeOttoSourceKey, draft,
+                          identityEdited: identityEdited || (previous?.sourceKey === activeOttoSourceKey && previous.identityEdited) || false,
+                        };
                       }}
                     />
                   </div>
