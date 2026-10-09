@@ -4,15 +4,50 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import uuid
 
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.utils import timezone
 
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from .publication_service import check_publication, extract_task_id, record_submissions, reconcile_next_publication
 from .tests import FakeResponse, FakeSession
+from .publication_views import OttoJobStatusAPIView
 
 TASK = "60dbf10a-7a9a-4133-a3e2-73d6bf8199fb"
 SKU = "4071489361629"
+
+
+@override_settings(DEBUG=False)
+class OttoJobStatusViewTests(SimpleTestCase):
+    def request(self, controller="jv", role="user"):
+        request = RequestFactory().get(f"/api/v1/otto/jobs/{TASK}/", {"controller": controller})
+        request.session = {"role": role}
+        return request
+
+    @patch("otto_service.publication_views.OttoExternalProductsClient")
+    def test_reads_external_job_for_each_account_and_keeps_failures(self, client_class):
+        failure = {"code": "100006", "message": "Invalid Grundfarbe", "jsonPath": "$.attributes.Grundfarbe"}
+        client_class.return_value.fetch_update_task.return_value = {
+            "state": "done", "total": 1, "succeeded": 0, "failed": 1, "failures": [failure],
+        }
+        for controller in ("jv", "xl"):
+            response = OttoJobStatusAPIView.as_view()(self.request(controller), job_id=uuid.UUID(TASK))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["failures"], [failure])
+            self.assertEqual(response.data["controller"], controller)
+            client_class.return_value.fetch_update_task.assert_called_with(task_id=TASK, controller=controller)
+
+    @patch("otto_service.publication_views.OttoExternalProductsClient")
+    def test_invalid_controller_and_unauthenticated_request_do_not_call_upstream(self, client_class):
+        self.assertEqual(OttoJobStatusAPIView.as_view()(self.request("dep"), job_id=uuid.UUID(TASK)).status_code, 400)
+        self.assertIn(OttoJobStatusAPIView.as_view()(self.request(role=""), job_id=uuid.UUID(TASK)).status_code, (401, 403))
+        client_class.assert_not_called()
+
+    @patch("otto_service.publication_views.OttoExternalProductsClient")
+    def test_upstream_failure_is_not_reported_as_success(self, client_class):
+        client_class.return_value.fetch_update_task.side_effect = OttoExternalAPIError("OTTO publication status is unavailable.", status_code=404)
+        response = OttoJobStatusAPIView.as_view()(self.request(), job_id=uuid.UUID(TASK))
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.data["upstream_status"], 404)
 
 
 def publication(**overrides):

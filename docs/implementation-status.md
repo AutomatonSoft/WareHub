@@ -1,5 +1,19 @@
 # Implementation status
 
+## OTTO external job lookup in Task statuses — 2026-10-09
+
+- History and recent results display each OTTO JV/XL external `job_id` (or legacy `marketplace_job_id`) as a button, independently of WareHub's internal job/task IDs. Results without an external ID do not invent one.
+- Each button also shows the KID and submitted EAN from its account-specific saved mapping, plus the upstream submitted SKU(s). Missing historical identity displays a dash, never a substituted source EAN or an assumption that SKU equals EAN. These identifiers do not assert online publication.
+- Clicking requests a session-protected services endpoint, which uses the existing timeout-bound OTTO client to call `GET /extermal/job_status/{job_id}?controller=jv|xl`. The UI shows state, counters, messages and rejection details including supplied error codes/field paths; request failures remain errors. Processing completion is explicitly not represented as online publication.
+- Validation: 23 OTTO publication/service tests pass, including account routing, rejection details, unauthenticated/invalid-controller rejection and upstream errors. Frontend extraction/client regressions pass; changed-file ESLint and diff checks pass. Typecheck remains blocked by the existing OpenAPI route export. Authenticated browser and live external API verification remain pending; no deployment performed.
+
+## OTTO Create Product identity — 2026-10-09
+
+- JV/XL reserve identities now initialize new drafts only. Saved drafts and manual SKU/EAN edits are not overwritten on tab changes or by late reservation responses; the form warns when its identity differs from the reserve.
+- Publication submits the current SKU/EAN fields and rejects an empty SKU. OTTO channels use the submitted root EAN rather than pool substitution, so the existing mapping path receives the submitted EAN. Other marketplaces retain their allocation behavior.
+- Validation: 263 frontend tests pass, including regressions for JV/XL edited identities, empty SKU rejection and OTTO channel allocation isolation. Changed-file ESLint reports zero errors and one reservation-effect dependency warning; diff check passes. Typecheck remains blocked by the existing OpenAPI route export `clearOpenApiCacheForTests`.
+- Authenticated browser verification and live OTTO publication/mapping confirmation remain pending. No deployment or repair of existing listings/mappings was performed.
+
 ## OTTO category attribute form — 2026-10-08
 
 - The supplied `categories.json` links categories to groups; `attributes_by_group.json` contains attribute relevance. The user explicitly confirmed that HIGH means mandatory for this OTTO integration.
