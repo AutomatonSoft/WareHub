@@ -3,7 +3,7 @@
 import { Package, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { useLabels } from "../use-labels";
+import { useLabels, useLanguage } from "../use-labels";
 import { MarketplaceInput as Input, MarketplaceFieldGroup, useMarketplaceField } from "../../components/product-forms/marketplace-form-feedback";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -39,6 +39,7 @@ export const EMPTY_OTTO_CREATE_PRODUCT_DRAFT: OttoCreateProductDraft = {
 type Props = {
   initialDraft: OttoCreateProductDraft;
   draftKey: string;
+  reservedEan?: string;
   showQuantity?: boolean;
   profile: OttoShippingProfileAccount;
   categoryId: string;
@@ -77,8 +78,9 @@ function AttributeInput({ name, value, onChange, placeholder }: {
   </select>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "", showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
   const t = useLabels();
+  const lang = useLanguage();
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
   const [categoryAttributes, setCategoryAttributes] = useState<OttoCategoryAttribute[]>([]);
   const [attributeError, setAttributeError] = useState<string | null>(null);
@@ -215,6 +217,15 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, showQuantity = 
         <Field label="SKU"><Input name="sku" value={draft.sku} onChange={(event) => update("sku", event.target.value)} /></Field>
         <Field label="EAN"><Input name="ean" value={draft.ean} onChange={(event) => update("ean", event.target.value)} /></Field>
       </div>
+      {reservedEan && (draft.ean.trim() !== reservedEan || draft.sku.trim() !== reservedEan) ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {lang === "ru"
+            ? `Резервный EAN: ${reservedEan}. В OTTO будут отправлены SKU и EAN из полей выше, без замены резервным номером.`
+            : lang === "de"
+              ? `Reservierte EAN: ${reservedEan}. An OTTO werden SKU und EAN aus den obigen Feldern unverändert gesendet.`
+              : `Reserved EAN: ${reservedEan}. OTTO receives the SKU and EAN from the fields above, without replacing them with the reserved number.`}
+        </p>
+      ) : null}
       {showQuantity ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label={t.ottoPriceEur}><Input name="price" inputMode="decimal" value={draft.price} onChange={(event) => update("price", event.target.value)} /></Field>

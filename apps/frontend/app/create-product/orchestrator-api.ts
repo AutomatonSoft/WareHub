@@ -89,7 +89,7 @@ function mapSiteIdToChannel(siteId: string): OrchestratorChannel | null {
     return {
       marketplace: Marketplace.otto,
       profile: account,
-      ean_source: "pool",
+      ean_source: "main",
       changed_fields: ["productReference", "ean", "pricing", "productDescription", "mediaAssets", "shippingProfileId"]
     };
   }
@@ -313,7 +313,7 @@ export async function createMainMarketplaceProductJob(input: {
         profile: site.kind.toLowerCase(),
         changed_fields: ottoChangedFields,
         overrides: input.ottoPayload,
-        ean_source: "pool",
+        ean_source: "main",
       });
       continue;
     }

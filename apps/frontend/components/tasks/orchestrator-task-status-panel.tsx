@@ -17,6 +17,8 @@ import { useLabels, useLanguage } from "../../app/use-labels";
 import { apiFetch } from "../../lib/api/client";
 import { Button } from "../ui/button";
 import { EbayImageValidationWarnings } from "../ebay/image-validation-warnings";
+import { extractOttoJobs } from "../../lib/api/otto-job-status";
+import { OttoJobStatusButton } from "./otto-job-status";
 
 const PAGE_SIZE = 20;
 
@@ -54,11 +56,15 @@ function OttoSubmissionNotice({ task }: { task: Task }) {
   const language = useLanguage();
   const submitted = task.result?.results?.some((target) => target.data && typeof target.data === "object" &&
     (target.data as Record<string, unknown>).publication_state === "pending");
-  if (!submitted) return null;
-  return <p className="mt-2 text-xs text-amber-700">{language === "ru"
+  const jobs = extractOttoJobs(task.result?.results ?? []);
+  if (!submitted && jobs.length === 0) return null;
+  return <div className="mt-2 flex flex-col gap-2">
+    {jobs.map(job => <OttoJobStatusButton key={`${job.controller}:${job.jobId}`} job={job} />)}
+    {submitted ? <p className="text-xs text-amber-700">{language === "ru"
     ? "OTTO: запрос отправлен на проверку, не подтверждение публикации. Текущий результат — в Sofort list."
     : language === "de" ? "OTTO: zur Prüfung gesendet, Veröffentlichung nicht bestätigt. Aktueller Status in der Sofort-Liste."
-      : "OTTO: submitted for validation, not confirmation of publication. Current status is in Sofort list."}</p>;
+      : "OTTO: submitted for validation, not confirmation of publication. Current status is in Sofort list."}</p> : null}
+  </div>;
 }
 
 function isCompleted(status: string): boolean {

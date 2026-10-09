@@ -6,17 +6,86 @@ import ts from "typescript";
 
 const source = readFileSync(new URL("../app/create-product/page.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-function handler(name, context) {
+function handler(name, context, sourceTree = tree) {
   let found;
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node;
     ts.forEachChild(node, visit);
   }
-  visit(tree);
+  visit(sourceTree);
   assert.ok(found, `Missing ${name}`);
-  const compiled = ts.transpileModule(found.getText(tree), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const compiled = ts.transpileModule(found.getText(sourceTree).replace(/^export /, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   return runInNewContext(`${compiled}\n${name}`, context);
 }
+
+test("OTTO JV and XL submit edited SKU/EAN instead of the reserved identity", async () => {
+  for (const profile of ["jv", "xl"]) {
+    const tab = `otto_${profile}`;
+    const calls = [];
+    const errors = [];
+    const draft = {
+      productReference: "4062292067495_SOFORT_JV", sku: "custom-sku", ean: "4071489460902",
+      quantity: "1", deliveryTime: "7", shippingProfileId: "shipping", productLine: "Sofa",
+      category: "Sofas", description: "Description", price: "340", bulletPoints: [],
+      additionalAttributes: {}, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: [],
+    };
+    const context = {
+      activeDraftContextKey: "kid-1614",
+      ottoDraftRefByTab: { current: { [tab]: { sourceKey: "kid-1614", draft } } },
+      reservedMarketplaceEans: { jv: "4071489360790", xl: "4071489360790" },
+      activeXlDescriptionFields: { ean: "source-ean" },
+      controller: { sourceSnapshot: { ean: "source-ean" }, price: "340", handleCreateProduct: async (...args) => calls.push(args) },
+      tabGalleryItemsByTab: { [tab]: [{ src: "https://example.test/photo.jpg" }] },
+      feedback: { report: (error) => { errors.push(error); return "Invalid field"; } },
+      showToast: () => {}, isOttoProductLineValid: () => true,
+      ottoCategoryByTab: { [tab]: "sofas" }, ottoProductsByProfile: {},
+      readOttoProductAttributes: () => [], fetchOttoCategoryAttributes: async () => [],
+      applyOttoDefaultAttributes: (value) => value,
+      deduplicateOttoAttributes: (value) => value, buildOttoPayloadAttributes: () => [],
+      getLocalImageFilesForTab: () => [],
+    };
+    const submit = handler("submitOttoCreate", context);
+    await submit([`otto-${profile}`], tab);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][2].ottoEan, draft.ean);
+    assert.equal(calls[0][2].ottoPayload.ean, draft.ean);
+    assert.equal(calls[0][2].ottoPayload.sku, "custom-sku");
+    assert.equal(calls[0][2].ottoPayload.productReference, draft.productReference);
+    draft.sku = "";
+    await submit([`otto-${profile}`], tab);
+    assert.equal(calls.length, 1);
+    assert.ok(errors[0].field_errors.sku);
+  }
+});
+
+test("OTTO jobs preserve supplied identity without changing other marketplaces' pool allocation", async () => {
+  const apiSource = readFileSync(new URL("../app/create-product/orchestrator-api.ts", import.meta.url), "utf8");
+  const apiTree = ts.createSourceFile("orchestrator-api.ts", apiSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let request;
+  const sites = ["OTTO", "HOOD", "KAUFLAND", "EBAY"].flatMap(family => ["JV", "XL"].map(kind => ({ id: `${family}-${kind}`, family, kind })));
+  const create = handler("createMainMarketplaceProductJob", {
+    allMarketplaceSites: sites,
+    Marketplace: { otto: "otto", hood: "hood", kaufland: "kaufland", ebay: "ebay" },
+    Operation: { publish: "publish" },
+    apiFetch: async (_url, options) => { request = JSON.parse(options.body); return { ok: true, json: async () => ({ job_id: "test-job" }) }; },
+    readJsonSafe: (response) => response.json(),
+  }, apiTree);
+  await create({
+    ean: "4071489460902", productName: "Sofa", description: "Description", price: "340",
+    imageUrls: [], kidId: 1614, kidNumber: "568597394", selectedSiteIds: sites.map(site => site.id),
+    xljvPayload: {}, hoodPayload: {}, kauflandPayload: {}, ebayPayload: {},
+    ottoPayload: { sku: "custom-sku", ean: "4071489460902" },
+  });
+  assert.equal(request.ean, "4071489460902");
+  assert.equal(request.command.kid_id, 1614);
+  for (const channel of request.command.channels) {
+    assert.equal(channel.ean_source, channel.marketplace === "otto" ? "main" : "pool");
+    if (channel.marketplace === "otto") {
+      assert.equal(channel.overrides.sku, "custom-sku");
+      assert.equal(channel.overrides.ean, request.ean);
+    }
+  }
+});
 
 test("eBay requires confirmation and publishes each account with its own draft and images", async () => {
   const calls = [];
