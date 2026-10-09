@@ -86,9 +86,11 @@ def healthz() -> dict:
 
 
 @router.get("/api/v1/readyz")
-def readyz(idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store)):
+def readyz(idempotency_store: SqliteIdempotencyStore = Depends(get_idempotency_store),
+           job_store: SqliteJobStore = Depends(get_job_store)):
     try:
         idempotency_store.ping()
+        job_store.check_replay_schema()
         return {"status": "ready"}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=503, content={"status": "not_ready", "reason": str(exc)})
@@ -170,7 +172,7 @@ def create_orchestrator_job(
     response.headers["X-Request-Id"] = request_id
     replay_key = _single_replay_key(idempotency_key=idempotency_key, body=body)
     if replay_key is not None:
-        cached = idempotency_store.get(replay_key)
+        cached = job_store.get_job_replay(replay_key) or idempotency_store.get(replay_key)
         if cached is not None:
             return cached
     if not _try_consume_job_intake_slots([body.priority]):
@@ -205,18 +207,9 @@ def create_orchestrator_job(
         return JSONResponse(status_code=400, content=err.model_dump())
 
     job_id = str(uuid.uuid4())
-    job_store.create_job(
-        job_id=job_id,
-        request_id=request_id,
-        ean=ean,
-        command=body.command,
-        scheduled_at_unix_ms=scheduled_at_unix_ms,
-        priority=body.priority,
-    )
     payload = CreateJobResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED).model_dump()
-    if replay_key is not None:
-        idempotency_store.put(replay_key, payload)
-    return payload
+    return job_store.create_jobs_once(items=[(job_id, body)], request_id=request_id, payload=payload,
+                                      replay_key=replay_key, ttl_seconds=idempotency_store.ttl_seconds)
 
 
 @router.post("/api/v1/orchestrator/jobs/batch")
@@ -233,7 +226,7 @@ def create_orchestrator_jobs_batch(
     response.headers["X-Request-Id"] = request_id
     replay_key = _batch_replay_key(idempotency_key=idempotency_key, body=body)
     if replay_key is not None:
-        cached = idempotency_store.get(replay_key)
+        cached = job_store.get_job_replay(replay_key) or idempotency_store.get(replay_key)
         if cached is not None:
             return cached
     if len(body.items) > settings.jobs_batch_max_items:
@@ -258,6 +251,7 @@ def create_orchestrator_jobs_batch(
         return JSONResponse(status_code=429, content=err.model_dump())
 
     results: list[BatchCreateJobResult] = []
+    queued_items = []
     for item in body.items:
         ean = item.ean.strip()
         if not ean:
@@ -289,22 +283,14 @@ def create_orchestrator_jobs_batch(
             )
             continue
         job_id = str(uuid.uuid4())
-        job_store.create_job(
-            job_id=job_id,
-            request_id=request_id,
-            ean=ean,
-            command=item.command,
-            scheduled_at_unix_ms=item.scheduled_at_unix_ms,
-            priority=item.priority,
-        )
+        queued_items.append((job_id, item))
         results.append(BatchCreateJobResult(ean=ean, job_id=job_id, status="queued"))
 
     queued = sum(1 for item in results if item.status == "queued")
     failed = len(results) - queued
     payload = BatchCreateJobResponse(request_id=request_id, queued=queued, failed=failed, results=results).model_dump()
-    if replay_key is not None:
-        idempotency_store.put(replay_key, payload)
-    return payload
+    return job_store.create_jobs_once(items=queued_items, request_id=request_id, payload=payload,
+                                      replay_key=replay_key, ttl_seconds=idempotency_store.ttl_seconds)
 
 
 @router.post("/api/v1/orchestrator/jobs/status/batch")

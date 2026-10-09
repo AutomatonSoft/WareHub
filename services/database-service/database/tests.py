@@ -214,6 +214,21 @@ class DatabaseApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertFalse(Ean.objects.exists())
 
+    def test_all_mapping_channels_require_identity_when_kid_number_is_ambiguous(self):
+        other_kid = Kid.objects.create(kid_number=["13234455"], place="OTHER-PLACE")
+        for marketplace, account in (("xljv", "xl"), ("hood", "jv"), ("hood", "xl"),
+                                     ("kaufland", "jv"), ("kaufland", "xl"),
+                                     ("otto", "jv"), ("otto", "xl"), ("ebay", "dep")):
+            with self.subTest(marketplace=marketplace, account=account):
+                payload = {"kid_number": "13234455", "marketplace": marketplace, "account": account, "ean": "4012345678901"}
+                response = self.client.post("/api/v1/marketplace/ean-mappings/confirm/", payload, format="json")
+                self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+                payload["kid_id"] = other_kid.pk
+                response = self.client.post("/api/v1/marketplace/ean-mappings/confirm/", payload, format="json")
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data["mapping"]["kid_id"], other_kid.pk)
+                self.assertFalse(Ean.objects.filter(kid=self.kid).exists())
+
     def test_kid_marketplace_status_update_changes_only_requested_status(self):
         EanStatus.objects.create(ean=self.kid, jv=True, hood_xl=False)
 

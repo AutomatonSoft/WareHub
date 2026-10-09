@@ -6,6 +6,8 @@ import time
 from contextlib import contextmanager
 
 from ..domain.models import (
+    BatchCreateJobItem,
+    CreateJobRequest,
     ErrorContract,
     JobAttempt,
     JobDetailsResponse,
@@ -127,35 +129,71 @@ class SqliteJobStore:
         scheduled_at_unix_ms: int | None = None,
         priority: JobPriority = JobPriority.NORMAL,
     ) -> None:
-        now = _now_ms()
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO orchestrator_jobs (
-                    job_id, request_id, ean, operation, command_json, status, priority, created_at_unix_ms, updated_at_unix_ms, scheduled_at_unix_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job_id,
-                    request_id,
-                    ean,
-                    command.operation.value,
-                    json.dumps(command.model_dump(), ensure_ascii=False),
-                    JobStatus.QUEUED.value,
-                    priority.value,
-                    now,
-                    now,
-                    scheduled_at_unix_ms,
-                ),
-            )
-            conn.execute(
-                """
-                INSERT INTO orchestrator_job_events (job_id, idx, event_type, at_unix_ms, details_json)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (job_id, 0, "job_created", now, json.dumps({}, ensure_ascii=False)),
-            )
+            self._insert_job(conn, job_id=job_id, request_id=request_id, ean=ean, command=command,
+                             scheduled_at_unix_ms=scheduled_at_unix_ms, priority=priority)
             conn.commit()
+
+    def check_replay_schema(self) -> None:
+        with self._connect() as conn:
+            conn.execute("SELECT replay_key, expires_at, payload_json FROM orchestrator_job_replays LIMIT 0")
+
+    def get_job_replay(self, replay_key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM orchestrator_job_replays WHERE replay_key = ? AND expires_at > ?",
+                (replay_key, time.time()),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def create_jobs_once(
+        self, *, items: list[tuple[str, CreateJobRequest | BatchCreateJobItem]], request_id: str,
+        payload: dict, replay_key: str | None, ttl_seconds: int,
+    ) -> dict:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if replay_key is not None:
+                now = time.time()
+                conn.execute("DELETE FROM orchestrator_job_replays WHERE expires_at <= ?", (now,))
+                row = conn.execute("SELECT payload_json FROM orchestrator_job_replays WHERE replay_key = ?", (replay_key,)).fetchone()
+                if row:
+                    return json.loads(row[0])
+            for job_id, item in items:
+                self._insert_job(conn, job_id=job_id, request_id=request_id, ean=item.ean.strip(),
+                                 command=item.command, scheduled_at_unix_ms=item.scheduled_at_unix_ms,
+                                 priority=item.priority)
+            if replay_key is not None:
+                conn.execute(
+                    "INSERT INTO orchestrator_job_replays (replay_key, expires_at, payload_json) VALUES (?, ?, ?)",
+                    (replay_key, time.time() + ttl_seconds, json.dumps(payload, ensure_ascii=False)),
+                )
+            conn.commit()
+        return payload
+
+    def _insert_job(
+        self, conn, *, job_id: str, request_id: str, ean: str, command: OrchestrateRequest,
+        scheduled_at_unix_ms: int | None, priority: JobPriority,
+    ) -> None:
+        now = _now_ms()
+        conn.execute(
+            """
+            INSERT INTO orchestrator_jobs (
+                job_id, request_id, ean, operation, command_json, status, priority, created_at_unix_ms, updated_at_unix_ms, scheduled_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id, request_id, ean, command.operation.value,
+                json.dumps(command.model_dump(), ensure_ascii=False),
+                JobStatus.QUEUED.value, priority.value, now, now, scheduled_at_unix_ms,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO orchestrator_job_events (job_id, idx, event_type, at_unix_ms, details_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (job_id, 0, "job_created", now, json.dumps({}, ensure_ascii=False)),
+        )
 
     def mark_running(self, *, job_id: str) -> bool:
         now = _now_ms()

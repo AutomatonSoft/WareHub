@@ -77,14 +77,35 @@ class ArchiveTests(SimpleTestCase):
 
     def test_restore_occupied_place_returns_conflict(self):
         from django.db import IntegrityError
-        kid = SimpleNamespace(pk=7, archived=True, place="-3", save=Mock(side_effect=IntegrityError()))
+        error = IntegrityError()
+        error.__cause__ = Exception()
+        error.__cause__.diag = SimpleNamespace(constraint_name="uniq_kid_non_empty_place")
+        kid = SimpleNamespace(pk=7, archived=True, place="-3", save=Mock(side_effect=error))
+        conflict = SimpleNamespace(pk=8, kid_number=["456"], place="12", archived=True)
         request = APIRequestFactory().post("/", {"kid_number": "123", "archived": False, "place": "12"}, format="json")
         request.session = {"role": "admin"}
-        with patch("database.views_archive._find_kid_by_number", return_value=kid), patch("database.views_archive.transaction.atomic", return_value=nullcontext()), patch("database.views_archive.Kid.objects.select_for_update") as locked, patch("database.views_archive.record_inventory_change") as audit:
+        with patch("database.views_archive._find_kid_by_number", return_value=kid), patch("database.views_archive.transaction.atomic", return_value=nullcontext()), patch("database.views_archive.Kid.objects.select_for_update") as locked, patch("database.views_archive.record_inventory_change") as audit, patch("database.views_archive.find_place_conflict", return_value=conflict):
             locked.return_value.get.return_value = kid
             response = KidArchiveAPIView.as_view()(request)
         self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "inventory_place_occupied")
+        self.assertEqual(response.data["conflict"]["kid_id"], 8)
+        self.assertTrue(response.data["conflict"]["archived"])
         audit.assert_not_called()
+
+    def test_unrelated_integrity_error_is_not_reported_as_occupied_place(self):
+        from django.db import IntegrityError
+        kid = SimpleNamespace(pk=7, archived=True, place="-3", save=Mock(side_effect=IntegrityError("private database detail")))
+        request = APIRequestFactory().post("/", {"kid_number": "123", "kid_id": 7, "archived": False, "place": "12"}, format="json")
+        request.session = {"role": "admin"}
+        with patch("database.views_archive._find_kid_by_number", return_value=kid), patch("database.views_archive.transaction.atomic", return_value=nullcontext()), patch("database.views_archive.Kid.objects.select_for_update") as locked, patch("database.views_archive.find_place_conflict") as conflict:
+            locked.return_value.get.return_value = kid
+            response = KidArchiveAPIView.as_view()(request)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data["code"], "inventory_archive_save_failed")
+        self.assertNotIn("place", response.data)
+        self.assertNotIn("private database detail", str(response.data))
+        conflict.assert_not_called()
 
 
 class ArchivePersistenceTests(TestCase):

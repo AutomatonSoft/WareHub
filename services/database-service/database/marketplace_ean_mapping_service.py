@@ -53,7 +53,7 @@ def confirm_marketplace_ean_mapping(
         matching_kids = list(kid_query.order_by("pk")[:2])
         if not matching_kids:
             raise MarketplaceEanMappingError("Kid was not found for the supplied identity.")
-        if len(matching_kids) > 1 and (field_name == "jv" or normalized_marketplace == "ebay"):
+        if len(matching_kids) > 1:
             raise MarketplaceEanMappingError("Multiple Kids have this kid_number; kid_id is required.")
         kid = matching_kids[0]
 

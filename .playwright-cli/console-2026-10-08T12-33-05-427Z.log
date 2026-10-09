@@ -1,0 +1,41 @@
+[   54846ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[   54961ms] [LOG] [HMR] connected @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[   55393ms] [ERROR] Cannot update a component (`%s`) while rendering a different component (`%s`). To locate the bad setState() call inside `%s`, follow the stack trace as described in https://react.dev/link/setstate-in-render LocalOttoQA OttoCreateProductPanel OttoCreateProductPanel @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1884
+[  175317ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  175802ms] [LOG] [Fast Refresh] done in 436ms @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  196961ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  197323ms] [LOG] [Fast Refresh] done in 246ms @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  198690ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  198712ms] [LOG] [Fast Refresh] done in 124ms @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  199536ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  199568ms] [LOG] [HMR] connected @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  226595ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  226625ms] [LOG] [HMR] connected @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  269863ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  270273ms] [LOG] [Fast Refresh] done in 317ms @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  271558ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  271582ms] [LOG] [HMR] connected @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  302221ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  303651ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303682ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303684ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303687ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303739ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303740ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303767ms] [LOG] [Fast Refresh] done in 336ms @ http://127.0.0.1:8945/_next/static/chunks/node_modules_next_dist_7b3a48b7._.js:1054
+[  303893ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303895ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303895ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303896ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303896ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303919ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303922ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303940ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303950ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303958ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  303963ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  304052ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  304060ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  304073ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  304082ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa?_rsc=b0pyn:0
+[  304121ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8945/local-otto-qa:0

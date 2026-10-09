@@ -45,7 +45,13 @@ const copy = {
 };
 
 export function marketplaceFieldKey(path) {
+  if (typeof path === "string" && path.startsWith("attributes.")) return path;
   const parts = String(path ?? "").replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+  const attributeIndex = parts.indexOf("attributes");
+  if (attributeIndex >= 0) {
+    const name = parts.slice(attributeIndex + 1);
+    return name.length && !/^\d+$/.test(name[0]) ? ["attributes", ...name].join(".") : "attributes";
+  }
   const aspectIndex = parts.findIndex((part) => ["aspects", "category_aspects"].includes(part));
   if (aspectIndex >= 0) return ["aspects", ...parts.slice(aspectIndex + 1).filter((part) => !/^\d+$/.test(part))].join(".");
   for (const part of parts.reverse()) {
@@ -61,6 +67,8 @@ export function marketplaceFieldLabel(field, language = "en") {
     de: { title: "Titel", price: "Preis", quantity: "Menge", delivery: "Lieferzeit", category: "Kategorie", description: "Beschreibung", images: "Bilder", height: "Höhe", width: "Breite", length: "Länge", depth: "Tiefe", size: "Größe", color: "Farbe", material: "Material", shipping_profile: "Versandprofil", fulfillment_policy_id: "Versandbedingungen", payment_policy_id: "Zahlungsbedingungen", return_policy_id: "Rücknahmebedingungen", package: "Verpackung", regulatory: "Produktsicherheit", aspects: "Kategorie-Merkmale" },
   };
   if (field.startsWith("aspects.")) return field.slice("aspects.".length);
+  if (field.startsWith("attributes.")) return field.slice("attributes.".length);
+  if (field === "attributes") return language === "ru" ? "Атрибуты категории" : language === "de" ? "Kategorie-Merkmale" : "Category attributes";
   if (field === "ean") return "EAN";
   if (field === "sku") return "SKU / Artikel-Nr.";
   return labels[language]?.[field] ?? field.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
@@ -90,7 +98,8 @@ export function describeMarketplaceError(error, language = "en", fallback = "") 
     target = typeof value.target === "string" ? value.target : typeof value.target_id === "string" ? value.target_id : target;
     requestId ||= typeof value.request_id === "string" ? value.request_id : "";
     status ||= Number(value.status_code ?? value.upstream_status_code ?? 0);
-    const path = Array.isArray(value.loc) ? value.loc.join(".") : value.field ?? value.path ?? "";
+    let path = Array.isArray(value.loc) ? value.loc.join(".") : value.field ?? value.path ?? "";
+    if (typeof value.attribute === "string" && marketplaceFieldKey(path).startsWith("attributes")) path = `attributes.${value.attribute}`;
     const message = value.msg ?? value.message ?? (typeof value.detail === "string" ? value.detail : "");
     const before = issues.length;
     for (const name of Array.isArray(value.missing_aspects) ? value.missing_aspects : []) add(`${labels.missing}: ${name}`, `aspects.${name}`, value.code, target);

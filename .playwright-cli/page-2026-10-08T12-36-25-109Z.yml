@@ -1,0 +1,96 @@
+- generic [active] [ref=f1e1]:
+  - main [ref=f1e3]:
+    - heading "Local OTTO component QA — jv" [level=1] [ref=f1e4]
+    - button "Switch account" [ref=f1e5] [cursor=pointer]
+    - button "Mock OTTO validation" [ref=f1e6] [cursor=pointer]
+    - generic [ref=f1e8]:
+      - generic [ref=f1e9]:
+        - generic [ref=f1e10]: Product line / title
+        - textbox "Product line / title" [ref=f1e11]: QA Desk
+      - generic [ref=f1e12]:
+        - generic [ref=f1e13]:
+          - generic [ref=f1e14]: Product reference
+          - textbox "Product reference" [ref=f1e15]
+        - generic [ref=f1e16]:
+          - generic [ref=f1e17]: SKU
+          - textbox "SKU" [ref=f1e18]: QA
+        - generic [ref=f1e19]:
+          - generic [ref=f1e20]: EAN
+          - textbox "EAN" [ref=f1e21]: "4012345678901"
+      - generic [ref=f1e22]:
+        - generic [ref=f1e23]:
+          - generic [ref=f1e24]: Price (EUR)
+          - textbox "Price (EUR)" [ref=f1e25]
+        - generic [ref=f1e26]:
+          - generic [ref=f1e27]: Quantity
+          - spinbutton "Quantity" [ref=f1e28]: "1"
+      - generic [ref=f1e29]:
+        - generic [ref=f1e30]: Delivery time (days)
+        - textbox "Delivery time (days)" [ref=f1e31]
+      - generic [ref=f1e32]:
+        - generic [ref=f1e33]: Shipping profile
+        - group [ref=f1e34]:
+          - combobox "Shipping profile" [ref=f1e35] [cursor=pointer]:
+            - generic [ref=f1e36]: Select shipping profile
+            - img [aria-hidden]: ▼
+          - textbox [aria-hidden] [ref=f1e37]
+      - generic [ref=f1e38]:
+        - generic [ref=f1e39]:
+          - generic [ref=f1e40]: Bullet point 1
+          - textbox "Bullet point 1" [ref=f1e41]
+        - generic [ref=f1e42]:
+          - generic [ref=f1e43]: Bullet point 2
+          - textbox "Bullet point 2" [ref=f1e44]
+        - generic [ref=f1e45]:
+          - generic [ref=f1e46]: Bullet point 3
+          - textbox "Bullet point 3" [ref=f1e47]
+        - generic [ref=f1e48]:
+          - generic [ref=f1e49]: Bullet point 4
+          - textbox "Bullet point 4" [ref=f1e50]
+        - generic [ref=f1e51]:
+          - generic [ref=f1e52]: Bullet point 5
+          - textbox "Bullet point 5" [ref=f1e53]
+      - group [ref=f1e54]:
+        - generic [ref=f1e55]:
+          - generic [ref=f1e56]: Description
+          - textbox "Description" [ref=f1e57]
+      - group [ref=f1e58]:
+        - region "OTTO category attributes" [ref=f1e59]:
+          - generic [ref=f1e60]:
+            - button "Fill attributes with OpenAI" [ref=f1e61] [cursor=pointer]
+            - paragraph [ref=f1e62]: Uses product details and selected category. Existing values stay unchanged. Review before publishing.
+          - generic [ref=f1e63]:
+            - heading "Attributes" [level=3] [ref=f1e64]
+            - combobox [disabled] [ref=f1e65]:
+              - generic [ref=f1e66]: No attributes
+              - img [aria-hidden]: ▼
+            - textbox [disabled] [aria-hidden] [ref=f1e67]
+          - generic [ref=f1e68]:
+            - generic [ref=f1e69]:
+              - term [ref=f1e70]: Grundfarbe *
+              - definition [ref=f1e71]:
+                - combobox "Grundfarbe" [invalid] [ref=f1e73]:
+                  - option "—"
+                  - option "invalid-colour — ✕" [disabled] [selected]
+                  - option "beige"
+                  - option "natur"
+                  - option "grün"
+                - button "Remove Grundfarbe" [ref=f1e74] [cursor=pointer]
+            - generic [ref=f1e75]:
+              - term [ref=f1e76]: Geschlecht *
+              - definition [ref=f1e77]:
+                - combobox "Geschlecht" [invalid] [ref=f1e79]:
+                  - option "—"
+                  - option "neutral — ✕" [disabled] [selected]
+                  - option "Unisex"
+                  - option "Damen"
+                  - option "Herren"
+                - button "Remove Geschlecht" [ref=f1e80] [cursor=pointer]
+            - generic [ref=f1e81]:
+              - term [ref=f1e82]: Pflegehinweise
+              - definition [ref=f1e83]:
+                - textbox "Pflegehinweise" [ref=f1e85]: Holz, lackiert
+                - button "Remove Pflegehinweise" [ref=f1e86] [cursor=pointer]
+    - generic [ref=f1e87]: "[{\"name\":\"Grundfarbe\",\"values\":[\"invalid-colour\"]},{\"name\":\"Geschlecht\",\"values\":[\"neutral\"]},{\"name\":\"Pflegehinweise\",\"values\":[\"Holz, lackiert\"]}]"
+  - button "Open Next.js Dev Tools" [ref=f1e93] [cursor=pointer]
+  - alert [ref=f1e97]

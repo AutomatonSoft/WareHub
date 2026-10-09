@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeMarketplaceError, marketplaceFieldKey } from "../components/product-forms/marketplace-errors.mjs";
+import { describeMarketplaceError, marketplaceFieldKey, marketplaceFieldLabel } from "../components/product-forms/marketplace-errors.mjs";
 
 test("DRF fields retain all errors and have Russian explanations", () => {
   const failure = describeMarketplaceError({ status: 400, payload: { price: ["A valid number is required."], quantity: ["This field is required."] } }, "ru");
@@ -67,4 +67,34 @@ test("unknown paths are not guessed and error volume is bounded", () => {
   assert.equal(marketplaceFieldKey("body.internal_seller_setting"), "");
   const failure = describeMarketplaceError({ errors: Array.from({ length: 500 }, (_, index) => ({ field: "price", message: `Failure ${index}` })) });
   assert.equal(failure.issues.length, 50);
+});
+
+test("OTTO preflight errors target stable attribute names instead of description or array position", () => {
+  const failure = describeMarketplaceError({ status: 400, payload: {
+    code: "otto_attributes_invalid", detail: "Исправьте атрибуты OTTO перед отправкой.",
+    errors: [
+      { field: "items[0].productDescription.attributes[2].values", attribute: "Grundfarbe", code: "attribute_value_not_allowed", message: "Выберите допустимое значение.", allowed_values: ["beige", "natur"] },
+      { field: "items[0].productDescription.attributes", attribute: "Hinweis Maßangaben", code: "required_attribute_missing", message: "Заполните обязательный атрибут." },
+      { field: "items[0].productDescription.attributes[4]", code: "invalid_attribute", message: "Укажите название атрибута." },
+    ],
+  } }, "ru");
+  assert.deepEqual(failure.issues.map((issue) => issue.field), ["attributes.Grundfarbe", "attributes.Hinweis Maßangaben", "attributes"]);
+  assert.equal(marketplaceFieldLabel(failure.issues[0].field, "ru"), "Grundfarbe");
+  assert.equal(marketplaceFieldLabel("attributes", "ru"), "Атрибуты категории");
+  assert.doesNotMatch(failure.message, /Описание/);
+});
+
+test("nested queued OTTO failures retain target and attribute identity", () => {
+  const failure = describeMarketplaceError({ result: { results: [{ status: "failed", target: "otto,profile=xl", error: { details: { upstream_response: {
+    errors: [{ field: "items[0].productDescription.attributes[0].values", attribute: "WEEE-Reg. Nr.", message: "Неверное значение." }],
+  } } } }] } });
+  assert.equal(failure.issues[0].field, "attributes.WEEE-Reg. Nr.");
+  assert.equal(failure.issues[0].target, "otto,profile=xl");
+  assert.equal(marketplaceFieldKey(failure.issues[0].field), failure.issues[0].field);
+});
+
+test("OTTO taxonomy failures do not mark product fields invalid", () => {
+  const failure = describeMarketplaceError({ status: 503, payload: { code: "otto_taxonomy_unavailable", detail: "Не удалось проверить каталог OTTO." } }, "ru");
+  assert.equal(failure.issues[0].field, "");
+  assert.match(failure.message, /каталог/);
 });

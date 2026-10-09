@@ -6,15 +6,16 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from src.sofort_orchestrator.api.routes import Deps, _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS, _JOB_INTAKE_TIMESTAMPS_MS
+from src.sofort_orchestrator.api.routes import Deps, _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS, _JOB_INTAKE_TIMESTAMPS_MS, _single_replay_key
 from src.sofort_orchestrator.application.orchestrator_service import OrchestratorService
 from src.sofort_orchestrator.application.job_worker import run_job_worker
-from src.sofort_orchestrator.domain.models import ChannelTarget, Marketplace
+from src.sofort_orchestrator.domain.models import ChannelTarget, CreateJobRequest, Marketplace
 from src.sofort_orchestrator.infra.channel_limiter import InMemoryChannelLimiter
 from src.sofort_orchestrator.infra.circuit_breaker import InMemoryCircuitBreaker
 from src.sofort_orchestrator.infra.http_client import RetryExhaustedError
 from src.sofort_orchestrator.infra.idempotency import SqliteIdempotencyStore
 from src.sofort_orchestrator.infra.job_store import SqliteJobStore
+from src.sofort_orchestrator.infra.job_replay_schema import migrate_job_replays
 from src.sofort_orchestrator.main import app
 from src.sofort_orchestrator.infra.settings import settings
 from src.sofort_orchestrator.domain.models import JobPriority, Operation, OrchestrateRequest
@@ -144,6 +145,7 @@ def _client_with_fake_adapters(fake: FakeAdapters, tmp_path) -> TestClient:
     Deps.service = OrchestratorService(adapters=fake)
     Deps.idempotency_store = SqliteIdempotencyStore(db_path=str(db_path), ttl_seconds=60)
     Deps.job_store = SqliteJobStore(db_path=str(jobs_path))
+    migrate_job_replays(str(jobs_path))
     _JOB_INTAKE_TIMESTAMPS_MS.clear()
     for queue in _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS.values():
         queue.clear()
@@ -156,6 +158,7 @@ def _client_with_service(service: OrchestratorService, tmp_path) -> TestClient:
     Deps.service = service
     Deps.idempotency_store = SqliteIdempotencyStore(db_path=str(db_path), ttl_seconds=60)
     Deps.job_store = SqliteJobStore(db_path=str(jobs_path))
+    migrate_job_replays(str(jobs_path))
     _JOB_INTAKE_TIMESTAMPS_MS.clear()
     for queue in _JOB_INTAKE_PRIORITY_TIMESTAMPS_MS.values():
         queue.clear()
@@ -898,6 +901,33 @@ def test_orchestrator_jobs_single_idempotency_replay(tmp_path):
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["job_id"] == second.json()["job_id"]
+
+
+def test_queued_job_replays_preserve_legacy_cache(tmp_path):
+    client = _client_with_fake_adapters(FakeAdapters(), tmp_path)
+    body = CreateJobRequest.model_validate({
+        "ean": "4012345678901",
+        "command": {"operation": "update", "payload": {"title": "Desk"},
+                    "channels": [{"marketplace": "hood", "account": "jv", "changed_fields": ["title"]}]},
+    })
+    replay_key = _single_replay_key(idempotency_key="legacy", body=body)
+    payload = {"job_id": "legacy-job", "request_id": "legacy-request", "status": "queued"}
+    Deps.idempotency_store.put(replay_key, payload)
+    response = client.post("/api/v1/orchestrator/jobs", json=body.model_dump(), headers={"Idempotency-Key": "legacy"})
+    assert response.status_code == 200
+    assert response.json() == payload
+    assert Deps.job_store.get_job_replay(replay_key) is None
+
+
+def test_readiness_requires_explicit_job_replay_migration(tmp_path):
+    client = _client_with_fake_adapters(FakeAdapters(), tmp_path)
+    path = str(tmp_path / "unmigrated-jobs.sqlite3")
+    Deps.job_store = SqliteJobStore(path)
+    assert client.get("/api/v1/readyz").status_code == 503
+    migrate_job_replays(path)
+    response = client.get("/api/v1/readyz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
 
 
 def test_orchestrator_jobs_single_idempotency_key_with_different_body_creates_distinct_jobs(tmp_path):

@@ -38,7 +38,8 @@ export function MarketplaceFormFeedback({ failure, clear, children }: {
       <p className="font-semibold">{language === "ru" ? "Запрос не выполнен" : language === "de" ? "Anfrage fehlgeschlagen" : "Request failed"}</p>
       <ul className="mt-2 list-disc space-y-1 pl-5">{failure.issues.map((issue, index) => <li key={index}>
         {issue.field ? <button type="button" className="text-left underline underline-offset-2" onClick={() => {
-          const field = container.current?.querySelector<HTMLElement>(`[data-marketplace-field="${CSS.escape(issue.field)}"]`);
+          const field = container.current?.querySelector<HTMLElement>(`[data-marketplace-field="${CSS.escape(issue.field)}"]`)
+            ?? (issue.field.startsWith("attributes.") ? container.current?.querySelector<HTMLElement>('[data-marketplace-field="attributes"]') : null);
           field?.scrollIntoView({ behavior: "smooth", block: "center" });
           field?.focus({ preventScroll: true });
         }}>{[issue.target, marketplaceFieldLabel(issue.field, language), issue.message].filter(Boolean).join(": ")}</button> : [issue.target, issue.message].filter(Boolean).join(": ")}

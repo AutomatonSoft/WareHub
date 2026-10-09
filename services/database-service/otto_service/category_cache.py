@@ -80,6 +80,10 @@ class OttoCategoryCache:
         row = self._attributes.find_one({"_id": category_id}, {"_id": 0, "attributes": 1})
         return row.get("attributes", []) if row else None
 
+    def category_id_by_name(self, name: str) -> str | None:
+        rows = list(self._categories.find({"name": name}, {"_id": 1}).limit(2))
+        return str(rows[0]["_id"]) if len(rows) == 1 else None
+
     def category_ids(self) -> list[str]:
         return [str(row["_id"]) for row in self._categories.find({}, {"_id": 1})]
 

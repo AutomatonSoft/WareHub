@@ -10,6 +10,9 @@ import {
   isOttoProductLineValid,
   OTTO_PRODUCT_LINE_MAX_LENGTH,
   OTTO_BASE_COLORS,
+  ottoAttributeChoices,
+  ottoAttributeValues,
+  synchronizeOttoDraft,
 } from "../app/create-product/otto-create-product-model.mjs";
 
 test("OTTO Grundfarbe choices match the requested lowercase single-select values", () => {
@@ -18,6 +21,40 @@ test("OTTO Grundfarbe choices match the requested lowercase single-select values
     "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
   ]);
   assert.equal(OTTO_BASE_COLORS.includes("Beige"), false);
+});
+
+test("OTTO single-value choices use taxonomy and leave free/multiple fields unchanged", () => {
+  assert.deepEqual(ottoAttributeChoices("Geschlecht", { multiValue: false, allowedValues: ["Unisex", "Damen", "Herren"] }), ["Unisex", "Damen", "Herren"]);
+  assert.deepEqual(ottoAttributeChoices("Farbe", { multiValue: true, allowedValues: ["Rot", "Blau"] }), []);
+  assert.deepEqual(ottoAttributeChoices("Pflegehinweise", { multiValue: false, allowedValues: [] }), []);
+  assert.deepEqual(ottoAttributeChoices("Other"), []);
+  assert.deepEqual(ottoAttributeChoices("Grundfarbe"), OTTO_BASE_COLORS);
+  assert.deepEqual(ottoAttributeChoices("Grundfarbe", { multiValue: false, allowedValues: ["natur"] }), ["natur"]);
+});
+
+test("OTTO draft synchronization is pure and preserves manual edits and stable source names", () => {
+  const draft = { category: "Old", additionalAttributes: { width: "100" }, attributeOverrides: { width: "120" }, attributeNames: {}, removedAttributeIds: [] };
+  const original = structuredClone(draft);
+  const source = [{ attributeId: "width", name: "Breite", values: ["90"] }];
+  const taxonomy = [{ id: "care", name: "Pflegehinweise", defaultValue: "Custom care" }];
+  const next = synchronizeOttoDraft(draft, source, taxonomy, "Sessel");
+  assert.deepEqual(draft, original);
+  assert.equal(next.category, "Sessel");
+  assert.deepEqual(next.additionalAttributes, { care: "Custom care" });
+  assert.equal(next.attributeOverrides.width, "120");
+  assert.equal(next.attributeNames.width, "Breite");
+  assert.equal(synchronizeOttoDraft(next, source, taxonomy, "Sessel"), next);
+});
+
+test("OTTO values preserve commas in prose, decimals and enum labels without splitting", () => {
+  for (const value of ["keine aggressiven Reinigungsmittel, nur ein feuchtes Tuch", "42,00", "Holz, lackiert"]) {
+    assert.deepEqual(ottoAttributeValues(value), [value]);
+    assert.deepEqual(buildOttoPayloadAttributes({ productAttributes: [{ attributeId: "value", name: "Test", values: ["Old"] }], attributeOverrides: { value } }), [{ name: "Test", values: [value] }]);
+  }
+  assert.deepEqual(ottoAttributeValues("Rot, Blau", ["Rot", "Blau"]), ["Rot", "Blau"]);
+  assert.deepEqual(ottoAttributeValues("", ["Old"]), []);
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes: [{ attributeId: "color", name: "Farbe", values: ["Rot", "Blau"] }], attributeOverrides: { color: "Rot, Blau" } }), [{ name: "Farbe", values: ["Rot", "Blau"] }]);
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes: [{ attributeId: "color", name: "Farbe", values: ["Rot"] }], attributeOverrides: { color: "" } }), []);
 });
 
 test("OTTO defaults use category IDs, replace source templates and preserve manual edits, blanks and removals", () => {

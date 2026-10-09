@@ -11,6 +11,18 @@ export const OTTO_BASE_COLORS = Object.freeze([
   "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
 ]);
 
+export function ottoAttributeChoices(name, attribute) {
+  if (attribute?.allowedValues?.length && (attribute.multiValue !== true || name.trim().toLowerCase() === "grundfarbe")) return attribute.allowedValues;
+  return name.trim().toLowerCase() === "grundfarbe" ? OTTO_BASE_COLORS : [];
+}
+
+export function ottoAttributeValues(value, originalValues = []) {
+  const normalized = text(value);
+  if (!normalized) return [];
+  const original = values(originalValues);
+  return original.join(", ") === normalized ? original : [normalized];
+}
+
 export function isOttoProductLineValid(value) {
   return text(value).length <= OTTO_PRODUCT_LINE_MAX_LENGTH;
 }
@@ -66,6 +78,22 @@ export function applyOttoAttributeSuggestions(draft, productAttributes, suggesti
   return { draft: next, applied };
 }
 
+export function synchronizeOttoDraft(draft, productAttributes, categoryAttributes, categoryName) {
+  let next = categoryName && draft.category !== categoryName ? { ...draft, category: categoryName } : draft;
+  next = applyOttoDefaultAttributes(next, productAttributes, categoryAttributes);
+  const names = Object.fromEntries(normalizeOttoProductAttributes(productAttributes).map((attribute) => [attribute.id, attribute.label]));
+  const missingNames = Object.fromEntries(Object.entries(names).filter(([id, name]) => next.attributeNames[id] !== name));
+  const mirrored = Object.entries(next.additionalAttributes).filter(([id]) => id in names);
+  if (!Object.keys(missingNames).length && !mirrored.length) return next;
+  const additionalAttributes = { ...next.additionalAttributes };
+  const attributeOverrides = { ...next.attributeOverrides };
+  for (const [id, value] of mirrored) {
+    delete additionalAttributes[id];
+    attributeOverrides[id] ??= value;
+  }
+  return { ...next, additionalAttributes, attributeOverrides, attributeNames: { ...next.attributeNames, ...missingNames } };
+}
+
 export function applyOttoDefaultAttributes(draft, productAttributes, attributes) {
   const source = normalizeOttoProductAttributes(productAttributes);
   let next = draft;
@@ -94,11 +122,12 @@ export function buildOttoPayloadAttributes({ productAttributes, additionalAttrib
 
   for (const attribute of normalizeOttoProductAttributes(productAttributes)) {
     if (removedIds.has(attribute.id)) continue;
-    const override = text(attributeOverrides?.[attribute.id]);
+    const override = attributeOverrides?.[attribute.id];
     const name = text(attributeNames?.[attribute.id]) || attribute.label;
     const key = name.toLocaleLowerCase();
     if (!name || !key) continue;
-    attributesByName.set(key, { name, values: override ? [override] : attribute.values });
+    const selectedValues = override === undefined ? attribute.values : ottoAttributeValues(override, attribute.values);
+    if (selectedValues.length) attributesByName.set(key, { name, values: selectedValues });
   }
 
   for (const [attributeId, value] of Object.entries(additionalAttributes ?? {})) {

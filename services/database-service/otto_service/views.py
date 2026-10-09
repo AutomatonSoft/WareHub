@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from database.permissions import SessionRolePermission
 from .external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from .category_cache import OttoCategoryCache
 from .attribute_defaults import with_create_attribute_defaults
+from .attribute_validation import OttoTaxonomyUnavailable, validate_product_attributes
 from .full_cache_sync import get_otto_full_cache_sync_service
 from .image_resolver import get_otto_image_resolver, resolve_cached_or_otto_image
 from .models import OttoProductJV, OttoProductXL
@@ -24,6 +26,7 @@ from .serializers import (
     OttoProductXLSerializer,
 )
 
+logger = logging.getLogger(__name__)
 
 PROFILE_TO_MODEL = {
     "jv": OttoProductJV,
@@ -198,6 +201,20 @@ class OttoProductUpsertAPIView(APIView):
         local_items = _normalize_products_for_local_storage(raw_items)
         serializer = OttoProductPayloadSerializer(data=local_items, many=True)
         serializer.is_valid(raise_exception=True)
+
+        try:
+            errors = validate_product_attributes(raw_items)
+        except (OttoTaxonomyUnavailable, RuntimeError, PyMongoError):
+            logger.warning("OTTO_UPSERT_TAXONOMY_UNAVAILABLE profile=%s", normalized_profile)
+            return Response(
+                {"code": "otto_taxonomy_unavailable", "detail": "Не удалось проверить атрибуты категории OTTO. Обновите каталог категорий и повторите отправку."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if errors:
+            return Response(
+                {"code": "otto_attributes_invalid", "detail": "Исправьте атрибуты OTTO перед отправкой.", "errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             upstream_response = OttoExternalProductsClient().create_or_update_products(
