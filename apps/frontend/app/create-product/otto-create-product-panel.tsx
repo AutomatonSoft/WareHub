@@ -40,13 +40,14 @@ type Props = {
   initialDraft: OttoCreateProductDraft;
   draftKey: string;
   reservedEan?: string;
+  identityEdited?: boolean;
   showQuantity?: boolean;
   profile: OttoShippingProfileAccount;
   categoryId: string;
   categoryName: string;
   productAttributes: unknown;
   sourceProduct?: Record<string, unknown>;
-  onDraftChange: (draft: OttoCreateProductDraft) => void;
+  onDraftChange: (draft: OttoCreateProductDraft, identityEdited?: boolean) => void;
 };
 
 type OttoProductAttribute = { id: string; label: string; value: string };
@@ -78,7 +79,7 @@ function AttributeInput({ name, value, onChange, placeholder }: {
   </select>;
 }
 
-export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "", showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
+export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "", identityEdited = false, showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
   const t = useLabels();
   const lang = useLanguage();
   const [draft, setDraft] = useState<OttoCreateProductDraft>(initialDraft);
@@ -87,6 +88,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "
   const onDraftChangeRef = useRef(onDraftChange);
   const sourceDraftRef = useRef(initialDraft);
   const dirtyDraftKeyRef = useRef<string | null>(null);
+  const editedIdentityKeyRef = useRef<string | null>(identityEdited ? draftKey : null);
   const initialDraftSignature = JSON.stringify(initialDraft);
 
   onDraftChangeRef.current = onDraftChange;
@@ -99,6 +101,15 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "
     if (dirtyDraftKeyRef.current === draftKey) return;
     setDraft(sourceDraftRef.current);
   }, [draftKey, initialDraftSignature]);
+  useEffect(() => {
+    if (!reservedEan || identityEdited || editedIdentityKeyRef.current === draftKey) return;
+    setDraft((current) => {
+      if (current.sku === reservedEan && current.ean === reservedEan) return current;
+      const next = { ...current, sku: reservedEan, ean: reservedEan };
+      onDraftChangeRef.current(next);
+      return next;
+    });
+  }, [draftKey, reservedEan, identityEdited, initialDraftSignature]);
   useEffect(() => {
     if (!categoryName) return;
     setDraft((current) => {
@@ -155,9 +166,11 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "
 
   const update = <Key extends keyof OttoCreateProductDraft>(key: Key, value: OttoCreateProductDraft[Key]) => {
     const next = { ...draft, [key]: value };
+    const identityChanged = key === "sku" || key === "ean";
+    if (identityChanged) editedIdentityKeyRef.current = draftKey;
     dirtyDraftKeyRef.current = draftKey;
     setDraft(next);
-    onDraftChangeRef.current(next);
+    onDraftChangeRef.current(next, identityChanged);
   };
   const updateBullet = (index: number, value: string) => {
     const next = Array.from({ length: Math.max(5, draft.bulletPoints.length) }, (_, itemIndex) => draft.bulletPoints[itemIndex] ?? "");
