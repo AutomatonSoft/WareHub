@@ -21,6 +21,15 @@ function selectSource(path, predicate) {
   return selected.getText(tree);
 }
 
+test("place editor preserves a leading minus and permits typing it first", () => {
+  const source = selectSource("../components/inventory/sofort-list/sofort-list-table-shell.tsx", node => ts.isFunctionDeclaration(node) && node.name?.text === "normalizePlaceValue");
+  const context = { exports: {}, stripCyrillic: value => value.replace(/[А-Яа-яЁё]/g, "") };
+  runInNewContext(ts.transpileModule(`exports.normalize = ${source};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  for (const [input, expected] of [["-", "-"], ["-3", "-3"], [" -176a", "-176A"], ["176a", "176A"], ["", ""]]) {
+    assert.equal(context.exports.normalize(input), expected);
+  }
+});
+
 test("archive return dialog shows old place and requires a positive new place without activating marketplaces", () => {
   const source = selectSource("../components/inventory/sofort-list/sofort-list-table-shell.tsx", (node, tree) => ts.isJsxElement(node) && node.openingElement.getText(tree).startsWith("<Dialog open={Boolean(marketplaceConfirm)}"));
   let confirm;

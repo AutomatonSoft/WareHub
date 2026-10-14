@@ -1,5 +1,14 @@
 # Implementation status
 
+## Archive place release and negative-place editing — 2026-10-14
+
+- Archiving locks the KID and atomically saves `archived=true` with the negative equivalent of a positive numeric place (including letter suffixes). Both changes are audited. Already-negative places remain unchanged, and repeated archiving is idempotent. Marketplace deactivation already calls this endpoint even after partial channel failures.
+- The Sofort list editor preserves the leading minus, including intermediate `-` input. Negative-place editing uses the existing archive-list filtering and does not activate/deactivate marketplaces.
+- Migration `database/0054_kid_active_place_constraint` restricts place uniqueness to nonarchived, nonempty, nonnegative places. Archived/negative places can repeat; occupied active places remain protected by the database. Place-conflict checks and suggestions ignore archived rows. Existing archived positive places no longer reserve active places; no historical rows are rewritten.
+- Validation: 11 archive/API persistence tests pass against an isolated in-memory SQLite schema, including both ordinary and composite edits, repeated negative places, archived positive places, audit and occupied-place rollback. Three frontend regressions and changed-file ESLint pass. Migration 0054 was applied independently to the 0053 KID schema in memory; duplicate archive places are allowed and active collisions rejected. `makemigrations --check --dry-run`, compileall and diff checks pass.
+- The full historical migration chain fails on SQLite at existing PostgreSQL-only SQL (`near DO`). PostgreSQL verification was not performed (local Docker socket permission denied). Authenticated browser verification, full frontend build/typecheck and stage/prod deployment remain pending.
+- Rollout requires a backup and explicit approval to apply migration 0054 before running the changed service. Rollback to the old constraint can fail after archived/negative places repeat: inspect duplicates and agree a data-preserving resolution before reversing the migration. No server migration or backfill was performed.
+
 ## OTTO external job lookup in Task statuses — 2026-10-09
 
 - History and recent results display each OTTO JV/XL external `job_id` (or legacy `marketplace_job_id`) as a button, independently of WareHub's internal job/task IDs. Results without an external ID do not invent one.

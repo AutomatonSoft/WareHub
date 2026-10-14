@@ -66,7 +66,7 @@ class Kid(Model):
         constraints = [
             UniqueConstraint(
                 fields=["place"],
-                condition=Q(place__isnull=False) & ~Q(place=""),
+                condition=Q(archived=False, place__isnull=False) & ~Q(place="") & ~Q(place__startswith="-"),
                 name="uniq_kid_non_empty_place",
             ),
         ]
