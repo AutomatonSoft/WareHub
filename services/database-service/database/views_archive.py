@@ -39,9 +39,14 @@ class KidArchiveAPIView(APIView):
             with transaction.atomic():
                 kid = Kid.objects.select_for_update().get(pk=kid.pk)
                 changes = []
-                if not data["archived"] and kid.place != data["place"]:
-                    changes.append({"field": "place", "before": kid.place, "after": data["place"]})
-                    kid.place = data["place"]
+                next_place = kid.place
+                if not data["archived"]:
+                    next_place = data["place"]
+                elif place_sign(kid.place) > 0:
+                    next_place = "-" + normalize_place(str(kid.place).strip().lstrip("+").lstrip("0"))
+                if kid.place != next_place:
+                    changes.append({"field": "place", "before": kid.place, "after": next_place})
+                    kid.place = next_place
                 if kid.archived != data["archived"]:
                     changes.append({"field": "archived", "before": kid.archived, "after": data["archived"]})
                     kid.archived = data["archived"]

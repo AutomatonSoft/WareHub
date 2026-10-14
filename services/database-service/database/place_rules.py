@@ -61,7 +61,7 @@ def normalize_place(value: object) -> str:
 
 
 def _occupied_pool_bases(*, exclude_kid_id: int | None = None) -> set[int]:
-    queryset = Kid.objects.all().order_by("id")
+    queryset = Kid.objects.filter(archived=False).order_by("id")
     if exclude_kid_id is not None:
         queryset = queryset.exclude(id=exclude_kid_id)
 
@@ -84,10 +84,10 @@ def suggest_next_free_base_place(*, exclude_kid_id: int | None = None, start_fro
 
 def find_place_conflict(place: object, *, exclude_kid_id: int | None = None) -> Kid | None:
     normalized_place = normalize_place(place)
-    if not normalized_place:
+    if not normalized_place or normalized_place.startswith("-"):
         return None
 
-    queryset = Kid.objects.filter(place__iexact=normalized_place).order_by("id")
+    queryset = Kid.objects.filter(archived=False, place__iexact=normalized_place).order_by("id")
     if exclude_kid_id is not None:
         queryset = queryset.exclude(id=exclude_kid_id)
     return queryset.first()
@@ -99,7 +99,7 @@ def suggest_nearest_free_place(place: object, *, exclude_kid_id: int | None = No
         return None
 
     base, suffix, _ = parsed
-    queryset = Kid.objects.all().order_by("id")
+    queryset = Kid.objects.filter(archived=False).order_by("id")
     if exclude_kid_id is not None:
         queryset = queryset.exclude(id=exclude_kid_id)
 
@@ -133,7 +133,7 @@ def suggest_same_base_subplace(place: object, *, exclude_kid_id: int | None = No
         return None
 
     base, suffix, _ = parsed
-    queryset = Kid.objects.all().order_by("id")
+    queryset = Kid.objects.filter(archived=False).order_by("id")
     if exclude_kid_id is not None:
         queryset = queryset.exclude(id=exclude_kid_id)
 
