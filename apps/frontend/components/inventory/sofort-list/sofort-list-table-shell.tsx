@@ -484,12 +484,14 @@ function stripCyrillic(value: string): string {
 }
 
 function normalizePlaceValue(value: string): string {
+  const negative = value.trimStart().startsWith("-");
   const sanitized = stripCyrillic(value).toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (negative && !sanitized) return "-";
   if (!/^\d/.test(sanitized)) return "";
   const match = sanitized.match(/^(\d{0,5})([A-Z]?)/);
   if (!match) return "";
   const [, digits = "", suffix = ""] = match;
-  return `${digits}${suffix}`;
+  return `${negative ? "-" : ""}${digits}${suffix}`;
 }
 
 function isNegativePlace(value: string): boolean {

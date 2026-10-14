@@ -88,6 +88,69 @@ class ArchiveTests(SimpleTestCase):
 
 
 class ArchivePersistenceTests(TestCase):
+    def archive(self, kid):
+        request = APIRequestFactory().post("/", {"kid_number": kid.kid_number[0], "kid_id": kid.pk, "archived": True}, format="json")
+        request.session = {"role": "admin"}
+        with patch("database.views_archive._find_kid_by_number", return_value=kid):
+            return KidArchiveAPIView.as_view()(request)
+
+    def test_archive_negates_place_and_records_both_changes(self):
+        from database.models import Kid, InventoryChangeLog
+        kid = Kid.objects.create(kid_number=["123"], place="3A")
+        self.assertEqual(self.archive(kid).status_code, 200)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "-3A")
+        self.assertTrue(kid.archived)
+        changes = InventoryChangeLog.objects.get(kid=kid).changes
+        self.assertIn({"field": "place", "before": "3A", "after": "-3A"}, changes)
+        self.assertIn({"field": "archived", "before": False, "after": True}, changes)
+        self.assertEqual(self.archive(kid).status_code, 200)
+        self.assertEqual(InventoryChangeLog.objects.filter(kid=kid).count(), 1)
+
+    def test_repeated_archiving_same_place_does_not_conflict(self):
+        from database.models import Kid
+        Kid.objects.create(kid_number=["old"], place="-3", archived=True)
+        kid = Kid.objects.create(kid_number=["123"], place="3")
+        self.assertEqual(self.archive(kid).status_code, 200)
+        self.assertEqual(Kid.objects.filter(place="-3", archived=True).count(), 2)
+        Kid.objects.create(kid_number=["next"], place="3")
+
+    def test_edit_allows_duplicate_negative_place_without_changing_marketplaces(self):
+        from database.models import Kid, EanStatus
+        from database.views import KidRetrieveUpdateAPIView, KidCompositeUpdateAPIView
+        Kid.objects.create(kid_number=["old"], place="-3", archived=True)
+        kid = Kid.objects.create(kid_number=["123"], place="12")
+        flags = EanStatus.objects.create(ean=kid, jv=True)
+        for view, payload in ((KidRetrieveUpdateAPIView, {"place": "-3"}), (KidCompositeUpdateAPIView, {"kid": {"place": "-3"}})):
+            with self.subTest(view=view.__name__):
+                kid.place = "12"
+                kid.save(update_fields=["place"])
+                request = APIRequestFactory().patch("/", payload, format="json")
+                request.session = {"role": "admin"}
+                response = view.as_view()(request, pk=kid.pk)
+                self.assertEqual(response.status_code, 200)
+                kid.refresh_from_db()
+                flags.refresh_from_db()
+                self.assertEqual(kid.place, "-3")
+                self.assertTrue(flags.jv)
+
+    def test_archived_positive_place_does_not_reserve_active_place(self):
+        from database.models import Kid
+        from database.place_rules import find_place_conflict, suggest_next_free_base_place
+        Kid.objects.create(kid_number=["old"], place="3", archived=True)
+        self.assertIsNone(find_place_conflict("3"))
+        self.assertIsNone(find_place_conflict("-3"))
+        self.assertEqual(suggest_next_free_base_place(start_from=3), "3")
+        kid = Kid.objects.create(kid_number=["123"], place="-12", archived=True)
+        request = APIRequestFactory().post("/", {"kid_number": "123", "kid_id": kid.pk, "archived": False, "place": "3"}, format="json")
+        request.session = {"role": "admin"}
+        with patch("database.views_archive._find_kid_by_number", return_value=kid):
+            response = KidArchiveAPIView.as_view()(request)
+        self.assertEqual(response.status_code, 200)
+        kid.refresh_from_db()
+        self.assertEqual(kid.place, "3")
+        self.assertFalse(kid.archived)
+
     def test_restore_updates_place_and_audits_previous_place(self):
         from database.models import Kid, InventoryChangeLog
         kid = Kid.objects.create(kid_number=["123"], place="-35", archived=False)
