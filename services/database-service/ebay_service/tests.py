@@ -660,6 +660,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
         self.assertEqual(session.calls[-1][0], "post")
         self.assertTrue(session.calls[-1][1][0].endswith("/sell/inventory/v1/offer"))
         self.assertEqual(session.calls[-1][2]["headers"]["Content-Language"], "de-DE")
+        self.assertEqual(session.calls[-1][2]["json"]["tax"]["vatPercentage"], 19.0)
         self.assertEqual(offer, {"offerId": "offer-id"})
 
     def test_reads_inventory_items_and_single_sku_with_seller_access_token(self):
@@ -698,6 +699,7 @@ class EbayTaxonomyClientTests(SimpleTestCase):
 
         operation_calls = [call for call in session.calls if "/sell/inventory/" in call[1][0]]
         self.assertTrue(operation_calls[0][1][0].endswith("/sell/inventory/v1/offer/offer-id"))
+        self.assertEqual(operation_calls[0][2]["json"]["tax"]["vatPercentage"], 19.0)
         self.assertTrue(operation_calls[1][1][0].endswith("/sell/inventory/v1/offer/offer-id/publish"))
         self.assertEqual(operation_calls[2][2]["json"]["requests"][0]["shipToLocationAvailability"], {"quantity": 2})
         self.assertEqual(operation_calls[2][2]["json"]["requests"][0]["offers"][0]["price"], {"currency": "EUR", "value": "19.99"})
