@@ -15,16 +15,23 @@ from .listing_operations import execute_listing_operation
 
 class EbayImageValidationTests(SimpleTestCase):
     @patch("ebay_service.image_validation._image_dimensions")
-    def test_filters_small_images_and_duplicates_without_changing_source(self, dimensions):
-        dimensions.side_effect = [(492, 330), (500, 100), (100, 500)]
+    def test_deduplicates_valid_images_without_changing_source(self, dimensions):
+        dimensions.side_effect = [(500, 330), (500, 100), (100, 500)]
         urls = ["https://images.test/small", "https://images.test/wide", "https://images.test/tall", "https://images.test/wide"]
         original = {"condition": "NEW", "product": {"title": "Chair", "imageUrls": urls}}
         checked, report = prepare_inventory_images(original)
-        self.assertEqual(checked["product"]["imageUrls"], urls[1:3])
+        self.assertEqual(checked["product"]["imageUrls"], urls[:3])
         self.assertEqual(original["product"]["imageUrls"], urls)
         self.assertEqual(dimensions.call_count, 3)
-        self.assertEqual(report["kept_count"], 2)
-        self.assertEqual({entry["reason"] for entry in report["removed_images"]}, {"duplicate", "too_small"})
+        self.assertEqual(report["kept_count"], 3)
+        self.assertEqual({entry["reason"] for entry in report["removed_images"]}, {"duplicate"})
+
+    @patch("ebay_service.image_validation._image_dimensions", side_effect=[(221, 330), (800, 600)])
+    def test_one_small_image_blocks_even_when_other_images_are_valid(self, _dimensions):
+        with self.assertRaises(EbayApiError) as error:
+            prepare_inventory_images({"product": {"imageUrls": ["https://images.test/main", "https://images.test/other"]}})
+        self.assertIn("images", error.exception.details["field_errors"])
+        self.assertEqual(error.exception.details["removed_images"][0]["width"], 221)
 
     @patch("ebay_service.image_validation._image_dimensions", return_value=(499, 499))
     def test_no_suitable_images_stops_publication(self, _dimensions):
@@ -90,7 +97,7 @@ class EbayImageValidationTests(SimpleTestCase):
 
 class EbayImagePublicationTests(SimpleTestCase):
     def setUp(self):
-        self.original = {"product": {"title": "Chair", "imageUrls": ["https://images.test/small", "https://images.test/good", "https://images.test/good"]}}
+        self.original = {"product": {"title": "Chair", "description": "Wooden chair", "imageUrls": ["https://images.test/good", "https://images.test/good"]}}
         self.listing = SimpleNamespace(offer_id="offer-1", item_id="item-1", merchant_location_key="warehouse", source_ean="4062292011702")
         for target in ("EbayOAuthClient", "EbayListing.objects.filter", "_save_listing", "_validate_inventory_publish_payload", "_validate_inventory_publish_taxonomy"):
             mocked = patch(f"ebay_service.listing_operations.{target}")
@@ -120,7 +127,33 @@ class EbayImagePublicationTests(SimpleTestCase):
                 self.assertEqual(result["image_validation"]["kept_count"], 1)
                 calls = [entry[0] for entry in self.client.mock_calls]
                 self.assertLess(calls.index("create_or_replace_inventory_item"), calls.index("publish_offer"))
-        self.assertEqual(len(self.original["product"]["imageUrls"]), 3)
+        self.assertEqual(len(self.original["product"]["imageUrls"]), 2)
+
+    @patch("ebay_service.image_validation._image_dimensions", return_value=(221, 330))
+    def test_update_with_small_image_does_not_write(self, _dimensions):
+        with self.assertRaises(EbayApiError):
+            self.execute("update")
+        self.client.create_or_replace_inventory_item.assert_not_called()
+        self.client.update_offer.assert_not_called()
+        self.client.bulk_update_price_quantity.assert_not_called()
+
+    def test_invalid_description_blocks_publish_update_and_relist(self):
+        self.original["product"]["description"] = '<link rel="stylesheet" href="https://example.test/style.css"><style>body { color: red;'
+        for operation in ("publish", "update", "relist"):
+            with self.subTest(operation=operation), self.assertRaises(EbayApiError) as error:
+                self.execute(operation)
+            self.assertIn("description", error.exception.details["field_errors"])
+        self.client.create_or_replace_inventory_item.assert_not_called()
+        self.client.update_offer.assert_not_called()
+        self.client.publish_offer.assert_not_called()
+
+    @patch("ebay_service.image_validation._image_dimensions", return_value=(800, 600))
+    def test_invalid_offer_description_is_checked_before_inventory_update(self, _dimensions):
+        self.client.offer.return_value = {"listingDescription": "<style>body{}"}
+        with self.assertRaises(EbayApiError):
+            self.execute("update")
+        self.client.create_or_replace_inventory_item.assert_not_called()
+        self.client.update_offer.assert_not_called()
 
     @patch("ebay_service.image_validation._image_dimensions")
     def test_failed_checks_do_not_write_or_publish(self, dimensions):

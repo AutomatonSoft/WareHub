@@ -62,7 +62,7 @@ def _image_dimensions(url: str, *, deadline: float) -> tuple[int, int]:
         raise EbayApiError(
             "Cannot verify an eBay image. Publication was stopped; check the image URL.",
             status_code=400, operation="validate_inventory_images",
-            details={"url": url, "reason": reason},
+            details={"url": url, "reason": reason, "field_errors": {"images": ["Cannot verify an eBay image. Check its public HTTPS URL."]}},
         ) from exc
     finally:
         if response is not None:
@@ -100,9 +100,15 @@ def prepare_inventory_images(item: dict) -> tuple[dict, dict]:
         else:
             kept.append(url)
     report = {"kept_count": len(kept), "removed_images": removed}
-    if not kept:
+    invalid = [entry for entry in removed if entry["reason"] == "too_small"]
+    if invalid:
+        first = invalid[0]
+        message = (
+            f"Publication stopped: {len(invalid)} image(s) have a longest side below 500 pixels. "
+            f"Replace the {first['width']} x {first['height']} image: {first['url']}"
+        )
         raise EbayApiError(
-            "No suitable eBay images remain. Add a photo with a longest side of at least 500 pixels.",
-            status_code=400, operation="validate_inventory_images", details=report,
+            message, status_code=400, operation="validate_inventory_images",
+            details={**report, "field_errors": {"images": [message]}},
         )
     return {**item, "product": {**product, "imageUrls": kept}}, report
