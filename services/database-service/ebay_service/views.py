@@ -15,6 +15,8 @@ from database.idempotency import build_request_hash, claim_or_replay, derive_ide
 
 from .client import EbayApiError, EbayNotificationClient, EbayOAuthClient, EbayTaxonomyClient
 from .credentials import EbayCredentialError, store_refresh_token
+from .content_validation import validate_inventory_descriptions
+from .image_validation import prepare_inventory_images
 from .listing_operations import execute_listing_operation, index_legacy_listing_page, reconcile_legacy_listing
 from .attribute_suggestions import AttributeSuggestionError, suggest_category_attributes
 
@@ -335,6 +337,8 @@ class EbayInventoryItemAPIView(APIView):
                 status=400,
             )
         try:
+            validate_inventory_descriptions(item)
+            item, _image_validation = prepare_inventory_images(item)
             EbayOAuthClient().create_or_replace_inventory_item(
                 account=account,
                 sku=sku,
@@ -360,6 +364,7 @@ class EbayOfferAPIView(APIView):
                 status=400,
             )
         try:
+            validate_inventory_descriptions(offer=offer)
             result = EbayOAuthClient().create_offer(account=account, offer=offer)
         except EbayApiError as error:
             return _offer_error_response(error, account=account)

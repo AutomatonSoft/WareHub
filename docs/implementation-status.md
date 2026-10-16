@@ -1,5 +1,19 @@
 # Implementation status
 
+## Fixed eBay Inventory VAT — 2026-10-16
+
+- Inventory offer creation and replacement always send `tax.vatPercentage=19.0` for JV/XL/DEP through the shared eBay client, including direct offer creation. Incoming VAT values cannot override it. Other tax settings and the submitted price remain unchanged; no additional 19% is added to the price.
+- No editable VAT control, environment setting, migrations, backfill or production writes were added. Existing listings are not changed automatically; price/quantity-only updates and relisting do not rewrite their tax configuration. Legacy Trading paths are unchanged.
+- Validation includes actual mocked POST/PUT payload assertions for all three accounts, absent/overridden VAT, preservation of other tax fields and input nonmutation. Live eBay acceptance and seller tax eligibility remain unverified; no deployment performed.
+
+## eBay strict Inventory content validation — 2026-10-16
+
+- Inventory publish/relist now fail closed when any image is below 500 px on its longest side, even if other images pass. The primary image is not silently dropped. Duplicate URLs remain deduplicated, with original source data unchanged. Download failures, invalid URLs, and excess images still block sending.
+- Server-side description validation rejects blank content, HTML/CSS/script-only templates, image-only descriptions, and inventory descriptions above 4000 characters. Nonempty listing description overrides must contain text too, without reusing the inventory-only length cap. This detects the observed truncated CSS template; it is not full HTML sanitization or a guarantee of semantic completeness.
+- Inventory content updates validate the merged inventory and offer before external writes. Price/quantity-only updates and withdrawal remain available without content validation; Legacy behavior is unchanged. Direct inventory-item and offer creation endpoints also validate provided descriptions, and direct inventory-item writes validate images.
+- Errors include `details.field_errors.images` or `description` for the existing shared form-error mapper. No production data, deployment, migrations, or live eBay writes were performed.
+- Validation: 78 focused server SimpleTestCase tests and 11 frontend marketplace-error tests pass locally with mocked external APIs. Django system checks, compileall and diff checks pass. Database-backed suites, authenticated browser behavior and live rejection checks remain unverified.
+
 ## Archive place release and negative-place editing — 2026-10-14
 
 - Archiving locks the KID and atomically saves `archived=true` with the negative equivalent of a positive numeric place (including letter suffixes). Both changes are audited. Already-negative places remain unchanged, and repeated archiving is idempotent. Marketplace deactivation already calls this endpoint even after partial channel failures.

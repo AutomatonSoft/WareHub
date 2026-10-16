@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from django.core.cache import cache
 
 from .credentials import EbayCredentialError, load_refresh_token
+from .offer_tax import with_fixed_vat
 
 
 logger = logging.getLogger(__name__)
@@ -377,7 +378,7 @@ class EbayOAuthClient:
         return self._seller_post(
             token=access_token,
             path="/sell/inventory/v1/offer",
-            payload=offer,
+            payload=with_fixed_vat(offer),
             operation="create_offer",
             content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
         )
@@ -415,7 +416,7 @@ class EbayOAuthClient:
         self._seller_put(
             token=access_token,
             path=f"/sell/inventory/v1/offer/{quote(_required(offer_id, 'offer_id'), safe='')}",
-            payload=offer,
+            payload=with_fixed_vat(offer),
             operation="update_offer",
             content_language=self._marketplace_locale(_required(str(offer.get("marketplaceId") or ""), "offer.marketplaceId")),
         )

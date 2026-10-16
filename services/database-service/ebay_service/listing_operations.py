@@ -10,6 +10,7 @@ from database.models import EbayListing
 
 from .client import EbayApiError, EbayOAuthClient, EbayTaxonomyClient
 from .image_validation import prepare_inventory_images
+from .content_validation import validate_inventory_descriptions
 
 
 _INVENTORY_OPERATIONS = frozenset({"fetch", "publish", "update", "unpublish", "relist"})
@@ -390,6 +391,7 @@ def _execute_inventory_operation(
         use_default_location = account in {"xl", "dep"} and not str(normalized_offer.get("merchantLocationKey") or "").strip()
         if use_default_location:
             normalized_offer["merchantLocationKey"] = f"warehub-{account}-de-{_DEFAULT_WAREHOUSE_POSTAL_CODE}"
+        validate_inventory_descriptions(inventory_item, normalized_offer)
         _validate_inventory_publish_payload(inventory_item=inventory_item, offer=normalized_offer)
         _validate_inventory_publish_taxonomy(
             inventory_item=inventory_item,
@@ -458,17 +460,25 @@ def _execute_inventory_operation(
         raise EbayApiError("No persisted Inventory API offer exists for this account, marketplace, and SKU.", status_code=409)
     if operation == "update":
         merchant_location_key = listing.merchant_location_key
+        checked_item = None
+        merged_offer = None
         if inventory_item is not None:
             current_inventory_item = client.inventory_item(account=account, sku=sku)
-            client.create_or_replace_inventory_item(
-                account=account,
-                sku=sku,
-                item=_merge_inventory_item(current=current_inventory_item, patch=inventory_item),
-                marketplace_id=marketplace_id,
-            )
+            merged_item = _merge_inventory_item(current=current_inventory_item, patch=inventory_item)
+            validate_inventory_descriptions(merged_item)
+            checked_item, _image_validation = prepare_inventory_images(merged_item)
         if offer is not None:
             current_offer = client.offer(account=account, offer_id=listing.offer_id)
             merged_offer = _merge_inventory_offer(current=current_offer, patch=offer, sku=sku, marketplace_id=marketplace_id)
+            validate_inventory_descriptions(offer=merged_offer)
+        if checked_item is not None:
+            client.create_or_replace_inventory_item(
+                account=account,
+                sku=sku,
+                item=checked_item,
+                marketplace_id=marketplace_id,
+            )
+        if merged_offer is not None:
             client.update_offer(
                 account=account,
                 offer_id=listing.offer_id,
@@ -518,6 +528,8 @@ def _execute_inventory_operation(
         )
 
     current_item = client.inventory_item(account=account, sku=sku)
+    current_offer = client.offer(account=account, offer_id=listing.offer_id)
+    validate_inventory_descriptions(current_item, current_offer)
     checked_item, image_validation = prepare_inventory_images(current_item)
     if checked_item != current_item:
         client.create_or_replace_inventory_item(account=account, sku=sku, item=checked_item, marketplace_id=marketplace_id)
