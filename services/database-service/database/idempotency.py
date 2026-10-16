@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from rest_framework.utils.encoders import JSONEncoder
 
 from .models import IdempotencyRecord
 
@@ -106,7 +107,7 @@ def claim_or_replay(*, scope: str, idem_key: str, request_hash: str, ttl_seconds
 def finalize_success(record: IdempotencyRecord, *, status_code: int, payload: dict):
     record.state = "completed"
     record.status_code = int(status_code)
-    record.response_payload = payload if isinstance(payload, dict) else {"data": payload}
+    record.response_payload = json.loads(json.dumps(payload if isinstance(payload, dict) else {"data": payload}, cls=JSONEncoder))
     record.error_code = ""
     record.save(update_fields=["state", "status_code", "response_payload", "error_code", "updated_at"])
 
@@ -114,6 +115,6 @@ def finalize_success(record: IdempotencyRecord, *, status_code: int, payload: di
 def finalize_error(record: IdempotencyRecord, *, status_code: int, payload: dict, error_code: str):
     record.state = "failed"
     record.status_code = int(status_code)
-    record.response_payload = payload if isinstance(payload, dict) else {"data": payload}
+    record.response_payload = json.loads(json.dumps(payload if isinstance(payload, dict) else {"data": payload}, cls=JSONEncoder))
     record.error_code = (error_code or "unknown_error")[:128]
     record.save(update_fields=["state", "status_code", "response_payload", "error_code", "updated_at"])
