@@ -1,0 +1,32 @@
+name: Self-hosted CI pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warehub-self-hosted-pilot
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.ref == 'refs/heads/stage' || github.ref == 'refs/heads/main'
+    runs-on: [warehub-ci-pilot]
+    timeout-minutes: 10
+    steps:
+      - name: Check isolated VM tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = warehub-ci-pilot
+          test "$(id -un)" = runner
+          test "$(nproc)" -eq 2
+          test ! -e /opt/warehub/prod/.env
+          test ! -e /opt/warehub/stage/.env
+          git --version
+          node --version
+          python3 --version
+          docker info --format '{{.Name}}'
+          docker run --rm --cpus=1 --memory=128m hello-world
