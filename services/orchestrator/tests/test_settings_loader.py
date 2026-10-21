@@ -41,7 +41,7 @@ def test_load_local_env_reads_only_repo_root_dotenv_without_overriding_existing_
 
     repo_root_env = module_path.parents[5] / ".env"
     repo_root_env.write_text(
-        "DATABASE_SERVICE_BASE_URL=http://from-root:8000\nORCHESTRATOR_HTTP_RETRIES=7\nORCHESTRATOR_SERVICE_AUTH_TOKEN=root-token\n",
+        "DATABASE_SERVICE_BASE_URL=http://from-root:8000\nORCHESTRATOR_HTTP_RETRIES=7\nORCHESTRATOR_SERVICE_AUTH_TOKEN=root-token\nORCHESTRATOR_HOOD_TIMEOUT_SECONDS=240\n",
         encoding="utf-8",
     )
 
@@ -54,12 +54,14 @@ def test_load_local_env_reads_only_repo_root_dotenv_without_overriding_existing_
     monkeypatch.setenv("DATABASE_SERVICE_BASE_URL", "http://already-set:9000")
     monkeypatch.delenv("ORCHESTRATOR_HTTP_RETRIES", raising=False)
     monkeypatch.delenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ORCHESTRATOR_HOOD_TIMEOUT_SECONDS", raising=False)
 
     module = _load_settings_module(module_path, "test_settings_root_dotenv")
 
     assert module.settings.base_url == "http://already-set:9000"
     assert module.settings.retries == 7
     assert module.settings.service_auth_token == "root-token"
+    assert module.settings.hood_timeout_seconds == 240.0
 
 
 def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):
@@ -70,9 +72,11 @@ def test_load_local_env_skips_missing_dotenv(tmp_path, monkeypatch):
 
     monkeypatch.delenv("ORCHESTRATOR_HTTP_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("ORCHESTRATOR_DISCOVER_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("ORCHESTRATOR_HOOD_TIMEOUT_SECONDS", raising=False)
 
     module = _load_settings_module(module_path, "test_settings_missing_dotenv")
 
     assert module.settings.timeout_seconds == 8.0
+    assert module.settings.hood_timeout_seconds == 300.0
     assert module.settings.discover_timeout_seconds == 15.0
     assert module.settings.marketplace_toggle_timeout_seconds == 60.0

@@ -30,6 +30,7 @@ class Settings:
         self.base_url = os.getenv("DATABASE_SERVICE_BASE_URL", "http://localhost:8000").rstrip("/")
         self.service_auth_token = (os.getenv("ORCHESTRATOR_SERVICE_AUTH_TOKEN") or "").strip()
         self.timeout_seconds = float(os.getenv("ORCHESTRATOR_HTTP_TIMEOUT_SECONDS", "8"))
+        self.hood_timeout_seconds = float(os.getenv("ORCHESTRATOR_HOOD_TIMEOUT_SECONDS", "300"))
         self.kaufland_publish_timeout_seconds = float(os.getenv("ORCHESTRATOR_KAUFLAND_PUBLISH_TIMEOUT_SECONDS", "75"))
         self.discover_timeout_seconds = float(os.getenv("ORCHESTRATOR_DISCOVER_TIMEOUT_SECONDS", "15"))
         self.marketplace_toggle_timeout_seconds = float(os.getenv("ORCHESTRATOR_MARKETPLACE_TOGGLE_TIMEOUT_SECONDS", "60"))
