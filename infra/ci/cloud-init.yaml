@@ -1,0 +1,45 @@
+#cloud-config
+hostname: warehub-ci-pilot
+ssh_pwauth: false
+disable_root: true
+users:
+  - name: runner
+    shell: /bin/bash
+    lock_passwd: true
+    groups: [docker]
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - docker.io
+  - git
+  - jq
+  - libicu74
+  - nodejs
+  - npm
+  - python3
+  - python3-venv
+  - qemu-guest-agent
+  - unzip
+write_files:
+  - path: /usr/local/sbin/prepare-warehub-runner
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      runner_version=2.338.0
+      runner_sha256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
+      install -d -o runner -g runner /opt/actions-runner
+      archive=$(mktemp)
+      trap 'rm -f "$archive"' EXIT
+      curl --fail --location --retry 3 --connect-timeout 15 --max-time 600 \
+        "https://github.com/actions/runner/releases/download/v${runner_version}/actions-runner-linux-x64-${runner_version}.tar.gz" \
+        -o "$archive"
+      printf '%s  %s\n' "$runner_sha256" "$archive" | sha256sum --check --status
+      tar -xzf "$archive" -C /opt/actions-runner
+      chown -R runner:runner /opt/actions-runner
+      touch /var/lib/warehub-runner-prepared
+runcmd:
+  - [systemctl, enable, --now, docker]
+  - [systemctl, start, qemu-guest-agent]
+  - [/usr/local/sbin/prepare-warehub-runner]

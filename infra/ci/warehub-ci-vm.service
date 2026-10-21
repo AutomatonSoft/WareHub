@@ -1,0 +1,45 @@
+[Unit]
+Description=Isolated WareHub CI pilot VM
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/warehub-ci/disk.qcow2
+
+[Service]
+Type=simple
+User=warehub-ci-vm
+Group=warehub-ci-vm
+SupplementaryGroups=kvm
+RuntimeDirectory=warehub-ci
+RuntimeDirectoryMode=0700
+WorkingDirectory=/opt/warehub-ci
+ExecStart=/usr/bin/qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 -display none -monitor none -serial stdio -no-reboot -drive file=/opt/warehub-ci/disk.qcow2,if=virtio,format=qcow2 -drive file=/opt/warehub-ci/seed.iso,media=cdrom,readonly=on -netdev user,id=net0,ipv6=off -device virtio-net-pci,netdev=net0 -device virtio-serial-pci -chardev socket,id=agent,path=/run/warehub-ci/agent.sock,server=on,wait=off -device virtserialport,chardev=agent,name=org.qemu.guest_agent.0
+CPUQuota=200%
+CPUWeight=10
+MemoryHigh=4608M
+MemoryMax=5G
+MemorySwapMax=0
+TasksMax=128
+IOWeight=10
+IOReadBandwidthMax=/opt/warehub-ci 20M
+IOWriteBandwidthMax=/opt/warehub-ci 10M
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/warehub-ci /run/warehub-ci
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+IPAddressDeny=localhost
+IPAddressDeny=10.0.0.0/8
+IPAddressDeny=172.16.0.0/12
+IPAddressDeny=192.168.0.0/16
+IPAddressDeny=169.254.0.0/16
+IPAddressDeny=fc00::/7
+IPAddressDeny=fe80::/10
+IPAddressDeny=31.70.112.98/32
+TimeoutStopSec=30
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
