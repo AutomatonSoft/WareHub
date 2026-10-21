@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import time
 
 import requests
 from ftplib import all_errors as FTP_ERRORS
@@ -48,6 +49,17 @@ HOOD_VALIDATE_UPLOADED_IMAGE_URLS = (os.getenv("HOOD_VALIDATE_UPLOADED_IMAGE_URL
     "on",
 }
 HOOD_CREATE_CATEGORY_ID = "2412"
+HOOD_CREATE_CONFIRMATION_DELAYS = (0, 0.5, 1)
+
+
+def _confirm_created_hood_item(*, ean: str, account: str) -> dict | None:
+    for delay in HOOD_CREATE_CONFIRMATION_DELAYS:
+        if delay:
+            time.sleep(delay)
+        item = _extract_current_external_item(ean=ean, account=account)
+        if item is not None:
+            return item
+    return None
 
 
 def _normalize_changed_fields(value) -> list[str]:
@@ -494,7 +506,8 @@ class HoodFetchByEANAPIView(APIView):
                 )
             except requests.RequestException as exc:
                 last_error = str(exc)
-                continue
+                external_response = None
+                break
 
             if response.status_code in (404, 405):
                 external_response = response
@@ -522,7 +535,14 @@ class HoodFetchByEANAPIView(APIView):
         except ValueError:
             external_payload = {}
 
-        created_item = _extract_current_external_item(ean=ean_value, account=account)
+        returned_items = external_payload.get("items", []) if isinstance(external_payload, dict) else []
+        created_item = next((
+            item for item in returned_items
+            if isinstance(item, dict) and item.get("itemID")
+            and str(item.get("ean") or item.get("itemNumber") or "").strip() == ean_value
+        ), None) if isinstance(returned_items, list) else None
+        if created_item is None:
+            created_item = _confirm_created_hood_item(ean=ean_value, account=account)
         if created_item is None:
             payload = {
                 "code": "hood_external_create_unconfirmed",
@@ -533,13 +553,13 @@ class HoodFetchByEANAPIView(APIView):
             finalize_error(idem_record, status_code=status.HTTP_502_BAD_GATEWAY, payload=payload, error_code=payload["code"])
             return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
 
-        if not isinstance(external_payload, dict) or not isinstance(external_payload.get("items"), list):
-            external_payload = {
-                "account": account,
-                "ean": ean_value,
-                "success": True,
-                "items": [created_item],
-            }
+        external_payload = {
+            **(external_payload if isinstance(external_payload, dict) else {}),
+            "account": account,
+            "ean": ean_value,
+            "success": True,
+            "items": [created_item],
+        }
 
         db_result = None
         if isinstance(external_payload, dict) and isinstance(external_payload.get("items"), list):

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 HOOD_API_BASE_URL = os.getenv("HOOD_API_BASE_URL", "https://hoodbot.automatonsoft.de").rstrip("/")
 HOOD_API_CONNECT_TIMEOUT = int(os.getenv("HOOD_API_CONNECT_TIMEOUT", "8"))
-HOOD_API_READ_TIMEOUT = int(os.getenv("HOOD_API_READ_TIMEOUT", "30"))
+HOOD_API_READ_TIMEOUT = int(os.getenv("HOOD_API_READ_TIMEOUT", "60"))
 HOOD_API_TIMEOUT = (HOOD_API_CONNECT_TIMEOUT, HOOD_API_READ_TIMEOUT)
 HOOD_API_PATCH_ENDPOINT = os.getenv("HOOD_API_PATCH_ENDPOINT", "/api/items/by-ean")
 HOOD_API_CREATE_ENDPOINT = os.getenv("HOOD_API_CREATE_ENDPOINT", HOOD_API_PATCH_ENDPOINT)

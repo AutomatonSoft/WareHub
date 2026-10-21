@@ -1,4 +1,10 @@
+from contextlib import ExitStack
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+import requests
 from django.test import SimpleTestCase, TestCase
+from rest_framework.test import APIRequestFactory
 
 from database.models import Ean, EanStatus, Kid
 
@@ -7,11 +13,124 @@ from .models import HoodProductSnapshot
 from .snapshot_store import get_hood_product_snapshot_payload, save_hood_product_snapshot
 from .views import (
     HOOD_CREATE_CATEGORY_ID,
+    HoodFetchByEANAPIView,
     _coerce_json_list_field,
     _enforce_create_category,
     _merge_uploaded_image_urls,
     _record_hood_marketplace_ean,
 )
+
+
+class HoodCreateConfirmationTests(SimpleTestCase):
+    def setUp(self):
+        stack = self.enterContext(ExitStack())
+        self.mocks = {}
+        for name in (
+            "claim_or_replay", "finalize_error", "finalize_success",
+            "_extract_current_external_item", "_record_hood_marketplace_ean",
+            "upsert_response_and_items", "set_external_push_status",
+            "transaction.atomic", "requests.post", "time.sleep", "build_create_urls",
+        ):
+            self.mocks[name] = stack.enter_context(patch(f"hood_service.views.{name}"))
+        self.mocks["claim_or_replay"].return_value = ("claimed", SimpleNamespace())
+        self.mocks["build_create_urls"].return_value = ["https://hood.example/create", "https://hood.example/create/"]
+        self.mocks["requests.post"].return_value = Mock(status_code=201, json=Mock(return_value={"items": []}))
+        self.item = {"itemID": "hood-123", "itemNumber": "4071489363630", "title": "Desk"}
+        self.mocks["_extract_current_external_item"].return_value = self.item
+
+    def create_product(self):
+        view = HoodFetchByEANAPIView()
+        request = APIRequestFactory().post(
+            "/api/v1/hood/items/by-ean/4071489363630/?account=jv",
+            {"title": "Desk", "__source_ean": "4062292028939"},
+            format="json",
+        )
+        return view.post(view.initialize_request(request), ean="4071489363630")
+
+    def test_delayed_confirmation_records_ean_without_repeating_create(self):
+        self.mocks["_extract_current_external_item"].side_effect = [None, self.item]
+
+        response = self.create_product()
+
+        self.assertEqual(response.status_code, 201)
+        self.mocks["requests.post"].assert_called_once()
+        self.assertEqual(self.mocks["_extract_current_external_item"].call_count, 2)
+        self.mocks["_record_hood_marketplace_ean"].assert_called_once_with(
+            source_ean="4062292028939", marketplace_ean="4071489363630", account="jv",
+        )
+        self.assertEqual(self.mocks["upsert_response_and_items"].call_args.args[0]["items"], [self.item])
+        self.mocks["finalize_success"].assert_called_once()
+
+    def test_unconfirmed_create_is_not_marked_published(self):
+        self.mocks["_extract_current_external_item"].return_value = None
+
+        response = self.create_product()
+
+        self.assertEqual(response.data["code"], "hood_external_create_unconfirmed")
+        self.mocks["requests.post"].assert_called_once()
+        self.assertEqual(self.mocks["_extract_current_external_item"].call_count, 3)
+        self.mocks["_record_hood_marketplace_ean"].assert_not_called()
+        self.mocks["finalize_success"].assert_not_called()
+
+    def test_matching_created_item_in_post_response_is_sufficient_confirmation(self):
+        self.mocks["requests.post"].return_value.json.return_value = {"items": [self.item]}
+
+        response = self.create_product()
+
+        self.assertEqual(response.status_code, 201)
+        self.mocks["_extract_current_external_item"].assert_not_called()
+        self.mocks["_record_hood_marketplace_ean"].assert_called_once()
+
+    def test_unrelated_post_item_cannot_confirm_creation(self):
+        self.mocks["requests.post"].return_value.json.return_value = {
+            "items": [{**self.item, "itemNumber": "OTHER-EAN"}],
+        }
+        self.mocks["_extract_current_external_item"].return_value = None
+
+        response = self.create_product()
+
+        self.assertEqual(response.data["code"], "hood_external_create_unconfirmed")
+        self.mocks["_record_hood_marketplace_ean"].assert_not_called()
+
+    def test_only_confirmed_item_is_saved_after_lookup(self):
+        self.mocks["requests.post"].return_value.json.return_value = {
+            "items": [{**self.item, "itemNumber": "OTHER-EAN"}],
+        }
+
+        response = self.create_product()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.mocks["upsert_response_and_items"].call_args.args[0]["items"], [self.item])
+
+    def test_timeout_does_not_try_another_create_url(self):
+        self.mocks["requests.post"].side_effect = requests.Timeout("response lost")
+
+        response = self.create_product()
+
+        self.assertEqual(response.data["code"], "hood_external_network_failed")
+        self.mocks["requests.post"].assert_called_once()
+        self.mocks["_record_hood_marketplace_ean"].assert_not_called()
+
+    def test_missing_endpoint_can_fall_back_to_next_url(self):
+        self.mocks["requests.post"].side_effect = [
+            Mock(status_code=404), Mock(status_code=201, json=Mock(return_value={})),
+        ]
+
+        response = self.create_product()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.mocks["requests.post"].call_count, 2)
+
+    def test_existing_item_error_does_not_claim_an_unverified_mapping(self):
+        self.mocks["requests.post"].return_value = Mock(
+            status_code=409, text="Item already exists in Hood by EAN: 4071489363630",
+        )
+
+        response = self.create_product()
+
+        self.assertEqual(response.data["code"], "hood_external_create_failed")
+        self.mocks["requests.post"].assert_called_once()
+        self.mocks["_record_hood_marketplace_ean"].assert_not_called()
 
 
 class HoodImagePayloadTests(SimpleTestCase):
