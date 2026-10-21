@@ -10,17 +10,32 @@ users:
 package_update: true
 packages:
   - ca-certificates
+  - build-essential
+  - clang
+  - cmake
   - curl
+  - docker-buildx
+  - docker-compose-v2
   - docker.io
   - git
   - jq
   - libicu74
+  - libclang-dev
+  - libglu1-mesa
+  - libssl-dev
+  - ninja-build
   - nodejs
   - npm
+  - openssh-client
+  - pkg-config
   - python3
   - python3-venv
   - qemu-guest-agent
+  - rsync
+  - ruby
   - unzip
+  - xz-utils
+  - zip
 write_files:
   - path: /usr/local/sbin/prepare-warehub-runner
     permissions: '0755'

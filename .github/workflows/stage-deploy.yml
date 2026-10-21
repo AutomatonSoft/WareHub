@@ -34,7 +34,7 @@ concurrency:
 jobs:
   prepare:
     name: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     outputs:
       image_owner: ${{ steps.meta.outputs.image_owner }}
@@ -97,7 +97,7 @@ jobs:
   build:
     name: build (${{ matrix.name }})
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 45
     strategy:
       fail-fast: true
@@ -159,7 +159,7 @@ jobs:
   deploy:
     name: stage-deploy
     needs: [prepare, build]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 45
     environment: stage
     permissions:

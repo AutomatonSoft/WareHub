@@ -13,7 +13,7 @@ concurrency:
 jobs:
   stage-compose-preflight:
     name: stage-compose-preflight
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     environment: stage
     env:

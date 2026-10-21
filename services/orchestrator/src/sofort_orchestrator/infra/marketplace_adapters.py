@@ -19,11 +19,13 @@ class MarketplaceAdapters:
         http_client: HttpClient,
         service_auth_token: str = "",
         kaufland_publish_timeout_seconds: float = 75,
+        hood_timeout_seconds: float = 300,
     ) -> None:
         self.base_url = base_url
         self.http = http_client
         self.service_auth_token = service_auth_token
         self.kaufland_publish_timeout_seconds = kaufland_publish_timeout_seconds
+        self.hood_timeout_seconds = hood_timeout_seconds
 
     def dispatch(
         self,
@@ -72,7 +74,11 @@ class MarketplaceAdapters:
             url = f"{self.base_url}/api/v1/hood/items/by-ean/{ean}/"
             method = "POST" if operation is Operation.PUBLISH else "PATCH"
             body = {**payload, "itemNumber": ean} if method == "POST" and channel.ean_source == "pool" else payload
-            response = self.http.request(method, url, headers=headers, params={"account": account}, json=body)
+            response = self.http.request(
+                method, url, headers=headers, params={"account": account}, json=body,
+                timeout_seconds=self.hood_timeout_seconds,
+                retries=0 if operation is Operation.PUBLISH else None,
+            )
             return AdapterResult(status_code=response.status_code, body=_json_or_text(response))
 
         if channel.marketplace is Marketplace.KAUFLAND:

@@ -27,7 +27,7 @@ concurrency:
 jobs:
   publish:
     name: build-and-publish-stage-apk
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 45
     environment: stage
     env:
