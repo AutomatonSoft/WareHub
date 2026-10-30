@@ -52,11 +52,11 @@ class OttoPublicationDatabaseTests(APITestCase):
         self.assertEqual(record.state, "pending")
         self.assertTrue(self.map_ean("xl")["status"])
 
-    def test_no_due_rows_and_non_otto_mapping_are_unchanged(self):
+    def test_no_due_rows_and_unverified_kaufland_mapping_remains_red(self):
         self.assertIsNone(reconcile_next_publication(client()))
         result = confirm_marketplace_ean_mapping(kid_number="123456789", marketplace="kaufland", account="jv", ean=SKU)
-        self.assertTrue(result["status"])
-        self.assertTrue(EanStatus.objects.get(ean=self.kid).kaufland_jv)
+        self.assertFalse(result["status"])
+        self.assertFalse(EanStatus.objects.get(ean=self.kid).kaufland_jv)
 
     def test_first_tracked_editor_update_clears_unverified_otto_flag_only(self):
         Ean.objects.create(kid=self.kid, otto_jv=SKU, kaufland_jv="another-ean")

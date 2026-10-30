@@ -39,6 +39,7 @@ test("iframe blur preserves the latest price and other draft edits without reloa
     useEffect: effect => { effects.push(effect); },
     readHoodDescriptionPreviewDocumentHtml: () => "<p>Edited description</p>",
     HtmlFontFamilySelect: () => null,
+    HtmlFontStyleControls: () => null,
     ResizeObserver: class { observe() {} disconnect() {} },
   };
   runInNewContext(ts.transpileModule(component.getText(tree), {

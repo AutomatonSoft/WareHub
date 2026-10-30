@@ -43,6 +43,8 @@ from jv_services.view_helpers import to_date_or_none, to_datetime_or_none
 from jv_services.views_push_state import mark_push_failed, mark_push_pending, mark_push_pushed
 from jv_services.views_write_products import create_local_product_from_source, update_local_product_from_source
 from kaufland.external_requests import set_product_active_state
+from kaufland.publication_service import apply_active_state as apply_kaufland_publication_active_state
+from kaufland.models import KauflandPublication
 from otto_service.external_requests import OttoExternalAPIError, OttoExternalProductsClient
 from otto_service.models import OttoPublication
 from xl_services.models import ImportedProduct as XLImportedProduct
@@ -1905,6 +1907,7 @@ def _apply_kaufland_active_state(*, ean: str, site_key: str, controller: str, in
             },
         }
 
+    apply_kaufland_publication_active_state(controller=controller, ean=ean, active=not bool(inactive))
     return {
         "ok": True,
         "site_key": site_key,
@@ -1915,7 +1918,7 @@ def _apply_kaufland_active_state(*, ean: str, site_key: str, controller: str, in
             "ean": ean,
             "controller": controller,
             "inactive": bool(inactive),
-            "status": not bool(inactive),
+            "status": False,
             "upstream_response": upstream_payload,
         },
     }
@@ -2121,7 +2124,10 @@ def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor:
         ean_value = str(getattr(ean_row, source_field, "") or "").strip()
         if not ean_value:
             continue
-        if bool(getattr(status_row, source_field, False)) == desired_status:
+        pending = KauflandPublication.objects.filter(
+            controller=controller, ean=ean_value, next_check_at__isnull=False,
+        ).exists()
+        if bool(getattr(status_row, source_field, False)) == desired_status and not (inactive and pending):
             continue
 
         result = _apply_kaufland_active_state(
@@ -2131,7 +2137,7 @@ def deactivate_kaufland_by_kid_number(*, kid_number: str, inactive: bool, actor:
             inactive=inactive,
         )
         if result.get("ok") and result.get("status_code") in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
-            setattr(status_row, source_field, desired_status)
+            setattr(status_row, source_field, bool(result.get("details", {}).get("status", desired_status)))
             status_row.save(update_fields=[source_field])
         results.append(result)
 

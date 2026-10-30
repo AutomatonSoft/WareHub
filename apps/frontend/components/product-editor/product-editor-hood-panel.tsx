@@ -8,6 +8,8 @@ import { Button } from "../ui/button";
 import { FormField } from "../ui/form-field";
 import { Input } from "../ui/input";
 import { HtmlFontFamilySelect } from "../ui/html-font-family-select";
+import { HtmlFontStyleControls } from "../ui/html-font-style-controls";
+import { applyHtmlFontSize } from "../ui/html-font-style";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/cn";
 import { decodeHtmlEntities } from "../hood/hood-search-utils";
@@ -146,20 +148,24 @@ function EditableHoodDescriptionPreview({
     }
   }
 
-  function applyFontFamily(fontFamily: string) {
+  function applyFormatting(command: string, value: string) {
     const frameDocument = iframeRef.current?.contentDocument;
     const selection = iframeRef.current?.contentWindow?.getSelection();
     if (!frameDocument || !selectionRangeRef.current || !selection) return;
     selection.removeAllRanges();
     selection.addRange(selectionRangeRef.current);
-    frameDocument.execCommand("fontName", false, fontFamily);
+    if (command === "fontSize") applyHtmlFontSize(frameDocument, value);
+    else frameDocument.execCommand(command, false, value);
     saveSelection();
     syncFrameToDraft();
   }
 
   return (
     <div className="space-y-3">
-      <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={applyFontFamily} />
+      <div className="flex flex-wrap items-center gap-1">
+        <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={(value) => applyFormatting("fontName", value)} />
+        <HtmlFontStyleControls onSaveSelection={saveSelection} onSizeChange={(value) => applyFormatting("fontSize", value)} onColorChange={(value) => applyFormatting("foreColor", value)} />
+      </div>
       <iframe
         ref={iframeRef}
         title={t.hoodDescriptionPreview}

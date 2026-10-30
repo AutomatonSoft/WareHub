@@ -8,7 +8,6 @@ from .external_requests import (
     change_product_by_ean,
     create_product_by_ean,
     delete_product_by_ean,
-    get_product_publication_status,
     product_inside,
     set_product_active_state,
 )
@@ -19,6 +18,7 @@ from .serializers import (
     KauflandCreateByEANSerializer,
     KauflandDeleteByEANSerializer,
 )
+from .publication_service import apply_active_state, record_submission
 import requests
 import re
 import json
@@ -245,6 +245,7 @@ class KauflandProductActiveStateAPIView(APIView):
                 controller=serializer.validated_data["controller"],
                 active=self.active,
             )
+            apply_active_state(controller=serializer.validated_data["controller"], ean=ean, active=self.active)
             return Response(data, status=200)
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502
@@ -295,29 +296,10 @@ class CreateProductByEANAPIView(APIView):
             )
         except Exception as exc:
             return Response({"error": str(exc)}, status=500)
-        try:
-            publication = get_product_publication_status(payload["ean"], payload["controller"])
-        except (requests.RequestException, ValueError):
-            return Response(
-                {
-                    "error": "kaufland_publication_unverified",
-                    "detail": "Kaufland accepted the upload, but its publication status could not be verified.",
-                },
-                status=503,
-            )
-        if (
-            publication.get("ean") != payload["ean"]
-            or publication.get("controller") != payload["controller"]
-            or publication.get("is_live") is not True
-            or publication.get("is_valid") is not True
-        ):
-            return Response(
-                {
-                    "error": "kaufland_publication_not_live",
-                    "detail": "Kaufland accepted the upload, but the product is not live.",
-                    "publication_status": publication.get("status"),
-                    "issues_detected": publication.get("issues_detected") or [],
-                },
-                status=409,
-            )
-        return Response(data, status=200)
+        record_submission(controller=payload["controller"], ean=payload["ean"])
+        return Response({
+            "status": "accepted", "publication_state": "pending",
+            "ean": payload["ean"], "controller": payload["controller"],
+            "detail": "Sent to Kaufland. Publication will be checked hourly.",
+            "upstream_response": data,
+        }, status=202)
