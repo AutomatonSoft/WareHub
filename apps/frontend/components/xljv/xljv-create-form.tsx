@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef } from "react";
+import { HtmlFontStyleControls } from "../ui/html-font-style-controls";
+import { applyHtmlFontSize } from "../ui/html-font-style";
 import { useLabels } from "../../app/use-labels";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -58,11 +60,26 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
   } = props;
 
   const htmlEditorRef = useRef<HTMLDivElement | null>(null);
+  const selectionRangeRef = useRef<Range | null>(null);
+
+  function saveHtmlSelection() {
+    const selection = document.getSelection();
+    if (selection?.rangeCount && htmlEditorRef.current?.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      selectionRangeRef.current = selection.getRangeAt(0).cloneRange();
+    }
+  }
 
   function applyHtmlCommand(command: string, value?: string) {
     if (!htmlEditorRef.current) return;
     htmlEditorRef.current.focus();
-    document.execCommand(command, false, value);
+    const selection = document.getSelection();
+    if (selectionRangeRef.current && selection) {
+      selection.removeAllRanges();
+      selection.addRange(selectionRangeRef.current);
+    }
+    if (command === "fontSize") applyHtmlFontSize(document, value ?? "");
+    else document.execCommand(command, false, value);
+    saveHtmlSelection();
     const nextHtml = htmlEditorRef.current.innerHTML || "";
     onSetCreateForm((prev) => (prev ? { ...prev, description_html: nextHtml } : prev));
   }
@@ -146,6 +163,7 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                 <div className="mb-1 text-xs font-semibold">{t.xljvWysiwygDescription}</div>
                 <div className="rounded-xl border border-border bg-card">
                   <div className="flex flex-wrap gap-1 border-b border-border p-2">
+                    <HtmlFontStyleControls onSaveSelection={saveHtmlSelection} onSizeChange={(value) => applyHtmlCommand("fontSize", value)} onColorChange={(value) => applyHtmlCommand("foreColor", value)} />
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("bold")}>B</Button>
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("italic")}>I</Button>
                     <Button type="button" variant="ghost" onClick={() => applyHtmlCommand("underline")}>U</Button>
@@ -167,6 +185,8 @@ export function XLJVCreateForm(props: XLJVCreateFormProps) {
                     ref={htmlEditorRef}
                     className="min-h-[180px] w-full px-3 py-2 text-sm outline-none"
                     contentEditable
+                    onMouseUp={saveHtmlSelection}
+                    onKeyUp={saveHtmlSelection}
                     suppressContentEditableWarning
                     onInput={() =>
                       onSetCreateForm((prev) =>

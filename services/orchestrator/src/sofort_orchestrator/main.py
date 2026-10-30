@@ -22,6 +22,7 @@ from .application.job_worker import run_job_worker
 from .application.reconciliation_scheduler import run_reconciliation_scheduler
 from .application.otto_category_scheduler import run_otto_category_scheduler
 from .application.otto_publication_scheduler import run_otto_publication_scheduler
+from .application.kaufland_publication_scheduler import run_kaufland_publication_scheduler
 from .application.orchestrator_service import OrchestratorService
 from .domain.models import ErrorContract
 from .infra.channel_limiter import InMemoryChannelLimiter
@@ -199,6 +200,7 @@ async def lifespan(_app: FastAPI):
     reconciliation_scheduler_task: asyncio.Task | None = None
     otto_category_scheduler_task: asyncio.Task | None = None
     otto_publication_scheduler_task: asyncio.Task | None = None
+    kaufland_publication_scheduler_task: asyncio.Task | None = None
     configure_runtime_dependencies()
     if settings.enable_job_worker:
         service = Deps.service
@@ -271,6 +273,11 @@ async def lifespan(_app: FastAPI):
             )
         )
     if settings.enable_job_worker and settings.service_auth_token:
+        kaufland_publication_scheduler_task = asyncio.create_task(
+            _run_background_worker("kaufland_publication_scheduler", run_kaufland_publication_scheduler(
+                base_url=settings.base_url, token=settings.service_auth_token,
+            ))
+        )
         otto_publication_scheduler_task = asyncio.create_task(
             _run_background_worker("otto_publication_scheduler", run_otto_publication_scheduler(
                 base_url=settings.base_url, token=settings.service_auth_token,
@@ -279,6 +286,12 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        if kaufland_publication_scheduler_task is not None:
+            kaufland_publication_scheduler_task.cancel()
+            try:
+                await kaufland_publication_scheduler_task
+            except asyncio.CancelledError:
+                pass
         if otto_publication_scheduler_task is not None:
             otto_publication_scheduler_task.cancel()
             try:

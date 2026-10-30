@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { readHoodDescriptionPreviewDocumentHtml } from "../../components/product-editor/product-editor-hood-description-preview";
 import { HtmlFontFamilySelect } from "../../components/ui/html-font-family-select";
+import { HtmlFontStyleControls } from "../../components/ui/html-font-style-controls";
+import { applyHtmlFontSize } from "../../components/ui/html-font-style";
 
 type EditableDescriptionPreviewProps = {
   title: string;
@@ -54,13 +56,14 @@ export function EditableDescriptionPreview({
     }
   };
 
-  const applyFontFamily = (fontFamily: string) => {
+  const applyFormatting = (command: string, value: string) => {
     const frameDocument = iframeRef.current?.contentDocument;
     const selection = iframeRef.current?.contentWindow?.getSelection();
     if (!frameDocument || !selectionRangeRef.current || !selection) return;
     selection.removeAllRanges();
     selection.addRange(selectionRangeRef.current);
-    frameDocument.execCommand("fontName", false, fontFamily);
+    if (command === "fontSize") applyHtmlFontSize(frameDocument, value);
+    else frameDocument.execCommand(command, false, value);
     saveSelection();
     saveFrameEdits();
     syncFrameHeight();
@@ -86,7 +89,8 @@ export function EditableDescriptionPreview({
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-1 rounded-t-[var(--radius-control)] border border-b-0 border-border/70 bg-muted/20 p-2">
-        <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={applyFontFamily} />
+        <HtmlFontFamilySelect onMouseDown={saveSelection} onSelect={(value) => applyFormatting("fontName", value)} />
+        <HtmlFontStyleControls onSaveSelection={saveSelection} onSizeChange={(value) => applyFormatting("fontSize", value)} onColorChange={(value) => applyFormatting("foreColor", value)} />
       </div>
       <iframe
       ref={iframeRef}

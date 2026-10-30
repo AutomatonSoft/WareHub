@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useLabels } from "../use-labels";
+import { Input } from "../../components/ui/input";
 import { DeferredInput } from "./deferred-form-fields";
 
 type Property = { name: string; value: string };
@@ -11,6 +12,7 @@ const HOOD_PROPERTY_PRESETS = [
   "Montage erforderlich", "Herstellungsjahr", "Herstellergarantie", "Maße",
 ];
 const CUSTOM_PROPERTY = "__custom__";
+const normalizePropertyName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
 type Props = {
   initialValue: string;
   draftKey: string;
@@ -34,20 +36,30 @@ export function HoodProductPropertiesPanel({ initialValue, draftKey, onDraftChan
   const callbackRef = useRef(onDraftChange);
   const [properties, setProperties] = useState(() => parseProperties(initialValue));
   const [selectedProperty, setSelectedProperty] = useState("");
+  const [propertyError, setPropertyError] = useState("");
 
   useEffect(() => { sourceValueRef.current = initialValue; }, [draftKey, initialValue]);
   useEffect(() => { callbackRef.current = onDraftChange; }, [onDraftChange]);
   useEffect(() => {
     const next = parseProperties(sourceValueRef.current);
     setProperties(next);
+    setPropertyError("");
   }, [draftKey]);
 
   const update = (next: Property[]) => {
+    setPropertyError("");
     setProperties(next);
     callbackRef.current(JSON.stringify(next));
   };
+  const hasProperty = (name: string, exceptIndex = -1) => Boolean(normalizePropertyName(name)) && properties.some(
+    (property, index) => index !== exceptIndex && normalizePropertyName(property.name) === normalizePropertyName(name),
+  );
   const addProperty = (name: string) => {
     if (!name) return;
+    if (name !== CUSTOM_PROPERTY && hasProperty(name)) {
+      setPropertyError(t.duplicateProductProperty.replace("{name}", name));
+      return;
+    }
     update([...properties, { name: name === CUSTOM_PROPERTY ? "" : name, value: "" }]);
     setSelectedProperty("");
   };
@@ -57,15 +69,23 @@ export function HoodProductPropertiesPanel({ initialValue, draftKey, onDraftChan
         <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{t.productProperties}</label>
         <select value={selectedProperty} onChange={(event) => addProperty(event.target.value)} className="rounded-[var(--radius-pill)] border border-border/70 bg-background px-3 py-1 text-[11px] font-semibold uppercase transition hover:bg-muted/40">
           <option value="">{t.addProperty}</option>
-          {HOOD_PROPERTY_PRESETS.map((name) => <option key={name} value={name}>{name}</option>)}
+          {HOOD_PROPERTY_PRESETS.map((name) => <option key={name} value={name} disabled={hasProperty(name)}>{name}</option>)}
           <option value={CUSTOM_PROPERTY}>Произвольное свойство</option>
         </select>
       </div>
+      {propertyError ? <p role="alert" className="text-sm text-destructive">{propertyError}</p> : null}
       {properties.length === 0 ? <div className="rounded-[var(--radius-control)] border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-sm text-muted-foreground">{t.noProductPropertiesYet}</div> : null}
       <div className="grid gap-2">
         {properties.map((property, index) => (
           <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-            <DeferredInput value={property.name} onDraftChange={(name) => update(properties.map((item, itemIndex) => itemIndex === index ? { ...item, name } : item))} placeholder={t.propertyName} />
+            <Input value={property.name} aria-label={t.propertyName} onChange={(event) => {
+              const name = event.currentTarget.value;
+              if (hasProperty(name, index)) {
+                setPropertyError(t.duplicateProductProperty.replace("{name}", name));
+                return;
+              }
+              update(properties.map((item, itemIndex) => itemIndex === index ? { ...item, name } : item));
+            }} placeholder={t.propertyName} />
             <DeferredInput value={property.value} onDraftChange={(value) => update(properties.map((item, itemIndex) => itemIndex === index ? { ...item, value } : item))} placeholder={t.propertyValue} />
             <button type="button" onClick={() => update(properties.filter((_, itemIndex) => itemIndex !== index))} aria-label={t.removeProperty} className="size-10 rounded-[var(--radius-control)] border border-destructive/30 text-destructive transition hover:bg-destructive/10">×</button>
           </div>
