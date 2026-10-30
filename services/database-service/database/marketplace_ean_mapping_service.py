@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import transaction
 from otto_service.models import OttoPublication
+from kaufland.models import KauflandPublication
 
 from .models import Ean, EanStatus, Kid
 
@@ -62,6 +63,9 @@ def confirm_marketplace_ean_mapping(
         published = True
         if normalized_marketplace == "otto":
             publication = OttoPublication.objects.filter(profile=normalized_account, ean=normalized_ean).order_by("-submitted_at").first()
+            published = publication.online is True if publication else False
+        if normalized_marketplace == "kaufland":
+            publication = KauflandPublication.objects.filter(controller=normalized_account, ean=normalized_ean).first()
             published = publication.online is True if publication else False
         setattr(ean_record, field_name, normalized_ean)
         setattr(status_record, field_name, published)

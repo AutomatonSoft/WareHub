@@ -2878,7 +2878,9 @@ export default function CreateProductPage() {
             condition: draft.condition,
             itemMode: draft.itemMode,
             itemNumber: draft.itemNumber,
-            productPropertiesText: draft.productPropertiesText,
+            productPropertiesText: snapshot?.sourceKey === sourceKey
+              ? snapshot.draft.productPropertiesText
+              : draft.productPropertiesText,
           },
         }, getLocalImageFilesForTab(tab)));
       }

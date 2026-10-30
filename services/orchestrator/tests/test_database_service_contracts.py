@@ -179,6 +179,8 @@ def test_hood_publish_contract_uses_post():
     assert call["method"] == "POST"
     assert call["url"] == "http://database-service:8000/api/v1/hood/items/by-ean/4012345678901/"
     assert call["params"] == {"account": "xl"}
+    assert call["retries"] == 0
+    assert call["timeout_seconds"] == 300
 
 
 def test_hood_pool_publish_uses_reserved_ean_as_item_number():
@@ -200,7 +202,7 @@ def test_hood_pool_publish_uses_reserved_ean_as_item_number():
 
 def test_hood_pool_update_keeps_existing_item_number():
     fake_http = CapturingHttpClient()
-    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)
+    adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http, hood_timeout_seconds=240)
 
     adapters.dispatch(
         ean="4098765432100",
@@ -211,6 +213,8 @@ def test_hood_pool_update_keeps_existing_item_number():
     )
 
     assert fake_http.calls[0]["json"]["itemNumber"] == "OLD-ARTICLE"
+    assert fake_http.calls[0]["retries"] is None
+    assert fake_http.calls[0]["timeout_seconds"] == 240
 
 
 def test_kaufland_publish_contract_uses_create_endpoint():

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   changes:
     name: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 5
     outputs:
       database_service: ${{ steps.detect.outputs.database_service }}
@@ -111,7 +111,7 @@ jobs:
 
   repo-safety:
     name: repo-safety
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -202,7 +202,7 @@ jobs:
 
   compose-config:
     name: compose-config
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -297,7 +297,7 @@ jobs:
 
   database-service:
     name: database-service
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.database_service == 'true'
@@ -349,7 +349,7 @@ jobs:
 
   frontend:
     name: frontend
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -381,7 +381,7 @@ jobs:
 
   mobile:
     name: mobile
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
@@ -430,7 +430,7 @@ jobs:
 
   orchestrator:
     name: orchestrator
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     needs: changes
     if: needs.changes.outputs.orchestrator == 'true'
@@ -488,7 +488,7 @@ jobs:
 
   rust-backend:
     name: rust-backend
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.rust_backend == 'true'
@@ -527,7 +527,7 @@ jobs:
 
   python-services-docker-build:
     name: python-services-docker-build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.python_services_docker_build == 'true'
@@ -569,7 +569,7 @@ jobs:
 
   frontend-docker-build:
     name: frontend-docker-build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.frontend_docker_build == 'true'
@@ -599,7 +599,7 @@ jobs:
 
   gateway-routing-contract:
     name: gateway-routing-contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     needs: changes
     if: needs.changes.outputs.gateway_routing_contract == 'true'
@@ -646,7 +646,7 @@ jobs:
 
   remaining-docker-builds:
     name: remaining-docker-builds
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.WAREHUB_RUNNER_LABELS || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     needs: changes
     if: needs.changes.outputs.remaining_docker_builds == 'true'

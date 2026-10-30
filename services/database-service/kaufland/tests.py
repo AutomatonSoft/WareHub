@@ -18,8 +18,9 @@ class KauflandProductActiveStateApiTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
+    @patch("kaufland.views.apply_active_state")
     @patch("kaufland.views.set_product_active_state")
-    def test_deactivate_forwards_ean_and_jv_controller(self, mock_set_product_active_state):
+    def test_deactivate_forwards_ean_and_jv_controller(self, mock_set_product_active_state, mock_apply):
         mock_set_product_active_state.return_value = {"status": "deactivated"}
         request = self.factory.post("/", {"controller": "jv"}, format="json")
 
@@ -33,8 +34,9 @@ class KauflandProductActiveStateApiTests(SimpleTestCase):
             active=False,
         )
 
+    @patch("kaufland.views.apply_active_state")
     @patch("kaufland.views.set_product_active_state")
-    def test_activate_forwards_ean_and_xl_controller(self, mock_set_product_active_state):
+    def test_activate_forwards_ean_and_xl_controller(self, mock_set_product_active_state, mock_apply):
         mock_set_product_active_state.return_value = {"status": "activated"}
         request = self.factory.post("/", {"controller": "xl"}, format="json")
 
@@ -170,7 +172,7 @@ class KauflandCreateApiTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.record_submission")
     @patch("kaufland.views.create_product_by_ean")
     def test_forwards_new_create_contract_with_defaults(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
@@ -197,9 +199,10 @@ class KauflandCreateApiTests(SimpleTestCase):
 
         response = CreateProductByEANAPIView.as_view()(request)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"status": "created"})
-        mock_status.assert_called_once_with("4062292276706", "jv")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["publication_state"], "pending")
+        self.assertEqual(response.data["upstream_response"], {"status": "created"})
+        mock_status.assert_called_once_with(ean="4062292276706", controller="jv")
         mock_create_product_by_ean.assert_called_once_with(
             {
                 "ean": "4062292276706",
@@ -221,7 +224,7 @@ class KauflandCreateApiTests(SimpleTestCase):
             }
         )
 
-    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.record_submission")
     @patch("kaufland.views.create_product_by_ean")
     def test_omits_empty_image_array_when_picture_is_provided(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
@@ -249,14 +252,14 @@ class KauflandCreateApiTests(SimpleTestCase):
 
         response = CreateProductByEANAPIView.as_view()(request)
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
         payload = mock_create_product_by_ean.call_args.args[0]
         self.assertEqual(payload["picture"], ["https://example.test/product.jpg"])
         self.assertNotIn("picture_urls", payload)
 
-    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.record_submission")
     @patch("kaufland.views.create_product_by_ean")
-    def test_rejects_upload_without_live_product(self, mock_create_product_by_ean, mock_status):
+    def test_accepts_upload_before_product_is_live(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
         mock_status.return_value = {
             "ean": "4062292276706",
@@ -278,16 +281,14 @@ class KauflandCreateApiTests(SimpleTestCase):
 
         response = CreateProductByEANAPIView.as_view()(request)
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data["error"], "kaufland_publication_not_live")
-        self.assertEqual(response.data["publication_status"], "BLOCKED")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["publication_state"], "pending")
         mock_create_product_by_ean.assert_called_once()
 
-    @patch("kaufland.views.get_product_publication_status")
+    @patch("kaufland.views.record_submission")
     @patch("kaufland.views.create_product_by_ean")
-    def test_reports_unverified_upload_when_status_times_out(self, mock_create_product_by_ean, mock_status):
+    def test_create_does_not_wait_for_publication_status(self, mock_create_product_by_ean, mock_status):
         mock_create_product_by_ean.return_value = {"status": "created"}
-        mock_status.side_effect = requests.Timeout()
         request = self.factory.post(
             "/", {
                 "ean": "4062292276706", "controller": "jv", "title": "Test cabinet",
@@ -300,8 +301,8 @@ class KauflandCreateApiTests(SimpleTestCase):
 
         response = CreateProductByEANAPIView.as_view()(request)
 
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.data["error"], "kaufland_publication_unverified")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["publication_state"], "pending")
         mock_create_product_by_ean.assert_called_once()
 
 

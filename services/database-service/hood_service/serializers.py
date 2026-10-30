@@ -29,3 +29,15 @@ class HoodPatchSerializer(serializers.Serializer):
         if len(cleaned) != len(value):
             raise serializers.ValidationError("images must not contain empty values.")
         return cleaned
+
+    def validate_productProperties(self, value):
+        names = set()
+        for item in value:
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            normalized = " ".join(name.split()).lower()
+            if normalized in names:
+                raise serializers.ValidationError(f'Property "{name.strip()}" must only be provided once.')
+            names.add(normalized)
+        return value

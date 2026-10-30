@@ -656,6 +656,31 @@ def test_ebay_publish_uses_stable_pool_sku_and_confirms_exact_kid(account, famil
     assert mapping_gateway.calls[0]["kid_id"] == 42
 
 
+@pytest.mark.parametrize("account", ["jv", "xl"])
+def test_kaufland_accepted_pending_upload_confirms_mapping_and_consumes_reserved_ean(account):
+    class PendingAdapters:
+        def dispatch(self, **kwargs):
+            return type("R", (), {"status_code": 202, "body": {"publication_state": "pending"}})()
+
+    pool_gateway = FakeEanPoolGateway()
+    mapping_gateway = FakeMarketplaceEanMappingGateway()
+    service = OrchestratorService(
+        adapters=PendingAdapters(), ean_pool_gateway=pool_gateway,
+        marketplace_ean_mapping_gateway=mapping_gateway,
+    )
+    command = OrchestrateRequest.model_validate({
+        "operation": "publish", "kid_number": "13234455", "kid_id": 42,
+        "payload": {"ean": "4012345678901", "title": "Desk", "description": "Oak", "price": "199.99"},
+        "channels": [{"marketplace": "kaufland", "account": account, "ean_source": "pool"}],
+    })
+    result = service.execute(ean="4012345678901", request_id="request-1", job_id="job-1", command=command)
+    assert result.status == "success"
+    assert result.results[0].data["publication_state"] == "pending"
+    assert mapping_gateway.calls[0]["account"] == account
+    assert mapping_gateway.calls[0]["kid_id"] == 42
+    assert pool_gateway.used_job_ids
+
+
 def test_kaufland_publish_rejection_does_not_confirm_ean_mapping():
     pool_gateway = FakeEanPoolGateway()
     mapping_gateway = FakeMarketplaceEanMappingGateway()
