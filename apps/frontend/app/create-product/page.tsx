@@ -3,6 +3,10 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { buttonVariants } from "../../components/ui/button";
+import { getSofortListReturnHref } from "../../components/inventory/sofort-list/sofort-list-navigation";
 
 import { AppShell } from "../../components/layout/app-shell";
 import { allMarketplaceSites, type SiteFamily } from "../../lib/marketplace-sites";
@@ -1212,6 +1216,8 @@ import { MarketplaceFormFeedback, useMarketplaceFeedback } from "../../component
 
 export default function CreateProductPage() {
   const t = useLabels();
+  const searchParams = useSearchParams();
+  const sofortListReturnHref = getSofortListReturnHref(searchParams.get("returnTo"));
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<CreateProductTab>("jv");
   const [isPublishSitesDialogOpen, setIsPublishSitesDialogOpen] = useState(false);
@@ -2910,6 +2916,11 @@ export default function CreateProductPage() {
       title={t.createProduct}
       subtitle={t.createProduct}
     >
+      <div className="mb-4">
+        <Link href={sofortListReturnHref} className={buttonVariants({ variant: "outline" })}>
+          {t.back}: {t.navSofortList}
+        </Link>
+      </div>
       <MarketplaceFormFeedback failure={feedback.failure} clear={feedback.clear}>
       <div className="rounded-[var(--radius-card)] border border-border/70 bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

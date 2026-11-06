@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildSofortCreateProductHref } from "./sofort-list-navigation";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Clock3, FilePlus2, ImageIcon, Loader2, PencilLine, Plus, X } from "lucide-react";
 
@@ -1014,7 +1015,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
 
   function startProductCreation(row: SofortListRow) {
     setProductActionRow(null);
-    router.push(`/create-product?kid=${encodeURIComponent(String(row.kidId))}`);
+    router.push(buildSofortCreateProductHref(row.kidId, `${window.location.pathname}${window.location.search}`));
   }
 
   function openProductEditor(row: SofortListRow) {
