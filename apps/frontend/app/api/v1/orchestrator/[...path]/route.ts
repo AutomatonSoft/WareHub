@@ -27,6 +27,13 @@ function isMarketplaceToggleCreation(pathPart: string, method: string): boolean 
   return method === "POST" && normalizeOrchestratorPath(pathPart) === "marketplace/toggle-by-kid";
 }
 
+function requiresVerifiedActor(pathPart: string, method: string): boolean {
+  return method === "POST" && (
+    isMarketplaceToggleCreation(pathPart, method)
+    || /^(jobs(?:\/batch)?|products\/[^/]+\/update)$/.test(normalizeOrchestratorPath(pathPart))
+  );
+}
+
 function readString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -70,14 +77,14 @@ async function proxyToOrchestrator(request: NextRequest, path: string[]): Promis
       ? undefined
       : Buffer.from(await request.arrayBuffer());
 
-  const actor = isMarketplaceToggleCreation(pathPart, request.method)
+  const actor = requiresVerifiedActor(pathPart, request.method)
     ? await verifyActor(authorizationHeader)
     : null;
-  if (isMarketplaceToggleCreation(pathPart, request.method) && actor === null) {
+  if (requiresVerifiedActor(pathPart, request.method) && actor === null) {
     return NextResponse.json(
       {
         code: "marketplace_toggle_authentication_required",
-        message: "Sign in again before changing marketplace availability.",
+        message: "Sign in again before submitting marketplace changes.",
         request_id: requestId,
       },
       { status: 401, headers: { "x-request-id": requestId } }

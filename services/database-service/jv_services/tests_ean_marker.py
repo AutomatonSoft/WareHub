@@ -4,32 +4,43 @@ from unittest.mock import MagicMock, Mock, call, patch
 
 from django.test import SimpleTestCase
 
-from .create_service import _record_jv_ean_marker
+from .create_service import _record_jv_ean_marker, enqueue_create_job
 
 
 class JVEanMarkerTests(SimpleTestCase):
+    def test_create_queue_snapshots_the_authenticated_author_for_the_worker(self):
+        request = SimpleNamespace(session={'username': 'eugen', 'first_name': 'Eugen', 'last_name': 'Tryrshkin'}, headers={})
+        with patch('jv_services.create_service.JVBatchJob.objects.create') as jobs, patch('jv_services.create_service.JVBatchJobItem.objects.create'), patch('jv_services.create_service.transaction.atomic', return_value=nullcontext()):
+            enqueue_create_job(request=request, ean='4071489360790', name='Desk', sites=[{'site': 'JV', 'site_key': 'JV_DE', 'payload': {}}])
+        self.assertEqual(jobs.call_args.kwargs['request_payload']['actor'], {'login': 'eugen', 'name': 'Eugen Tryrshkin'})
+
     def record(self, reserved, main=()):
-        item = SimpleNamespace(id=1, site='JV', site_key='JV_DE', source_product_id=490071, effective_ean='JVM4071489360790')
+        item = SimpleNamespace(id=1, site='JV', site_key='JV_DE', source_product_id=490071, effective_ean='JVM4071489360790', job=SimpleNamespace(pk=77, initiated_by='eugen', request_payload={'actor': {'login': 'eugen', 'name': 'Eugen Tryrshkin'}}))
         queryset = MagicMock()
         queryset.order_by.return_value.__getitem__.side_effect = [list(reserved), list(main)]
-        with patch('jv_services.create_service.ImportedProduct.all_objects') as products, patch('database.models.Ean.objects') as eans, patch('database.models.EanStatus.objects') as statuses, patch('jv_services.create_service.transaction.atomic', return_value=nullcontext()):
+        with patch('jv_services.create_service.ImportedProduct.all_objects') as products, patch('database.models.Ean.objects') as eans, patch('database.models.EanStatus.objects') as statuses, patch('jv_services.create_service.transaction.atomic', return_value=nullcontext()), patch('jv_services.create_service.record_product_submission') as audit:
             products.filter.return_value.filter.return_value.order_by.return_value.first.return_value = SimpleNamespace(source_model='JVM4071489360790')
             rows = eans.select_for_update.return_value
             rows.filter.return_value = queryset
             _record_jv_ean_marker(item)
+            self.audit_calls = audit.call_args_list
         return rows, statuses
 
     def test_new_reserved_ean_maps_without_replacing_main_ean(self):
-        row = SimpleNamespace(kid_id=1632, jv=None, main_ean_jv='4062292293528', reserved_jv='4071489360790', save=Mock())
+        row = SimpleNamespace(kid_id=1632, kid=SimpleNamespace(pk=1632), jv=None, main_ean_jv='4062292293528', reserved_jv='4071489360790', save=Mock())
         rows, statuses = self.record([row])
         rows.filter.assert_called_once_with(reserved_jv='4071489360790')
         self.assertEqual(row.jv, 'JVM4071489360790')
         self.assertEqual(row.main_ean_jv, '4062292293528')
         row.save.assert_called_once_with(update_fields=['jv'])
         statuses.update_or_create.assert_called_once_with(ean_id=1632, defaults={'jv': True})
+        self.assertEqual(self.audit_calls[0].kwargs, {
+            'kid': row.kid, 'actor': {'login': 'eugen', 'name': 'Eugen Tryrshkin'},
+            'channel': 'JV_DE', 'ean': 'JVM4071489360790', 'request_id': 'jv-create:77',
+        })
 
     def test_legacy_main_ean_fallback_and_idempotent_repeat(self):
-        row = SimpleNamespace(kid_id=1632, jv='JVM4071489360790', save=Mock())
+        row = SimpleNamespace(kid_id=1632, kid=SimpleNamespace(pk=1632), jv='JVM4071489360790', save=Mock())
         rows, statuses = self.record([], [row])
         self.assertEqual(rows.filter.call_args_list, [call(reserved_jv='4071489360790'), call(main_ean_jv='4071489360790')])
         row.save.assert_not_called()
@@ -42,6 +53,7 @@ class JVEanMarkerTests(SimpleTestCase):
         statuses.update_or_create.assert_not_called()
         for row in records:
             row.save.assert_not_called()
+        self.assertEqual(self.audit_calls, [])
 
     def test_missing_identity_or_conflicting_mapping_does_not_mark_active(self):
         _, statuses = self.record([])

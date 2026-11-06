@@ -8,6 +8,7 @@ from typing import Any
 
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Q
 
 from .kid_number_utils import primary_kid_number
@@ -114,6 +115,23 @@ def record_inventory_change(
     except Exception:  # noqa: BLE001
         # Audit availability must not block an inventory change while a deployment is being migrated.
         logger.exception("INVENTORY_AUDIT_WRITE_FAILED action=%s kid_id=%s", action, kid.id)
+
+
+def record_product_submission(*, kid: Kid, actor: dict[str, str], channel: str, ean: str, request_id: str) -> None:
+    if not request_id or not (actor.get("login") or actor.get("name")):
+        return
+    try:
+        with transaction.atomic():
+            if InventoryChangeLog.objects.filter(
+                kid=kid, action="marketplace_product_submitted", metadata__request_id=request_id, metadata__channel=channel,
+            ).exists():
+                return
+            record_inventory_change(
+                kid=kid, actor=actor, action="marketplace_product_submitted",
+                metadata={"channel": channel, "ean": ean, "request_id": request_id, "source": "create_product"},
+            )
+    except Exception:
+        logger.exception("INVENTORY_SUBMISSION_AUDIT_FAILED kid_id=%s request_id=%s", kid.pk, request_id)
 
 
 def purge_expired_inventory_change_history() -> int:

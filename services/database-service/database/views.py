@@ -101,7 +101,10 @@ class MarketplaceEanMappingConfirmAPIView(APIView):
         serializer = MarketplaceEanMappingConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            mapping = confirm_marketplace_ean_mapping(**serializer.validated_data)
+            mapping = confirm_marketplace_ean_mapping(
+                **serializer.validated_data, actor=request_actor(request),
+                request_id=str(request.headers.get("x-request-id") or "").strip(),
+            )
         except MarketplaceEanMappingError as exc:
             return Response(
                 {"code": "marketplace_ean_mapping_not_confirmed", "detail": str(exc)},

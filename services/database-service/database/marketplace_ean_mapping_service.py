@@ -5,6 +5,7 @@ from otto_service.models import OttoPublication
 from kaufland.models import KauflandPublication
 
 from .models import Ean, EanStatus, Kid
+from .inventory_audit_service import record_product_submission
 
 
 class MarketplaceEanMappingError(ValueError):
@@ -33,6 +34,8 @@ def confirm_marketplace_ean_mapping(
     marketplace: str,
     account: str,
     ean: str,
+    actor: dict[str, str] | None = None,
+    request_id: str = "",
 ) -> dict[str, str | int | bool]:
     normalized_kid_number = str(kid_number or "").strip()
     normalized_marketplace = str(marketplace or "").strip().lower()
@@ -71,6 +74,11 @@ def confirm_marketplace_ean_mapping(
         setattr(status_record, field_name, published)
         ean_record.save(update_fields=[field_name])
         status_record.save(update_fields=[field_name])
+        if actor:
+            record_product_submission(
+                kid=kid, actor=actor, channel=f"{normalized_marketplace.upper()} {normalized_account.upper()}",
+                ean=normalized_ean, request_id=request_id,
+            )
 
     return {
         "kid_id": kid.pk,
