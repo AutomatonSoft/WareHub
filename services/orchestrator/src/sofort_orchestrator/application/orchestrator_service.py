@@ -350,6 +350,8 @@ class OrchestratorService:
                 marketplace=channel.marketplace.value,
                 account=account,
                 ean=ean,
+                **({"actor_login": command.actor_login, "actor_name": command.actor_name}
+                   if command.actor_login or command.actor_name else {}),
             )
         except Exception as exc:  # noqa: BLE001
             return {"status": "failed", "reason": str(exc)}

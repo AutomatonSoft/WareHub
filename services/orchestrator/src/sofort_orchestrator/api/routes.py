@@ -142,6 +142,8 @@ def orchestrate_update(
         if cached is not None:
             return cached
 
+    command.actor_login = request.headers.get("x-warehub-actor-login", "").strip()
+    command.actor_name = request.headers.get("x-warehub-actor-name", "").strip()
     result = service.execute(ean=ean.strip(), request_id=request_id, command=command)
     payload = result.model_dump()
     logger.info(
@@ -205,6 +207,8 @@ def create_orchestrator_job(
         return JSONResponse(status_code=400, content=err.model_dump())
 
     job_id = str(uuid.uuid4())
+    body.command.actor_login = request.headers.get("x-warehub-actor-login", "").strip()
+    body.command.actor_name = request.headers.get("x-warehub-actor-name", "").strip()
     job_store.create_job(
         job_id=job_id,
         request_id=request_id,
@@ -289,6 +293,8 @@ def create_orchestrator_jobs_batch(
             )
             continue
         job_id = str(uuid.uuid4())
+        item.command.actor_login = request.headers.get("x-warehub-actor-login", "").strip()
+        item.command.actor_name = request.headers.get("x-warehub-actor-name", "").strip()
         job_store.create_job(
             job_id=job_id,
             request_id=request_id,

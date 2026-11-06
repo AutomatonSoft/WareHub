@@ -220,6 +220,12 @@ export function InventoryChangeHistory() {
     : t.inventoryHistoryAllParticipants;
   const hasMore = entries.length < total;
   const actionLabel = (entry: InventoryChangeHistoryEntryDto) => {
+    if (entry.action === "marketplace_product_submitted") {
+      const channel = String(entry.metadata.channel || "");
+      return lang === "ru" ? `отправил товар в ${channel} через Create Product`
+        : lang === "de" ? `hat einen Artikel über Create Product an ${channel} gesendet`
+        : `submitted a product to ${channel} via Create Product`;
+    }
     if (entry.action === "product_created") return t.inventoryChangeCreated;
     if (entry.action === "product_updated") return t.inventoryChangeUpdated;
     if (entry.action === "order_memo_updated") {
@@ -315,6 +321,9 @@ export function InventoryChangeHistory() {
                         <span>{actionLabel(entry)}</span>
                         <span className="wh-dashboard-history__product">KID {entry.product.kid_number || "-"}{entry.product.place ? ` · ${entry.product.place}` : ""}</span>
                       </p>
+                      {entry.action === "marketplace_product_submitted" ? (
+                        <div className="wh-dashboard-history__changes">EAN: {String(entry.metadata.ean || "-")}</div>
+                      ) : null}
                       {entry.changes.length > 0 ? (
                         <div className="wh-dashboard-history__changes">
                           {entry.changes.map((change, index) => {
