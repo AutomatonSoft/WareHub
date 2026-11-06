@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.db import close_old_connections, transaction
 from django.utils import timezone
+from database.inventory_audit_service import record_product_submission, request_actor
 
 from .batch_item_status import (
     finalize_batch_job,
@@ -58,6 +59,7 @@ def enqueue_create_job(*, request, ean: str, name: str, sites: list[dict]) -> JV
         "ean": ean,
         "name": name,
         "sites": normalized_sites,
+        "actor": request_actor(request),
     }
     initial_summary = {
         "progress_phase": "queued",
@@ -143,6 +145,12 @@ def _record_jv_ean_marker(item: JVBatchJobItem) -> None:
                 ean_record.jv = artikelnr
                 ean_record.save(update_fields=["jv"])
             EanStatus.objects.update_or_create(ean_id=ean_record.kid_id, defaults={"jv": True})
+            job = item.job
+            record_product_submission(
+                kid=ean_record.kid,
+                actor=(job.request_payload or {}).get("actor") or {"login": job.initiated_by, "name": job.initiated_by},
+                channel=str(item.site_key), ean=artikelnr, request_id=f"jv-create:{job.pk}",
+            )
     except Exception:  # noqa: BLE001
         logger.warning(
             "JV_EAN_MARKER_WRITE_FAILED code=jv_ean_marker_write_failed item_id=%s ean=%s",

@@ -707,6 +707,44 @@ def test_kaufland_publish_rejection_does_not_confirm_ean_mapping():
     assert pool_gateway.used_job_ids == []
 
 
+@pytest.mark.parametrize("batch", [False, True])
+def test_publish_job_persists_proxy_actor_and_forwards_it_to_mapping(tmp_path, batch):
+    from unittest.mock import Mock
+    mapping = Mock()
+    mapping.confirm.return_value = {"confirmed": True}
+    service = OrchestratorService(adapters=SuccessfulAdapters(), marketplace_ean_mapping_gateway=mapping)
+    client = _client_with_service(service, tmp_path)
+    command = {
+        "operation": "publish", "kid_number": "565536401", "kid_id": 42,
+        "actor_login": "forged", "actor_name": "Forged",
+        "payload": {"title": "Desk", "description": "Oak", "price": "199.99", "quantity": 1},
+        "channels": [{"marketplace": "hood", "account": "jv"}],
+    }
+    item = {"ean": "4071489368567", "command": command}
+    response = client.post(
+        "/api/v1/orchestrator/jobs/batch" if batch else "/api/v1/orchestrator/jobs",
+        json={"items": [item]} if batch else item,
+        headers={"X-WareHub-Actor-Login": "eugen", "X-WareHub-Actor-Name": "Eugen Tryrshkin"},
+    )
+    assert response.status_code == 200
+    claimed = Deps.job_store.claim_next_queued_job()
+    assert claimed["command"].actor_login == "eugen"
+    result = service.execute(ean=claimed["ean"], request_id=claimed["request_id"], command=claimed["command"])
+    assert result.status == "success"
+    assert mapping.confirm.call_args.kwargs["actor_login"] == "eugen"
+    assert mapping.confirm.call_args.kwargs["actor_name"] == "Eugen Tryrshkin"
+
+
+def test_job_actor_cannot_be_supplied_by_the_json_body(tmp_path):
+    client = _client_with_fake_adapters(SuccessfulAdapters(), tmp_path)
+    response = client.post("/api/v1/orchestrator/jobs", json={
+        "ean": "4071489368567",
+        "command": {"operation": "publish", "actor_login": "forged", "actor_name": "Forged", "payload": {}, "channels": []},
+    })
+    assert response.status_code == 200
+    assert Deps.job_store.claim_next_queued_job()["command"].actor_login == ""
+
+
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)

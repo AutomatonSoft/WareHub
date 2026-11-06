@@ -24,10 +24,16 @@ class MarketplaceEanMappingGateway:
         marketplace: str,
         account: str,
         ean: str,
+        actor_login: str = "",
+        actor_name: str = "",
     ) -> dict[str, Any]:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
         if self.service_auth_token:
             headers["X-WareHub-Service-Token"] = self.service_auth_token
+            if actor_login:
+                headers["X-WareHub-Actor-Login"] = actor_login
+            if actor_name:
+                headers["X-WareHub-Actor-Name"] = actor_name
         response = self.http.request(
             "POST",
             f"{self.base_url}/api/v1/marketplace/ean-mappings/confirm/",

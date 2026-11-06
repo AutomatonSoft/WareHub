@@ -76,6 +76,16 @@ def test_ebay_pooled_publish_preserves_source_gtin_and_update_sku():
     assert fake_http.calls[1]["json"]["sku"] == "4071489360790"
 
 
+def test_mapping_forwards_author_only_with_the_trusted_service_token():
+    for token in ["", "service-token"]:
+        http = CapturingHttpClient()
+        gateway = MarketplaceEanMappingGateway(base_url="http://database-service:8000", http_client=http, service_auth_token=token)
+        gateway.confirm(request_id="create-1", kid_number="123", marketplace="otto", account="xl", ean="4071489368567", actor_login="eugen", actor_name="Eugen Tryrshkin")
+        headers = http.calls[0]["headers"]
+        assert (headers.get("X-WareHub-Actor-Login") == "eugen") is bool(token)
+        assert (headers.get("X-WareHub-Actor-Name") == "Eugen Tryrshkin") is bool(token)
+
+
 def test_hood_contract_path_and_params():
     fake_http = CapturingHttpClient()
     adapters = MarketplaceAdapters(base_url="http://database-service:8000", http_client=fake_http)

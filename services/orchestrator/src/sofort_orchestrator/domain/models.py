@@ -106,6 +106,8 @@ class OrchestrateRequest(BaseModel):
     channels: list[ChannelTarget]
     kid_number: str | None = None
     kid_id: int | None = Field(default=None, ge=1)
+    actor_login: str = ""
+    actor_name: str = ""
 
 
 class ErrorContract(BaseModel):
