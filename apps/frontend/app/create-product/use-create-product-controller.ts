@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { getPendingPublicationMarketplaces } from "../../lib/marketplace-publication-display.mjs";
 import { Operation } from "../../lib/api/generated/orchestrator-openapi-types";
 import { allMarketplaceSites } from "../../lib/marketplace-sites";
 import {
@@ -779,7 +780,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
       totalResults: result.results.length,
       failedCount,
       failureSummary: buildFailureSummary(result.results),
-      pendingOttoPublications: result.results.filter((item) => item.data?.publication_state === "pending").length,
+      pendingPublicationMarketplaces: getPendingPublicationMarketplaces(result.results),
       language: readStoredLang(),
     });
     showToast(toast.message, toast.tone);
@@ -848,7 +849,7 @@ export function useCreateProductController(input: UseCreateProductControllerInpu
         totalResults: result.results.length,
         failedCount,
         failureSummary,
-        pendingOttoPublications: result.results.filter((item) => item.data?.publication_state === "pending").length,
+        pendingPublicationMarketplaces: getPendingPublicationMarketplaces(result.results),
         language: readStoredLang(),
       });
       showToast(toast.message, toast.tone);

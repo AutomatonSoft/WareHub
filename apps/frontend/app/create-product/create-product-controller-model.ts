@@ -1,4 +1,5 @@
 import type { CreateProductValidationErrorCode } from "./create-product-model";
+import { publicationSubmissionMessage } from "../../lib/marketplace-publication-display.mjs";
 
 type Labels = Record<string, string>;
 
@@ -16,14 +17,11 @@ export function buildOrchestratorStatusToastMessage(input: {
   totalResults: number;
   failedCount: number;
   failureSummary: string;
-  pendingOttoPublications?: number;
+  pendingPublicationMarketplaces?: string[];
   language?: string;
 }): { tone: "success" | "info" | "error"; message: string } {
   const suffix = input.failureSummary ? ` ${input.failureSummary}` : "";
-  const pending = input.pendingOttoPublications ? (input.language === "ru"
-    ? "OTTO: отправлено на проверку, публикация не подтверждена. Результат — в Sofort list."
-    : input.language === "de" ? "OTTO: zur Prüfung gesendet, Veröffentlichung nicht bestätigt. Status in der Sofort-Liste."
-      : "OTTO: submitted for validation, publication not confirmed. Check Sofort list.") : "";
+  const pending = publicationSubmissionMessage(input.pendingPublicationMarketplaces ?? [], input.language);
 
   if (input.status === "success") {
     return {

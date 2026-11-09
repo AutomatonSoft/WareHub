@@ -1,3 +1,5 @@
+import { publicationSubmissionMessage } from "../../lib/marketplace-publication-display.mjs";
+
 export function mapValidationErrorCodeToLabel(code, labels) {
   if (code === "price_numeric") return labels.validationPriceNumeric;
   return labels.validationProductNameMin3;
@@ -5,10 +7,7 @@ export function mapValidationErrorCodeToLabel(code, labels) {
 
 export function buildOrchestratorStatusToastMessage(input) {
   const suffix = input.failureSummary ? ` ${input.failureSummary}` : "";
-  const pending = input.pendingOttoPublications ? (input.language === "ru"
-    ? "OTTO: отправлено на проверку, публикация не подтверждена. Результат — в Sofort list."
-    : input.language === "de" ? "OTTO: zur Prüfung gesendet, Veröffentlichung nicht bestätigt. Status in der Sofort-Liste."
-      : "OTTO: submitted for validation, publication not confirmed. Check Sofort list.") : "";
+  const pending = publicationSubmissionMessage(input.pendingPublicationMarketplaces ?? [], input.language);
 
   if (input.status === "success") {
     return {

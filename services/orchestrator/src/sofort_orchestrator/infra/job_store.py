@@ -6,6 +6,7 @@ import time
 from contextlib import contextmanager
 
 from ..domain.models import (
+    ChannelTarget,
     ErrorContract,
     JobAttempt,
     JobDetailsResponse,
@@ -309,7 +310,7 @@ class SqliteJobStore:
                 """
                 SELECT
                     job_id, request_id, ean, operation, status, priority,
-                    created_at_unix_ms, updated_at_unix_ms, result_json, error_json
+                    created_at_unix_ms, updated_at_unix_ms, result_json, error_json, command_json
                 FROM orchestrator_jobs
                 WHERE ean LIKE ? ESCAPE '\\'
                 ORDER BY created_at_unix_ms DESC
@@ -330,6 +331,8 @@ class SqliteJobStore:
                 updated_at_unix_ms=int(row[7]),
                 result=OrchestrateResponse(**json.loads(row[8])) if row[8] else None,
                 error=ErrorContract(**json.loads(row[9])) if row[9] else None,
+                marketplaces=list(dict.fromkeys(channel["marketplace"] for channel in json.loads(row[10]).get("channels", []))),
+                targets=[ChannelTarget.model_validate(channel).target_label() for channel in json.loads(row[10]).get("channels", [])],
             )
             for row in rows
         ]
