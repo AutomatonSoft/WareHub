@@ -19,14 +19,16 @@ import { Button } from "../ui/button";
 import { EbayImageValidationWarnings } from "../ebay/image-validation-warnings";
 import { extractOttoJobs } from "../../lib/api/otto-job-status";
 import { OttoJobStatusButton } from "./otto-job-status";
+import { getPendingPublicationMarketplaces, publicationSubmissionMessage } from "../../lib/marketplace-publication-display.mjs";
+import { TaskTargetList } from "./task-target-list";
+import { buildTaskTargetRows, taskOperationName, type TaskTarget } from "./task-target-model";
 
 const PAGE_SIZE = 20;
 
-type TaskTarget = { marketplace?: string; target?: string; status?: string; data?: unknown; details?: unknown; error?: { message?: string } };
-type Task = { job_id: string; request_id: string; ean: string; operation: string; status: string; created_at_unix_ms: number; updated_at_unix_ms: number; result?: { results?: TaskTarget[] }; error?: { message?: string } };
+type Task = { job_id: string; request_id: string; ean: string; operation: string; status: string; created_at_unix_ms: number; updated_at_unix_ms: number; marketplaces?: string[]; targets?: string[]; result?: { results?: TaskTarget[] }; error?: { message?: string } };
 type ProductEditorTask = { job_id: string; request_id: string; active_group?: string; ean?: string; status: string; targets?: Array<{ target_id?: string; status?: string; data?: unknown; error?: { message?: string } }>; error?: { message?: string }; created_at_unix_ms?: number; updated_at_unix_ms?: number };
 type MarketplaceToggleTask = { job_id: string; request_id: string; kid_number: string; inactive: boolean; job_status?: string; status: string; results?: Array<{ site_key?: string; channel?: string; ok?: boolean; status_code?: number; details?: unknown }>; error?: { message?: string }; created_at_unix_ms?: number; updated_at_unix_ms?: number };
-type JvBatchTask = { id: number; ean: string; operation: string; status: string; created_at?: string; updated_at?: string; items?: Array<{ site?: string; site_key?: string; status?: string; error_text?: string }> };
+type JvBatchTask = { id: number; ean: string; operation: string; status: string; created_at?: string; updated_at?: string; items?: Array<{ site?: string; site_key?: string; status?: string; error_text?: string; effective_ean?: string }> };
 type JobsResponse<T> = { jobs?: T[]; total?: number };
 type SourceKey = "orchestrator" | "productEditor" | "marketplace" | "jvBatch";
 type SourceState = { tasks: Task[]; total: number };
@@ -52,19 +54,21 @@ function isActive(status: string): boolean {
   return ["queued", "running", "pending"].includes(status.toLowerCase());
 }
 
-function OttoSubmissionNotice({ task }: { task: Task }) {
+function PublicationSubmissionNotice({ task }: { task: Task }) {
   const language = useLanguage();
-  const submitted = task.result?.results?.some((target) => target.data && typeof target.data === "object" &&
-    (target.data as Record<string, unknown>).publication_state === "pending");
+  const submitted = getPendingPublicationMarketplaces(task.result?.results);
   const jobs = extractOttoJobs(task.result?.results ?? []);
-  if (!submitted && jobs.length === 0) return null;
+  if (!submitted.length && jobs.length === 0) return null;
   return <div className="mt-2 flex flex-col gap-2">
     {jobs.map(job => <OttoJobStatusButton key={`${job.controller}:${job.jobId}`} job={job} />)}
-    {submitted ? <p className="text-xs text-amber-700">{language === "ru"
-    ? "OTTO: запрос отправлен на проверку, не подтверждение публикации. Текущий результат — в Sofort list."
-    : language === "de" ? "OTTO: zur Prüfung gesendet, Veröffentlichung nicht bestätigt. Aktueller Status in der Sofort-Liste."
-      : "OTTO: submitted for validation, not confirmation of publication. Current status is in Sofort list."}</p> : null}
+    {submitted.length ? <p className="text-xs text-amber-700">{publicationSubmissionMessage(submitted, language)}</p> : null}
   </div>;
+}
+
+function taskOperationLabel(task: Task, language = "en"): string {
+  const marketplaces = [...new Set(task.marketplaces ?? task.result?.results?.map(target => target.marketplace).filter((value): value is string => Boolean(value)) ?? [])];
+  const names = marketplaces.map(marketplace => marketplace.toLowerCase() === "kaufland" ? "Kaufland" : marketplace.toUpperCase());
+  return [taskOperationName(task.operation, language), ...names].join(" · ");
 }
 
 function isCompleted(status: string): boolean {
@@ -95,7 +99,7 @@ function toMarketplaceTask(job: MarketplaceToggleTask): Task {
 }
 
 function toJvBatchTask(job: JvBatchTask): Task {
-  return { job_id: `jv-batch-${job.id}`, request_id: "", ean: job.ean, operation: `jv_${job.operation}`, status: job.status === "applied" ? "completed" : job.status, created_at_unix_ms: job.created_at ? Date.parse(job.created_at) : 0, updated_at_unix_ms: job.updated_at ? Date.parse(job.updated_at) : 0, result: { results: (job.items ?? []).map((item) => ({ marketplace: item.site, target: item.site_key, status: item.status, error: item.error_text ? { message: item.error_text } : undefined })) } };
+  return { job_id: `jv-batch-${job.id}`, request_id: "", ean: job.ean, operation: `jv_${job.operation}`, status: job.status === "applied" ? "completed" : job.status, created_at_unix_ms: job.created_at ? Date.parse(job.created_at) : 0, updated_at_unix_ms: job.updated_at ? Date.parse(job.updated_at) : 0, result: { results: (job.items ?? []).map((item) => ({ marketplace: item.site, target: item.site_key, status: item.status, data: { ean: item.effective_ean }, error: item.error_text ? { message: item.error_text } : undefined })) } };
 }
 
 function sourceLabel(source: SourceKey, labels: ReturnType<typeof useLabels>): string {
@@ -108,8 +112,19 @@ function sourceLabel(source: SourceKey, labels: ReturnType<typeof useLabels>): s
   return sourceLabels[source];
 }
 
-function statusView(status: string, labels: ReturnType<typeof useLabels>) {
-  if (isCompleted(status)) return { label: labels.taskStatusesCompleted, badgeClass: "bg-emerald-50 text-emerald-700", lineClass: "bg-emerald-500", icon: Check };
+function statusView(task: Task, labels: ReturnType<typeof useLabels>, language: string) {
+  const status = task.status;
+  const rows = buildTaskTargetRows(task.result?.results, task.targets, status);
+  const failed = rows.filter(row => row.state === "failed").length;
+  if (isCompleted(status) && failed) {
+    const partial = failed < rows.length;
+    return { label: partial ? (language === "ru" ? "Частично выполнено" : language === "de" ? "Teilweise abgeschlossen" : "Partially completed") : labels.taskStatusesFailed,
+      badgeClass: partial ? "bg-amber-50 text-amber-700" : "bg-destructive/10 text-destructive", lineClass: "bg-amber-500", icon: CircleAlert };
+  }
+  if (isCompleted(status) && getPendingPublicationMarketplaces(task.result?.results).length) {
+    return { label: language === "ru" ? "Отправлено на проверку" : language === "de" ? "Zur Prüfung gesendet" : "Submitted for validation", badgeClass: "bg-amber-50 text-amber-700", lineClass: "bg-amber-500", icon: Clock3 };
+  }
+  if (isCompleted(status)) return { label: language === "ru" ? "Обработка завершена" : language === "de" ? "Verarbeitung abgeschlossen" : labels.taskStatusesCompleted, badgeClass: "bg-emerald-50 text-emerald-700", lineClass: "bg-emerald-500", icon: Check };
   if (isFailed(status)) return { label: labels.taskStatusesFailed, badgeClass: "bg-red-50 text-red-700", lineClass: "bg-red-500", icon: CircleAlert };
   if (status.toLowerCase() === "queued" || status.toLowerCase() === "pending") return { label: labels.taskStatusesInQueue, badgeClass: "bg-blue-50 text-blue-700", lineClass: "bg-blue-500", icon: Clock3 };
   return { label: labels.taskStatusesInProgress, badgeClass: "bg-amber-50 text-amber-700", lineClass: "bg-amber-500", icon: LoaderCircle };
@@ -120,7 +135,7 @@ function matchesStatusFilter(task: Task, filter: StatusFilter): boolean {
   if (filter === "queued") return ["queued", "pending"].includes(task.status.toLowerCase());
   if (filter === "running") return task.status.toLowerCase() === "running";
   if (filter === "completed") return isCompleted(task.status);
-  return isFailed(task.status);
+  return isFailed(task.status) || buildTaskTargetRows(task.result?.results, task.targets, task.status).some(row => row.state === "failed");
 }
 
 export function OrchestratorTaskStatusPanel() {
@@ -233,37 +248,53 @@ function TaskArea({ title, count, loading = false, emptyLabel, children }: { tit
 }
 
 function QueueTaskCard({ task, labels }: { task: TaskWithSource; labels: ReturnType<typeof useLabels> }) {
-  const view = statusView(task.status, labels);
+  const language = useLanguage();
+  const view = statusView(task, labels, language);
   const StatusIcon = view.icon;
-  const targetCount = task.result?.results?.length ?? 0;
-  return <article className="rounded-xl border bg-background p-4 shadow-sm transition-shadow duration-200 hover:shadow-md"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{task.operation} · {task.ean.startsWith("KID ") ? task.ean : `EAN ${task.ean}`}</p><p className="mt-1 truncate text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${view.badgeClass}`}><StatusIcon size={13} className={task.status.toLowerCase() === "running" ? "animate-spin" : ""} />{view.label}</span></div><div className="mt-4 flex items-end justify-between gap-3 text-xs text-muted-foreground"><span>{labels.taskStatusesCreatedAt}: {formatTime(task.created_at_unix_ms)}</span><span>{targetCount > 0 ? `${targetCount} ${labels.taskStatusesTargets.toLowerCase()}` : task.request_id || "—"}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full w-2/3 rounded-full ${view.lineClass} ${task.status.toLowerCase() === "running" ? "animate-pulse motion-reduce:animate-none" : ""}`} /></div><EbayImageValidationWarnings payload={task.result} /></article>;
+  const targetCount = task.targets?.length || task.result?.results?.length || 0;
+  return <article className="rounded-xl border bg-background p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="break-words text-sm font-semibold text-foreground">{taskOperationLabel(task, language)} · {task.ean.startsWith("KID ") ? task.ean : `EAN ${task.ean}`}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p>
+      </div>
+      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${view.badgeClass}`}><StatusIcon size={13} className={task.status.toLowerCase() === "running" ? "animate-spin motion-reduce:animate-none" : ""} />{view.label}</span>
+    </div>
+    <TaskTargetList results={task.result?.results} targets={task.targets} status={task.status} operation={task.operation} />
+    <div className="mt-4 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{labels.taskStatusesCreatedAt}: {formatTime(task.created_at_unix_ms)}</span><span>{targetCount > 0 ? `${targetCount} ${labels.taskStatusesTargets.toLowerCase()}` : task.request_id || "—"}</span></div>
+    <EbayImageValidationWarnings payload={task.result} />
+  </article>;
 }
 
 function HistoryTaskRow({ task, labels }: { task: TaskWithSource; labels: ReturnType<typeof useLabels> }) {
-  const view = statusView(task.status, labels);
+  const language = useLanguage();
+  const view = statusView(task, labels, language);
   const StatusIcon = view.icon;
   return (
     <article className="flex flex-col gap-2 px-3 py-3">
       <div className="flex items-center gap-3">
         <span className={`grid size-8 shrink-0 place-items-center rounded-full ${view.badgeClass}`}><StatusIcon size={15} /></span>
-        <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-foreground">{task.operation} · {task.ean}</p><p className="truncate text-xs text-muted-foreground">{sourceLabel(task.source, labels)} · {formatTime(task.updated_at_unix_ms || task.created_at_unix_ms)}</p></div>
+        <div className="min-w-0 flex-1"><p className="break-words text-sm font-medium text-foreground">{taskOperationLabel(task, language)} · {task.ean}</p><p className="text-xs text-muted-foreground">{sourceLabel(task.source, labels)} · {formatTime(task.updated_at_unix_ms || task.created_at_unix_ms)}</p></div>
         <span className={`hidden rounded-full px-2 py-1 text-xs font-medium sm:inline ${view.badgeClass}`}>{view.label}</span>
       </div>
+      <TaskTargetList results={task.result?.results} targets={task.targets} status={task.status} operation={task.operation} />
+      {task.error?.message ? <p className="break-words text-xs text-destructive">{task.error.message}</p> : null}
       <EbayImageValidationWarnings payload={task.result} />
-      <OttoSubmissionNotice task={task} />
+      <PublicationSubmissionNotice task={task} />
     </article>
   );
 }
 
 function TaskArchive({ tasks, labels }: { tasks: TaskWithSource[]; labels: ReturnType<typeof useLabels> }) {
+  const language = useLanguage();
   if (tasks.length === 0) return <p className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">{labels.taskStatusesEmpty}</p>;
   return <div className="overflow-x-auto rounded-lg border">
     <table className="w-full min-w-[620px] text-left text-sm">
       <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2.5 font-medium">{labels.taskStatusesTargets}</th><th className="px-3 py-2.5 font-medium">EAN / KID</th><th className="px-3 py-2.5 font-medium">{labels.taskStatusesCreatedAt}</th><th className="px-3 py-2.5 font-medium">{labels.status}</th></tr></thead>
       <tbody className="divide-y">{tasks.map((task) => {
-        const view = statusView(task.status, labels);
+        const view = statusView(task, labels, language);
         return <tr key={`${task.source}-${task.job_id}`} className="bg-background">
-          <td className="px-3 py-3"><p className="font-medium text-foreground">{task.operation}</p><p className="text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p><EbayImageValidationWarnings payload={task.result} /><OttoSubmissionNotice task={task} /></td>
+          <td className="px-3 py-3"><p className="font-medium text-foreground">{taskOperationLabel(task, language)}</p><p className="text-xs text-muted-foreground">{sourceLabel(task.source, labels)}</p><TaskTargetList results={task.result?.results} targets={task.targets} status={task.status} operation={task.operation} />{task.error?.message ? <p className="break-words text-xs text-destructive">{task.error.message}</p> : null}<EbayImageValidationWarnings payload={task.result} /><PublicationSubmissionNotice task={task} /></td>
           <td className="px-3 py-3 text-foreground">{task.ean}</td>
           <td className="px-3 py-3 text-muted-foreground">{formatTime(task.updated_at_unix_ms || task.created_at_unix_ms)}</td>
           <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${view.badgeClass}`}>{view.label}</span></td>

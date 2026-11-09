@@ -745,6 +745,24 @@ def test_job_actor_cannot_be_supplied_by_the_json_body(tmp_path):
     assert Deps.job_store.claim_next_queued_job()["command"].actor_login == ""
 
 
+def test_job_list_identifies_marketplaces_before_processing_without_exposing_the_command(tmp_path):
+    client = _client_with_fake_adapters(SuccessfulAdapters(), tmp_path)
+    response = client.post("/api/v1/orchestrator/jobs", json={
+        "ean": "4071489368680", "command": {"operation": "publish", "payload": {"title": "Desk"},
+        "channels": [{"marketplace": "kaufland", "account": "jv"}, {"marketplace": "kaufland", "account": "xl"}, {"marketplace": "otto", "profile": "jv"}]},
+    })
+    assert response.status_code == 200
+    response = client.get("/api/v1/orchestrator/jobs")
+    assert response.status_code == 200
+    job = response.json()["jobs"][0]
+    assert job["status"] == "queued"
+    assert job["result"] is None
+    assert job["marketplaces"] == ["kaufland", "otto"]
+    assert job["targets"] == ["kaufland,account=jv", "kaufland,account=xl", "otto,profile=jv"]
+    assert "command" not in job
+    assert "payload" not in job
+
+
 def test_orchestrator_response_request_id_matches_header_when_generated(tmp_path):
     fake = FakeAdapters()
     client = _client_with_fake_adapters(fake, tmp_path)

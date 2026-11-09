@@ -99,6 +99,14 @@ class ChannelTarget(BaseModel):
     overrides: dict = Field(default_factory=dict)
     ean_source: Literal["main", "pool"] = "main"
 
+    def target_label(self) -> str:
+        parts = [self.marketplace.value]
+        for field in ("account", "profile", "site", "site_key"):
+            value = getattr(self, field)
+            if value:
+                parts.append(f"{field}={value}")
+        return ",".join(parts)
+
 
 class OrchestrateRequest(BaseModel):
     operation: Operation = Operation.UPDATE
@@ -244,6 +252,8 @@ class JobListItem(BaseModel):
     priority: JobPriority = JobPriority.NORMAL
     result: OrchestrateResponse | None = None
     error: ErrorContract | None = None
+    marketplaces: list[Marketplace] = Field(default_factory=list)
+    targets: list[str] = Field(default_factory=list)
 
 
 class JobListResponse(BaseModel):
