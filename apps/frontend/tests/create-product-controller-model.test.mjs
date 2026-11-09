@@ -44,10 +44,10 @@ test("buildOrchestratorStatusToastMessage builds failed message with summary", (
 });
 
 test("OTTO accepted requests show validation pending, not a publication success toast", () => {
-  const result = buildOrchestratorStatusToastMessage({ labels, status: "success", totalResults: 1, failedCount: 0, failureSummary: "", pendingOttoPublications: 1, language: "ru" });
+  const result = buildOrchestratorStatusToastMessage({ labels, status: "success", totalResults: 1, failedCount: 0, failureSummary: "", pendingPublicationMarketplaces: ["OTTO"], language: "ru" });
   assert.equal(result.tone, "info");
   assert.match(result.message, /публикация не подтверждена/);
-  const partial = buildOrchestratorStatusToastMessage({ labels, status: "partial_success", totalResults: 2, failedCount: 1, failureSummary: "hood: failed", pendingOttoPublications: 1 });
+  const partial = buildOrchestratorStatusToastMessage({ labels, status: "partial_success", totalResults: 2, failedCount: 1, failureSummary: "hood: failed", pendingPublicationMarketplaces: ["OTTO"] });
   assert.match(partial.message, /hood: failed/);
   assert.match(partial.message, /publication not confirmed/);
 });

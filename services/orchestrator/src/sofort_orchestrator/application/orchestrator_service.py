@@ -435,16 +435,7 @@ class OrchestratorService:
 
 
 def _target_label(channel) -> str:
-    parts = [channel.marketplace.value]
-    if channel.account:
-        parts.append(f"account={channel.account}")
-    if channel.profile:
-        parts.append(f"profile={channel.profile}")
-    if channel.site:
-        parts.append(f"site={channel.site}")
-    if channel.site_key:
-        parts.append(f"site_key={channel.site_key}")
-    return ",".join(parts)
+    return channel.target_label()
 
 
 def _final_status(results: list[ChannelResult]) -> FinalStatus:
