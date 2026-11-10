@@ -72,6 +72,7 @@ async function proxyToOrchestrator(request: NextRequest, path: string[]): Promis
   const cookieHeader = request.headers.get("cookie") ?? "";
   const authorizationHeader = request.headers.get("authorization");
   const requestId = request.headers.get("x-request-id") ?? createRequestId();
+  const idempotencyKey = request.headers.get("idempotency-key");
   const body =
     request.method === "GET" || request.method === "HEAD"
       ? undefined
@@ -103,6 +104,7 @@ async function proxyToOrchestrator(request: NextRequest, path: string[]): Promis
           "content-type": request.headers.get("content-type") ?? "application/json",
           cookie: cookieHeader,
           ...(requestId ? { "x-request-id": requestId } : {}),
+          ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
           ...(actor ? { "x-warehub-actor-login": actor.login, "x-warehub-actor-name": actor.name } : {}),
         },
         body,

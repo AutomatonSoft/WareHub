@@ -1,3 +1,5 @@
+import math
+
 from rest_framework import serializers
 
 from .models import OttoProductJV, OttoProductXL
@@ -61,3 +63,20 @@ class OttoProductPayloadSerializer(serializers.Serializer):
     pricing = serializers.JSONField(required=False)
     logistics = serializers.JSONField(required=False)
     compliance = serializers.JSONField(required=False)
+
+    def validate_pricing(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Pricing must be an object.")
+        if "standardPrice" not in value:
+            return value
+        standard_price = value["standardPrice"]
+        message = "A valid number is required for standardPrice.amount."
+        if not isinstance(standard_price, dict) or isinstance(standard_price.get("amount"), bool):
+            raise serializers.ValidationError(message)
+        try:
+            amount = serializers.FloatField(min_value=0).run_validation(standard_price.get("amount"))
+        except serializers.ValidationError:
+            raise serializers.ValidationError(message)
+        if not math.isfinite(amount):
+            raise serializers.ValidationError(message)
+        return {**value, "standardPrice": {**standard_price, "amount": amount}}
