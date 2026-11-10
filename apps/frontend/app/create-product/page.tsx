@@ -42,7 +42,7 @@ import { KauflandProductFields } from "../../components/product-forms/kaufland-p
 import { fetchOttoProductBySku, type OttoProfile } from "../../components/channels/otto-api";
 import { OttoCategoriesPanel } from "./otto-categories-panel";
 import { deduplicateOttoAttributes } from "./orchestrator-payload-model";
-import { applyOttoDefaultAttributes, applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid } from "./otto-create-product-model.mjs";
+import { applyOttoDefaultAttributes, applyReservedOttoIdentity, buildOttoPayloadAttributes, extractOttoMediaUrls, isOttoProductLineValid, parseOttoPrice } from "./otto-create-product-model.mjs";
 import { fetchOttoCategoryAttributes } from "./otto-categories-api";
 import { claimEanForKid } from "../../components/editor/ean-pool-api";
 import { EbaySellerSetupPanel } from "./ebay-seller-setup-panel";
@@ -2716,6 +2716,11 @@ export default function CreateProductPage() {
       return;
     }
     const ean = identityEan;
+    const price = parseOttoPrice(draft.price.trim() || controller.price.trim());
+    if (price === null) {
+      rejectField("price", t.validationPriceNumeric);
+      return;
+    }
     const quantity = Number(draft.quantity);
     if (!Number.isInteger(quantity) || quantity < 1) {
       rejectField("quantity", "Enter a positive whole quantity for OTTO.");
@@ -2757,7 +2762,7 @@ export default function CreateProductPage() {
     return controller.handleCreateProduct({}, siteIds, {
       ottoEan: ean,
       ottoTitle: draft.productLine.trim(),
-      ottoPrice: draft.price.trim() || controller.price.trim(),
+      ottoPrice: String(price),
       ottoImageUrls: imageUrls,
       ottoPayload: {
         productReference,
@@ -2777,7 +2782,7 @@ export default function CreateProductPage() {
           location,
           filename: location.split("/").pop() || productReference,
         })),
-        pricing: { standardPrice: { amount: Number(draft.price || controller.price), currency: "EUR" }, vat: "FULL" },
+        pricing: { standardPrice: { amount: price, currency: "EUR" }, vat: "FULL" },
         delivery: { type: "PARCEL", deliveryTime },
         order: { maxOrderQuantity: 1 },
         compliance: { productSafety: {} },

@@ -46,6 +46,7 @@ const copy = {
 
 export function marketplaceFieldKey(path) {
   const parts = String(path ?? "").replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+  if ((parts.at(-1) === "amount" && parts.includes("standardPrice")) || (parts.length === 1 && parts[0] === "pricing")) return "price";
   const aspectIndex = parts.findIndex((part) => ["aspects", "category_aspects"].includes(part));
   if (aspectIndex >= 0) return ["aspects", ...parts.slice(aspectIndex + 1).filter((part) => !/^\d+$/.test(part))].join(".");
   for (const part of parts.reverse()) {

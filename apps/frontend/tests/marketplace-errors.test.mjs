@@ -21,6 +21,19 @@ test("Pydantic field paths map to visible controls without exposing input", () =
   assert.doesNotMatch(failure.message, /private-value/);
 });
 
+test("OTTO standardPrice.amount is a price error, not a quantity error", () => {
+  const failure = describeMarketplaceError({ error: { details: { upstream_response: { detail: [
+    { type: "float_type", loc: ["body", 0, "pricing", "standardPrice", "amount"], msg: "Input should be a valid number", input: null },
+  ] } } } }, "ru");
+  assert.equal(failure.issues[0].field, "price");
+  assert.match(failure.message, /Цена/);
+  assert.doesNotMatch(failure.message, /Количество/);
+  assert.equal(marketplaceFieldKey("amount"), "quantity");
+  assert.equal(marketplaceFieldKey("pricing.standardPrice.amount"), "price");
+  assert.equal(marketplaceFieldKey("pricing.vat"), "");
+  assert.equal(describeMarketplaceError({ pricing: ["A valid number is required for standardPrice.amount."] }, "ru").issues[0].field, "price");
+});
+
 test("completed orchestrator jobs expose nested eBay missing aspects", () => {
   const failure = describeMarketplaceError({ status: "completed", request_id: "req-test", result: { results: [{ status: "failed", target: "ebay,account=dep", error: { code: "upstream_4xx", message: "Marketplace adapter returned non-success status", details: { upstream_response: { detail: "Missing required aspects", details: { missing_aspects: ["Produktart", "Marke"] } } } } }] } }, "ru");
   assert.deepEqual(failure.issues.map((issue) => issue.field), ["aspects.Produktart", "aspects.Marke"]);

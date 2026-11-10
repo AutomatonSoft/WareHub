@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
 const composeFile = path.join(__dirname, "docker-compose.gateway.yml");
-const composeProject = "warehub_gateway_contract";
-const gatewayPort = 18080;
+const composeProject = process.env.GATEWAY_TEST_PROJECT || "warehub_gateway_contract";
+const gatewayPort = Number(process.env.GATEWAY_TEST_PORT || 18080);
 
 function gatewayBaseUrl() {
   return `http://127.0.0.1:${gatewayPort}`;
@@ -406,6 +406,30 @@ test("marketplace toggle goes through frontend actor verification while job poll
   const health = await requestJson("/api/v1/orchestrator/healthz");
   assert.equal(health.body.server, "orchestrator");
   assert.equal(health.body.url, "/api/v1/healthz");
+});
+
+test("product submissions go through frontend actor verification with identity headers and payload intact", async () => {
+  for (const path of ["jobs", "jobs/", "jobs/batch", "jobs/batch/", "products/4071489368819/update", "products/4071489368819/update/"]) {
+    const body = JSON.stringify({ ean: "4071489368819", command: { operation: "publish" } });
+    const url = `/api/v1/orchestrator/${path}?source=create-product`;
+    const response = await requestJson(url, {
+      method: "POST", headers: {
+        "content-type": "application/json", authorization: "Bearer gateway-contract-token",
+        cookie: "session=gateway-contract-session", "x-request-id": "create-actor-contract",
+      }, body,
+    });
+    assert.equal(response.body.server, "frontend", path);
+    assert.equal(response.body.method, "POST");
+    assert.equal(response.body.url, url);
+    assert.equal(response.body.body, body);
+    assert.equal(response.body.headers.authorization, "Bearer gateway-contract-token");
+    assert.equal(response.body.headers.cookie, "session=gateway-contract-session");
+    assert.equal(response.body.headers["x-request-id"], "create-actor-contract");
+  }
+  for (const path of ["jobs/job-123", "jobs/job-123/events", "jobs/job-123/attempts", "jobs/status/batch", "product-editor/jobs"]) {
+    const response = await requestJson(`/api/v1/orchestrator/${path}`);
+    assert.equal(response.body.server, "orchestrator", path);
+  }
 });
 
 test("backend canonical routing strips only /backend and preserves method, body, query, slash", async () => {

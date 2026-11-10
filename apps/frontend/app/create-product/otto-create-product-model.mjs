@@ -6,6 +6,13 @@ function text(value) {
 
 export const OTTO_PRODUCT_LINE_MAX_LENGTH = 70;
 
+export function parseOttoPrice(value) {
+  const normalized = text(value).replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  const price = Number(normalized);
+  return Number.isFinite(price) ? price : null;
+}
+
 export const OTTO_BASE_COLORS = Object.freeze([
   "beige", "blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün",
   "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
