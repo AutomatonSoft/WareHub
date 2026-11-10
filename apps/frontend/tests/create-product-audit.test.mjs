@@ -24,18 +24,19 @@ function loadProxy(fetch) {
   return exports;
 }
 
-for (const path of [["jobs"], ["jobs", "batch"], ["products", "4071489368567", "update"]]) {
+for (const path of [["jobs"], ["jobs", ""], ["jobs", "batch"], ["jobs", "batch", ""], ["products", "4071489368567", "update"], ["products", "4071489368567", "update", ""]]) {
   test(`publication proxy verifies actor for ${path.join("/")} and ignores forged headers`, async () => {
     const calls = [];
     const proxy = loadProxy(async (url, init) => {
       calls.push({ url, init });
       return new Response(JSON.stringify(url.endsWith("/auth/me") ? { login: "eugen", first_name: "Eugen", last_name: "Tryrshkin" } : { job_id: "job-1" }));
     });
-    const response = await proxy.POST({ method: "POST", nextUrl: { search: "" }, headers: new Headers({ authorization: "Bearer verified", "x-warehub-actor-login": "forged" }), arrayBuffer: async () => new ArrayBuffer(0) }, { params: Promise.resolve({ path }) });
+    const response = await proxy.POST({ method: "POST", nextUrl: { search: "" }, headers: new Headers({ authorization: "Bearer verified", "x-warehub-actor-login": "forged", "idempotency-key": "retry-safe-create" }), arrayBuffer: async () => new ArrayBuffer(0) }, { params: Promise.resolve({ path }) });
     assert.equal(response.status, 200);
     assert.equal(calls[0].init.headers.Authorization, "Bearer verified");
     assert.equal(calls[1].init.headers["x-warehub-actor-login"], "eugen");
     assert.equal(calls[1].init.headers["x-warehub-actor-name"], "Eugen Tryrshkin");
+    assert.equal(calls[1].init.headers["idempotency-key"], "retry-safe-create");
   });
 }
 

@@ -4,7 +4,9 @@ import {
   buildJobUpdatePayload,
   type BuildOrchestratorPayloadInput
 } from "./orchestrator-payload-model";
-import { apiFetch, ApiError } from "../../lib/api/client";
+import { ApiError } from "../../lib/api/client";
+import { authorizedFetch } from "../client-api-shared";
+import { ensureRequestIdHeader } from "../../lib/api/request-id";
 import { Marketplace, Operation, type components } from "../../lib/api/generated/orchestrator-openapi-types";
 import { extractErrorTextFromBody, formatCreateProductApiError } from "./create-product-api-errors";
 
@@ -35,6 +37,10 @@ export type OrchestratorResponse = {
 };
 
 const SUPPORTED_FAMILIES = new Set(["HOOD", "KAUFLAND", "OTTO", "JVMOEBEL", "XL"]);
+
+async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  return authorizedFetch(url, { ...options, headers: ensureRequestIdHeader(options.headers) });
+}
 
 async function readJsonSafe(response: Response): Promise<Record<string, unknown>> {
   try {

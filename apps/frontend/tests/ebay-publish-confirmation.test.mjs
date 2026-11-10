@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { parseOttoPrice } from "../app/create-product/otto-create-product-model.mjs";
 
 const source = readFileSync(new URL("../app/create-product/page.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -68,6 +69,7 @@ test("OTTO JV and XL submit edited SKU/EAN instead of the reserved identity", as
       additionalAttributes: {}, attributeOverrides: {}, attributeNames: {}, removedAttributeIds: [],
     };
     const context = {
+      parseOttoPrice,
       activeDraftContextKey: "kid-1614",
       ottoDraftRefByTab: { current: { [tab]: { sourceKey: "kid-1614", draft } } },
       reservedMarketplaceEans: { jv: "4071489360790", xl: "4071489360790" },

@@ -12,6 +12,7 @@ import {
 } from "../../app/create-product/create-product-image-gallery";
 import { OttoCategoriesPanel } from "../../app/create-product/otto-categories-panel";
 import type { ProductEditorOttoDraft, ProductEditorWarning } from "./product-editor-types";
+import { parseOttoPrice } from "../../app/create-product/otto-create-product-model.mjs";
 
 type Props = {
   draft: ProductEditorOttoDraft;
@@ -143,7 +144,7 @@ export function ProductEditorOttoPanel(props: Props) {
   ).length;
 
   const applyCreateDraft = (next: OttoCreateProductDraft) => {
-    const price = Number(next.price);
+    const price = parseOttoPrice(next.price);
     const deliveryTime = Number(next.deliveryTime);
 
     props.onChange({
@@ -151,7 +152,7 @@ export function ProductEditorOttoPanel(props: Props) {
       sku: next.sku,
       ean: next.ean,
       shippingProfileId: next.shippingProfileId,
-      pricing: Number.isFinite(price)
+      pricing: price !== null
         ? { ...props.draft.pricing, standardPrice: { ...asRecord(props.draft.pricing.standardPrice), amount: price } }
         : props.draft.pricing,
       delivery: {
