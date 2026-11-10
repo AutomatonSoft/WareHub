@@ -10,7 +10,37 @@ import {
   isOttoProductLineValid,
   OTTO_PRODUCT_LINE_MAX_LENGTH,
   OTTO_BASE_COLORS,
+  getOttoAttributeChoices,
+  normalizeOttoAttributeValues,
 } from "../app/create-product/otto-create-product-model.mjs";
+
+test("OTTO gender and audience choices prefer category allowed values", () => {
+  assert.deepEqual(getOttoAttributeChoices("Geschlecht"), ["männlich", "neutral", "weiblich"]);
+  assert.deepEqual(getOttoAttributeChoices("Zielgruppe"), ["Babys", "Erwachsene", "Jugendliche", "Kinder"]);
+  assert.deepEqual(getOttoAttributeChoices("Zielgruppe", ["Erwachsene"]), ["Erwachsene"]);
+  assert.deepEqual(getOttoAttributeChoices("Farbe"), []);
+});
+
+test("OTTO audience splits combined values and gender preserves exact case without inventing replacements", () => {
+  assert.deepEqual(normalizeOttoAttributeValues("Geschlecht", "Neutral"), ["neutral"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Zielgruppe", ["Erwachsene/Jugendliche", "Erwachsene"]), ["Erwachsene", "Jugendliche"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Zielgruppe", "Erwachsene, Jugendliche; Kinder"), ["Erwachsene", "Jugendliche", "Kinder"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Geschlecht", "Unisex"), ["Unisex"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Zielgruppe", "Jugendiche"), ["Jugendiche"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Material", "Holz/Metall, Glas"), ["Holz/Metall, Glas"]);
+});
+
+test("OTTO creation payload normalizes source, edited and added gender/audience attributes", () => {
+  const productAttributes = [
+    { attributeId: "gender", name: "Geschlecht", values: ["Neutral"] },
+    { attributeId: "audience", name: "Zielgruppe", values: ["Erwachsene/Jugendliche"] },
+  ];
+  const expected = [{ name: "Geschlecht", values: ["neutral"] }, { name: "Zielgruppe", values: ["Erwachsene", "Jugendliche"] }];
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes }), expected);
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes, attributeOverrides: { gender: "Neutral", audience: "Erwachsene, Jugendliche" } }), expected);
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes: [], additionalAttributes: { gender: "Neutral", audience: "Erwachsene/Jugendliche" }, attributeNames: { gender: "Geschlecht", audience: "Zielgruppe" } }), expected);
+  assert.deepEqual(buildOttoPayloadAttributes({ productAttributes, attributeOverrides: { audience: "" } }), [expected[0]]);
+});
 
 test("OTTO Grundfarbe choices match the requested lowercase single-select values", () => {
   assert.deepEqual(OTTO_BASE_COLORS, [
