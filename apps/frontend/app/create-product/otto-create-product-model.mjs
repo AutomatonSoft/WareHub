@@ -18,6 +18,23 @@ export const OTTO_BASE_COLORS = Object.freeze([
   "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
 ]);
 
+export function getOttoAttributeChoices(name, allowedValues = []) {
+  const key = text(name).toLowerCase();
+  if (key === "grundfarbe") return OTTO_BASE_COLORS;
+  if (key !== "geschlecht" && key !== "zielgruppe") return [];
+  if (allowedValues.length) return allowedValues;
+  return key === "geschlecht" ? ["männlich", "neutral", "weiblich"] : ["Babys", "Erwachsene", "Jugendliche", "Kinder"];
+}
+
+export function normalizeOttoAttributeValues(name, input, allowedValues = []) {
+  const choices = getOttoAttributeChoices(name, allowedValues);
+  const selected = values(input);
+  const separate = text(name).toLowerCase() === "zielgruppe"
+    ? selected.flatMap((value) => value.split(/[,/;]/).map(text).filter(Boolean))
+    : selected;
+  return [...new Set(separate.map((value) => choices.find((choice) => choice.toLowerCase() === value.toLowerCase()) ?? value))];
+}
+
 export function isOttoProductLineValid(value) {
   return text(value).length <= OTTO_PRODUCT_LINE_MAX_LENGTH;
 }
@@ -101,11 +118,12 @@ export function buildOttoPayloadAttributes({ productAttributes, additionalAttrib
 
   for (const attribute of normalizeOttoProductAttributes(productAttributes)) {
     if (removedIds.has(attribute.id)) continue;
-    const override = text(attributeOverrides?.[attribute.id]);
+    const override = attributeOverrides?.[attribute.id];
     const name = text(attributeNames?.[attribute.id]) || attribute.label;
     const key = name.toLocaleLowerCase();
     if (!name || !key) continue;
-    attributesByName.set(key, { name, values: override ? [override] : attribute.values });
+    const selectedValues = normalizeOttoAttributeValues(name, override === undefined ? attribute.values : override);
+    if (selectedValues.length) attributesByName.set(key, { name, values: selectedValues });
   }
 
   for (const [attributeId, value] of Object.entries(additionalAttributes ?? {})) {
@@ -113,7 +131,7 @@ export function buildOttoPayloadAttributes({ productAttributes, additionalAttrib
     const name = text(attributeNames?.[attributeId]);
     const normalizedValue = text(value);
     if (!name || !normalizedValue) continue;
-    attributesByName.set(name.toLocaleLowerCase(), { name, values: [normalizedValue] });
+    attributesByName.set(name.toLocaleLowerCase(), { name, values: normalizeOttoAttributeValues(name, normalizedValue) });
   }
 
   return Array.from(attributesByName.values());
