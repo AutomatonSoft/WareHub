@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "../../components/ui/textarea";
 import { getOttoShippingProfiles, type OttoShippingProfileAccount } from "../../lib/otto-shipping-profiles";
 import { fetchOttoCategoryAttributes, type OttoCategoryAttribute } from "./otto-categories-api";
-import { applyOttoDefaultAttributes, normalizeOttoProductAttributes, OTTO_BASE_COLORS, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
+import { applyOttoDefaultAttributes, getOttoAttributeChoices, normalizeOttoAttributeValues, normalizeOttoProductAttributes, OTTO_PRODUCT_LINE_MAX_LENGTH } from "./otto-create-product-model.mjs";
 import { OttoAiAttributes } from "./otto-ai-attributes";
 
 export type OttoCreateProductDraft = {
@@ -56,26 +56,30 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="flex min-w-0 flex-col gap-1.5"><span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/65">{label}</span>{children}</label>;
 }
 
-function AttributeInput({ name, value, onChange, placeholder }: {
-  name: string; value: string; onChange: (value: string) => void; placeholder?: string;
+function AttributeInput({ name, value, onChange, placeholder, allowedValues = [] }: {
+  name: string; value: string; onChange: (value: string) => void; placeholder?: string; allowedValues?: string[];
 }) {
-  const isBaseColor = name.trim().toLowerCase() === "grundfarbe";
-  const normalized = value.trim().toLowerCase();
-  const isAllowed = OTTO_BASE_COLORS.includes(normalized);
+  const choices = getOttoAttributeChoices(name, allowedValues);
+  const multiple = name.trim().toLowerCase() === "zielgruppe";
+  const selected = normalizeOttoAttributeValues(name, value, allowedValues);
+  const normalized = selected.join(", ");
+  const invalid = selected.filter((item) => !choices.includes(item));
   useEffect(() => {
-    if (isBaseColor && isAllowed && value !== normalized) onChange(normalized);
-  }, [isBaseColor, isAllowed, value, normalized, onChange]);
-  if (!isBaseColor) return <Input aria-label={name} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
+    if (choices.length && invalid.length === 0 && value !== normalized) onChange(normalized);
+  }, [choices.length, invalid.length, value, normalized, onChange]);
+  if (!choices.length) return <Input aria-label={name} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
   return <select
     aria-label={name}
-    aria-invalid={Boolean(value) && !isAllowed}
-    className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive"
-    value={isAllowed ? normalized : value}
-    onChange={(event) => onChange(event.target.value)}
+    aria-invalid={invalid.length > 0}
+    multiple={multiple}
+    size={multiple ? choices.length : undefined}
+    className={`${multiple ? "min-h-28" : "h-10"} w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive`}
+    value={multiple ? selected : normalized}
+    onChange={(event) => onChange(multiple ? Array.from(event.target.selectedOptions, (option) => option.value).join(", ") : event.target.value)}
   >
-    <option value="">—</option>
-    {value && !isAllowed ? <option value={value} disabled>{value} — ✕</option> : null}
-    {OTTO_BASE_COLORS.map((color) => <option key={color} value={color}>{color}</option>)}
+    {!multiple ? <option value="">—</option> : null}
+    {invalid.map((item) => <option key={item} value={item} disabled>{item} — ✕</option>)}
+    {choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
   </select>;
 }
 
@@ -299,7 +303,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "
               <div key={attribute.id} className="flex min-w-0 flex-col gap-1">
                 <dt className="text-xs font-medium text-muted-foreground">{attribute.label}{categoryAttributes.some((item) => item.relevance === "HIGH" && (item.id === attribute.id || item.name.trim().toLocaleLowerCase() === attribute.label.trim().toLocaleLowerCase())) ? <span className="text-destructive"> *</span> : null}</dt>
                 <dd className="flex min-w-0 gap-2">
-                  <AttributeInput name={attribute.label} value={attribute.value} onChange={(value) => updateProductAttribute(attribute, value)} />
+                  <AttributeInput name={attribute.label} value={attribute.value} allowedValues={categoryAttributes.find((item) => item.id === attribute.id || item.name.trim().toLowerCase() === attribute.label.trim().toLowerCase())?.allowedValues} onChange={(value) => updateProductAttribute(attribute, value)} />
                   <Button type="button" variant="ghost" size="icon" aria-label={t.ottoRemoveAttribute.replace("{name}", attribute.label)} onClick={() => removeProductAttribute(attribute.id)}>
                     <Trash2 />
                   </Button>
@@ -315,6 +319,7 @@ export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "
                   <div className="flex min-w-0 gap-2">
                     <AttributeInput
                       name={attribute.name}
+                      allowedValues={attribute.allowedValues}
                       value={draft.additionalAttributes[attribute.id] ?? ""}
                       onChange={(value) => updateAdditionalAttribute(attribute, value)}
                       placeholder={attribute.unit || attribute.type}

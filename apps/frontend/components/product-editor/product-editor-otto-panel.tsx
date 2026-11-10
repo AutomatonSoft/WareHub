@@ -12,7 +12,7 @@ import {
 } from "../../app/create-product/create-product-image-gallery";
 import { OttoCategoriesPanel } from "../../app/create-product/otto-categories-panel";
 import type { ProductEditorOttoDraft, ProductEditorWarning } from "./product-editor-types";
-import { parseOttoPrice } from "../../app/create-product/otto-create-product-model.mjs";
+import { normalizeOttoAttributeValues, parseOttoPrice } from "../../app/create-product/otto-create-product-model.mjs";
 
 type Props = {
   draft: ProductEditorOttoDraft;
@@ -102,13 +102,14 @@ function toEditorAttributes(source: Array<Record<string, unknown>>, draft: OttoC
     .filter(({ id }) => !draft.removedAttributeIds.includes(id))
     .map(({ attribute, id }) => {
       const override = draft.attributeOverrides[id];
-      return override === undefined ? attribute : { ...attribute, values: attributeValues(override) };
+      const name = textValue(attribute.name ?? attribute.label ?? attribute.attributeKey);
+      return override === undefined ? attribute : { ...attribute, values: normalizeOttoAttributeValues(name, attributeValues(override)) };
     });
 
   const sourceIds = new Set(source.map(attributeId));
   const addedAttributes = Object.entries(draft.additionalAttributes)
     .filter(([id]) => !sourceIds.has(id))
-    .map(([id, value]) => ({ attributeId: id, name: draft.attributeNames[id] ?? id, values: attributeValues(value), additional: true }));
+    .map(([id, value]) => ({ attributeId: id, name: draft.attributeNames[id] ?? id, values: normalizeOttoAttributeValues(draft.attributeNames[id] ?? id, attributeValues(value)), additional: true }));
 
   return [...selectedAttributes, ...addedAttributes];
 }
