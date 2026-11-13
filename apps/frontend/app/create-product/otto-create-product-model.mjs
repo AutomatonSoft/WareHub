@@ -13,14 +13,9 @@ export function parseOttoPrice(value) {
   return Number.isFinite(price) ? price : null;
 }
 
-export const OTTO_BASE_COLORS = Object.freeze([
-  "beige", "blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün",
-  "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
-]);
-
 export function getOttoAttributeChoices(name, allowedValues = []) {
   const key = text(name).toLowerCase();
-  if (key === "grundfarbe") return OTTO_BASE_COLORS;
+  if (key === "grundfarbe") return allowedValues;
   if (key !== "geschlecht" && key !== "zielgruppe") return [];
   if (allowedValues.length) return allowedValues;
   return key === "geschlecht" ? ["männlich", "neutral", "weiblich"] : ["Babys", "Erwachsene", "Jugendliche", "Kinder"];

@@ -200,6 +200,7 @@ export function SofortListTable() {
   const serverMaterial = materialFilter.trim() || undefined;
 
   const sofortListQuery = useQuery({
+    refetchOnMount: "always",
     queryKey: [
       "sofort-list-rows",
       archived,

@@ -67,10 +67,11 @@ function AttributeInput({ name, value, onChange, placeholder, allowedValues = []
   useEffect(() => {
     if (choices.length && invalid.length === 0 && value !== normalized) onChange(normalized);
   }, [choices.length, invalid.length, value, normalized, onChange]);
-  if (!choices.length) return <Input aria-label={name} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
+  if (!choices.length && name.trim().toLowerCase() !== "grundfarbe") return <Input aria-label={name} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />;
   return <select
     aria-label={name}
     aria-invalid={invalid.length > 0}
+    disabled={choices.length === 0}
     multiple={multiple}
     size={multiple ? choices.length : undefined}
     className={`${multiple ? "min-h-28" : "h-10"} w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive`}
@@ -82,6 +83,8 @@ function AttributeInput({ name, value, onChange, placeholder, allowedValues = []
     {choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
   </select>;
 }
+
+export { AttributeInput };
 
 export function OttoCreateProductPanel({ initialDraft, draftKey, reservedEan = "", identityEdited = false, showQuantity = true, profile, categoryId, categoryName, productAttributes, sourceProduct, onDraftChange }: Props) {
   const t = useLabels();

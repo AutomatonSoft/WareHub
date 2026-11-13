@@ -14,10 +14,6 @@ const BACKEND_OPENAPI_TIMEOUT_MS = 3_000;
 const ORCHESTRATOR_OPENAPI_TIMEOUT_MS = 7_000;
 let openApiCache: { value: OpenApiDocument; expiresAt: number } | null = null;
 
-export function clearOpenApiCacheForTests(): void {
-  openApiCache = null;
-}
-
 async function fetchJson(url: string, timeoutMs: number): Promise<OpenApiDocument | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

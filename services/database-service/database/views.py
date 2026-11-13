@@ -1723,16 +1723,12 @@ class KidMarketplaceEansAPIView(APIView):
 
         with transaction.atomic():
             ean_row, _ = Ean.objects.get_or_create(kid=kid)
-            ean_update_fields: list[str] = []
-            for request_field, model_field in field_map.items():
-                if request_field not in updates:
-                    continue
-                field_value = updates[request_field]
-                if getattr(ean_row, model_field) != field_value:
-                    setattr(ean_row, model_field, field_value)
-                    ean_update_fields.append(model_field)
-            if ean_update_fields:
-                ean_row.save(update_fields=ean_update_fields)
+            ean_serializer = EanPatchSerializer(ean_row, data={
+                model_field: updates[request_field]
+                for request_field, model_field in field_map.items() if request_field in updates
+            }, partial=True)
+            ean_serializer.is_valid(raise_exception=True)
+            ean_serializer.save()
 
         return self.get(request, kid_id)
 
