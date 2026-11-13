@@ -446,6 +446,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orchestrator/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Product Reviews
+         * @description GET /api/v1/orchestrator/reviews.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_reviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orchestrator/reviews/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Product Review
+         * @description GET /api/v1/orchestrator/reviews/{job_id}.
+         */
+        get: operations["orchestrator_get_api_v1_orchestrator_reviews_job_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/readyz": {
         parameters: {
             query?: never;
@@ -526,6 +566,10 @@ export interface components {
             } | null;
             /** Ebay Item Id */
             ebay_item_id?: string | null;
+            /** Ebay Legacy Item */
+            ebay_legacy_item?: {
+                [key: string]: unknown;
+            } | null;
             /** Ebay Listing Mode */
             ebay_listing_mode?: CanonicalPayloadEbay_listing_modeAnyOf0 | null;
             /** Ebay Offer */
@@ -658,6 +702,7 @@ export interface components {
             ean: string;
             /** @default normal */
             priority: components["schemas"]["JobPriority"];
+            review?: components["schemas"]["ReviewRetryInput"] | null;
             /** Scheduled At Unix Ms */
             scheduled_at_unix_ms?: number | null;
         };
@@ -747,6 +792,8 @@ export interface components {
              * @default true
              */
             inactive: boolean;
+            /** Kid Id */
+            kid_id?: number | null;
             /** Kid Number */
             kid_number: string;
             /** Place */
@@ -783,6 +830,16 @@ export interface components {
         Operation: Operation;
         /** OrchestrateRequest */
         OrchestrateRequest: {
+            /**
+             * Actor Login
+             * @default
+             */
+            actor_login: string;
+            /**
+             * Actor Name
+             * @default
+             */
+            actor_name: string;
             /** Channels */
             channels: components["schemas"]["ChannelTarget"][];
             /** Kid Id */
@@ -792,6 +849,7 @@ export interface components {
             /** @default update */
             operation: components["schemas"]["Operation"];
             payload: components["schemas"]["CanonicalPayload"];
+            review_origin?: components["schemas"]["ReviewRetryReference"] | null;
         };
         /** ProductEditorApplyRequest */
         ProductEditorApplyRequest: {
@@ -1083,6 +1141,63 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** ProductReviewDraft */
+        ProductReviewDraft: {
+            item: components["schemas"]["ProductReviewItem"];
+            /** Locked Fields */
+            locked_fields: string[];
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** ProductReviewItem */
+        ProductReviewItem: {
+            /** Account */
+            account: string;
+            /**
+             * Blocked Reason
+             * @default
+             */
+            blocked_reason: string;
+            /** Created At Unix Ms */
+            created_at_unix_ms: number;
+            /** Ean */
+            ean: string;
+            /** Job Id */
+            job_id: string;
+            /** Kid Id */
+            kid_id: number | null;
+            /** Kid Number */
+            kid_number: string;
+            /** Marketplace */
+            marketplace: string;
+            /** Messages */
+            messages: string[];
+            /** Request Id */
+            request_id: string;
+            /** Retryable */
+            retryable: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: ProductReviewItemState;
+            /** Target */
+            target: string;
+        };
+        /** ProductReviewList */
+        ProductReviewList: {
+            /** Items */
+            items: components["schemas"]["ProductReviewItem"][];
+            /** Next Offset */
+            next_offset: number | null;
+            /**
+             * Status Unavailable
+             * @default false
+             */
+            status_unavailable: boolean;
+        };
         /** ReconciliationChannelState */
         ReconciliationChannelState: {
             /** Payload */
@@ -1103,6 +1218,24 @@ export interface components {
             desired: components["schemas"]["OrchestrateRequest"];
             /** Ean */
             ean: string;
+        };
+        /** ReviewRetryInput */
+        ReviewRetryInput: {
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Source Job Id */
+            source_job_id: string;
+            /** Target */
+            target: string;
+        };
+        /** ReviewRetryReference */
+        ReviewRetryReference: {
+            /** Source Job Id */
+            source_job_id: string;
+            /** Target */
+            target: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1881,6 +2014,72 @@ export interface operations {
             };
         };
     };
+    orchestrator_get_api_v1_orchestrator_reviews: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductReviewList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orchestrator_get_api_v1_orchestrator_reviews_job_id: {
+        parameters: {
+            query: {
+                target: string;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductReviewDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     orchestrator_get_api_v1_readyz: {
         parameters: {
             query?: never;
@@ -1971,4 +2170,13 @@ export enum ProductEditorTargetStatus {
 export enum ProductEditorTargetType {
     source_site = "source_site",
     marketplace_account = "marketplace_account"
+}
+export enum ProductReviewItemState {
+    queued = "queued",
+    running = "running",
+    failed = "failed",
+    rejected = "rejected",
+    pending = "pending",
+    online = "online",
+    unknown = "unknown"
 }

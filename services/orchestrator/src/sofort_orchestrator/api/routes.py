@@ -127,6 +127,8 @@ def orchestrate_update(
     request_id = getattr(request.state, "request_id", x_request_id or str(uuid.uuid4()))
     response.headers["X-Request-Id"] = request_id
 
+    if command.review_origin is not None:
+        return JSONResponse(status_code=400, content={"code": "product_review_invalid_origin", "message": "Use the review submission endpoint."})
     if not ean.strip():
         err = ErrorContract(
             code="orchestrator_ean_empty",
@@ -175,6 +177,18 @@ def create_orchestrator_job(
         cached = idempotency_store.get(replay_key)
         if cached is not None:
             return cached
+    if body.command.review_origin is not None:
+        return JSONResponse(status_code=400, content={"code": "product_review_invalid_origin", "message": "Review origin is assigned by the server."})
+    if body.review is not None:
+        from .product_review_routes import get_product_review_service
+        from ..application.product_review_service import ProductReviewError
+        try:
+            body.ean, body.command = get_product_review_service().prepare_retry(
+                job_id=body.review.source_job_id, target=body.review.target,
+                payload=body.review.payload, request_id=request_id,
+            )
+        except ProductReviewError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"code": "product_review_retry_blocked", "message": str(exc)})
     if not _try_consume_job_intake_slots([body.priority]):
         err = ErrorContract(
             code="orchestrator_jobs_rate_limited",
@@ -209,14 +223,13 @@ def create_orchestrator_job(
     job_id = str(uuid.uuid4())
     body.command.actor_login = request.headers.get("x-warehub-actor-login", "").strip()
     body.command.actor_name = request.headers.get("x-warehub-actor-name", "").strip()
-    job_store.create_job(
-        job_id=job_id,
-        request_id=request_id,
-        ean=ean,
-        command=body.command,
-        scheduled_at_unix_ms=scheduled_at_unix_ms,
-        priority=body.priority,
-    )
+    try:
+        job_store.create_job(
+            job_id=job_id, request_id=request_id, ean=ean, command=body.command,
+            scheduled_at_unix_ms=scheduled_at_unix_ms, priority=body.priority,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=409, content={"code": "product_review_stale", "message": str(exc)})
     payload = CreateJobResponse(job_id=job_id, request_id=request_id, status=JobStatus.QUEUED).model_dump()
     if replay_key is not None:
         idempotency_store.put(replay_key, payload)
@@ -235,6 +248,8 @@ def create_orchestrator_jobs_batch(
 ):
     request_id = getattr(request.state, "request_id", x_request_id or str(uuid.uuid4()))
     response.headers["X-Request-Id"] = request_id
+    if any(item.command.review_origin is not None for item in body.items):
+        return JSONResponse(status_code=400, content={"code": "product_review_invalid_origin", "message": "Review retries cannot be submitted through batch intake."})
     replay_key = _batch_replay_key(idempotency_key=idempotency_key, body=body)
     if replay_key is not None:
         cached = idempotency_store.get(replay_key)
@@ -614,7 +629,7 @@ def _batch_replay_key(*, idempotency_key: str | None, body: BatchCreateJobReques
     raw_key = (idempotency_key or "").strip()
     if not raw_key:
         return None
-    canonical = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(_replay_payload(body), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"orchestrator_jobs_batch::{raw_key}::{digest}"
 
@@ -623,6 +638,18 @@ def _single_replay_key(*, idempotency_key: str | None, body: CreateJobRequest) -
     raw_key = (idempotency_key or "").strip()
     if not raw_key:
         return None
-    canonical = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(_replay_payload(body), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"orchestrator_jobs_single::{raw_key}::{digest}"
+
+
+def _replay_payload(body) -> dict:
+    value = body.model_dump(mode="json")
+    if value.get("review") is None:
+        value.pop("review", None)
+    items = value.get("items", [value])
+    for item in items:
+        command = item.get("command", {})
+        if command.get("review_origin") is None:
+            command.pop("review_origin", None)
+    return value

@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from .product_review_models import ReviewRetryInput, ReviewRetryReference
 
 
 class Marketplace(str, Enum):
@@ -109,6 +110,7 @@ class ChannelTarget(BaseModel):
 
 
 class OrchestrateRequest(BaseModel):
+    review_origin: ReviewRetryReference | None = None
     operation: Operation = Operation.UPDATE
     payload: CanonicalPayload
     channels: list[ChannelTarget]
@@ -154,6 +156,7 @@ class JobPriority(str, Enum):
 
 
 class CreateJobRequest(BaseModel):
+    review: ReviewRetryInput | None = None
     ean: str
     command: OrchestrateRequest
     scheduled_at_unix_ms: int | None = None

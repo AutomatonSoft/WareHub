@@ -51,6 +51,33 @@ test("actual OTTO inputs preserve invalid source values visibly instead of guess
   assert.deepEqual(changes, []);
 });
 
+test("Grundfarbe uses category choices and never replaces an unsupported source color", () => {
+  const changes = [];
+  const input = renderInput({ name: "Grundfarbe", value: "beige", allowedValues: ["natur", "weiß"], onChange: (value) => changes.push(value) });
+  assert.equal(input.type, "select");
+  assert.equal(input.props.multiple, false);
+  assert.equal(input.props["aria-invalid"], true);
+  const options = input.children.flat().filter((child) => child?.type === "option");
+  assert.deepEqual(options.filter((option) => !option.props.disabled).map((option) => option.props.value), ["", "natur", "weiß"]);
+  assert.deepEqual(changes, []);
+  input.props.onChange({ target: { value: "natur" } });
+  assert.deepEqual(changes, ["natur"]);
+});
+
+test("Grundfarbe stays a disabled select until category choices are available", () => {
+  const input = renderInput({ name: "Grundfarbe", value: "beige", onChange: () => assert.fail("Must not guess a color") });
+  assert.equal(input.type, "select");
+  assert.equal(input.props.disabled, true);
+});
+
+test("Grundfarbe allows beige only when the selected category actually allows it", () => {
+  const changes = [];
+  const input = renderInput({ name: "Grundfarbe", value: "Beige", allowedValues: ["beige", "natur"], onChange: (value) => changes.push(value) });
+  assert.equal(input.props["aria-invalid"], false);
+  assert.equal(input.props.value, "beige");
+  assert.deepEqual(changes, ["beige"]);
+});
+
 test("actual Product Editor mapper sends audience values separately and gender lowercase", () => {
   const code = extractFunctions("../components/product-editor/product-editor-otto-panel.tsx", ["textValue", "attributeId", "attributeValues", "toEditorAttributes"]);
   const attributes = runInNewContext(ts.transpileModule(`${code}\ntoEditorAttributes(source, draft);`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {

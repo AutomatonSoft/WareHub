@@ -130,6 +130,13 @@ class SqliteJobStore:
     ) -> None:
         now = _now_ms()
         with self._connect() as conn:
+            if command.review_origin is not None:
+                from .product_review_store import ProductReviewStore
+                conn.execute("BEGIN IMMEDIATE")
+                reviews = ProductReviewStore(self.db_path)
+                source = reviews.source(command.review_origin.source_job_id, command.review_origin.target)
+                if source is None or not reviews.is_latest(source):
+                    raise ValueError("A newer review submission already exists.")
             conn.execute(
                 """
                 INSERT INTO orchestrator_jobs (

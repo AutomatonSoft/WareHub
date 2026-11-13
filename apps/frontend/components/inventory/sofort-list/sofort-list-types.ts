@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 export type SofortListRow = {
   ottoPublications?: Partial<Record<"ottoJv" | "ottoXl", {
+    ean?: string;
+    sku?: string;
     state: string;
     online: boolean | null;
     checking?: boolean;

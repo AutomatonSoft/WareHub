@@ -9,7 +9,6 @@ import {
   extractOttoMediaUrls,
   isOttoProductLineValid,
   OTTO_PRODUCT_LINE_MAX_LENGTH,
-  OTTO_BASE_COLORS,
   getOttoAttributeChoices,
   normalizeOttoAttributeValues,
 } from "../app/create-product/otto-create-product-model.mjs";
@@ -42,12 +41,14 @@ test("OTTO creation payload normalizes source, edited and added gender/audience 
   assert.deepEqual(buildOttoPayloadAttributes({ productAttributes, attributeOverrides: { audience: "" } }), [expected[0]]);
 });
 
-test("OTTO Grundfarbe choices match the requested lowercase single-select values", () => {
-  assert.deepEqual(OTTO_BASE_COLORS, [
-    "beige", "blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün",
-    "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß",
-  ]);
-  assert.equal(OTTO_BASE_COLORS.includes("Beige"), false);
+test("OTTO Grundfarbe uses only category allowedValues without a global fallback", () => {
+  const schminktischColors = ["blau", "braun", "bunt", "gelb", "goldfarben", "grau", "grün", "lila", "natur", "orange", "rosa", "rot", "schwarz", "silberfarben", "transparent", "weiß"];
+  assert.deepEqual(getOttoAttributeChoices("Grundfarbe", schminktischColors), schminktischColors);
+  assert.equal(getOttoAttributeChoices("Grundfarbe", schminktischColors).includes("beige"), false);
+  assert.deepEqual(getOttoAttributeChoices("Grundfarbe", ["beige", "natur"]), ["beige", "natur"]);
+  assert.deepEqual(getOttoAttributeChoices("Grundfarbe"), []);
+  assert.deepEqual(normalizeOttoAttributeValues("Grundfarbe", "Beige", ["Beige", "Natur"]), ["Beige"]);
+  assert.deepEqual(normalizeOttoAttributeValues("Grundfarbe", "beige", schminktischColors), ["beige"]);
 });
 
 test("OTTO defaults use category IDs, replace source templates and preserve manual edits, blanks and removals", () => {

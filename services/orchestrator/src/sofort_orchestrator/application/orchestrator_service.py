@@ -49,6 +49,7 @@ class OrchestratorService:
         results: list[ChannelResult] = []
         pool_eans_by_reservation_id: dict[str, str] = {}
         used_pool_reservations: dict[str, str | None] = {}
+        submission_identities: dict[str, dict] = {}
         kid_number = str(command.kid_number or "").strip()
 
         for channel in command.channels:
@@ -179,6 +180,11 @@ class OrchestratorService:
                             reservation_family=reservation_family,
                         )
                         pool_eans_by_reservation_id[reservation_id] = channel_ean
+                submitted_ean = str(scoped_payload.get("ean") or channel_ean) if channel.ean_source == "main" and channel.marketplace is Marketplace.OTTO else channel_ean
+                submission_identities[target_label] = {
+                    "ean": submitted_ean,
+                    "sku": str(scoped_payload.get("sku") or submitted_ean) if channel.ean_source == "main" else submitted_ean,
+                }
                 adapter_result = self.adapters.dispatch(
                     ean=channel_ean,
                     request_id=request_id,
@@ -248,7 +254,7 @@ class OrchestratorService:
                         request_id=request_id,
                         kid_number=kid_number,
                         channel=channel,
-                        ean=channel_ean,
+                        ean=submission_identities[target_label]["ean"],
                         account=mapping_account,
                     )
                 if self.circuit_breaker is not None:
@@ -292,6 +298,10 @@ class OrchestratorService:
                     ),
                 )
             )
+
+        for result in results:
+            if result.target in submission_identities:
+                result.data["submission_identity"] = submission_identities[result.target]
 
         for reservation_id, reservation_family in used_pool_reservations.items():
             self._mark_pool_ean_used(
@@ -338,7 +348,7 @@ class OrchestratorService:
         ean: str,
         account: str,
     ) -> dict[str, object]:
-        if command.operation is not Operation.PUBLISH or not kid_number:
+        if (command.operation is not Operation.PUBLISH and command.review_origin is None) or not kid_number:
             return {"status": "skipped", "reason": "publish_kid_number_required"}
         if self.marketplace_ean_mapping_gateway is None:
             return {"status": "skipped", "reason": "mapping_gateway_not_configured"}

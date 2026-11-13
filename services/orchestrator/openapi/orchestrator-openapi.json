@@ -546,6 +546,128 @@
         "description": "Returns recorded event history for one orchestrator job."
       }
     },
+    "/api/v1/orchestrator/reviews": {
+      "get": {
+        "summary": "List Product Reviews",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reviews",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductReviewList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Reviews"
+        ],
+        "description": "GET /api/v1/orchestrator/reviews."
+      }
+    },
+    "/api/v1/orchestrator/reviews/{job_id}": {
+      "get": {
+        "summary": "Get Product Review",
+        "operationId": "orchestrator_get_api_v1_orchestrator_reviews_job_id",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Target"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductReviewDraft"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Product Reviews"
+        ],
+        "description": "GET /api/v1/orchestrator/reviews/{job_id}."
+      }
+    },
     "/api/v1/orchestrator/product-editor/apply": {
       "post": {
         "summary": "Product Editor Apply",
@@ -2092,6 +2214,18 @@
             ],
             "title": "Ebay Offer"
           },
+          "ebay_legacy_item": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ebay Legacy Item"
+          },
           "ebay_currency": {
             "anyOf": [
               {
@@ -2187,6 +2321,16 @@
       },
       "CreateJobRequest": {
         "properties": {
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRetryInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ean": {
             "type": "string",
             "title": "Ean"
@@ -2444,6 +2588,18 @@
             "type": "string",
             "title": "Kid Number"
           },
+          "kid_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kid Id"
+          },
           "inactive": {
             "type": "boolean",
             "title": "Inactive",
@@ -2536,6 +2692,16 @@
       },
       "OrchestrateRequest": {
         "properties": {
+          "review_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRetryReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "operation": {
             "$ref": "#/components/schemas/Operation",
             "default": "update"
@@ -2572,6 +2738,16 @@
               }
             ],
             "title": "Kid Id"
+          },
+          "actor_login": {
+            "type": "string",
+            "title": "Actor Login",
+            "default": ""
+          },
+          "actor_name": {
+            "type": "string",
+            "title": "Actor Name",
+            "default": ""
           }
         },
         "type": "object",
@@ -2676,6 +2852,21 @@
                 "type": "null"
               }
             ]
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "jv",
+                  "xl"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
           }
         },
         "type": "object",
@@ -3273,6 +3464,157 @@
         ],
         "title": "ProductEditorWarning"
       },
+      "ProductReviewDraft": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ProductReviewItem"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "locked_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Locked Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item",
+          "payload",
+          "locked_fields"
+        ],
+        "title": "ProductReviewDraft"
+      },
+      "ProductReviewItem": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "marketplace": {
+            "type": "string",
+            "title": "Marketplace"
+          },
+          "account": {
+            "type": "string",
+            "title": "Account"
+          },
+          "ean": {
+            "type": "string",
+            "title": "Ean"
+          },
+          "kid_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kid Id"
+          },
+          "kid_number": {
+            "type": "string",
+            "title": "Kid Number"
+          },
+          "created_at_unix_ms": {
+            "type": "integer",
+            "title": "Created At Unix Ms"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "failed",
+              "rejected",
+              "pending",
+              "online",
+              "unknown"
+            ],
+            "title": "State"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          },
+          "blocked_reason": {
+            "type": "string",
+            "title": "Blocked Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "request_id",
+          "target",
+          "marketplace",
+          "account",
+          "ean",
+          "kid_id",
+          "kid_number",
+          "created_at_unix_ms",
+          "state",
+          "messages",
+          "retryable"
+        ],
+        "title": "ProductReviewItem"
+      },
+      "ProductReviewList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductReviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "status_unavailable": {
+            "type": "boolean",
+            "title": "Status Unavailable",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_offset"
+        ],
+        "title": "ProductReviewList"
+      },
       "ReconciliationChannelState": {
         "properties": {
           "target": {
@@ -3318,6 +3660,56 @@
           "desired"
         ],
         "title": "ReconciliationRequest"
+      },
+      "ReviewRetryInput": {
+        "properties": {
+          "source_job_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Source Job Id"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_job_id",
+          "target",
+          "payload"
+        ],
+        "title": "ReviewRetryInput"
+      },
+      "ReviewRetryReference": {
+        "properties": {
+          "source_job_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Source Job Id"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_job_id",
+          "target"
+        ],
+        "title": "ReviewRetryReference"
       },
       "ValidationError": {
         "properties": {
@@ -3371,6 +3763,10 @@
       "description": "Async orchestrator job intake and inspection endpoints."
     },
     {
+      "name": "Product Reviews",
+      "description": "Failed publication snapshots and safe retry preparation."
+    },
+    {
       "name": "Product Editor",
       "description": "Product Editor discover, load, plan, apply and job-status endpoints."
     },
@@ -3393,6 +3789,7 @@
       "tags": [
         "System",
         "Jobs",
+        "Product Reviews",
         "Product Editor",
         "Products",
         "Reconciliation",

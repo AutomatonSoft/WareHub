@@ -49,22 +49,45 @@ test("all responsive matrix grids reserve three account columns and TEMU spans o
   assert.match(shell, /wh-sofort-table-wrap[^"\n]*overflow-x-auto/);
 });
 
-test("OTTO submission does not inherit an optimistic green flag and rejected updates keep confirmed visibility", () => {
+test("OTTO publication labels remain separate from the editable local status", () => {
   const pending = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
-    ...props, siteEanStatuses: { ...props.siteEanStatuses, ottoJv: true },
-    ottoPublications: { ottoJv: { state: "pending", online: null, errors: [] } },
+    ...props,
+    ottoPublications: { ottoJv: { sku: props.siteEans.ottoJv, state: "pending", online: null, errors: [] } },
   }));
   assert.match(pending, /OTTO validation pending/);
   const pendingCheckbox = pending.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0];
   assert.doesNotMatch(pendingCheckbox, /checked=/);
-  assert.match(pendingCheckbox, /disabled=/);
+  assert.doesNotMatch(pendingCheckbox, /disabled=/);
   const rejected = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
-    ...props, ottoPublications: { ottoJv: { state: "rejected", online: true, errors: [{ code: "100006", title: "Invalid Grundfarbe", jsonPath: "$.attributes.Grundfarbe" }] } },
+    ...props, siteEanStatuses: { ...props.siteEanStatuses, ottoJv: true },
+    ottoPublications: { ottoJv: { ean: props.siteEans.ottoJv, state: "rejected", online: false, errors: [{ code: "100006", title: "Invalid Grundfarbe", jsonPath: "$.attributes.Grundfarbe" }] } },
   }));
   assert.match(rejected, /Rejected by OTTO/);
   assert.match(rejected, /Invalid Grundfarbe/);
   assert.match(rejected, /\$\.attributes\.Grundfarbe/);
   assert.match(rejected.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0], /checked=/);
+  assert.doesNotMatch(rejected.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0], /disabled=/);
+});
+
+test("cleared or replaced EAN never displays the previous OTTO rejection", () => {
+  for (const ean of ["", props.placeholderEan, "4071489368673"]) {
+    const html = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
+      ...props, siteEans: { ...props.siteEans, ottoJv: ean },
+      ottoPublications: { ottoJv: { ean: props.siteEans.ottoJv, state: "rejected", online: false, errors: [{ title: "Old rejection" }] } },
+    }));
+    assert.doesNotMatch(html, /Rejected by OTTO|Old rejection/);
+    assert.doesNotMatch(html.match(/<input[^>]*aria-label="OTTO ottoJv status"[^>]*>/)[0], /disabled=/);
+  }
+});
+
+test("resubmitted OTTO publication shows pending without the previous rejection", () => {
+  const html = renderToStaticMarkup(React.createElement(SofortListMarketplaceMatrix, {
+    ...props, ottoPublications: { ottoJv: { ean: props.siteEans.ottoJv, state: "pending", online: false, errors: [] } },
+  }));
+  assert.match(html, /OTTO validation pending/);
+  assert.doesNotMatch(html, /Rejected by OTTO/);
+  const table = readFileSync(new URL("../components/inventory/sofort-list-table.tsx", import.meta.url), "utf8");
+  assert.match(table, /refetchOnMount: "always"/);
 });
 
 if (process.env.DEP_LAYOUT_PREVIEW_PATH) {

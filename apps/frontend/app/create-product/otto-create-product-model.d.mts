@@ -37,7 +37,6 @@ export function extractOttoMediaUrls(product: Record<string, unknown> | undefine
 
 export declare const OTTO_PRODUCT_LINE_MAX_LENGTH: 70;
 export function parseOttoPrice(value: unknown): number | null;
-export declare const OTTO_BASE_COLORS: readonly string[];
 export function getOttoAttributeChoices(name: string, allowedValues?: readonly string[]): readonly string[];
 export function normalizeOttoAttributeValues(name: string, input: unknown, allowedValues?: readonly string[]): string[];
 

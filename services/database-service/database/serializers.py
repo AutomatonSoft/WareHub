@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from django.db import transaction
+
 from rest_framework import serializers
 
 from .ftp_upload import normalize_managed_public_photo_value
@@ -263,6 +265,19 @@ class OrderUserReadSerializer(serializers.ModelSerializer):
 
 
 class EanPatchSerializer(serializers.ModelSerializer):
+    def update(self, instance, validated_data):
+        reset_statuses = {
+            field: False for field in ("otto_jv", "otto_xl")
+            if field in validated_data and getattr(instance, field) != validated_data[field]
+        }
+        with transaction.atomic():
+            for field, value in validated_data.items():
+                setattr(instance, field, value)
+            instance.save(update_fields=list(validated_data))
+            if reset_statuses:
+                EanStatus.objects.filter(ean_id=instance.kid_id).update(**reset_statuses)
+        return instance
+
     class Meta:
         model = Ean
         exclude = ("kid",)

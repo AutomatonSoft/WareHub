@@ -63,7 +63,7 @@ def _sync_mapping_visibility(publication):
 
 
 def publication_data(publication):
-    return {"sku": publication.sku, "task_id": publication.task_id, "state": publication.state,
+    return {"ean": publication.ean, "sku": publication.sku, "task_id": publication.task_id, "state": publication.state,
             "online": publication.online, "errors": publication.errors,
             "checking": publication.next_check_at is not None,
             "checked_at": publication.checked_at.isoformat() if publication.checked_at else None}
