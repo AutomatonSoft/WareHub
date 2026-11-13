@@ -18,6 +18,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from database.views_archive import KidArchiveAPIView
+from database.publication_state_views import PublicationStatesAPIView
 from django.urls import path
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import JSONOpenAPIRenderer
@@ -601,6 +602,7 @@ class OpenApiSchemaView(APIView):
         return Response(generate_openapi_document(request=request, public=True))
 
 urlpatterns = [
+    path('api/v1/marketplace/publication-states/', PublicationStatesAPIView.as_view(), name='marketplace-publication-states'),
     path("admin/", admin.site.urls),
     path("api/v1/openapi.json", OpenApiSchemaView.as_view(), name="openapi-schema-v1"),
     *api_v1_patterns,

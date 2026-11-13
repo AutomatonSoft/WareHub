@@ -73,8 +73,9 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
           </span>
           {row.cells.map((cell) => {
             const displayValue = displayEan(cell.value, props.placeholderEan);
-            const publication = cell.key === "ottoJv" || cell.key === "ottoXl" ? props.ottoPublications?.[cell.key] : undefined;
-            const active = publication ? publication.online === true : cell.status === true;
+            const candidate = cell.key === "ottoJv" || cell.key === "ottoXl" ? props.ottoPublications?.[cell.key] : undefined;
+            const publication = !cell.isEmpty && (candidate?.ean ?? candidate?.sku) === cell.value.trim() ? candidate : undefined;
+            const active = cell.status === true;
             const publicationLabels = language === "ru"
               ? { pending: "На проверке OTTO", processed: "Ожидает публикации", rejected: "Отклонён OTTO", unknown: "Не подтверждён", online: "Опубликован", offline: "Деактивирован" }
               : language === "de"
@@ -105,7 +106,7 @@ export const SofortListMarketplaceMatrix = memo(function SofortListMarketplaceMa
                 <Checkbox
                   className="wh-sofort-marketplace-matrix__checkbox"
                   checked={active}
-                  disabled={Boolean(publication) || updatingMarketplace === cell.key}
+                  disabled={updatingMarketplace === cell.key}
                   aria-label={`${row.market} ${cell.key} status`}
                   onCheckedChange={(value) => void handleStatusChange(cell.key as MarketplaceStatusKey, value === true)}
                 />

@@ -28,6 +28,7 @@ function isMarketplaceToggleCreation(pathPart: string, method: string): boolean 
 }
 
 function requiresVerifiedActor(pathPart: string, method: string): boolean {
+  if (method === "GET" && /^reviews(?:\/|$)/.test(normalizeOrchestratorPath(pathPart))) return true;
   return method === "POST" && (
     isMarketplaceToggleCreation(pathPart, method)
     || /^(jobs(?:\/batch)?|products\/[^/]+\/update)$/.test(normalizeOrchestratorPath(pathPart))

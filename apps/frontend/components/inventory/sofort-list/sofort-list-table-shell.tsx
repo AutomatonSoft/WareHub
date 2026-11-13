@@ -861,14 +861,16 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
     setFullscreenGallery({ photos: normalizedPhotos, index: safeIndex });
   }
 
+  const onUpdateRow = props.onUpdateRow;
   const updateMarketplaceStatus = useCallback(async (row: SofortListRow, marketplace: MarketplaceStatusRowKey, nextStatus: boolean) => {
     try {
       await patchKidMarketplaceStatus({ kidId: row.kidId, marketplace, status: nextStatus });
+      onUpdateRow({ ...row, siteEanStatuses: { ...row.siteEanStatuses, [marketplace]: nextStatus } });
     } catch (error) {
       showToast(error instanceof Error ? error.message : t.failedSaveChanges, "error");
       throw error;
     }
-  }, [showToast, t.failedSaveChanges]);
+  }, [onUpdateRow, showToast, t.failedSaveChanges]);
 
   function closeFullscreenPhoto() {
     if (!fullscreenGallery) return;
@@ -1190,6 +1192,7 @@ export const SofortListTableShell = memo(function SofortListTableShell(props: {
       };
 
       props.onUpdateRow(nextRow);
+      props.onRefresh();
       closeEditModal(true);
     } catch (requestError) {
       setEditError(requestError instanceof Error ? requestError.message : t.failedSaveChanges);

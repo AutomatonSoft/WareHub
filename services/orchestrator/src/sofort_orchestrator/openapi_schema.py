@@ -12,12 +12,14 @@ DOMAIN_ORDER = [
     "openapi.json",
     "metrics",
     "jobs",
+    "reviews",
     "product-editor",
     "products",
     "reconciliation",
 ]
 
 TAG_CONFIG = {
+    "reviews": ("Product Reviews", "Failed publication snapshots and safe retry preparation."),
     "healthz": ("System", "System health, readiness and OpenAPI endpoints."),
     "readyz": ("System", "System health, readiness and OpenAPI endpoints."),
     "openapi.json": ("System", "System health, readiness and OpenAPI endpoints."),

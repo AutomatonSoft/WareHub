@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from .api.marketplace_job_routes import MarketplaceJobDeps
 from .api.product_editor_routes import ProductEditorDeps
 from .api.routes import Deps, router
+from .api.product_review_routes import router as product_review_router
 from .application.marketplace_job_service import MarketplaceJobService
 from .application.marketplace_job_worker import run_marketplace_job_worker
 from .application.product_editor_service import ProductEditorService
@@ -387,3 +388,4 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 app.include_router(router)
+app.include_router(product_review_router)

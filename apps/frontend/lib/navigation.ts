@@ -12,6 +12,7 @@ export const navigationItems = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/sofort-list", labelKey: "navSofortList", icon: List },
   { href: "/task-statuses", labelKey: "navTaskStatuses", icon: ListChecks },
+  { href: "/reviews", labelKey: "navProductReviews", icon: ListChecks },
   { href: "/product-editor", labelKey: "navProductEditor", icon: PencilRuler },
   { href: "/warehouse-map", labelKey: "navWarehouseMap", icon: Map }
 ] as const;
