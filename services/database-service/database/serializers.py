@@ -480,12 +480,15 @@ class EANPoolTakeNextSerializer(serializers.Serializer):
 
 class EANPoolClaimForJobSerializer(serializers.Serializer):
     job_id = serializers.UUIDField()
+    kid_id = serializers.IntegerField(min_value=1, required=False)
     kid_number = serializers.CharField(max_length=128, required=False)
     reservation_family = serializers.ChoiceField(choices=("jv", "xl"), required=False)
 
     def validate(self, attrs):
         kid_number = str(attrs.get("kid_number") or "").strip()
         reservation_family = str(attrs.get("reservation_family") or "").strip()
+        if attrs.get("kid_id") is not None and not kid_number:
+            raise serializers.ValidationError({"kid_id": "kid_number is required with kid_id."})
         if bool(kid_number) != bool(reservation_family):
             raise serializers.ValidationError(
                 "kid_number and reservation_family must be provided together.",
