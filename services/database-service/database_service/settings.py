@@ -241,6 +241,7 @@ _csrf_trusted_origins_env = os.getenv(
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_trusted_origins_env.split(',') if o.strip()]
 
 REST_FRAMEWORK = {
+    'EXCEPTION_HANDLER': 'database.api_errors.exception_handler',
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.openapi.AutoSchema',
 }
 

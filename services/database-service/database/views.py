@@ -60,6 +60,8 @@ from .ftp_upload import (
 from .permissions import SessionRolePermission
 from .remote_images import MAX_REMOTE_BATCH_BYTES, MAX_REMOTE_IMAGES, RemoteImageError, download_remote_image
 from .marketplace_ean_mapping_service import MarketplaceEanMappingError, confirm_marketplace_ean_mapping
+from .ean_ownership import assert_ean_available, unassigned_pool_items
+from .marketplace_deactivate_service import MarketplaceKidConflict
 from .serializers import (
     EANPoolImportSerializer,
     EANPoolReserveSerializer,
@@ -2612,6 +2614,7 @@ class EANPoolReserveAPIView(APIView):
         if item.status == "blocked":
             return Response({"detail": "EAN заблокирован."}, status=status.HTTP_409_CONFLICT)
 
+        assert_ean_available(ean)
         item.status = "reserved"
         item.reserved_by = actor
         item.reserved_at = timezone.now()
@@ -2630,7 +2633,7 @@ class EANPoolTakeNextFreeAPIView(APIView):
         actor = reserved_by or str(request.session.get("username") or request.session.get("user") or "system")
 
         item = (
-            EANPool.objects.select_for_update()
+            unassigned_pool_items(EANPool.objects.select_for_update())
             .filter(status="free")
             .order_by("ean", "id")
             .first()
@@ -2644,11 +2647,26 @@ class EANPoolTakeNextFreeAPIView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        assert_ean_available(item.ean)
         item.status = "reserved"
         item.reserved_by = actor
         item.reserved_at = timezone.now()
         item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
         return Response(EANPoolSerializer(item).data, status=status.HTTP_200_OK)
+
+
+def _lock_pool_ean_row(kid_number: str, kid_id: int | None) -> Ean | None:
+    matches = Kid.objects.select_for_update().filter(kid_number__contains=[kid_number])
+    if kid_id is not None:
+        matches = matches.filter(pk=kid_id)
+    candidates = list(matches.order_by("pk")[:2])
+    if len(candidates) > 1:
+        raise MarketplaceKidConflict("Multiple Kid records match kid_number; specify kid_id.")
+    if not candidates:
+        if kid_id is not None:
+            raise MarketplaceKidConflict("kid_id does not match kid_number.")
+        return None
+    return Ean.objects.select_for_update().filter(kid=candidates[0]).first()
 
 
 class EANPoolClaimForJobAPIView(APIView):
@@ -2669,7 +2687,7 @@ class EANPoolClaimForJobAPIView(APIView):
         ean_row = None
         reserved_field = ""
         if kid_number:
-            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            ean_row = _lock_pool_ean_row(kid_number, serializer.validated_data.get("kid_id"))
             if ean_row is None:
                 return Response(
                     {
@@ -2683,6 +2701,7 @@ class EANPoolClaimForJobAPIView(APIView):
             other_reserved_field = "reserved_xl" if reservation_family == "jv" else "reserved_jv"
             other_reserved_ean = str(getattr(ean_row, other_reserved_field) or "").strip()
             if reserved_ean and reserved_ean != other_reserved_ean:
+                assert_ean_available(reserved_ean, kid_id=ean_row.kid_id)
                 item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first()
                 if item is None:
                     return Response(
@@ -2702,7 +2721,7 @@ class EANPoolClaimForJobAPIView(APIView):
         )
         if item is None:
             item = (
-                EANPool.objects.select_for_update()
+                unassigned_pool_items(EANPool.objects.select_for_update())
                 .filter(status="free")
                 .order_by("ean", "id")
                 .first()
@@ -2720,6 +2739,7 @@ class EANPoolClaimForJobAPIView(APIView):
             item.reserved_at = timezone.now()
             item.save(update_fields=["status", "reserved_by", "reserved_at", "updated_at"])
 
+        assert_ean_available(item.ean, kid_id=ean_row.kid_id if ean_row else None)
         if ean_row is not None:
             setattr(ean_row, reserved_field, item.ean)
             ean_row.save(update_fields=[reserved_field])
@@ -2737,7 +2757,7 @@ class EANPoolMarkJobUsedAPIView(APIView):
         kid_number = str(serializer.validated_data.get("kid_number") or "").strip()
         reservation_family = str(serializer.validated_data.get("reservation_family") or "").strip()
         if kid_number:
-            ean_row = Ean.objects.select_for_update().filter(kid__kid_number__contains=[kid_number]).order_by("id").first()
+            ean_row = _lock_pool_ean_row(kid_number, serializer.validated_data.get("kid_id"))
             reserved_ean = str(getattr(ean_row, f"reserved_{reservation_family}", "") or "").strip() if ean_row else ""
             item = EANPool.objects.select_for_update().filter(ean=reserved_ean).first() if reserved_ean else None
         else:

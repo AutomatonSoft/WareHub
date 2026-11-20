@@ -17,6 +17,8 @@ from django.db.models import (
     SET_NULL,
 )
 from django.db.models import Q
+from django.db import router
+from .ean_ownership import assert_ean_available, ean_fields, normalized_ean, serialize_ean_ownership
 from .kid_number_utils import normalize_kid_numbers
 
 class Paymant:
@@ -73,6 +75,22 @@ class Kid(Model):
 
 
 class Ean(Model):
+    def save(self, *args, **kwargs):
+        using = kwargs.get('using') or router.db_for_write(type(self), instance=self)
+        fields = ean_fields(type(self))
+        selected = kwargs.get('update_fields')
+        if selected is not None:
+            fields = [field for field in fields if field in selected]
+        with serialize_ean_ownership({normalized_ean(getattr(self, field)) for field in fields}, using):
+            previous = type(self).objects.using(using).filter(pk=self.pk).values(*fields).first() if self.pk and fields else None
+            values = {
+                normalized_ean(getattr(self, field)) for field in fields
+                if previous is None or normalized_ean(previous[field]) != normalized_ean(getattr(self, field))
+            }
+            for value in sorted(values - {''}):
+                assert_ean_available(value, kid_id=self.kid_id, using=using)
+            return super().save(*args, **kwargs)
+
     kid = OneToOneField(Kid, on_delete=CASCADE, related_name="ean")
     main_ean_jv = CharField(max_length=64, null=True, blank=True)
     main_ean_xl = CharField(max_length=64, null=True, blank=True)

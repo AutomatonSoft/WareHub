@@ -21,6 +21,7 @@ class EanPoolGateway:
         job_id: str,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> str:
         payload = self._post(
@@ -28,6 +29,7 @@ class EanPoolGateway:
             job_id=job_id,
             request_id=request_id,
             kid_number=kid_number,
+            kid_id=kid_id,
             reservation_family=reservation_family,
         )
         ean = str(payload.get("ean") or "").strip()
@@ -41,6 +43,7 @@ class EanPoolGateway:
         job_id: str,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> None:
         self._post(
@@ -48,6 +51,7 @@ class EanPoolGateway:
             job_id=job_id,
             request_id=request_id,
             kid_number=kid_number,
+            kid_id=kid_id,
             reservation_family=reservation_family,
         )
 
@@ -58,6 +62,7 @@ class EanPoolGateway:
         job_id: str,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> dict[str, Any]:
         headers = {"X-Request-Id": request_id, "Content-Type": "application/json"}
@@ -70,6 +75,7 @@ class EanPoolGateway:
             json={
                 "job_id": job_id,
                 **({"kid_number": kid_number} if kid_number else {}),
+                **({"kid_id": kid_id} if kid_id is not None else {}),
                 **({"reservation_family": reservation_family} if reservation_family else {}),
             },
         )

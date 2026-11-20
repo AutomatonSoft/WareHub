@@ -74,6 +74,8 @@ class FakeEanPoolGateway:
         self.eans_by_job_id: dict[str, str] = {}
         self.claimed_job_ids: list[str] = []
         self.used_job_ids: list[str] = []
+        self.claimed_kid_ids: list[int | None] = []
+        self.used_kid_ids: list[int | None] = []
 
     def claim_for_job(
         self,
@@ -81,9 +83,11 @@ class FakeEanPoolGateway:
         job_id: str,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> str:
         self.claimed_job_ids.append(job_id)
+        self.claimed_kid_ids.append(kid_id)
         return self.eans_by_job_id.setdefault(job_id, f"4098765432{len(self.eans_by_job_id) + 100}")
 
     def mark_used_for_job(
@@ -92,9 +96,11 @@ class FakeEanPoolGateway:
         job_id: str,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> None:
         self.used_job_ids.append(job_id)
+        self.used_kid_ids.append(kid_id)
 
 
 class FakeMarketplaceEanMappingGateway:
@@ -651,6 +657,7 @@ def test_ebay_publish_uses_stable_pool_sku_and_confirms_exact_kid(account, famil
         assert result.results[0].data["payload"]["__source_ean"] == "4012345678901"
         assert result.results[0].data["ean"] != "4012345678901"
     assert pool_gateway.claimed_job_ids == [service._pool_reservation_id(job_id="job-1", target_label=family)] * 2
+    assert pool_gateway.claimed_kid_ids == pool_gateway.used_kid_ids == [42, 42]
     assert mapping_gateway.calls[0] == mapping_gateway.calls[1]
     assert mapping_gateway.calls[0]["account"] == account
     assert mapping_gateway.calls[0]["kid_id"] == 42
