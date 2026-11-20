@@ -177,6 +177,7 @@ class OrchestratorService:
                             job_id=reservation_id,
                             request_id=request_id,
                             kid_number=kid_number if reservation_family else None,
+                            kid_id=command.kid_id if reservation_family else None,
                             reservation_family=reservation_family,
                         )
                         pool_eans_by_reservation_id[reservation_id] = channel_ean
@@ -308,6 +309,7 @@ class OrchestratorService:
                 job_id=reservation_id,
                 request_id=request_id,
                 kid_number=kid_number if reservation_family else None,
+                kid_id=command.kid_id if reservation_family else None,
                 reservation_family=reservation_family,
             )
 
@@ -327,6 +329,7 @@ class OrchestratorService:
         job_id: str | None,
         request_id: str,
         kid_number: str | None = None,
+        kid_id: int | None = None,
         reservation_family: str | None = None,
     ) -> None:
         if not job_id or self.ean_pool_gateway is None:
@@ -335,6 +338,7 @@ class OrchestratorService:
             job_id=job_id,
             request_id=request_id,
             kid_number=kid_number,
+            kid_id=kid_id,
             reservation_family=reservation_family,
         )
 
