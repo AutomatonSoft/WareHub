@@ -104,6 +104,7 @@ export async function takeNextFreeEan(): Promise<{ response: Response; ean: stri
 }
 
 export async function claimEanForKid(input: {
+  kidId: number;
   kidNumber: string;
   reservationFamily: "jv" | "xl";
 }): Promise<{ response: Response; ean: string | null; errorText: string }> {
@@ -115,6 +116,7 @@ export async function claimEanForKid(input: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         job_id: crypto.randomUUID(),
+        kid_id: input.kidId,
         kid_number: input.kidNumber,
         reservation_family: input.reservationFamily,
       }),
@@ -125,5 +127,6 @@ export async function claimEanForKid(input: {
   if (response.ok) {
     return { response, ean: parseEanFromPayload(payload), errorText: "" };
   }
-  return { response, ean: null, errorText: payload ? JSON.stringify(payload) : "" };
+  const detail = payload?.detail;
+  return { response, ean: null, errorText: typeof detail === "string" ? detail : "" };
 }

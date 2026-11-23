@@ -1591,6 +1591,7 @@ export default function CreateProductPage() {
     controller.sourceSnapshot?.sourceProductId || "",
   ].join(":");
   const activeDraftContextKey = [
+    controller.kidContext?.kidId,
     controller.kidContext?.kidNumber?.trim() || "",
     controller.kidContext?.mainEanJv?.trim() || "",
     controller.kidContext?.mainEanXl?.trim() || "",
@@ -1790,12 +1791,13 @@ export default function CreateProductPage() {
 
   useEffect(() => {
     const kidNumber = controller.kidContext?.kidNumber.trim() || "";
-    if (!activeReservationFamily || !kidNumber) {
+    const kidId = controller.kidContext?.kidId;
+    if (!activeReservationFamily || !kidNumber || !kidId) {
       return;
     }
 
     let active = true;
-    void claimEanForKid({ kidNumber, reservationFamily: activeReservationFamily })
+    void claimEanForKid({ kidId, kidNumber, reservationFamily: activeReservationFamily })
       .then(({ ean, errorText }) => {
         if (!active) return;
         if (!ean) {
@@ -1834,7 +1836,7 @@ export default function CreateProductPage() {
     return () => {
       active = false;
     };
-  }, [activeReservationFamily, controller.kidContext?.kidNumber, showToast]);
+  }, [activeReservationFamily, activeDraftContextKey, controller.kidContext?.kidId, controller.kidContext?.kidNumber, showToast]);
 
   useEffect(() => {
     if (activeTab !== "jv" || !controller.sourceSnapshot?.rawPayload) {
